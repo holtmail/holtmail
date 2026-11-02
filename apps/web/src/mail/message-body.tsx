@@ -1,0 +1,122 @@
+import { bodyQuery, type MessageDetail } from '@holtmail/api-client'
+import { Button, Skeleton } from '@holtmail/ui'
+import { useQuery } from '@tanstack/react-query'
+import { ImageOffIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+import { linkify, withLinkTarget } from '../lib/text.ts'
+import { strings } from '../strings.ts'
+
+export function MessageBody({ message }: { message: MessageDetail }) {
+  if (message.has_html) return <HtmlBody message={message} />
+  if (!message.text?.trim()) {
+    return <p className="text-sm text-fg-subtle italic">{strings.reader.noBody}</p>
+  }
+  return <TextBody text={message.text} />
+}
+
+function TextBody({ text }: { text: string }) {
+  const parts = useMemo(() => linkify(text), [text])
+  return (
+    <div className="max-w-prose font-sans text-base wrap-break-word whitespace-pre-wrap text-fg">
+      {parts.map((part, index) =>
+        part.kind === 'link' ? (
+          <a
+            key={index}
+            href={part.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline-offset-2 hover:underline"
+          >
+            {part.text}
+          </a>
+        ) : (
+          <span key={index}>{part.text}</span>
+        ),
+      )}
+    </div>
+  )
+}
+
+function HtmlBody({ message }: { message: MessageDetail }) {
+  const [remote, setRemote] = useState(false)
+  const body = useQuery({
+    ...bodyQuery(message.id, remote),
+    placeholderData: (previous) => previous,
+  })
+  const srcDoc = useMemo(
+    () => (body.data ? withLinkTarget(body.data.html) : undefined),
+    [body.data],
+  )
+
+  if (body.isError) return <p className="text-sm text-danger">{strings.reader.bodyFailed}</p>
+
+  return (
+    <div className="grid gap-3">
+      {body.data?.remoteBlocked && !remote && (
+        <div className="flex items-center gap-3 border border-border bg-bg-subtle py-1 pr-1 pl-3 text-sm text-fg-muted">
+          <ImageOffIcon aria-hidden className="size-4 shrink-0" />
+          <span className="flex-1">{strings.reader.remoteHidden}</span>
+          <Button size="sm" variant="ghost" onClick={() => setRemote(true)}>
+            {strings.reader.showRemote}
+          </Button>
+        </div>
+      )}
+      {srcDoc ? (
+        <AutoHeightFrame srcDoc={srcDoc} title={strings.reader.bodyTitle(message.subject ?? '')} />
+      ) : (
+        <div className="grid gap-2">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AutoHeightFrame({ srcDoc, title }: { srcDoc: string; title: string }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState<number>()
+
+  useEffect(() => {
+    const frame = ref.current
+    if (!frame) return undefined
+    let observer: ResizeObserver | undefined
+    const measure = () => {
+      const doc = frame.contentDocument
+      if (!doc?.documentElement) return
+      const next = Math.ceil(
+        Math.max(doc.documentElement.offsetHeight, doc.body?.scrollHeight ?? 0),
+      )
+      setHeight((previous) => (previous === next ? previous : next))
+    }
+    const onLoad = () => {
+      measure()
+      observer?.disconnect()
+      const doc = frame.contentDocument
+      if (!doc?.documentElement) return
+      observer = new ResizeObserver(measure)
+      observer.observe(doc.documentElement)
+      if (doc.body) observer.observe(doc.body)
+    }
+    frame.addEventListener('load', onLoad)
+    if (frame.contentDocument?.readyState === 'complete') onLoad()
+    return () => {
+      frame.removeEventListener('load', onLoad)
+      observer?.disconnect()
+    }
+  }, [srcDoc])
+
+  return (
+    <iframe
+      ref={ref}
+      title={title}
+      srcDoc={srcDoc}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="no-referrer"
+      className="block min-h-24 w-full border-0"
+      style={height === undefined ? undefined : { height }}
+    />
+  )
+}

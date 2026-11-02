@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+@import '@holtmail/tokens/fonts.css';
+@import '@holtmail/tokens/tokens.css';
+@import '@holtmail/tokens/theme.css';
+@import '@holtmail/ui/styles.css';
+
+@source './';
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+}

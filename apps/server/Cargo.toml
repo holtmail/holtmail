@@ -1,0 +1,47 @@
+[package]
+name = "holtmail-server"
+description = "The holtmail binary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "holtmail"
+path = "src/main.rs"
+
+[dependencies]
+holtmail-api.workspace = true
+holtmail-auth.workspace = true
+holtmail-blob.workspace = true
+holtmail-blob-fs.workspace = true
+holtmail-blob-s3.workspace = true
+holtmail-core.workspace = true
+holtmail-import.workspace = true
+holtmail-index.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-ingest.workspace = true
+holtmail-secret.workspace = true
+holtmail-secret-local.workspace = true
+holtmail-source.workspace = true
+holtmail-source-imap.workspace = true
+holtmail-store.workspace = true
+holtmail-store-sqlite.workspace = true
+holtmail-sync.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["signal", "net", "time"] }
+toml.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

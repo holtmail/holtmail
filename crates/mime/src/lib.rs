@@ -4,6 +4,7 @@
 //! produced again at any time.
 
 use bytes::Bytes;
+pub use holtmail_core::Address;
 use mail_parser::{AddressList, MessageParser, MessagePart};
 
 /// Characters kept in [`ParsedMessage::preview`].
@@ -40,15 +41,6 @@ pub struct ParsedMessage {
     pub preview: String,
     /// Attachments and inline parts that are not the message body, in document order.
     pub attachments: Vec<Attachment>,
-}
-
-/// One mailbox from an address header.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Address {
-    /// Display name, decoded.
-    pub name: Option<String>,
-    /// The address as written, e.g. `ada@example.com`.
-    pub email: String,
 }
 
 /// A part of a message that is not its body.

@@ -8,6 +8,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+holtmail-core.workspace = true
 bytes.workspace = true
 mail-parser.workspace = true
 thiserror.workspace = true

@@ -15,7 +15,7 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError>;
 | `message_id`, `in_reply_to`, `references` | Ids without angle brackets; `references` oldest first |
 | `subject` | Decoded, including RFC 2047 encoded words in any charset |
 | `sent_at` | `Date` as Unix seconds in UTC; `None` when missing or broken |
-| `from`, `to`, `cc`, `bcc`, `reply_to` | `Address { name, email }`, groups flattened, entries without an address dropped |
+| `from`, `to`, `cc`, `bcc`, `reply_to` | `Address { name, email }` from `holtmail-core`, groups flattened, entries without an address dropped |
 | `text` | Plain body; derived from HTML when the message has no text part |
 | `html` | HTML body as sent, **unsanitized**: never show it without `holtmail-sanitize` |
 | `preview` | First `PREVIEW_CHARS` (200) characters of the body as one line |

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "apps/web": {
+      "project": ["src/**/*.{ts,tsx,css}"]
+    },
+    "packages/tokens": {
+      "entry": ["src/*.css"]
+    },
+    "packages/ui": {
+      "entry": ["src/*.css"]
+    },
+    "packages/api-client": {
+      "ignore": ["src/schema.ts"]
+    }
+  }
+}

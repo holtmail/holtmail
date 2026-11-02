@@ -1,9 +1,12 @@
 [tools]
 rust = "1.99"
+bun = "1.4.4"
 
 [tasks.check]
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets -- -D warnings",
   "cargo test --workspace",
+  "bun install --frozen-lockfile",
+  "bun run check",
 ]

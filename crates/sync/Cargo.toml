@@ -1,0 +1,29 @@
+[package]
+name = "holtmail-sync"
+description = "Archiving an account's folders incrementally"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-ingest.workspace = true
+holtmail-source.workspace = true
+holtmail-store.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-index.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-source = { workspace = true, features = ["testing"] }
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

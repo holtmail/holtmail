@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-index-tantivy"
+description = "Holtmail search index on Tantivy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-index.workspace = true
+async-trait.workspace = true
+tantivy.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+holtmail-index = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

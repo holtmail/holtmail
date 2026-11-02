@@ -56,3 +56,4 @@ with `holtmail-blob = { workspace = true, features = ["testing"] }` in `[dev-dep
 ## Implementations
 
 - [holtmail-blob-fs](../../blob-fs/docs/README.md) — files on a local disk
+- [holtmail-blob-s3](../../blob-s3/docs/README.md) — S3-compatible object storage

@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-blob-s3"
+description = "BlobStore on S3-compatible object storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+object_store.workspace = true
+
+[dev-dependencies]
+holtmail-blob = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

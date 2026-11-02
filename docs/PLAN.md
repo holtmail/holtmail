@@ -2,7 +2,7 @@
 
 Holtmail is a self-hosted email archiver. It connects to mail accounts over IMAP, JMAP and Microsoft Graph, keeps a copy of every message for as long as you want, and lets you search and read the archive in a fast web interface. It is for a person who wants their mail out of a provider's hands as well as for a company that must keep mail for years.
 
-Status: design. The first modules are [holtmail-blob](../crates/blob/docs/README.md) and [holtmail-blob-fs](../crates/blob-fs/docs/README.md).
+Status: milestone 1. Done so far: [holtmail-blob](../crates/blob/docs/README.md) with [blob-fs](../crates/blob-fs/docs/README.md) and [blob-s3](../crates/blob-s3/docs/README.md).
 
 ## Principles
 
@@ -130,7 +130,7 @@ Each milestone ends in something usable.
 | JMAP        | `jmap-client`                                             |
 | Search      | `tantivy`                                                 |
 | Database    | SQLite and Postgres through `sqlx`                        |
-| S3          | `aws-sdk-s3` or `object_store`, decided in milestone 1    |
+| S3          | `object_store`                                            |
 | Web         | React, Vite, TypeScript, TanStack Router and Query        |
 | UI          | shadcn/ui on Radix, Tailwind CSS v4, Motion, IBM Plex — see [design.md](design.md) |
 | Tools       | mise, cargo fmt, clippy                                   |

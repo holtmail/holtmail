@@ -1,0 +1,16 @@
+[package]
+name = "holtmail-mime"
+description = "Parsing raw messages into headers, bodies and attachments"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes.workspace = true
+mail-parser.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

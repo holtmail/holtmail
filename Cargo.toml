@@ -15,6 +15,7 @@ holtmail-blob = { path = "crates/blob" }
 async-trait = "0.1"
 blake3 = "1"
 bytes = "1"
+mail-parser = { version = "1", features = ["full_encoding"] }
 object_store = { version = "0.14", features = ["aws"] }
 tempfile = "3"
 thiserror = "2"

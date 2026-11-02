@@ -15,8 +15,8 @@ pub mod testing;
 
 /// The address of a blob: the BLAKE3 hash of its bytes.
 ///
-/// Two blobs have the same id exactly when their bytes are equal. Displays and parses as 64
-/// lowercase hex characters.
+/// Two blobs have the same id exactly when their bytes are equal. Displays, parses and serializes
+/// as 64 lowercase hex characters.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlobId([u8; 32]);
 
@@ -60,6 +60,19 @@ impl FromStr for BlobId {
         blake3::Hash::from_hex(s)
             .map(|hash| Self(*hash.as_bytes()))
             .map_err(|_| InvalidBlobId)
+    }
+}
+
+impl serde::Serialize for BlobId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlobId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let hex = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        hex.parse().map_err(serde::de::Error::custom)
     }
 }
 

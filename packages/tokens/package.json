@@ -1,0 +1,20 @@
+{
+  "name": "@holtmail/tokens",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./fonts.css": "./src/fonts.css",
+    "./tokens.css": "./src/tokens.css",
+    "./theme.css": "./src/theme.css"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0"
+  }
+}

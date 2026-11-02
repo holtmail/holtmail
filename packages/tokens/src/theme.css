@@ -1,0 +1,115 @@
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--hm-color-bg);
+  --color-bg-subtle: var(--hm-color-bg-subtle);
+  --color-bg-hover: var(--hm-color-bg-hover);
+  --color-bg-selected: var(--hm-color-bg-selected);
+  --color-fg: var(--hm-color-fg);
+  --color-fg-muted: var(--hm-color-fg-muted);
+  --color-fg-subtle: var(--hm-color-fg-subtle);
+  --color-border: var(--hm-color-border);
+  --color-border-strong: var(--hm-color-border-strong);
+  --color-accent: var(--hm-color-accent);
+  --color-accent-hover: var(--hm-color-accent-hover);
+  --color-accent-fg: var(--hm-color-accent-fg);
+  --color-focus: var(--hm-color-focus);
+  --color-danger: var(--hm-color-danger);
+  --color-danger-hover: var(--hm-color-danger-hover);
+  --color-danger-fg: var(--hm-color-danger-fg);
+  --color-warning: var(--hm-color-warning);
+  --color-success: var(--hm-color-success);
+  --color-overlay: var(--hm-color-overlay);
+
+  --font-*: initial;
+  --font-sans: var(--hm-font-sans);
+  --font-mono: var(--hm-font-mono);
+
+  --font-weight-*: initial;
+  --font-weight-normal: var(--hm-font-weight-regular);
+  --font-weight-medium: var(--hm-font-weight-medium);
+  --font-weight-semibold: var(--hm-font-weight-semibold);
+
+  --text-*: initial;
+  --text-xs: var(--hm-text-xs);
+  --text-xs--line-height: var(--hm-text-xs-line-height);
+  --text-xs--letter-spacing: var(--hm-text-xs-tracking);
+  --text-sm: var(--hm-text-sm);
+  --text-sm--line-height: var(--hm-text-sm-line-height);
+  --text-sm--letter-spacing: var(--hm-text-sm-tracking);
+  --text-base: var(--hm-text-base);
+  --text-base--line-height: var(--hm-text-base-line-height);
+  --text-base--letter-spacing: var(--hm-text-base-tracking);
+  --text-lg: var(--hm-text-lg);
+  --text-lg--line-height: var(--hm-text-lg-line-height);
+  --text-lg--letter-spacing: var(--hm-text-lg-tracking);
+  --text-xl: var(--hm-text-xl);
+  --text-xl--line-height: var(--hm-text-xl-line-height);
+  --text-xl--letter-spacing: var(--hm-text-xl-tracking);
+  --text-2xl: var(--hm-text-2xl);
+  --text-2xl--line-height: var(--hm-text-2xl-line-height);
+  --text-2xl--letter-spacing: var(--hm-text-2xl-tracking);
+
+  --spacing: var(--hm-space-unit);
+
+  --container-pane-folders: var(--hm-layout-pane-folders);
+  --container-pane-list: var(--hm-layout-pane-list);
+  --spacing-topbar: var(--hm-layout-topbar);
+
+  --radius: var(--hm-radius);
+  --radius-*: initial;
+  --radius-xs: var(--hm-radius);
+  --radius-sm: var(--hm-radius);
+  --radius-md: var(--hm-radius);
+  --radius-lg: var(--hm-radius);
+  --radius-xl: var(--hm-radius);
+  --radius-2xl: var(--hm-radius);
+  --radius-3xl: var(--hm-radius);
+  --radius-4xl: var(--hm-radius);
+
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+
+  --ease-*: initial;
+  --ease-productive: var(--hm-ease-productive);
+  --ease-productive-exit: var(--hm-ease-productive-exit);
+  --ease-expressive: var(--hm-ease-expressive);
+  --ease-expressive-exit: var(--hm-ease-expressive-exit);
+
+  --duration-fast-01: var(--hm-duration-fast-01);
+  --duration-fast-02: var(--hm-duration-fast-02);
+  --duration-moderate-01: var(--hm-duration-moderate-01);
+  --duration-moderate-02: var(--hm-duration-moderate-02);
+  --duration-slow-01: var(--hm-duration-slow-01);
+}
+
+@utility duration-* {
+  transition-duration: --value(--duration-*);
+}
+
+@layer base {
+  html {
+    background-color: var(--hm-color-bg);
+    color: var(--hm-color-fg);
+    font-family: var(--hm-font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--hm-color-bg-selected);
+  }
+}

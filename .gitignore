@@ -1,0 +1,6 @@
+target/
+node_modules/
+.DS_Store
+*.log
+AGENTS.local.md
+CLAUDE.local.md

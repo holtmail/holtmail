@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-blob"
+description = "Contract for content-addressed storage of raw message bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = ["dep:tokio"]
+
+[dependencies]
+async-trait.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+
+[lints]
+workspace = true

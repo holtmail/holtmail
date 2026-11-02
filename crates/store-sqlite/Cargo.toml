@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-store-sqlite"
+description = "Holtmail metadata store on SQLite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+holtmail-store = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

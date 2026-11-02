@@ -1,0 +1,23 @@
+[package]
+name = "holtmail-store"
+description = "Contract for Holtmail metadata: archives, accounts, folders, messages, sync state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = ["dep:tokio"]
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+
+[lints]
+workspace = true

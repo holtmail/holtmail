@@ -1,0 +1,483 @@
+use holtmail_blob::BlobId;
+use holtmail_core::{
+    AccountId, Address, ArchiveId, FolderId, MessageId, ThreadId, Timestamp, UserId,
+};
+use serde::{Deserialize, Serialize};
+
+/// A named collection of accounts; the unit people are given access to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Archive {
+    /// Id.
+    pub id: ArchiveId,
+    /// Name shown to people.
+    pub name: String,
+    /// When it was created.
+    pub created_at: Timestamp,
+}
+
+/// What kind of source an account reads mail from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountKind {
+    /// An IMAP server.
+    Imap,
+    /// Microsoft Graph.
+    Graph,
+    /// A JMAP server.
+    Jmap,
+    /// No server: messages only arrive through imports.
+    Import,
+}
+
+impl AccountKind {
+    /// The lowercase name used in storage and the API.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Imap => "imap",
+            Self::Graph => "graph",
+            Self::Jmap => "jmap",
+            Self::Import => "import",
+        }
+    }
+
+    /// Parses [`AccountKind::as_str`] output.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "imap" => Self::Imap,
+            "graph" => Self::Graph,
+            "jmap" => Self::Jmap,
+            "import" => Self::Import,
+            _ => return None,
+        })
+    }
+}
+
+/// A mail account archived into an archive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Account {
+    /// Id.
+    pub id: AccountId,
+    /// The archive the account's mail goes to.
+    pub archive_id: ArchiveId,
+    /// Where the mail comes from.
+    pub kind: AccountKind,
+    /// Name shown to people.
+    pub name: String,
+    /// The mailbox address, when known.
+    pub address: Option<String>,
+    /// Source settings that are not secret (host, port, folder rules), owned by the source module.
+    pub settings: serde_json::Value,
+    /// Credentials sealed by `holtmail-secret`; opaque to the store.
+    #[serde(skip)]
+    pub sealed_secret: Option<Vec<u8>>,
+    /// Whether scheduled sync runs for this account.
+    pub enabled: bool,
+    /// When it was created.
+    pub created_at: Timestamp,
+}
+
+/// Fields of a new account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewAccount {
+    /// The archive the account's mail goes to.
+    pub archive_id: ArchiveId,
+    /// Where the mail comes from.
+    pub kind: AccountKind,
+    /// Name shown to people.
+    pub name: String,
+    /// The mailbox address, when known.
+    pub address: Option<String>,
+    /// Source settings that are not secret.
+    pub settings: serde_json::Value,
+    /// Credentials sealed by `holtmail-secret`.
+    pub sealed_secret: Option<Vec<u8>>,
+    /// Whether scheduled sync runs for this account.
+    pub enabled: bool,
+}
+
+/// What a folder is for, from IMAP special-use attributes or the provider's well-known names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FolderRole {
+    /// Incoming mail.
+    Inbox,
+    /// Sent mail.
+    Sent,
+    /// Drafts.
+    Drafts,
+    /// Deleted mail.
+    Trash,
+    /// Spam.
+    Junk,
+    /// Archived mail.
+    Archive,
+    /// Every message of the account, like Gmail's All Mail.
+    All,
+    /// Starred or flagged mail.
+    Flagged,
+    /// Gmail's Important.
+    Important,
+}
+
+impl FolderRole {
+    /// The lowercase name used in storage and the API.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Inbox => "inbox",
+            Self::Sent => "sent",
+            Self::Drafts => "drafts",
+            Self::Trash => "trash",
+            Self::Junk => "junk",
+            Self::Archive => "archive",
+            Self::All => "all",
+            Self::Flagged => "flagged",
+            Self::Important => "important",
+        }
+    }
+
+    /// The role a folder name usually means, in the languages and clients seen most often.
+    /// `path` may use `/` or `.` between levels; only the last level counts.
+    pub fn guess(path: &str) -> Option<Self> {
+        let name = path
+            .rsplit(['/', '.'])
+            .next()
+            .unwrap_or(path)
+            .trim()
+            .to_lowercase();
+        let full = path.to_lowercase();
+        Some(match name.as_str() {
+            "inbox" | "входящие" | "posteingang" | "boîte de réception" => Self::Inbox,
+            "sent"
+            | "sent items"
+            | "sent mail"
+            | "sent messages"
+            | "отправленные"
+            | "gesendet"
+            | "envoyés" => Self::Sent,
+            "drafts" | "draft" | "черновики" | "entwürfe" | "brouillons" => Self::Drafts,
+            "trash" | "deleted items" | "deleted messages" | "bin" | "корзина" | "удаленные"
+            | "удалённые" | "papierkorb" | "corbeille" => Self::Trash,
+            "junk" | "spam" | "junk e-mail" | "junk email" | "спам" | "нежелательная почта" => {
+                Self::Junk
+            }
+            "archive" | "archives" | "архив" | "archiv" => Self::Archive,
+            "all mail" | "вся почта" if full.contains("gmail") || name == "all mail" => {
+                Self::All
+            }
+            "starred" | "flagged" | "помеченные" => Self::Flagged,
+            "important" | "важное" => Self::Important,
+            _ => return None,
+        })
+    }
+
+    /// Parses [`FolderRole::as_str`] output.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "inbox" => Self::Inbox,
+            "sent" => Self::Sent,
+            "drafts" => Self::Drafts,
+            "trash" => Self::Trash,
+            "junk" => Self::Junk,
+            "archive" => Self::Archive,
+            "all" => Self::All,
+            "flagged" => Self::Flagged,
+            "important" => Self::Important,
+            _ => return None,
+        })
+    }
+}
+
+/// A folder of an account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Folder {
+    /// Id.
+    pub id: FolderId,
+    /// The account it belongs to.
+    pub account_id: AccountId,
+    /// The full path on the server with `/` between levels, e.g. `Projects/2025`.
+    pub path: String,
+    /// What the folder is for, when known.
+    pub role: Option<FolderRole>,
+    /// When it was first seen.
+    pub created_at: Timestamp,
+}
+
+/// A folder with how many archived messages are in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderSummary {
+    /// The folder.
+    #[serde(flatten)]
+    pub folder: Folder,
+    /// Messages located in the folder and not removed from it.
+    pub messages: u64,
+    /// Of those, the ones whose flags in this folder lack `\Seen` (compared ignoring case).
+    pub unread: u64,
+}
+
+/// Where a folder's sync stopped, saved after each batch so a sync can resume.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderCursor {
+    /// IMAP `UIDVALIDITY` the UIDs below belong to.
+    pub uid_validity: Option<u64>,
+    /// The highest UID archived.
+    pub last_uid: Option<u64>,
+    /// IMAP `HIGHESTMODSEQ` after the last sync.
+    pub highest_modseq: Option<u64>,
+    /// An opaque provider state: a JMAP state string or a Graph delta link.
+    pub state: Option<String>,
+    /// When the folder last finished syncing.
+    pub synced_at: Option<Timestamp>,
+}
+
+/// A message that could not be archived, kept so the sync can move on and retry it later.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncFailure {
+    /// The folder.
+    pub folder_id: FolderId,
+    /// The message's UID in the folder.
+    pub uid: u64,
+    /// Why it failed, without message content.
+    pub reason: String,
+    /// How many times it failed.
+    pub attempts: u32,
+    /// When it last failed.
+    pub failed_at: Timestamp,
+}
+
+/// A part of a message stored as its own blob.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attachment {
+    /// Position among the message's attachments, from 0.
+    pub ordinal: u32,
+    /// The decoded content.
+    pub blob_id: BlobId,
+    /// File name.
+    pub filename: Option<String>,
+    /// Lowercase media type.
+    pub content_type: String,
+    /// Size of the decoded content in bytes.
+    pub size: u64,
+    /// `Content-ID` without angle brackets.
+    pub content_id: Option<String>,
+    /// Shown inside the body rather than listed as a file.
+    pub inline: bool,
+}
+
+/// A message to add to an archive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewMessage {
+    /// The archive.
+    pub archive_id: ArchiveId,
+    /// The raw message bytes.
+    pub blob_id: BlobId,
+    /// Size of the raw message in bytes.
+    pub size: u64,
+    /// `Message-ID` without angle brackets.
+    pub rfc_message_id: Option<String>,
+    /// `In-Reply-To` and `References` ids, used for threading.
+    pub parent_ids: Vec<String>,
+    /// Subject.
+    pub subject: Option<String>,
+    /// `From`.
+    pub from: Vec<Address>,
+    /// `To`.
+    pub to: Vec<Address>,
+    /// `Cc`.
+    pub cc: Vec<Address>,
+    /// `Bcc`.
+    pub bcc: Vec<Address>,
+    /// `Date` header.
+    pub sent_at: Option<Timestamp>,
+    /// When the server received it (IMAP `INTERNALDATE`), when known.
+    pub received_at: Option<Timestamp>,
+    /// One line from the start of the body.
+    pub preview: String,
+    /// Attachments, already stored as blobs.
+    pub attachments: Vec<Attachment>,
+}
+
+/// An archived message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Message {
+    /// Id.
+    pub id: MessageId,
+    /// The archive.
+    pub archive_id: ArchiveId,
+    /// The conversation.
+    pub thread_id: ThreadId,
+    /// The raw message bytes.
+    pub blob_id: BlobId,
+    /// Size of the raw message in bytes.
+    pub size: u64,
+    /// `Message-ID` without angle brackets.
+    pub rfc_message_id: Option<String>,
+    /// Subject.
+    pub subject: Option<String>,
+    /// `From`.
+    pub from: Vec<Address>,
+    /// `To`.
+    pub to: Vec<Address>,
+    /// `Cc`.
+    pub cc: Vec<Address>,
+    /// `Bcc`.
+    pub bcc: Vec<Address>,
+    /// `Date` header.
+    pub sent_at: Option<Timestamp>,
+    /// When the server received it.
+    pub received_at: Option<Timestamp>,
+    /// When Holtmail archived it.
+    pub archived_at: Timestamp,
+    /// The time lists sort by: `sent_at`, else `received_at`, else `archived_at`.
+    pub date: Timestamp,
+    /// One line from the start of the body.
+    pub preview: String,
+    /// Number of attachments that are not inline.
+    pub attachment_count: u32,
+}
+
+/// What [`crate::MessageStore::insert_message`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Inserted {
+    /// The message, new or existing.
+    pub message_id: MessageId,
+    /// Its thread.
+    pub thread_id: ThreadId,
+    /// `false` when the archive already had a message with these bytes.
+    pub created: bool,
+}
+
+/// Where a message was seen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Location {
+    /// The folder.
+    pub folder_id: FolderId,
+    /// UID in the folder under the folder's current `UIDVALIDITY`, when the source has UIDs.
+    pub uid: Option<u64>,
+    /// Flags and keywords as the source reported them, e.g. `\Seen`, `\Flagged`, `$label1`.
+    pub flags: Vec<String>,
+    /// When it was first seen in the folder.
+    pub first_seen_at: Timestamp,
+    /// When it was last seen in the folder.
+    pub last_seen_at: Timestamp,
+    /// When it was found missing from the folder on the server. The archive keeps the message.
+    pub removed_at: Option<Timestamp>,
+}
+
+/// What a message list shows about a message besides the message itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageExtras {
+    /// Flags of the message, sorted and without duplicates: those of its location in the folder
+    /// asked for, or the union over every location not removed.
+    pub flags: Vec<String>,
+    /// Messages in its thread, itself included.
+    pub thread_count: u32,
+    /// Folders it is located in and not removed from, ordered by id.
+    pub folder_ids: Vec<FolderId>,
+}
+
+/// Which messages to list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageQuery {
+    /// The archive.
+    pub archive_id: ArchiveId,
+    /// Only messages located in this folder and not removed from it.
+    pub folder_id: Option<FolderId>,
+    /// Continue after this point of a previous page.
+    pub after: Option<PageCursor>,
+    /// At most this many messages; implementations cap it at 500.
+    pub limit: u32,
+}
+
+/// An opaque position in a list, valid only for the same query.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PageCursor(pub String);
+
+/// One page of a list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Page<T> {
+    /// Items in list order.
+    pub items: Vec<T>,
+    /// Where the next page starts; `None` on the last page.
+    pub next: Option<PageCursor>,
+}
+
+/// Totals of an archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ArchiveStats {
+    /// Messages.
+    pub messages: u64,
+    /// Attachments, inline ones included.
+    pub attachments: u64,
+    /// Sum of raw message sizes in bytes.
+    pub bytes: u64,
+    /// Date of the oldest message.
+    pub oldest: Option<Timestamp>,
+    /// Date of the newest message.
+    pub newest: Option<Timestamp>,
+}
+
+/// What a user may do with the instance itself. Roles never grant reading mail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstanceRole {
+    /// Everything, including transferring ownership.
+    Owner,
+    /// Users, settings, storage and sync health.
+    Admin,
+    /// Only their own archives.
+    Member,
+}
+
+impl InstanceRole {
+    /// The lowercase name used in storage and the API.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Admin => "admin",
+            Self::Member => "member",
+        }
+    }
+
+    /// Parses [`InstanceRole::as_str`] output.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "owner" => Self::Owner,
+            "admin" => Self::Admin,
+            "member" => Self::Member,
+            _ => return None,
+        })
+    }
+}
+
+/// A person who signs in. The password hash is kept apart and read only through
+/// [`crate::UserStore::password_hash`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct User {
+    /// Id.
+    pub id: UserId,
+    /// Sign-in address, as it was entered.
+    pub email: String,
+    /// Name shown to people.
+    pub name: String,
+    /// What the user may do with the instance.
+    pub role: InstanceRole,
+    /// When it was created.
+    pub created_at: Timestamp,
+}
+
+/// Fields of a new user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewUser {
+    /// Sign-in address; unique regardless of letter case.
+    pub email: String,
+    /// Name shown to people.
+    pub name: String,
+    /// What the user may do with the instance.
+    pub role: InstanceRole,
+    /// A PHC password hash, or `None` for a user without a password.
+    pub password_hash: Option<String>,
+}
+
+/// The hash of a session token. Stores never see the token itself.
+pub type SessionHash = [u8; 32];

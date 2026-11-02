@@ -1,0 +1,1510 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Holtmail",
+    "description": "Self-hosted email archive",
+    "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+    },
+    "version": "0.0.0"
+  },
+  "paths": {
+    "/api/archives": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "list_archives",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArchiveDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_archive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/accounts": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "list_accounts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/folders": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "list_folders",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FolderDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/messages": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "list_messages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "description": "Only messages in this folder.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "`next` from the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, at most 500; 50 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive or folder id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/search": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "The query, e.g. `from:ada@example.com has:attachment`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`newest` (default) or `relevance`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, at most 200; 50 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query does not parse; the message says why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in; sets the session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many failed sign-ins",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds until another attempt is allowed"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [{}]
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Signed out; clears the session cookie"
+          }
+        },
+        "security": [{}]
+      }
+    },
+    "/api/messages/{id}": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/attachments/{ordinal}": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_attachment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ordinal",
+            "in": "path",
+            "description": "The attachment's position, from 0",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attachment's content",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message or attachment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/body": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_body",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "remote",
+            "in": "query",
+            "description": "Load remote images and styles.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sanitized HTML body as a full document",
+            "headers": {
+              "x-holtmail-remote-blocked": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`1` when remote content was blocked, else `0`"
+              }
+            },
+            "content": {
+              "text/html": {}
+            }
+          },
+          "400": {
+            "description": "The message does not parse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/raw": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_raw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The original message",
+            "content": {
+              "message/rfc822": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "current",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [{}]
+      }
+    },
+    "/api/setup": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "setup_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [{}]
+      },
+      "post": {
+        "tags": ["session"],
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The owner was created and signed in; sets the session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed body, a short password, a malformed email or an empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong or used setup token, or the instance already has users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [{}]
+      }
+    },
+    "/api/threads/{id}": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_thread",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Thread id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountDto": {
+        "type": "object",
+        "description": "A mail account of an archive.",
+        "required": ["id", "name", "kind", "enabled"],
+        "properties": {
+          "address": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`imap`, `graph`, `jmap` or `import`."
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AddressDto": {
+        "type": "object",
+        "description": "One mailbox of an address header.",
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ArchiveDto": {
+        "type": "object",
+        "description": "An archive with its totals.",
+        "required": ["id", "name", "created_at", "stats"],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/StatsDto"
+          }
+        }
+      },
+      "AttachmentDto": {
+        "type": "object",
+        "description": "An attachment of a message.",
+        "required": ["ordinal", "content_type", "size", "inline", "url"],
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "filename": {
+            "type": ["string", "null"]
+          },
+          "inline": {
+            "type": "boolean"
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string",
+            "description": "Where to download it."
+          }
+        }
+      },
+      "ErrorDto": {
+        "type": "object",
+        "description": "An error.",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderDto": {
+        "type": "object",
+        "description": "A folder with its message count.",
+        "required": ["id", "account_id", "path", "name", "messages", "unread"],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "The last level of the path."
+          },
+          "path": {
+            "type": "string",
+            "description": "Full path with `/` between levels."
+          },
+          "role": {
+            "type": ["string", "null"],
+            "description": "`inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, `all`, `flagged` or `important`."
+          },
+          "unread": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages in the folder without the `\\Seen` flag there.",
+            "minimum": 0
+          }
+        }
+      },
+      "LocationDto": {
+        "type": "object",
+        "description": "A folder a message is in.",
+        "required": ["folder_id", "flags"],
+        "properties": {
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "folder_id": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds when it disappeared from the folder on the server."
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "description": "Signs in with a password.",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageDetail": {
+        "type": "object",
+        "description": "Everything the reader shows about a message, except its HTML body.",
+        "required": [
+          "id",
+          "archive_id",
+          "thread_id",
+          "from",
+          "to",
+          "cc",
+          "bcc",
+          "reply_to",
+          "date",
+          "archived_at",
+          "size",
+          "preview",
+          "in_reply_to",
+          "references",
+          "has_html",
+          "attachments",
+          "locations"
+        ],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "archived_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentDto"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "date": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "has_html": {
+            "type": "boolean",
+            "description": "Whether `GET /api/messages/{id}/body` has an HTML body to show."
+          },
+          "id": {
+            "type": "string"
+          },
+          "in_reply_to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`In-Reply-To` ids without angle brackets."
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            }
+          },
+          "preview": {
+            "type": "string",
+            "description": "One line from the start of the body."
+          },
+          "received_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`References` ids without angle brackets, oldest first."
+          },
+          "reply_to": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "rfc_message_id": {
+            "type": ["string", "null"]
+          },
+          "sent_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "text": {
+            "type": ["string", "null"],
+            "description": "Plain text body."
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          }
+        }
+      },
+      "MessagePage": {
+        "type": "object",
+        "description": "One page of a message list.",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageSummary"
+            }
+          },
+          "next": {
+            "type": ["string", "null"],
+            "description": "Pass as `after` for the next page; absent on the last page."
+          }
+        }
+      },
+      "MessageSummary": {
+        "type": "object",
+        "description": "What a message list shows.",
+        "required": [
+          "id",
+          "thread_id",
+          "from",
+          "to",
+          "date",
+          "preview",
+          "attachment_count",
+          "size",
+          "flags",
+          "thread_count",
+          "folder_ids"
+        ],
+        "properties": {
+          "attachment_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds; what lists sort by."
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IMAP flags and keywords such as `\\Seen` and `\\Flagged`: those in the listed folder, or\nthe union over every folder the message is in."
+          },
+          "folder_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folders the message is in now."
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "thread_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Messages in its thread, itself included.",
+            "minimum": 0
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "description": "One page of search results.",
+        "required": ["items", "total"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageSummary"
+            }
+          },
+          "next_offset": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Pass as `offset` for the next page; absent on the last page.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionDto": {
+        "type": "object",
+        "description": "The signed-in user.",
+        "required": ["user"],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserDto"
+          }
+        }
+      },
+      "SetupRequest": {
+        "type": "object",
+        "description": "Creates the owner with the one-time setup token.",
+        "required": ["token", "email", "name", "password"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "description": "At least 10 characters."
+          },
+          "token": {
+            "type": "string",
+            "description": "The `token` query parameter of the setup link."
+          }
+        }
+      },
+      "SetupStatusDto": {
+        "type": "object",
+        "description": "Whether the instance still needs its owner.",
+        "required": ["needed"],
+        "properties": {
+          "needed": {
+            "type": "boolean",
+            "description": "`true` while there are no users; the web app then shows the setup screen."
+          }
+        }
+      },
+      "StatsDto": {
+        "type": "object",
+        "description": "Totals of an archive.",
+        "required": ["messages", "attachments", "bytes"],
+        "properties": {
+          "attachments": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "newest": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "oldest": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          }
+        }
+      },
+      "ThreadDto": {
+        "type": "object",
+        "description": "A conversation, oldest message first.",
+        "required": ["id", "messages"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageDetail"
+            }
+          }
+        }
+      },
+      "UserDto": {
+        "type": "object",
+        "description": "A user who can sign in.",
+        "required": ["id", "email", "name", "role"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "description": "`owner`, `admin` or `member`."
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "holtmail_session"
+      }
+    }
+  },
+  "security": [
+    {
+      "session": []
+    }
+  ]
+}

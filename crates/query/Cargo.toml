@@ -1,0 +1,16 @@
+[package]
+name = "holtmail-query"
+description = "Parsing the Holtmail search language"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-index.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

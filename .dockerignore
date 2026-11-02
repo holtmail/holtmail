@@ -1,0 +1,17 @@
+.git
+.github
+**/node_modules
+**/dist
+target
+data
+**/*.log
+**/.DS_Store
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.env
+.env.*
+AGENTS.local.md
+CLAUDE.local.md
+Dockerfile
+.dockerignore

@@ -27,7 +27,7 @@ Crate directories drop the prefix, package names keep it: `crates/blob-fs` is `h
 
 Holtmail is many small modules, and any of them can be swapped for another one that keeps the same contract. Mail sources, blob storage, the metadata store, the search index and authentication are all behind contracts.
 
-- **Contract crates** (`holtmail-blob`, `holtmail-store`, `holtmail-source`, `holtmail-index`, `holtmail-auth`, ...) hold only traits, the types in their signatures and their error type. No I/O, no provider code.
+- **Contract crates** (`holtmail-blob`, `holtmail-store`, `holtmail-source`, `holtmail-index`, `holtmail-secret`, ...) hold only traits, the types in their signatures and their error type. No I/O, no provider code.
 - **Implementation crates** are named `<contract>-<kind>` (`blob-fs`, `blob-s3`, `source-imap`, `index-tantivy`). They depend on their contract and on `holtmail-core`, never on another implementation.
 - **One composition root.** Only `apps/server` depends on implementation crates; it builds them from config and hands them out as `Arc<dyn Trait>`. Library code receives contracts, never constructs implementations.
 - **Object-safe traits.** Every contract trait is `Send + Sync` and usable as `dyn Trait`; async methods use `#[async_trait]`. Generic parameters on contract methods are not allowed.

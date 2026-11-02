@@ -2,7 +2,7 @@
 
 Holtmail is a self-hosted email archiver. It connects to mail accounts over IMAP, JMAP and Microsoft Graph, keeps a copy of every message for as long as you want, and lets you search and read the archive in a fast web interface. It is for a person who wants their mail out of a provider's hands as well as for a company that must keep mail for years.
 
-Status: milestone 1. Done so far: [holtmail-blob](../crates/blob/docs/README.md) with [blob-fs](../crates/blob-fs/docs/README.md) and [blob-s3](../crates/blob-s3/docs/README.md), and [holtmail-mime](../crates/mime/docs/README.md).
+Status: milestones 1 and 2 in progress; see [WORKPLAN.md](WORKPLAN.md) for the checklist and log.
 
 ## Principles
 
@@ -55,7 +55,6 @@ Contracts and their implementations:
 | `holtmail-index`  | Full-text search over messages                                                     | `index-tantivy`                                   |
 | `holtmail-auth`   | Signing users in                                                                   | `auth-passkey`, `auth-password`, `auth-oidc`      |
 | `holtmail-secret` | Encrypting stored account credentials and OAuth tokens                             | `secret-local`                                    |
-| `holtmail-import` | Reading archives from files                                                        | `import-mbox`, `import-maildir`, `import-eml`     |
 
 Modules that are not behind a contract, because there is one right way to do them:
 
@@ -64,6 +63,8 @@ Modules that are not behind a contract, because there is one right way to do the
 | `holtmail-core`        | Ids and types shared by several contracts                                                  |
 | `holtmail-mime`        | Parsing raw bytes into headers, bodies and attachments (on top of `mail-parser`)           |
 | `holtmail-sanitize`    | Making message HTML safe to show (on top of `ammonia`)                                     |
+| `holtmail-import`      | Reading mbox, Maildir, `.eml` and zip files                                                 |
+| `holtmail-ingest`      | One path from raw bytes to a stored, indexed message, used by sync and import              |
 | `holtmail-query`       | Parsing the search language into a structured query for `holtmail-index`                   |
 | `holtmail-sync`        | The sync engine: source → blob → store → index, with retries and resumable state         |
 | `holtmail-jobs`        | Scheduling and running sync, retention and export jobs on top of the store                 |

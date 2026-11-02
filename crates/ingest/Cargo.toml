@@ -1,0 +1,27 @@
+[package]
+name = "holtmail-ingest"
+description = "From raw message bytes to a stored, indexed message"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-index.workspace = true
+holtmail-mime.workspace = true
+holtmail-store.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

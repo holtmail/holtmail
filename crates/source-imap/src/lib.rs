@@ -55,7 +55,8 @@ impl ImapSettings {
         serde_json::from_value(value.clone()).map_err(|e| SourceError::Config(e.to_string()))
     }
 
-    fn port(&self) -> u16 {
+    /// The port to connect to: the configured one, else the default of `security`.
+    pub fn port(&self) -> u16 {
         self.port.unwrap_or(match self.security {
             Security::Tls => 993,
             Security::Starttls | Security::Plain => 143,

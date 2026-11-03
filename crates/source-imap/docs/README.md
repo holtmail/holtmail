@@ -10,7 +10,7 @@ Stored as JSON in `Account.settings`; the password is sealed separately with `ho
 { "host": "imap.example.com", "port": 993, "security": "tls", "username": "ada@example.com" }
 ```
 
-`security` is `tls` (default, port 993), `starttls` (port 143) or `plain` (local servers and tests only). `ImapSettings::from_json` fails with `SourceError::Config` when `host` or `username` is missing.
+`security` is `tls` (default, port 993), `starttls` (port 143) or `plain` (local servers and tests only). `ImapSettings::from_json` fails with `SourceError::Config` when `host` or `username` is missing; `port()` is the port it will connect to.
 
 ```rust
 let source = ImapSource::new(ImapSettings::from_json(&account.settings)?, password);

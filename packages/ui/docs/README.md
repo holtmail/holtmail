@@ -47,6 +47,14 @@ A key cap for shortcuts, in Plex Mono.
 
 `variant`: `neutral` (default), `outline`, `accent`, `danger`, `warning`, `success`. `asChild` supported. `badgeVariants` exported.
 
+### Switch
+
+An on/off control: a 36×20px square track with a hairline border and a square thumb that slides 16px. Checked fills the track with the accent. Props of the Radix `Switch.Root` (`checked`, `defaultChecked`, `onCheckedChange`, `disabled`). Pair it with a `<label htmlFor>`.
+
+### RadioGroup
+
+`RadioGroup` (`value`, `defaultValue`, `onValueChange`; a grid with 8px gaps) and `RadioGroupItem` (`value`): a 16px square with a hairline border and an 8px accent square when checked. Arrow keys move between items.
+
 ### Separator
 
 A 1px hairline. `orientation`: `horizontal` (default) or `vertical`; `decorative` defaults to `true`.

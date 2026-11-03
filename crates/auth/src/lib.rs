@@ -205,6 +205,46 @@ impl Auth {
         Ok(())
     }
 
+    /// Stores the user's email, name and role, cleaned as in [`Auth::create_user`]. Fails with
+    /// `Invalid` for a malformed email or name and with `EmailTaken` when another user has the
+    /// email.
+    pub async fn update_user(&self, mut user: User) -> Result<User, AuthError> {
+        user.email = normalize_email(&user.email)?;
+        user.name = normalize_name(&user.name)?;
+        if let Some(other) = self.store.find_user_by_email(&user.email).await?
+            && other.id != user.id
+        {
+            return Err(AuthError::EmailTaken);
+        }
+        match self.store.update_user(&user).await {
+            Err(StoreError::Invalid(_)) => Err(AuthError::EmailTaken),
+            other => {
+                other?;
+                Ok(user)
+            }
+        }
+    }
+
+    /// Replaces the user's password after checking the current one, ends all their sessions and
+    /// starts a new one. Fails with `InvalidCredentials` when `current` is wrong.
+    pub async fn change_password(
+        &self,
+        user: User,
+        current: &str,
+        new: &str,
+    ) -> Result<SignedIn, AuthError> {
+        validate_password(new)?;
+        let valid = match self.store.password_hash(user.id).await? {
+            Some(hash) => self.verify(current.to_owned(), hash).await?,
+            None => false,
+        };
+        if !valid {
+            return Err(AuthError::InvalidCredentials);
+        }
+        self.set_password(user.id, new).await?;
+        self.start_session(user).await
+    }
+
     /// Checks the password and starts a session.
     ///
     /// After `max_failures` failures for the same `client` and email within `failure_window`,

@@ -24,6 +24,8 @@ Methods hash on Tokio's blocking pool, so they run inside a Tokio runtime.
 | `complete_setup(token, signup)` | Creates the `owner` and signs them in. The token is compared in constant time, works once, only while there are no users and only after `setup_token` created it; concurrent calls create at most one owner. Otherwise `InvalidSetupToken` |
 | `create_user(signup, role)` | Validates and hashes; `EmailTaken` for a known email (any letter case), `Invalid` for bad input |
 | `set_password(user, password)` | Validates, replaces the hash and ends every session of the user |
+| `update_user(user)` | Stores email, name and role, cleaned like `create_user`; `EmailTaken` when another user has the email, `Invalid` for bad input |
+| `change_password(user, current, new)` | Checks `current` (`InvalidCredentials` when wrong), replaces the hash, ends every session of the user and starts a new one |
 | `login(client_ip, email, password)` | Starts a session. Unknown emails, users without a password and wrong passwords all give `InvalidCredentials` and take the same time (a decoy hash is checked). After `max_failures` failures for the same client address and email within `failure_window`, every attempt gives `TooManyAttempts { retry_after }` without checking the password until the oldest failure leaves the window; a success clears the count |
 | `session(token)` | The user of a live session; `None` for unknown, malformed or expired tokens |
 | `logout(token)` | Ends the session; idempotent |

@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId};
 use holtmail_index::SortOrder;
 use holtmail_store::{Message, MessageQuery, PageCursor};
 
 use crate::dto::*;
-use crate::{ApiError, ApiResult, ApiState};
+use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
 type AppState = State<Arc<ApiState>>;
 
@@ -23,9 +23,16 @@ fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
     path = "/api/archives",
     responses((status = 200, body = Vec<ArchiveDto>), (status = 401, description = "Not signed in", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
-pub(crate) async fn list_archives(State(state): AppState) -> ApiResult<Json<Vec<ArchiveDto>>> {
+pub(crate) async fn list_archives(
+    State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+) -> ApiResult<Json<Vec<ArchiveDto>>> {
+    let readable = crate::access::readable(&state, &user).await?;
     let mut out = Vec::new();
     for archive in state.store.list_archives().await? {
+        if !readable.contains(&archive.id) {
+            continue;
+        }
         let stats = state.store.archive_stats(archive.id).await?;
         out.push(ArchiveDto::new(archive, stats));
     }
@@ -50,21 +57,6 @@ pub(crate) async fn get_archive(
         .ok_or_else(|| ApiError::not_found("archive"))?;
     let stats = state.store.archive_stats(archive_id).await?;
     Ok(Json(ArchiveDto::new(archive, stats)))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/archives/{id}/accounts",
-    params(("id" = String, Path, description = "Archive id")),
-    responses((status = 200, body = Vec<AccountDto>), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "Malformed archive id", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
-)]
-pub(crate) async fn list_accounts(
-    State(state): AppState,
-    Path(raw): Path<String>,
-) -> ApiResult<Json<Vec<AccountDto>>> {
-    let archive: ArchiveId = id(&raw, "archive")?;
-    let accounts = state.store.list_accounts(archive).await?;
-    Ok(Json(accounts.into_iter().map(AccountDto::from).collect()))
 }
 
 #[utoipa::path(

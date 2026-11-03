@@ -4,6 +4,8 @@ use holtmail_store::{
     User,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::AccountStatus;
 use utoipa::{IntoParams, ToSchema};
 
 /// An archive with its totals.
@@ -35,6 +37,117 @@ pub struct AccountDto {
     pub kind: String,
     pub address: Option<String>,
     pub enabled: bool,
+    pub status: AccountStatusDto,
+}
+
+/// What is happening to an account now and how its last sync or import ended.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AccountStatusDto {
+    /// A sync or import is running.
+    pub running: bool,
+    /// Messages added by the running or last run.
+    pub new_messages: u64,
+    /// When the last run ended, Unix milliseconds.
+    pub finished_at: Option<i64>,
+    /// Why the last run failed.
+    pub error: Option<String>,
+}
+
+/// A new archive.
+#[derive(Deserialize, ToSchema)]
+pub struct NewArchiveRequest {
+    /// Not empty, at most 100 characters.
+    pub name: String,
+}
+
+/// An IMAP account to add.
+#[derive(Deserialize, ToSchema)]
+pub struct ImapAccountRequest {
+    /// Shown in the sidebar; the user name when missing.
+    pub name: Option<String>,
+    pub host: String,
+    /// 993 for `tls`, 143 otherwise when missing.
+    pub port: Option<u16>,
+    /// `tls` (default), `starttls` or `plain`.
+    pub security: Option<String>,
+    pub username: String,
+    pub password: String,
+}
+
+/// A user as owners and admins see them.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PersonDto {
+    pub user: UserDto,
+    /// Unix milliseconds.
+    pub created_at: i64,
+    /// Archives granted to the user. Owners and admins read every archive regardless.
+    pub archives: Vec<String>,
+}
+
+/// A user to add.
+#[derive(Deserialize, ToSchema)]
+pub struct NewUserRequest {
+    pub email: String,
+    pub name: String,
+    /// At least 10 characters.
+    pub password: String,
+    /// `owner`, `admin` or `member` (default). Only an owner adds owners.
+    pub role: Option<String>,
+    /// Archive ids the user may read.
+    #[serde(default)]
+    pub archives: Vec<String>,
+}
+
+/// Changes to a user; missing fields stay as they are.
+#[derive(Deserialize, ToSchema)]
+pub struct UserUpdateRequest {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub role: Option<String>,
+    /// Replaces the granted archives.
+    pub archives: Option<Vec<String>>,
+    /// A new password; ends the user's sessions.
+    pub password: Option<String>,
+}
+
+/// Changes to your own profile; missing fields stay as they are.
+#[derive(Deserialize, ToSchema)]
+pub struct ProfileRequest {
+    pub email: Option<String>,
+    pub name: Option<String>,
+}
+
+/// A password change.
+#[derive(Deserialize, ToSchema)]
+pub struct PasswordRequest {
+    pub current: String,
+    /// At least 10 characters.
+    pub new: String,
+}
+
+/// Changes to an archive.
+#[derive(Deserialize, ToSchema)]
+pub struct ArchiveUpdateRequest {
+    /// Not empty, at most 100 characters.
+    pub name: String,
+}
+
+/// Changes to an account; missing fields stay as they are.
+#[derive(Deserialize, ToSchema)]
+pub struct AccountUpdateRequest {
+    pub name: Option<String>,
+    /// Paused accounts are not synced.
+    pub enabled: Option<bool>,
+    /// A new password; checked by signing in before it is stored.
+    pub password: Option<String>,
+}
+
+/// Query of an upload.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ImportParams {
+    /// The file's name; its extension picks the format (`.mbox`, `.eml`, `.zip`).
+    pub name: String,
 }
 
 /// A folder with its message count.
@@ -280,14 +393,20 @@ impl ArchiveDto {
     }
 }
 
-impl From<Account> for AccountDto {
-    fn from(account: Account) -> Self {
+impl AccountDto {
+    pub fn new(account: Account, status: AccountStatus) -> Self {
         Self {
             id: account.id.to_string(),
             name: account.name,
             kind: account.kind.as_str().to_owned(),
             address: account.address,
             enabled: account.enabled,
+            status: AccountStatusDto {
+                running: status.running,
+                new_messages: status.new_messages,
+                finished_at: status.finished_at.map(|t| t.as_millis()),
+                error: status.error,
+            },
         }
     }
 }

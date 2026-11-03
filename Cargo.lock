@@ -1297,8 +1297,10 @@ dependencies = [
 name = "holtmail-api"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "bytes",
+ "futures",
  "holtmail-auth",
  "holtmail-blob",
  "holtmail-blob-fs",
@@ -1314,6 +1316,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tower",
  "utoipa",
@@ -1480,6 +1483,7 @@ name = "holtmail-server"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "clap",
  "holtmail-api",

@@ -5,11 +5,24 @@ The HTTP API the web app and scripts use. Built on `axum`; the OpenAPI descripti
 ## Usage
 
 ```rust
-let app = holtmail_api::router(ApiState { blobs, store, index, auth, secure_cookies });
+let app = holtmail_api::router(ApiState { blobs, store, index, auth, mailboxes, secure_cookies });
 axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 ```
 
 `ConnectInfo<SocketAddr>` gives the login rate limit the client address; without it every client counts as `0.0.0.0`.
+
+## Mailboxes
+
+Talking to mail servers, sealing passwords and reading mailbox files need implementation crates, which this crate may not depend on. The server hands them in as `mailboxes: Arc<dyn Mailboxes>`:
+
+| Method | Guarantees |
+| --- | --- |
+| `add_imap(archive, NewImapAccount)` | Signs in and lists folders first; nothing is stored when that fails (`MailboxError::Invalid` with a message safe to show). Then stores the account with its password sealed and starts its first sync in the background |
+| `set_password(account, password)` | Signs in with the account's settings and the new password, then stores it sealed; nothing changes when signing in fails |
+| `sync(account)` | Starts a sync in the background; does nothing when one of this account is running |
+| `import(account, file)` | Imports the uploaded file into the import account in the background and removes the file afterwards |
+| `upload_dir()` | Where uploads are written before `import` |
+| `status(account)` | `AccountStatus { running, new_messages, finished_at, error }` of the running or last run |
 
 ## Sign-in
 
@@ -32,7 +45,8 @@ The setup token comes from the setup link the server prints at start while there
 ### Access and CSRF
 
 - Every route except the five above and `/api/openapi.json` answers `401 { "error": "sign in required" }` without a live session. Unknown paths under `/api/` answer `401` too, and `404` once signed in.
-- Requests other than `GET`, `HEAD` and `OPTIONS` must have `Content-Type: application/json` (else `415`) and are refused with `403` when they carry an `Origin` whose host differs from `Host`, or `Sec-Fetch-Site: cross-site`. Together with `SameSite=Lax` this keeps other sites from acting with a visitor's session.
+- Owners and admins may do everything. Members may read the archives granted to them (`GET` on `/api/archives…`, `/api/messages…`, `/api/threads…`) and change their own profile (`/api/me…`); archives, messages and threads they may not read answer `404` as if missing, and every other write, `/api/users…` and `/api/accounts…` answer `403`. `GET /api/archives` lists only readable archives.
+- Requests other than `GET`, `HEAD` and `OPTIONS` must have `Content-Type: application/json` or, for uploads, `application/octet-stream` (else `415`); neither can be sent cross-site without a CORS preflight, which the server never grants and are refused with `403` when they carry an `Origin` whose host differs from `Host`, or `Sec-Fetch-Site: cross-site`. Together with `SameSite=Lax` this keeps other sites from acting with a visitor's session.
 - The OpenAPI description declares the cookie as the `session` security scheme; the sign-in routes are marked as needing none.
 
 ## Endpoints
@@ -51,6 +65,34 @@ The setup token comes from the setup link the server prints at start while there
 | `GET /api/messages/{id}/attachments/{ordinal}` | Attachment bytes |
 | `GET /api/threads/{id}` | Every message of the conversation, oldest first |
 
+Accounts carry `status`: `{ running, new_messages, finished_at, error }` of the running or last sync or import, kept in memory by the server.
+
+### Managing
+
+Owners and admins only.
+
+| Method and path | Body | Answers |
+| --- | --- | --- |
+| `POST /api/archives` | `{ "name" }` | `201` archive; `400` for an empty name or one over 100 characters |
+| `PATCH /api/archives/{id}` | `{ "name" }` | `200` archive |
+| `DELETE /api/archives/{id}` | | `204` after removing the archive, its index entries and the blobs no other archive uses; `409` while one of its accounts syncs or imports |
+| `POST /api/archives/{id}/accounts` | `{ "host", "port"?, "security"? (tls, starttls, plain), "username", "password", "name"? }` | `201` account, first sync started; `400` with a readable reason when signing in fails |
+| `POST /api/archives/{id}/imports?name=` | the file, `application/octet-stream`, any size | `202` with the import account named after the file (reused for the same name); the import runs in the background. `400` for an empty file |
+| `PATCH /api/accounts/{id}` | `{ "name"?, "enabled"?, "password"? }` | `200` account; a new password is checked by signing in first |
+| `DELETE /api/accounts/{id}` | | `204`; its messages stay in the archive. `409` while it syncs or imports |
+| `POST /api/accounts/{id}/sync` | none or `{}` | `202` account; `400` for an import account |
+| `GET /api/users` | | Every user with `created_at` and the `archives` granted to them |
+| `POST /api/users` | `{ "email", "name", "password", "role"?, "archives"? }` | `201`; `409` for a taken email; only an owner adds owners (`403`) |
+| `PATCH /api/users/{id}` | `{ "email"?, "name"?, "role"?, "archives"?, "password"? }` | `200`; a password ends their sessions. Only an owner changes owners or makes one; nobody changes their own role (`400`) |
+| `DELETE /api/users/{id}` | | `204`; not yourself (`400`), owners only by owners |
+
+### Your profile
+
+| Method and path | Body | Answers |
+| --- | --- | --- |
+| `PATCH /api/me` | `{ "name"?, "email"? }` | `200 { "user" }` |
+| `POST /api/me/password` | `{ "current", "new" }` | `200 { "user" }` with a new session cookie; every other session ends. `401` for a wrong current password |
+
 The OpenAPI description declares every path parameter, the `x-holtmail-remote-blocked` header of `/body`, `Retry-After` on a `429` from `/api/login`, and the `400`, `401`, `404` and `500` answers each route can give.
 
 Errors are `{ "error": "..." }` with `400`, `401`, `403`, `404`, `409`, `415`, `429` or `500`. Ids that do not parse answer `404`, like ids that do not exist.
@@ -64,4 +106,4 @@ Errors are `{ "error": "..." }` with `400`, `401`, `403`, `404`, `409`, `415`, `
 
 ## Not yet
 
-Every signed-in user can read every archive: per-archive grants, roles beyond the stored one, passkeys, OIDC and API tokens come later. Write endpoints (accounts, sync, retention, export) come with the milestones in [PLAN.md](../../../docs/PLAN.md).
+Passkeys, OIDC, API tokens, retention and export come with the milestones in [PLAN.md](../../../docs/PLAN.md).

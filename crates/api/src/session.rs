@@ -18,7 +18,7 @@ use crate::{ApiError, ApiState};
 pub const SESSION_COOKIE: &str = "holtmail_session";
 
 type AppState = State<Arc<ApiState>>;
-type Reply = Result<Response, Refusal>;
+pub(crate) type Reply = Result<Response, Refusal>;
 
 /// The signed-in user, put into the request's extensions for protected routes.
 #[derive(Debug, Clone)]
@@ -42,7 +42,7 @@ impl IntoResponse for Refusal {
     }
 }
 
-fn error(status: StatusCode, message: impl Into<String>) -> Refusal {
+pub(crate) fn error(status: StatusCode, message: impl Into<String>) -> Refusal {
     Refusal {
         status,
         message: message.into(),
@@ -54,7 +54,7 @@ fn unauthorized() -> Refusal {
     error(StatusCode::UNAUTHORIZED, "sign in required")
 }
 
-fn auth_error(failure: AuthError) -> Refusal {
+pub(crate) fn auth_error(failure: AuthError) -> Refusal {
     match failure {
         AuthError::InvalidCredentials => error(StatusCode::UNAUTHORIZED, failure.to_string()),
         AuthError::TooManyAttempts { retry_after } => Refusal {
@@ -98,14 +98,14 @@ fn cookie(value: &str, max_age: u64, secure: bool) -> HeaderValue {
     .expect("cookie characters are valid in a header")
 }
 
-fn no_store(mut response: Response) -> Response {
+pub(crate) fn no_store(mut response: Response) -> Response {
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
 
-fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Refusal> {
+pub(crate) fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Refusal> {
     serde_json::from_slice(bytes)
         .map_err(|_| error(StatusCode::BAD_REQUEST, "malformed request body"))
 }
@@ -117,7 +117,7 @@ fn client_ip(extensions: &Extensions) -> IpAddr {
         .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
 }
 
-fn signed_in(state: &ApiState, headers: &HeaderMap, session: SignedIn) -> Response {
+pub(crate) fn signed_in(state: &ApiState, headers: &HeaderMap, session: SignedIn) -> Response {
     let max_age = state.auth.options().session_lifetime.as_secs();
     let mut response = no_store(
         Json(SessionDto {
@@ -268,10 +268,10 @@ pub(crate) async fn guard_writes(request: Request, next: Next) -> Response {
         if !same_origin(&request) {
             return error(StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
         }
-        if !is_json(request.headers()) {
+        if !accepted_media(request.headers()) {
             return error(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "expected Content-Type: application/json",
+                "expected Content-Type: application/json or application/octet-stream",
             )
             .into_response();
         }
@@ -305,10 +305,14 @@ fn same_origin(request: &Request) -> bool {
     }
 }
 
-fn is_json(headers: &HeaderMap) -> bool {
+fn accepted_media(headers: &HeaderMap) -> bool {
     headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
-        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
+        .map(str::trim)
+        .is_some_and(|media| {
+            media.eq_ignore_ascii_case("application/json")
+                || media.eq_ignore_ascii_case("application/octet-stream")
+        })
 }

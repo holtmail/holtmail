@@ -20,8 +20,97 @@ use super::*;
 const NEWSLETTER: &[u8] = b"From: News <news@example.com>\r\nTo: ada@example.com\r\nSubject: Weekly news\r\nMessage-ID: <n1@example.com>\r\nDate: Mon, 10 Mar 2025 08:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=r\r\n\r\n--r\r\nContent-Type: text/html\r\n\r\n<p onclick=\"x()\">Hello <img src=\"cid:logo@example.com\"><img src=\"https://tracker.example.com/p.gif\"></p>\r\n--r\r\nContent-Type: image/png\r\nContent-ID: <logo@example.com>\r\nContent-Disposition: inline\r\n\r\nPNGDATA\r\n--r\r\nContent-Type: text/html; name=\"evil.html\"\r\nContent-Disposition: attachment; filename=\"evil.html\"\r\n\r\n<script>alert(1)</script>\r\n--r--\r\n";
 const PLAIN: &[u8] = b"From: Bob <bob@example.org>\r\nTo: ada@example.com\r\nSubject: Re: Weekly news\r\nIn-Reply-To: <n1@example.com>\r\nDate: Tue, 11 Mar 2025 08:00:00 +0000\r\n\r\nThanks <3\r\n";
 
+#[derive(Default)]
+struct FakeMailboxes {
+    store: std::sync::OnceLock<Arc<dyn Store>>,
+    uploads: std::path::PathBuf,
+    synced: std::sync::Mutex<Vec<holtmail_core::AccountId>>,
+    imported: std::sync::Mutex<Vec<(holtmail_core::AccountId, String, Vec<u8>)>>,
+}
+
+#[async_trait::async_trait]
+impl Mailboxes for FakeMailboxes {
+    async fn add_imap(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        account: NewImapAccount,
+    ) -> Result<holtmail_store::Account, MailboxError> {
+        if account.password != "right" {
+            return Err(MailboxError::Invalid("The server refused".into()));
+        }
+        let store = self.store.get().unwrap();
+        let created = store
+            .create_account(NewAccount {
+                archive_id: archive,
+                kind: AccountKind::Imap,
+                name: account.name.unwrap_or(account.username),
+                address: None,
+                settings: json!({ "host": account.host }),
+                sealed_secret: None,
+                enabled: true,
+            })
+            .await
+            .map_err(|e| MailboxError::Backend(e.to_string()))?;
+        self.synced.lock().unwrap().push(created.id);
+        Ok(created)
+    }
+
+    async fn set_password(
+        &self,
+        account: &holtmail_store::Account,
+        password: String,
+    ) -> Result<(), MailboxError> {
+        if password != "right" {
+            return Err(MailboxError::Invalid("The server refused".into()));
+        }
+        let store = self.store.get().unwrap();
+        let mut account = account.clone();
+        account.sealed_secret = Some(password.into_bytes());
+        store
+            .update_account(&account)
+            .await
+            .map_err(|e| MailboxError::Backend(e.to_string()))
+    }
+
+    async fn sync(&self, account: &holtmail_store::Account) -> Result<(), MailboxError> {
+        self.synced.lock().unwrap().push(account.id);
+        Ok(())
+    }
+
+    async fn import(
+        &self,
+        account: &holtmail_store::Account,
+        file: std::path::PathBuf,
+    ) -> Result<(), MailboxError> {
+        assert!(file.starts_with(&self.uploads));
+        let bytes = std::fs::read(&file).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        let extension = file
+            .extension()
+            .map(|e| e.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.imported
+            .lock()
+            .unwrap()
+            .push((account.id, extension, bytes));
+        Ok(())
+    }
+
+    fn upload_dir(&self) -> &std::path::Path {
+        &self.uploads
+    }
+
+    fn status(&self, account: holtmail_core::AccountId) -> AccountStatus {
+        AccountStatus {
+            running: self.synced.lock().unwrap().contains(&account),
+            ..AccountStatus::default()
+        }
+    }
+}
+
 struct Fixture {
     app: Router,
+    mailboxes: Arc<FakeMailboxes>,
     auth: Arc<Auth>,
     cookie: String,
     archive: String,
@@ -122,14 +211,21 @@ async fn empty_fixture() -> Fixture {
     }
     ingest.commit().await.unwrap();
     let auth = auth(store.clone());
+    let mailboxes = Arc::new(FakeMailboxes {
+        uploads: dir.path().join("uploads"),
+        ..FakeMailboxes::default()
+    });
+    let _ = mailboxes.store.set(store.clone());
     Fixture {
         app: router(ApiState {
             blobs,
             store,
             index,
             auth: auth.clone(),
+            mailboxes: mailboxes.clone(),
             secure_cookies: false,
         }),
+        mailboxes,
         auth,
         cookie: String::new(),
         archive: archive.to_string(),
@@ -584,4 +680,498 @@ async fn marks_the_cookie_secure_behind_https() {
             .unwrap()
             .ends_with("; Secure")
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn creates_archives_and_adds_accounts() {
+    let f = fixture().await;
+    let (status, _, body) = f
+        .send(post_json("/api/archives", json!({ "name": "  Work  " })))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let archive: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(archive["name"], "Work");
+    let id = archive["id"].as_str().unwrap().to_owned();
+    let (status, _, _) = f
+        .send(post_json("/api/archives", json!({ "name": " " })))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let accounts = format!("/api/archives/{id}/accounts");
+    let imap = |password: &str| json!({ "host": "imap.example.com", "username": "ada@example.com", "password": password });
+    let (status, _, body) = f.send(post_json(&accounts, imap("wrong"))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["error"],
+        "The server refused"
+    );
+    let (status, _, _) = f
+        .send(post_json(
+            &accounts,
+            json!({ "host": "imap.example.com", "username": "ada", "password": "right", "security": "ssl" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = f.send(post_json(&accounts, imap("right"))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["kind"], "imap");
+    assert_eq!(account["status"]["running"], true);
+    assert!(!String::from_utf8_lossy(&body).contains("right"));
+
+    let list = f.json(&accounts).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+
+    let account_id = account["id"].as_str().unwrap();
+    let (status, _, _) = f
+        .send(post_json(
+            &format!("/api/accounts/{account_id}/sync"),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(f.mailboxes.synced.lock().unwrap().len(), 2);
+
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/archives/0190d6e4-0000-7000-8000-000000000000/accounts",
+            imap("right"),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn imports_uploaded_files() {
+    let f = fixture().await;
+    let upload = |name: &str, body: &'static [u8]| {
+        Request::post(format!("/api/archives/{}/imports?name={name}", f.archive))
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let (status, _, body) = f
+        .send(upload("Old%20mail.MBOX", b"From x\nSubject: a\n\nb\n"))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::ACCEPTED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["kind"], "import");
+    assert_eq!(account["name"], "Old mail.MBOX");
+    let (status, _, again) = f.send(upload("Old%20mail.MBOX", b"more")).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&again).unwrap()["id"],
+        account["id"]
+    );
+    {
+        let imported = f.mailboxes.imported.lock().unwrap();
+        assert_eq!(imported.len(), 2);
+        assert_eq!(imported[0].1, "mbox");
+        assert_eq!(imported[0].2, b"From x\nSubject: a\n\nb\n");
+    }
+
+    let (status, _, _) = f.send(upload("empty.eml", b"")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(f.mailboxes.imported.lock().unwrap().len(), 2);
+    assert_eq!(
+        std::fs::read_dir(&f.mailboxes.uploads).unwrap().count(),
+        0,
+        "a refused upload left its file"
+    );
+
+    let (status, _, _) = f
+        .send(
+            Request::post(format!("/api/archives/{}/imports?name=a.eml", f.archive))
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("x"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+}
+
+fn request(method: &str, uri: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+impl Fixture {
+    async fn sign_in(&self, email: &str, password: &str) -> String {
+        let (status, headers, body) = self
+            .send(
+                Request::post("/api/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, "x=y")
+                    .body(Body::from(
+                        json!({ "email": email, "password": password }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        session_cookie(&headers).unwrap()
+    }
+
+    async fn send_as(&self, cookie: &str, mut request: Request<Body>) -> Answer {
+        request
+            .headers_mut()
+            .insert(header::COOKIE, cookie.parse().unwrap());
+        self.send(request).await
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn members_read_only_granted_archives() {
+    let f = fixture().await;
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "Grace@example.org ", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let grace: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(grace["user"]["role"], "member");
+    assert_eq!(grace["user"]["email"], "Grace@example.org");
+    let grace_id = grace["user"]["id"].as_str().unwrap().to_owned();
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+
+    let (_, _, body) = f
+        .send_as(
+            &member,
+            Request::get("/api/archives").body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), json!([]));
+    let messages = format!("/api/archives/{}/messages", f.archive);
+    let (status, _, _) = f
+        .send_as(
+            &member,
+            Request::get(&messages).body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let page = f.json(&messages).await;
+    let message = page["items"][0]["id"].as_str().unwrap().to_owned();
+    let thread = page["items"][0]["thread_id"].as_str().unwrap().to_owned();
+    for uri in [
+        format!("/api/messages/{message}"),
+        format!("/api/messages/{message}/raw"),
+        format!("/api/threads/{thread}"),
+    ] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/users/{grace_id}"),
+            json!({ "archives": [f.archive] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, _, body) = f
+        .send_as(
+            &member,
+            Request::get("/api/archives").body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    for uri in [
+        messages.clone(),
+        format!("/api/messages/{message}"),
+        format!("/api/threads/{thread}"),
+    ] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+    }
+
+    for (method, uri, body) in [
+        (
+            "POST",
+            "/api/archives".to_owned(),
+            json!({ "name": "Mine" }),
+        ),
+        (
+            "PATCH",
+            format!("/api/archives/{}", f.archive),
+            json!({ "name": "Mine" }),
+        ),
+        ("DELETE", format!("/api/archives/{}", f.archive), json!({})),
+        ("GET", "/api/users".to_owned(), json!({})),
+        (
+            "POST",
+            format!("/api/archives/{}/accounts", f.archive),
+            json!({}),
+        ),
+    ] {
+        let (status, _, _) = f.send_as(&member, request(method, &uri, body)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
+    }
+
+    let (status, _, body) = f
+        .send_as(
+            &member,
+            request("PATCH", "/api/me", json!({ "name": "Grace Hopper" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["user"]["name"],
+        "Grace Hopper"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn manages_people_by_role() {
+    let f = fixture().await;
+    let me = f.json("/api/session").await["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "alan@example.org", "name": "Alan", "password": "short", "role": "admin" }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "alan@example.org", "name": "Alan", "password": "enigma machine", "role": "admin" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let alan = serde_json::from_slice::<Value>(&body).unwrap()["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "ALAN@example.org", "name": "Alan", "password": "enigma machine" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let admin = f.sign_in("alan@example.org", "enigma machine").await;
+    let (status, _, _) = f
+        .send_as(
+            &admin,
+            request(
+                "PATCH",
+                &format!("/api/users/{me}"),
+                json!({ "name": "Not Ada" }),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = f
+        .send_as(
+            &admin,
+            post_json(
+                "/api/users",
+                json!({ "email": "kurt@example.org", "name": "Kurt", "password": "incompleteness", "role": "owner" }),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = f
+        .send_as(
+            &admin,
+            request("DELETE", &format!("/api/users/{me}"), json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/users/{me}"),
+            json!({ "role": "member" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, _) = f
+        .send(request("DELETE", &format!("/api/users/{me}"), json!({})))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/users/{alan}"),
+            json!({ "password": "a new enigma" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = f
+        .send_as(
+            &admin,
+            Request::get("/api/session").body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a reset password kept the old session"
+    );
+
+    let (status, _, _) = f
+        .send(request("DELETE", &format!("/api/users/{alan}"), json!({})))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let users = f.json("/api/users").await;
+    assert_eq!(users.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn changes_your_own_password() {
+    let f = fixture().await;
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/me/password",
+            json!({ "current": "wrong one!!", "new": "babbage engine" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, headers, _) = f
+        .send(post_json(
+            "/api/me/password",
+            json!({ "current": PASSWORD, "new": "babbage engine" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let fresh = session_cookie(&headers).unwrap();
+    let (status, _, _) = f.get("/api/session").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "the old session survived");
+    let (status, _, _) = f
+        .send_as(
+            &fresh,
+            Request::get("/api/session").body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    f.sign_in("ada@example.com", "babbage engine").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edits_and_removes_archives_and_accounts() {
+    let f = fixture().await;
+    let accounts = format!("/api/archives/{}/accounts", f.archive);
+    let (_, _, body) = f
+        .send(post_json(
+            &accounts,
+            json!({ "host": "imap.example.com", "username": "ada", "password": "right" }),
+        ))
+        .await;
+    let imap = serde_json::from_slice::<Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/accounts/{imap}"),
+            json!({ "password": "wrong" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/accounts/{imap}"),
+            json!({ "password": "right", "name": "Work mail", "enabled": false }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["name"], "Work mail");
+    assert_eq!(account["enabled"], false);
+
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/archives/{}", f.archive),
+            json!({ "name": "Home" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        f.json(&format!("/api/archives/{}", f.archive)).await["name"],
+        "Home"
+    );
+
+    let (status, _, _) = f
+        .send(request(
+            "DELETE",
+            &format!("/api/archives/{}", f.archive),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "deleted while syncing");
+    f.mailboxes.synced.lock().unwrap().clear();
+
+    let (status, _, _) = f
+        .send(request(
+            "DELETE",
+            &format!("/api/accounts/{imap}"),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let search = format!("/api/archives/{}/search?q=weekly", f.archive);
+    assert_eq!(f.json(&search).await["total"], 2);
+    let raw = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let (status, _, _) = f
+        .send(request(
+            "DELETE",
+            &format!("/api/archives/{}", f.archive),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(f.json("/api/archives").await, json!([]));
+    let (status, _, _) = f.get(&format!("/api/messages/{raw}/raw")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _) = f.get(&format!("/api/archives/{}", f.archive)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

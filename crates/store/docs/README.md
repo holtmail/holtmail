@@ -12,7 +12,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | --- | --- |
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
-| `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives); `NotFound` for a missing archive |
+| `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives). Turning it on records `save_remote_images_since` unless it was already on; turning it off clears it. `NotFound` for a missing archive |
 | `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, sync state and grants, and the remote copies no remaining message links. Returns the blobs no message, attachment or remote copy references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
@@ -81,9 +81,16 @@ Copies of remote images linked from messages, shared by every message and archiv
 | --- | --- |
 | `remote_copy(key)` | The copy or failure recorded for the key, `None` when never fetched |
 | `save_remote_copy(copy)` | Records it, replacing what was recorded for the key |
-| `unscanned_messages(archive, limit)` | Messages of the archive whose remote images were never looked at, oldest first |
+| `unscanned_messages(archive, when, limit)` | Messages of the archive archived `when` (`ArchivedWhen::Any`, `Since(t)`, `Before(t)`, by `archived_at`) whose remote images were never looked at, oldest first |
+| `count_unscanned(archive, when)` | How many of those there are |
+| `remote_copy_totals(archive)` | Saved images (`images`, `bytes`) and failed ones the archive's messages link to, each counted once |
+| `failed_remote_copies(archive, tried_before, limit)` | Failed copies the archive's messages link to, last tried before `tried_before`, oldest attempt first |
 | `record_remote_scan(message, keys)` | Marks the message as looked at and links it to the recorded copies among `keys`; unknown keys are ignored; idempotent. `NotFound` for a missing message |
 | `message_remote_copies(message)` | The linked copies that have saved bytes |
+
+### SettingsStore
+
+Instance-wide settings as text by key: `setting(key)` (`None` when unset) and `set_setting(key, value)` (`None` removes; idempotent). Values are opaque to the store; the server seals secrets before storing them.
 
 ## Errors
 

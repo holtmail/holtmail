@@ -25,6 +25,26 @@ pub async fn conformance(store: Arc<dyn Store>) {
     removal(&*store).await;
     user_changes_and_grants(&*store).await;
     remote_copies(&*store).await;
+    settings(&*store).await;
+}
+
+async fn settings(store: &dyn Store) {
+    assert_eq!(store.setting("image_proxy").await.unwrap(), None);
+    store
+        .set_setting("image_proxy", Some("first"))
+        .await
+        .unwrap();
+    store
+        .set_setting("image_proxy", Some("second"))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.setting("image_proxy").await.unwrap().as_deref(),
+        Some("second")
+    );
+    store.set_setting("image_proxy", None).await.unwrap();
+    store.set_setting("image_proxy", None).await.unwrap();
+    assert_eq!(store.setting("image_proxy").await.unwrap(), None);
 }
 
 /// A message with invented headers; `n` makes its bytes unique.
@@ -971,15 +991,7 @@ async fn remote_copies(store: &dyn Store) {
         !first.save_remote_images,
         "saving remote images is on by default"
     );
-    store.set_save_remote_images(first.id, true).await.unwrap();
-    assert!(
-        store
-            .get_archive(first.id)
-            .await
-            .unwrap()
-            .unwrap()
-            .save_remote_images
-    );
+    assert_eq!(first.save_remote_images_since, None);
     assert!(matches!(
         store.set_save_remote_images(ArchiveId::new(), true).await,
         Err(StoreError::NotFound(_))
@@ -1001,10 +1013,54 @@ async fn remote_copies(store: &dyn Store) {
         .await
         .unwrap()
         .message_id;
+    let all = ArchivedWhen::Any;
     assert_eq!(
-        store.unscanned_messages(first.id, 10).await.unwrap(),
+        store.unscanned_messages(first.id, all, 10).await.unwrap(),
         [a, b]
     );
+    assert_eq!(store.count_unscanned(first.id, all).await.unwrap(), 2);
+
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    store.set_save_remote_images(first.id, true).await.unwrap();
+    let since = store
+        .get_archive(first.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .save_remote_images_since
+        .expect("turning saving on records when");
+    store.set_save_remote_images(first.id, true).await.unwrap();
+    assert_eq!(
+        store
+            .get_archive(first.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .save_remote_images_since,
+        Some(since),
+        "turning saving on again moved its start"
+    );
+    let later = store
+        .insert_message(message(first.id, 9104, 1_600_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    assert_eq!(
+        store
+            .unscanned_messages(first.id, ArchivedWhen::Since(since), 10)
+            .await
+            .unwrap(),
+        [later],
+        "messages are picked by when they were archived, not sent"
+    );
+    assert_eq!(
+        store
+            .count_unscanned(first.id, ArchivedWhen::Before(since))
+            .await
+            .unwrap(),
+        2
+    );
+    store.record_remote_scan(later, &[]).await.unwrap();
 
     let logo_blob = BlobId::of(b"logo bytes");
     let logo = RemoteCopy {
@@ -1039,13 +1095,45 @@ async fn remote_copies(store: &dyn Store) {
         store.record_remote_scan(MessageId::new(), &[]).await,
         Err(StoreError::NotFound(_))
     ));
-    assert_eq!(store.unscanned_messages(first.id, 10).await.unwrap(), [b]);
+    assert_eq!(
+        store.unscanned_messages(first.id, all, 10).await.unwrap(),
+        [b]
+    );
+    assert_eq!(
+        store.remote_copy_totals(first.id).await.unwrap(),
+        RemoteCopyTotals {
+            images: 1,
+            bytes: 10,
+            failed: 1,
+        },
+        "copies counted twice or in the wrong column"
+    );
+    assert_eq!(
+        store
+            .failed_remote_copies(first.id, Timestamp::from_secs(2), 10)
+            .await
+            .unwrap(),
+        std::slice::from_ref(&broken)
+    );
+    assert!(
+        store
+            .failed_remote_copies(first.id, Timestamp::from_secs(1), 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a copy tried after the cut-off was listed"
+    );
     assert_eq!(
         store.message_remote_copies(a).await.unwrap(),
         std::slice::from_ref(&logo),
         "only copies with saved bytes are listed"
     );
     assert!(store.message_remote_copies(b).await.unwrap().is_empty());
+
+    store.set_save_remote_images(first.id, false).await.unwrap();
+    let off = store.get_archive(first.id).await.unwrap().unwrap();
+    assert!(!off.save_remote_images);
+    assert_eq!(off.save_remote_images_since, None);
 
     let orphans = store.delete_archive(first.id).await.unwrap();
     assert!(

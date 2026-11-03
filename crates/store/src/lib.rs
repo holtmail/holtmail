@@ -47,8 +47,9 @@ pub trait ArchiveStore: Send + Sync {
     /// Renames the archive. `NotFound` when it does not exist.
     async fn rename_archive(&self, id: ArchiveId, name: &str) -> Result<(), StoreError>;
 
-    /// Turns saving remote images for an archive on or off. Fails with `NotFound` for an unknown
-    /// archive.
+    /// Turns saving remote images for an archive on or off. Turning it on records the time in
+    /// `save_remote_images_since`, unless it was already on; turning it off clears it. Fails with
+    /// `NotFound` for an unknown archive.
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
 
     /// Removes the archive with its accounts, folders, messages, attachments, sync state and
@@ -277,13 +278,34 @@ pub trait RemoteImageStore: Send + Sync {
     /// Records a copy or a failure for `copy.key`, replacing what was recorded before.
     async fn save_remote_copy(&self, copy: &RemoteCopy) -> Result<(), StoreError>;
 
-    /// Up to `limit` messages of `archive` whose remote images were never looked at, oldest
-    /// first.
+    /// Up to `limit` messages of `archive` archived `when`, whose remote images were never looked
+    /// at, oldest first.
     async fn unscanned_messages(
         &self,
         archive: ArchiveId,
+        when: ArchivedWhen,
         limit: u32,
     ) -> Result<Vec<MessageId>, StoreError>;
+
+    /// How many messages [`RemoteImageStore::unscanned_messages`] would return without a limit.
+    async fn count_unscanned(
+        &self,
+        archive: ArchiveId,
+        when: ArchivedWhen,
+    ) -> Result<u64, StoreError>;
+
+    /// The saved and failed images the archive's messages link to, each counted once.
+    async fn remote_copy_totals(&self, archive: ArchiveId) -> Result<RemoteCopyTotals, StoreError>;
+
+    /// Up to `limit` failed copies (no saved bytes) the archive's messages link to, last tried
+    /// before `tried_before`, oldest attempt first. Saving a new attempt moves a copy past
+    /// `tried_before`, so a retry run can page through them once.
+    async fn failed_remote_copies(
+        &self,
+        archive: ArchiveId,
+        tried_before: Timestamp,
+        limit: u32,
+    ) -> Result<Vec<RemoteCopy>, StoreError>;
 
     /// Marks `message` as looked at and links it to the remote copies in `keys`, which were saved
     /// with [`RemoteImageStore::save_remote_copy`] first; unknown keys are ignored. Idempotent.
@@ -300,7 +322,23 @@ pub trait RemoteImageStore: Send + Sync {
     ) -> Result<Vec<RemoteCopy>, StoreError>;
 }
 
-/// The whole metadata store.
-pub trait Store: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore {}
+/// Instance-wide settings, as text values by key.
+#[async_trait]
+pub trait SettingsStore: Send + Sync {
+    /// The value stored under `key`, `None` when unset.
+    async fn setting(&self, key: &str) -> Result<Option<String>, StoreError>;
 
-impl<T: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore> Store for T {}
+    /// Stores `value` under `key`, replacing any earlier value; `None` removes it. Idempotent.
+    async fn set_setting(&self, key: &str, value: Option<&str>) -> Result<(), StoreError>;
+}
+
+/// The whole metadata store.
+pub trait Store:
+    ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore + SettingsStore
+{
+}
+
+impl<T> Store for T where
+    T: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore + SettingsStore
+{
+}

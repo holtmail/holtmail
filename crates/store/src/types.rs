@@ -15,6 +15,9 @@ pub struct Archive {
     pub created_at: Timestamp,
     /// Whether remote images linked from its messages are downloaded and kept with the archive.
     pub save_remote_images: bool,
+    /// When saving was turned on; set exactly while `save_remote_images` is. Messages archived
+    /// earlier are processed only on request.
+    pub save_remote_images_since: Option<Timestamp>,
 }
 
 /// What kind of source an account reads mail from.
@@ -501,4 +504,26 @@ pub struct RemoteCopy {
     pub fetched_at: Timestamp,
     /// Why fetching failed, without any message content.
     pub error: Option<String>,
+}
+
+/// Which messages of an archive, by when they were archived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchivedWhen {
+    /// Every message.
+    Any,
+    /// Messages archived at or after this time.
+    Since(Timestamp),
+    /// Messages archived before this time.
+    Before(Timestamp),
+}
+
+/// Saved remote images an archive's messages link to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RemoteCopyTotals {
+    /// Distinct saved images.
+    pub images: u64,
+    /// Their size in bytes.
+    pub bytes: u64,
+    /// Distinct images that could not be fetched.
+    pub failed: u64,
 }

@@ -133,6 +133,20 @@ const peopleSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/people-page.tsx'), 'PeoplePage'),
 })
 
+const tasksSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'tasks',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/tasks-page.tsx'), 'TasksPage'),
+})
+
+const networkSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'network',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/network-page.tsx'), 'NetworkPage'),
+})
+
 const profileSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'profile',
@@ -179,6 +193,8 @@ const routeTree = rootRoute.addChildren([
     settingsIndexRoute,
     archivesSettingsRoute,
     peopleSettingsRoute,
+    tasksSettingsRoute,
+    networkSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,
   ]),

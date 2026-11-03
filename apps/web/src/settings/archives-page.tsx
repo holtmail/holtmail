@@ -1,8 +1,12 @@
 import {
   type Archive,
   archivesQuery,
+  cancelTask,
   createArchive,
   deleteArchive,
+  type RemoteImageJob,
+  startRemoteImages,
+  tasksQuery,
   updateArchive,
 } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
@@ -25,26 +29,32 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowUpRightIcon,
+  DownloadIcon,
   EllipsisIcon,
   FileUpIcon,
+  ImageIcon,
   MailPlusIcon,
   PencilIcon,
   PlusIcon,
+  RotateCwIcon,
+  SquareIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useLiveArchive } from '../hooks/use-live-archive.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { formatCount, formatSize } from '../lib/format.ts'
 import type { AddMail } from '../lib/search-params.ts'
+import { remoteImagesTask } from '../lib/tasks.ts'
 import { AccountList } from '../manage/account-list.tsx'
 import { ConfirmDialog, TextDialog } from '../manage/confirm-dialog.tsx'
 import { ConnectImapForm } from '../manage/connect-imap.tsx'
 import { ImportFiles } from '../manage/import-files.tsx'
 import { strings } from '../strings.ts'
+import { TaskProgress } from '../tasks/task-progress.tsx'
 import { SettingsPage } from './settings-layout.tsx'
 
 const t = strings.settings
@@ -240,38 +250,156 @@ function SaveImages({ archive }: { archive: Archive }) {
   })
   const checked = mutation.isPending ? mutation.variables : archive.save_remote_images
   return (
-    <div className="flex items-start gap-4 border-t border-border pt-6">
-      <div className="grid flex-1 gap-1">
-        <label htmlFor={id} className="text-sm text-fg">
-          {t.saveImages}
-        </label>
-        <p className="text-xs text-fg-muted">{t.saveImagesHint}</p>
-        <AnimatePresence initial={false}>
-          {checked && (
-            <m.p
-              key="warning"
-              className="flex items-start gap-2 overflow-hidden text-xs text-fg-muted"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto', transition: transition.expressive.moderate02 }}
-              exit={{ opacity: 0, height: 0, transition: transition.productiveExit.fast02 }}
-            >
-              <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
-              {t.saveImagesWarning}
-            </m.p>
+    <div className="grid gap-4 border-t border-border pt-6">
+      <div className="flex items-start gap-4">
+        <div className="grid flex-1 gap-1">
+          <label htmlFor={id} className="text-sm text-fg">
+            {t.saveImages}
+          </label>
+          <p className="text-xs text-fg-muted">{t.saveImagesHint}</p>
+          <AnimatePresence initial={false}>
+            {checked && (
+              <m.p
+                key="warning"
+                className="flex items-start gap-2 overflow-hidden text-xs text-fg-muted"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{
+                  opacity: 1,
+                  height: 'auto',
+                  transition: transition.expressive.moderate02,
+                }}
+                exit={{ opacity: 0, height: 0, transition: transition.productiveExit.fast02 }}
+              >
+                <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+                {t.saveImagesWarning}
+              </m.p>
+            )}
+          </AnimatePresence>
+          {mutation.isError && (
+            <p role="alert" className="text-xs text-danger">
+              {authErrorMessage(mutation.error)}
+            </p>
           )}
-        </AnimatePresence>
-        {mutation.isError && (
-          <p role="alert" className="text-xs text-danger">
-            {authErrorMessage(mutation.error)}
-          </p>
-        )}
+        </div>
+        <Switch
+          id={id}
+          checked={checked}
+          disabled={mutation.isPending}
+          onCheckedChange={(save) => mutation.mutate(save)}
+        />
       </div>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={mutation.isPending}
-        onCheckedChange={(save) => mutation.mutate(save)}
-      />
+      {archive.save_remote_images && <SavedImages archive={archive} />}
+    </div>
+  )
+}
+
+function SavedImages({ archive }: { archive: Archive }) {
+  const queryClient = useQueryClient()
+  const tasks = useQuery(tasksQuery)
+  const task = remoteImagesTask(tasks.data, archive.id)
+  const wasRunning = useRef(Boolean(task))
+  const { images, bytes, failed, older_pending: older } = archive.remote_images
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['archives'] })
+
+  useEffect(() => {
+    if (wasRunning.current && !task) void queryClient.invalidateQueries({ queryKey: ['archives'] })
+    wasRunning.current = Boolean(task)
+  }, [task, queryClient])
+
+  const start = useMutation({
+    mutationFn: (job: RemoteImageJob) => startRemoteImages(archive.id, job),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      await refresh()
+    },
+  })
+  const cancel = useMutation({
+    mutationFn: (taskId: string) => cancelTask(taskId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+
+  return (
+    <div className="grid gap-3 border border-border bg-bg-subtle px-4 py-3 text-sm">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-fg-muted tabular-nums">
+        <ImageIcon aria-hidden className="size-4 text-fg-subtle" />
+        {t.savedImages(formatCount(images), formatSize(bytes))}
+        {failed > 0 && <span className="text-warning">{t.failedImages(formatCount(failed))}</span>}
+      </p>
+      <AnimatePresence initial={false} mode="popLayout">
+        {task ? (
+          <m.div
+            key="task"
+            className="grid gap-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: transition.productive.moderate01 }}
+            exit={{ opacity: 0, transition: transition.productiveExit.fast02 }}
+          >
+            <TaskProgress task={task} />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex-1 truncate text-xs text-fg-muted tabular-nums">
+                {task.summary}
+              </span>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/settings/tasks">{t.openTasks}</Link>
+              </Button>
+              {task.cancellable && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancel.isPending}
+                  onClick={() => cancel.mutate(task.id)}
+                >
+                  <SquareIcon />
+                  {t.cancel}
+                </Button>
+              )}
+            </div>
+          </m.div>
+        ) : (
+          (older > 0 || failed > 0) && (
+            <m.div
+              key="actions"
+              className="grid gap-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: transition.productive.moderate01 }}
+              exit={{ opacity: 0, transition: transition.productiveExit.fast02 }}
+            >
+              {older > 0 && (
+                <p className="text-xs text-fg-muted">{t.olderPending(formatCount(older))}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {older > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={start.isPending}
+                    onClick={() => start.mutate('older')}
+                  >
+                    <DownloadIcon />
+                    {t.saveOlder}
+                  </Button>
+                )}
+                {failed > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={start.isPending}
+                    onClick={() => start.mutate('failed')}
+                  >
+                    <RotateCwIcon />
+                    {t.retryFailed}
+                  </Button>
+                )}
+              </div>
+            </m.div>
+          )
+        )}
+      </AnimatePresence>
+      {(start.isError || cancel.isError) && (
+        <p role="alert" className="text-xs text-danger">
+          {authErrorMessage(start.error ?? cancel.error)}
+        </p>
+      )}
     </div>
   )
 }

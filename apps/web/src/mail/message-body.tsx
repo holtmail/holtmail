@@ -2,11 +2,11 @@ import { bodyQuery, type MessageDetail } from '@holtmail/api-client'
 import { Button, Skeleton } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ImageOffIcon } from 'lucide-react'
+import { ArchiveIcon, GlobeIcon, ImageOffIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useRemoteImages } from '../hooks/use-remote-images.ts'
-import { bodyMode } from '../lib/remote-images.ts'
+import { bodyMode, liveMode } from '../lib/remote-images.ts'
 import { linkify, withLinkTarget } from '../lib/text.ts'
 import { strings } from '../strings.ts'
 
@@ -44,9 +44,10 @@ function TextBody({ text }: { text: string }) {
 function HtmlBody({ message }: { message: MessageDetail }) {
   const [preference] = useRemoteImages()
   const [shown, setShown] = useState(false)
-  const mode = bodyMode(preference, shown)
+  const [live, setLive] = useState(false)
+  const mode = live ? liveMode(preference) : bodyMode(preference, shown)
   const body = useQuery({
-    ...bodyQuery(message.id, mode),
+    ...bodyQuery(message.id, mode, !live),
     placeholderData: (previous) => previous,
   })
   const srcDoc = useMemo(
@@ -70,6 +71,24 @@ function HtmlBody({ message }: { message: MessageDetail }) {
               <Link to="/settings/reading">{strings.reader.alwaysShowRemote}</Link>
             </Button>
           </span>
+        </div>
+      )}
+      {body.data?.savedShown && !live && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5 pl-3 text-xs text-fg-subtle">
+          <ArchiveIcon aria-hidden className="size-3.5 shrink-0" />
+          <span className="flex-1">{strings.reader.savedShown}</span>
+          <Button size="sm" variant="ghost" onClick={() => setLive(true)}>
+            {strings.reader.loadOriginals}
+          </Button>
+        </div>
+      )}
+      {live && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-0.5 pl-3 text-xs text-fg-subtle">
+          <GlobeIcon aria-hidden className="size-3.5 shrink-0" />
+          <span className="flex-1">{strings.reader.originalsShown}</span>
+          <Button size="sm" variant="ghost" onClick={() => setLive(false)}>
+            {strings.reader.showSaved}
+          </Button>
         </div>
       )}
       {srcDoc ? (

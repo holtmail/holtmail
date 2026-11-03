@@ -6,6 +6,7 @@ import {
   type Folder,
   foldersQuery,
   sessionQuery,
+  tasksQuery,
 } from '@holtmail/api-client'
 import {
   Button,
@@ -26,6 +27,7 @@ import {
   FilePenIcon,
   FolderIcon,
   InboxIcon,
+  ListChecksIcon,
   PlusIcon,
   type LucideIcon,
   MailIcon,
@@ -41,6 +43,7 @@ import { accountState } from '../lib/accounts.ts'
 import { groupFolders } from '../lib/folders.ts'
 import { formatCount } from '../lib/format.ts'
 import { manages } from '../lib/roles.ts'
+import { runningTasks } from '../lib/tasks.ts'
 import { StatusDot } from '../manage/account-list.tsx'
 import { strings } from '../strings.ts'
 import { useMail } from './context.ts'
@@ -197,6 +200,8 @@ function Sources({
   const now = useNow(30_000)
   const user = useQuery(sessionQuery).data
   const canManage = manages(user?.role)
+  const tasks = useQuery({ ...tasksQuery, enabled: canManage })
+  const running = runningTasks(tasks.data).length
   if (accounts.length === 0 && !canManage) return null
   return (
     <div className="grid gap-1 border-t border-border py-2">
@@ -222,6 +227,16 @@ function Sources({
           </div>
         )
       })}
+      {canManage && running > 0 && (
+        <Link
+          to="/settings/tasks"
+          onClick={onNavigate}
+          className={cn(itemClass, 'pl-4 text-xs text-accent')}
+        >
+          <ListChecksIcon />
+          {strings.settings.tasksRunning(running)}
+        </Link>
+      )}
       {canManage && (
         <Link
           to="/settings/archives"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { bodyMode, parseRemoteImages } from './remote-images.ts'
+import { bodyMode, liveMode, parseRemoteImages } from './remote-images.ts'
 
 describe('parseRemoteImages', () => {
   it('falls back to asking', () => {
@@ -20,5 +20,13 @@ describe('bodyMode', () => {
   it('follows a standing choice', () => {
     expect(bodyMode('proxy', false)).toBe('proxy')
     expect(bodyMode('direct', false)).toBe('direct')
+  })
+})
+
+describe('liveMode', () => {
+  it('goes through the server unless the choice is direct', () => {
+    expect(liveMode('ask')).toBe('proxy')
+    expect(liveMode('proxy')).toBe('proxy')
+    expect(liveMode('direct')).toBe('direct')
   })
 })

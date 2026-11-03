@@ -1,4 +1,4 @@
-import { archivesQuery, sessionQuery } from '@holtmail/api-client'
+import { archivesQuery, sessionQuery, tasksQuery } from '@holtmail/api-client'
 import { distance, transition } from '@holtmail/tokens'
 import { Button, cn } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
@@ -7,6 +7,8 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BookOpenIcon,
+  GlobeIcon,
+  ListChecksIcon,
   type LucideIcon,
   UserIcon,
   UsersIcon,
@@ -15,13 +17,20 @@ import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 
 import { manages } from '../lib/roles.ts'
+import { runningTasks } from '../lib/tasks.ts'
 import { UserMenu } from '../mail/user-menu.tsx'
 import { strings } from '../strings.ts'
 
 const t = strings.settings
 
 interface Section {
-  to: '/settings/archives' | '/settings/people' | '/settings/reading' | '/settings/profile'
+  to:
+    | '/settings/archives'
+    | '/settings/people'
+    | '/settings/tasks'
+    | '/settings/network'
+    | '/settings/reading'
+    | '/settings/profile'
   label: string
   icon: LucideIcon
   managers: boolean
@@ -30,6 +39,8 @@ interface Section {
 const sections: Section[] = [
   { to: '/settings/archives', label: t.archives, icon: ArchiveIcon, managers: true },
   { to: '/settings/people', label: t.people, icon: UsersIcon, managers: true },
+  { to: '/settings/tasks', label: t.tasks, icon: ListChecksIcon, managers: true },
+  { to: '/settings/network', label: t.network, icon: GlobeIcon, managers: true },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
 ]
@@ -38,7 +49,10 @@ export function SettingsLayout() {
   const user = useQuery(sessionQuery).data
   const archives = useQuery(archivesQuery)
   const { pathname } = useLocation()
-  const visible = sections.filter((section) => !section.managers || manages(user?.role))
+  const canManage = manages(user?.role)
+  const visible = sections.filter((section) => !section.managers || canManage)
+  const tasks = useQuery({ ...tasksQuery, enabled: canManage })
+  const running = runningTasks(tasks.data).length
   const first = archives.data?.[0]
 
   return (
@@ -94,6 +108,14 @@ export function SettingsLayout() {
                     )}
                     <Icon className="relative" />
                     <span className="relative">{label}</span>
+                    {to === '/settings/tasks' && running > 0 && (
+                      <span
+                        aria-label={t.tasksRunning(running)}
+                        className="relative ml-auto flex h-4 min-w-4 items-center justify-center bg-accent px-1 font-mono text-[0.625rem] text-accent-fg tabular-nums max-md:ml-0"
+                      >
+                        {running}
+                      </span>
+                    )}
                   </Link>
                 </li>
               )

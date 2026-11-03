@@ -8,6 +8,10 @@ export function parseRemoteImages(value: string | null | undefined): RemoteImage
   return value === 'proxy' || value === 'direct' ? value : 'ask'
 }
 
+export function liveMode(preference: RemoteImages): RemoteMode {
+  return preference === 'direct' ? 'direct' : 'proxy'
+}
+
 export function bodyMode(preference: RemoteImages, shown: boolean): RemoteMode {
   if (preference === 'ask') return shown ? 'proxy' : 'block'
   return preference

@@ -21,7 +21,7 @@ All requests are same-origin: paths start with `/api`, which the Vite dev server
 
 ### Types
 
-`Archive`, `Account`, `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
+`Archive`, `Account`, `AccountStatus`, `Person`, `Role`, the request bodies (`ImapAccountRequest`, `AccountUpdateRequest`, `NewUserRequest`, `UserUpdateRequest`, `ProfileRequest`, `PasswordRequest`), `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
 
 ### Errors
 
@@ -57,6 +57,21 @@ Pages hold 100 messages. Spread a factory into `useQuery` / `useInfiniteQuery` t
 | `login({ email, password })`              | `POST /api/login`; the signed-in `User`                                     |
 | `setup({ token, email, name, password })` | `POST /api/setup`; the new owner, signed in                                 |
 | `logout()`                                | `POST /api/logout` with `{}`; idempotent                                    |
+
+### Changes
+
+Each resolves with the changed record (or nothing for a delete) and throws `ApiError` otherwise. They do not touch the cache; callers invalidate what they show.
+
+| Export                                                                | Request                                                                                                                                                                                        |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createArchive(name)`, `renameArchive(id, name)`, `deleteArchive(id)` | `POST /api/archives`, `PATCH` / `DELETE /api/archives/{id}`                                                                                                                                    |
+| `addImapAccount(archiveId, request)`                                  | `POST /api/archives/{id}/accounts`; the server signs in first                                                                                                                                  |
+| `updateAccount(id, request)`, `deleteAccount(id)`, `syncAccount(id)`  | `PATCH` / `DELETE /api/accounts/{id}`, `POST /api/accounts/{id}/sync`                                                                                                                          |
+| `uploadImport(archiveId, file, { onProgress, signal })`               | `POST /api/archives/{id}/imports?name=` with the file as `application/octet-stream` over `XMLHttpRequest`, so `onProgress(loaded, total)` reports the upload; resolves with the import account |
+| `createUser`, `updateUser(id, request)`, `deleteUser(id)`             | `/api/users`                                                                                                                                                                                   |
+| `updateProfile(request)`, `changePassword(request)`                   | `PATCH /api/me`, `POST /api/me/password`; both resolve with the signed-in `User`                                                                                                               |
+
+`accountsQuery` refetches every 2 seconds while any account syncs or imports and every minute otherwise. `usersQuery` (`['users']`) lists people with their grants.
 
 Every `POST` sends `Content-Type: application/json`, which the server requires of every write.
 

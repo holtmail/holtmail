@@ -19,6 +19,15 @@ export type Thread = Schemas['ThreadDto']
 export type User = Schemas['UserDto']
 export type LoginRequest = Schemas['LoginRequest']
 export type SetupRequest = Schemas['SetupRequest']
+export type AccountStatus = Schemas['AccountStatusDto']
+export type ImapAccountRequest = Schemas['ImapAccountRequest']
+export type AccountUpdateRequest = Schemas['AccountUpdateRequest']
+export type Person = Schemas['PersonDto']
+export type NewUserRequest = Schemas['NewUserRequest']
+export type UserUpdateRequest = Schemas['UserUpdateRequest']
+export type ProfileRequest = Schemas['ProfileRequest']
+export type PasswordRequest = Schemas['PasswordRequest']
+export type Role = 'owner' | 'admin' | 'member'
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -108,6 +117,110 @@ export async function logout(): Promise<void> {
   await post('/api/logout', {})
 }
 
+const json = { 'Content-Type': 'application/json' }
+
+function done(result: { error?: unknown; response: Response }): void {
+  if (!result.response.ok) {
+    throw new ApiError(
+      result.response.status,
+      errorMessage(result.error, result.response),
+      readRetryAfter(result.response),
+    )
+  }
+}
+
+const archivePath = (id: string) => ({ params: { path: { id } } })
+
+export const createArchive = async (name: string) =>
+  unwrap(await client.POST('/api/archives', { body: { name } }))
+
+export const renameArchive = async (id: string, name: string) =>
+  unwrap(await client.PATCH('/api/archives/{id}', { ...archivePath(id), body: { name } }))
+
+export const deleteArchive = async (id: string) =>
+  done(await client.DELETE('/api/archives/{id}', { ...archivePath(id), headers: json }))
+
+export const addImapAccount = async (archiveId: string, request: ImapAccountRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/accounts', { ...archivePath(archiveId), body: request }),
+  )
+
+export const updateAccount = async (id: string, request: AccountUpdateRequest) =>
+  unwrap(await client.PATCH('/api/accounts/{id}', { ...archivePath(id), body: request }))
+
+export const deleteAccount = async (id: string) =>
+  done(await client.DELETE('/api/accounts/{id}', { ...archivePath(id), headers: json }))
+
+export const syncAccount = async (id: string) =>
+  unwrap(await client.POST('/api/accounts/{id}/sync', { ...archivePath(id), headers: json }))
+
+export const createUser = async (request: NewUserRequest) =>
+  unwrap(await client.POST('/api/users', { body: request }))
+
+export const updateUser = async (id: string, request: UserUpdateRequest) =>
+  unwrap(await client.PATCH('/api/users/{id}', { ...archivePath(id), body: request }))
+
+export const deleteUser = async (id: string) =>
+  done(await client.DELETE('/api/users/{id}', { ...archivePath(id), headers: json }))
+
+export const updateProfile = async (request: ProfileRequest): Promise<User> =>
+  unwrap(await client.PATCH('/api/me', { body: request })).user
+
+export const changePassword = async (request: PasswordRequest): Promise<User> =>
+  unwrap(await client.POST('/api/me/password', { body: request })).user
+
+function isAccount(value: unknown): value is Account {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = new Map(Object.entries(value))
+  const status = fields.get('status')
+  return (
+    ['id', 'name', 'kind'].every((key) => typeof fields.get(key) === 'string') &&
+    typeof status === 'object' &&
+    status !== null
+  )
+}
+
+export interface UploadOptions {
+  onProgress?: (loaded: number, total: number) => void
+  signal?: AbortSignal
+}
+
+/** Sends a mailbox file to be imported; resolves with the import account once it is stored. */
+export function uploadImport(
+  archiveId: string,
+  file: File,
+  { onProgress, signal }: UploadOptions = {},
+): Promise<Account> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/archives/${encode(archiveId)}/imports?name=${encode(file.name)}`)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.responseType = 'json'
+    xhr.upload.addEventListener('progress', (event) =>
+      onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size),
+    )
+    xhr.addEventListener('load', () => {
+      const body: unknown = xhr.response
+      if (xhr.status >= 200 && xhr.status < 300 && isAccount(body)) {
+        resolve(body)
+        return
+      }
+      const message =
+        typeof body === 'object' &&
+        body !== null &&
+        'error' in body &&
+        typeof body.error === 'string'
+          ? body.error
+          : xhr.statusText || `HTTP ${xhr.status}`
+      reject(new ApiError(xhr.status, message))
+    })
+    xhr.addEventListener('error', () => reject(new ApiError(0, 'the upload failed')))
+    xhr.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    xhr.send(file)
+  })
+}
+
 const encode = encodeURIComponent
 
 export const bodyUrl = (id: string, remote = false): string =>
@@ -169,7 +282,14 @@ export const accountsQuery = (archiveId: string) =>
           signal,
         }),
       ),
+    refetchInterval: (query) =>
+      query.state.data?.some((account) => account.status.running) ? 2_000 : 60_000,
   })
+
+export const usersQuery = queryOptions({
+  queryKey: ['users'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/users', { signal })),
+})
 
 export const foldersQuery = (archiveId: string) =>
   queryOptions({

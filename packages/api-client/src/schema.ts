@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+  '/api/accounts/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_account']
+    options?: never
+    head?: never
+    patch: operations['update_account']
+    trace?: never
+  }
+  '/api/accounts/{id}/sync': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['sync_account']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives': {
     parameters: {
       query?: never
@@ -13,7 +45,7 @@ export interface paths {
     }
     get: operations['list_archives']
     put?: never
-    post?: never
+    post: operations['create_archive']
     delete?: never
     options?: never
     head?: never
@@ -30,10 +62,10 @@ export interface paths {
     get: operations['get_archive']
     put?: never
     post?: never
-    delete?: never
+    delete: operations['delete_archive']
     options?: never
     head?: never
-    patch?: never
+    patch: operations['update_archive']
     trace?: never
   }
   '/api/archives/{id}/accounts': {
@@ -45,7 +77,7 @@ export interface paths {
     }
     get: operations['list_accounts']
     put?: never
-    post?: never
+    post: operations['add_imap_account']
     delete?: never
     options?: never
     head?: never
@@ -62,6 +94,22 @@ export interface paths {
     get: operations['list_folders']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/imports': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['import_file']
     delete?: never
     options?: never
     head?: never
@@ -126,6 +174,38 @@ export interface paths {
     get?: never
     put?: never
     post: operations['logout']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/me': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch: operations['update_me']
+    trace?: never
+  }
+  '/api/me/password': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['change_password']
     delete?: never
     options?: never
     head?: never
@@ -244,6 +324,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/users': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_users']
+    put?: never
+    post: operations['create_user']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/users/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_user']
+    options?: never
+    head?: never
+    patch: operations['update_user']
+    trace?: never
+  }
 }
 export type webhooks = Record<string, never>
 export interface components {
@@ -256,6 +368,32 @@ export interface components {
       /** @description `imap`, `graph`, `jmap` or `import`. */
       kind: string
       name: string
+      status: components['schemas']['AccountStatusDto']
+    }
+    /** @description What is happening to an account now and how its last sync or import ended. */
+    AccountStatusDto: {
+      /** @description Why the last run failed. */
+      error?: string | null
+      /**
+       * Format: int64
+       * @description When the last run ended, Unix milliseconds.
+       */
+      finished_at?: number | null
+      /**
+       * Format: int64
+       * @description Messages added by the running or last run.
+       */
+      new_messages: number
+      /** @description A sync or import is running. */
+      running: boolean
+    }
+    /** @description Changes to an account; missing fields stay as they are. */
+    AccountUpdateRequest: {
+      /** @description Paused accounts are not synced. */
+      enabled?: boolean | null
+      name?: string | null
+      /** @description A new password; checked by signing in before it is stored. */
+      password?: string | null
     }
     /** @description One mailbox of an address header. */
     AddressDto: {
@@ -272,6 +410,11 @@ export interface components {
       id: string
       name: string
       stats: components['schemas']['StatsDto']
+    }
+    /** @description Changes to an archive. */
+    ArchiveUpdateRequest: {
+      /** @description Not empty, at most 100 characters. */
+      name: string
     }
     /** @description An attachment of a message. */
     AttachmentDto: {
@@ -306,6 +449,21 @@ export interface components {
        * @description Messages in the folder without the `\Seen` flag there.
        */
       unread: number
+    }
+    /** @description An IMAP account to add. */
+    ImapAccountRequest: {
+      host: string
+      /** @description Shown in the sidebar; the user name when missing. */
+      name?: string | null
+      password: string
+      /**
+       * Format: int32
+       * @description 993 for `tls`, 143 otherwise when missing.
+       */
+      port?: number | null
+      /** @description `tls` (default), `starttls` or `plain`. */
+      security?: string | null
+      username: string
     }
     /** @description A folder a message is in. */
     LocationDto: {
@@ -393,6 +551,44 @@ export interface components {
       thread_id: string
       to: components['schemas']['AddressDto'][]
     }
+    /** @description A new archive. */
+    NewArchiveRequest: {
+      /** @description Not empty, at most 100 characters. */
+      name: string
+    }
+    /** @description A user to add. */
+    NewUserRequest: {
+      /** @description Archive ids the user may read. */
+      archives?: string[]
+      email: string
+      name: string
+      /** @description At least 10 characters. */
+      password: string
+      /** @description `owner`, `admin` or `member` (default). Only an owner adds owners. */
+      role?: string | null
+    }
+    /** @description A password change. */
+    PasswordRequest: {
+      current: string
+      /** @description At least 10 characters. */
+      new: string
+    }
+    /** @description A user as owners and admins see them. */
+    PersonDto: {
+      /** @description Archives granted to the user. Owners and admins read every archive regardless. */
+      archives: string[]
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      user: components['schemas']['UserDto']
+    }
+    /** @description Changes to your own profile; missing fields stay as they are. */
+    ProfileRequest: {
+      email?: string | null
+      name?: string | null
+    }
     /** @description One page of search results. */
     SearchResponse: {
       items: components['schemas']['MessageSummary'][]
@@ -448,6 +644,16 @@ export interface components {
       /** @description `owner`, `admin` or `member`. */
       role: string
     }
+    /** @description Changes to a user; missing fields stay as they are. */
+    UserUpdateRequest: {
+      /** @description Replaces the granted archives. */
+      archives?: string[] | null
+      email?: string | null
+      name?: string | null
+      /** @description A new password; ends the user's sessions. */
+      password?: string | null
+      role?: string | null
+    }
   }
   responses: never
   parameters: never
@@ -457,6 +663,202 @@ export interface components {
 }
 export type $defs = Record<string, never>
 export interface operations {
+  delete_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with its folders; its messages stay in the archive */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The account is syncing or importing */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AccountUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description An empty name, a password on an import account, or the server refused the new password */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  sync_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Syncing in the background */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description An import account, which has no server */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_archives: {
     parameters: {
       query?: never
@@ -472,6 +874,56 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ArchiveDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_archive: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewArchiveRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ArchiveDto']
+        }
+      }
+      /** @description An empty or too long name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
         }
       }
       /** @description Not signed in */
@@ -516,6 +968,143 @@ export interface operations {
       }
       /** @description Not signed in */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_archive: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with its accounts and messages; bytes no other archive uses are deleted */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description One of its accounts is syncing or importing */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_archive: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ArchiveUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ArchiveDto']
+        }
+      }
+      /** @description An empty or too long name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -592,6 +1181,69 @@ export interface operations {
       }
     }
   }
+  add_imap_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ImapAccountRequest']
+      }
+    }
+    responses: {
+      /** @description Stored; the first sync has started */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description Bad settings, or the server refused to sign in */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_folders: {
     parameters: {
       query?: never
@@ -622,6 +1274,73 @@ export interface operations {
         }
       }
       /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  import_file: {
+    parameters: {
+      query: {
+        /** @description The file's name; its extension picks the format (`.mbox`, `.eml`, `.zip`). */
+        name: string
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    /** @description An mbox, .eml or zip file */
+    requestBody: {
+      content: {
+        'application/octet-stream': number[]
+      }
+    }
+    responses: {
+      /** @description Importing in the background into the import account named after the file */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description An empty name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
       404: {
         headers: {
           [name: string]: unknown
@@ -849,6 +1568,116 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  update_me: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ProfileRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SessionDto']
+        }
+      }
+      /** @description A malformed email or an empty name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The email is taken */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  change_password: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PasswordRequest']
+      }
+    }
+    responses: {
+      /** @description Changed; every other session ended and a new cookie is set */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SessionDto']
+        }
+      }
+      /** @description The new password is too short */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in, or the current password is wrong */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
       }
     }
   }
@@ -1214,6 +2043,266 @@ export interface operations {
       }
       /** @description No such thread */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_users: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewUserRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonDto']
+        }
+      }
+      /** @description A malformed email, an empty name or a short password */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or an admin adding an owner */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The email is taken */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with their sessions */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Removing yourself */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or an admin removing an owner */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UserUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonDto']
+        }
+      }
+      /** @description Bad values, or changing your own role */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or an admin changing an owner */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The email is taken */
+      409: {
         headers: {
           [name: string]: unknown
         }

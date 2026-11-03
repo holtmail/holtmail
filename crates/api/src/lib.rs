@@ -13,6 +13,7 @@ mod people;
 mod remote;
 mod routes;
 mod session;
+mod tasks;
 
 use std::sync::Arc;
 
@@ -31,7 +32,10 @@ use utoipa::OpenApi;
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 use dto::*;
-pub use mailboxes::{AccountStatus, MailboxError, Mailboxes, NewImapAccount};
+pub use mailboxes::{
+    AccountStatus, ImageProxy, MailboxError, Mailboxes, NewImapAccount, RemoteImageJob, Task,
+    TaskKind, TaskLevel, TaskLine, TaskState,
+};
 pub use session::{CurrentUser, SESSION_COOKIE};
 
 /// What the API reads from.
@@ -107,6 +111,17 @@ pub fn router(state: ApiState) -> Router {
             get(routes::get_attachment),
         )
         .route("/api/messages/{id}/remote/{key}", get(remote::get_remote))
+        .route("/api/messages/{id}/live/{key}", get(remote::get_live))
+        .route(
+            "/api/archives/{id}/remote-images",
+            post(manage::start_remote_images),
+        )
+        .route("/api/tasks", get(tasks::list_tasks))
+        .route("/api/tasks/{id}/cancel", post(tasks::cancel_task))
+        .route(
+            "/api/image-proxy",
+            get(tasks::get_image_proxy).put(tasks::set_image_proxy),
+        )
         .route("/api/threads/{id}", get(routes::get_thread))
         .route("/api/{*rest}", any(routes::unknown))
         .route_layer(from_fn_with_state(state.clone(), access::check))
@@ -168,6 +183,12 @@ pub fn openapi_json() -> String {
         routes::get_raw,
         routes::get_attachment,
         remote::get_remote,
+        remote::get_live,
+        manage::start_remote_images,
+        tasks::list_tasks,
+        tasks::cancel_task,
+        tasks::get_image_proxy,
+        tasks::set_image_proxy,
         routes::get_thread,
     ),
     components(schemas(
@@ -185,6 +206,12 @@ pub fn openapi_json() -> String {
         ArchiveUpdateRequest,
         AccountUpdateRequest,
         RemoteMode,
+        RemoteImagesDto,
+        RemoteImagesRequest,
+        TaskDto,
+        TaskLineDto,
+        ImageProxyDto,
+        ImageProxyRequest,
         FolderDto,
         AddressDto,
         MessageSummary,

@@ -26,7 +26,31 @@ struct FakeMailboxes {
     uploads: std::path::PathBuf,
     synced: std::sync::Mutex<Vec<holtmail_core::AccountId>>,
     imported: std::sync::Mutex<Vec<(holtmail_core::AccountId, String, Vec<u8>)>>,
-    saving: std::sync::Mutex<Vec<holtmail_core::ArchiveId>>,
+    jobs: std::sync::Mutex<Vec<(holtmail_core::ArchiveId, RemoteImageJob)>>,
+    proxy: std::sync::Mutex<ImageProxy>,
+    cancelled: std::sync::Mutex<Vec<String>>,
+}
+
+fn fake_task(archive: holtmail_core::ArchiveId) -> Task {
+    Task {
+        id: "t1".into(),
+        kind: TaskKind::RemoteImages,
+        archive_id: Some(archive),
+        account_id: None,
+        title: "Personal".into(),
+        state: TaskState::Running,
+        started_at: holtmail_core::Timestamp::from_secs(1),
+        finished_at: None,
+        done: 3,
+        total: Some(10),
+        summary: "3 of 10 messages".into(),
+        cancellable: true,
+        log: vec![TaskLine {
+            at: holtmail_core::Timestamp::from_secs(1),
+            level: TaskLevel::Info,
+            text: "Started".into(),
+        }],
+    }
 }
 
 #[derive(Default)]
@@ -127,8 +151,46 @@ impl Mailboxes for FakeMailboxes {
         }
     }
 
-    fn save_remote_images(&self, archive: holtmail_core::ArchiveId) {
-        self.saving.lock().unwrap().push(archive);
+    fn tasks(&self) -> Vec<Task> {
+        self.jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(archive, _)| fake_task(*archive))
+            .collect()
+    }
+
+    fn cancel_task(&self, id: &str) -> Result<(), MailboxError> {
+        if id != "t1" {
+            return Err(MailboxError::Invalid("no such task".into()));
+        }
+        self.cancelled.lock().unwrap().push(id.to_owned());
+        Ok(())
+    }
+
+    async fn start_remote_images(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        job: RemoteImageJob,
+    ) -> Result<Task, MailboxError> {
+        self.jobs.lock().unwrap().push((archive, job));
+        Ok(fake_task(archive))
+    }
+
+    fn image_proxy(&self) -> ImageProxy {
+        self.proxy.lock().unwrap().clone()
+    }
+
+    async fn set_image_proxy(&self, proxy: Option<String>) -> Result<ImageProxy, MailboxError> {
+        if proxy
+            .as_deref()
+            .is_some_and(|p| !p.starts_with("socks5h://"))
+        {
+            return Err(MailboxError::Invalid("unreachable".into()));
+        }
+        let mut current = self.proxy.lock().unwrap();
+        current.address = proxy;
+        Ok(current.clone())
     }
 }
 
@@ -943,6 +1005,12 @@ async fn members_read_only_granted_archives() {
             .await;
         assert_eq!(status, StatusCode::OK, "{uri}");
     }
+    for uri in ["/api/tasks", "/api/image-proxy"] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+    }
 
     for (method, uri, body) in [
         (
@@ -1277,6 +1345,7 @@ async fn proxies_and_shows_saved_remote_images() {
         "a saved copy is hidden"
     );
     assert_eq!(headers["x-holtmail-remote-blocked"], "0");
+    assert_eq!(headers["x-holtmail-remote-saved"], "1");
     let (_, _, bytes) = f.get(&format!("/api/messages/{id}/remote/{key}")).await;
     assert_eq!(&bytes[..], b"GIF89a saved");
     assert_eq!(
@@ -1284,10 +1353,27 @@ async fn proxies_and_shows_saved_remote_images() {
         1,
         "a saved copy was fetched again"
     );
+
+    let (_, headers, body) = f
+        .get(&format!("/api/messages/{id}/body?remote=proxy&saved=false"))
+        .await;
+    assert!(
+        String::from_utf8_lossy(&body).contains(&format!(
+            "http://mail.example.com/api/messages/{id}/live/{key}"
+        )),
+        "originals were not asked for"
+    );
+    assert_eq!(headers["x-holtmail-remote-saved"], "0");
+    let (_, _, bytes) = f.get(&format!("/api/messages/{id}/live/{key}")).await;
+    assert_eq!(
+        &bytes[..],
+        b"GIF89a fetched",
+        "the live route served the saved copy"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn turns_on_saving_remote_images() {
+async fn turns_on_saving_and_starts_tasks() {
     let f = fixture().await;
     let (status, _, body) = f
         .send(request(
@@ -1300,9 +1386,82 @@ async fn turns_on_saving_remote_images() {
     let archive: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(archive["save_remote_images"], true);
     assert_eq!(archive["name"], "Personal");
+    assert!(archive["remote_images"]["since"].is_i64());
     assert_eq!(
-        f.mailboxes.saving.lock().unwrap().len(),
-        1,
-        "saving the images of archived messages did not start"
+        archive["remote_images"]["older_pending"], 2,
+        "mail archived before turning saving on is not offered"
+    );
+    assert!(
+        f.mailboxes.jobs.lock().unwrap().is_empty(),
+        "older mail was processed without being asked"
+    );
+
+    let uri = format!("/api/archives/{}/remote-images", f.archive);
+    let (status, _, body) = f.send(post_json(&uri, json!({ "job": "older" }))).await;
+    assert_eq!(
+        status,
+        StatusCode::ACCEPTED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let task: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(task["kind"], "remote_images");
+    assert_eq!(task["state"], "running");
+    assert_eq!(task["log"][0]["level"], "info");
+    let (status, _, _) = f.send(post_json(&uri, json!({ "job": "failed" }))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let (status, _, _) = f.send(post_json(&uri, json!({ "job": "all" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        f.mailboxes
+            .jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, job)| *job)
+            .collect::<Vec<_>>(),
+        [RemoteImageJob::Older, RemoteImageJob::Failed]
+    );
+
+    let tasks = f.json("/api/tasks").await;
+    assert_eq!(tasks.as_array().unwrap().len(), 2);
+    let (status, _, _) = f.send(post_json("/api/tasks/t1/cancel", json!({}))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _, _) = f.send(post_json("/api/tasks/t9/cancel", json!({}))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sets_the_image_proxy() {
+    let f = fixture().await;
+    let proxy = f.json("/api/image-proxy").await;
+    assert_eq!(proxy["address"], Value::Null);
+    let (status, _, body) = f
+        .send(request(
+            "PUT",
+            "/api/image-proxy",
+            json!({ "proxy": " socks5h://127.0.0.1:9050 " }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["address"],
+        "socks5h://127.0.0.1:9050"
+    );
+    let (status, _, _) = f
+        .send(request(
+            "PUT",
+            "/api/image-proxy",
+            json!({ "proxy": "http://proxy.example.com" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = f
+        .send(request("PUT", "/api/image-proxy", json!({ "proxy": "" })))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["address"],
+        Value::Null
     );
 }

@@ -117,9 +117,19 @@ Passkeys, OIDC, API tokens, retention and export come with the milestones in [PL
 - `proxy`: pointed at `/api/messages/{id}/remote/{key}`, so the server fetches them and the reader's address stays private. Remote styles and fonts are still left out.
 - `direct`: original addresses kept and allowed by the document's CSP; the reader's browser contacts the sender's servers.
 
-Images the archive saved (see `save_remote_images`) are always pointed at `/remote/{key}`, whatever the mode, because showing them reaches no one.
+Images the archive saved (see `save_remote_images`) are pointed at `/remote/{key}` whatever the mode, because showing them reaches no one, and `x-holtmail-remote-saved: 1` says so. `?saved=false` ignores saved copies and shows the originals as `remote` says, through `/api/messages/{id}/live/{key}` for `proxy`, which always fetches now. The stored message is never changed: copies live beside it.
 
 `/remote/{key}` serves only URLs that the message itself links, so it is not an open proxy. It answers with the saved copy when there is one (cached for a year) and otherwise fetches through the [`Fetcher`](../../fetch/docs/README.md), which never contacts private or local addresses (cached for a day). Responses carry `nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`; types other than common raster images are sent as `application/octet-stream`.
 
-`ApiState.fetcher` is the `Fetcher`; `Mailboxes::save_remote_images(archive)` starts saving in the background.
+`ApiState.fetcher` is the `Fetcher`.
+
+### Saving and tasks
+
+`ArchiveDto.remote_images` has `since` (when saving was turned on), `images`, `bytes`, `failed` and `older_pending`: messages archived before `since` and not looked at. Turning saving on starts nothing: new mail is handled after each sync or import, older mail only through `POST /api/archives/{id}/remote-images` with `{ "job": "older" }`, and `{ "job": "failed" }` fetches failed images again. Both answer `202` with the task, or the archive's running remote image task when there is one.
+
+`GET /api/tasks` lists running tasks and recent finished ones (syncs, imports, remote images) with `done`, `total` (`null` when unknown), a `summary` and a `log` of `{ at, level, text }` lines that carry counts, folder names and reasons, never message content. `POST /api/tasks/{id}/cancel` stops a cancellable task after its current step (`409` otherwise). Tasks live in the server's memory.
+
+`GET` / `PUT /api/image-proxy` read and set the outbound proxy for remote images: `{ "proxy": "socks5h://127.0.0.1:9050" }` or `null`. The answer shows `address` without credentials and `from_config` when the server's config sets it (then `PUT` answers `400`). Setting checks that the proxy accepts connections.
+
+Members get `403` on `/api/tasks` and `/api/image-proxy`. The server provides all of this through `Mailboxes`: `tasks`, `cancel_task`, `start_remote_images`, `image_proxy`, `set_image_proxy`.
 

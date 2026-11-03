@@ -40,7 +40,32 @@ pub(crate) async fn get_remote(
     State(state): AppState,
     Path((raw, key)): Path<(String, String)>,
 ) -> ApiResult<Response> {
-    let (_, bytes) = load(&state, &raw).await?;
+    remote(&state, &raw, &key, true).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/messages/{id}/live/{key}",
+    params(
+        ("id" = String, Path, description = "Message id"),
+        ("key" = String, Path, description = "BLAKE3 hex of the image URL, as used in the body"),
+    ),
+    responses(
+        (status = 200, description = "The image fetched now by the server, ignoring any saved copy", content_type = "image/*"),
+        (status = 401, description = "Not signed in", body = ErrorDto),
+        (status = 404, description = "The message links no such image, or it is not an image the server will fetch", body = ErrorDto),
+        (status = 502, description = "The remote server could not be reached", body = ErrorDto),
+    ),
+)]
+pub(crate) async fn get_live(
+    State(state): AppState,
+    Path((raw, key)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    remote(&state, &raw, &key, false).await
+}
+
+async fn remote(state: &ApiState, raw: &str, key: &str, use_saved: bool) -> ApiResult<Response> {
+    let (_, bytes) = load(state, raw).await?;
     let url = holtmail_mime::parse(&bytes)
         .ok()
         .and_then(|parsed| parsed.html)
@@ -50,7 +75,8 @@ pub(crate) async fn get_remote(
         .find(|url| holtmail_sanitize::remote_key(url) == key)
         .ok_or_else(|| ApiError::not_found("remote image"))?;
 
-    if let Some(copy) = state.store.remote_copy(&key).await?
+    if use_saved
+        && let Some(copy) = state.store.remote_copy(key).await?
         && let (Some(blob), Some(content_type)) = (copy.blob_id, copy.content_type)
         && let Some(bytes) = state.blobs.get(&blob).await?
     {

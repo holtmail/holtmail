@@ -11,7 +11,7 @@ use holtmail_store::{Account, AccountKind, MessageQuery, NewAccount};
 use tokio::io::AsyncWriteExt;
 
 use crate::dto::*;
-use crate::mailboxes::{MailboxError, NewImapAccount};
+use crate::mailboxes::{MailboxError, NewImapAccount, RemoteImageJob};
 use crate::{ApiError, ApiResult, ApiState};
 
 type AppState = State<Arc<ApiState>>;
@@ -89,8 +89,10 @@ pub(crate) async fn create_archive(
 ) -> ApiResult<(StatusCode, Json<ArchiveDto>)> {
     let name = name(&request.name, "the name")?;
     let archive = state.store.create_archive(&name).await?;
-    let stats = state.store.archive_stats(archive.id).await?;
-    Ok((StatusCode::CREATED, Json(ArchiveDto::new(archive, stats))))
+    Ok((
+        StatusCode::CREATED,
+        Json(crate::routes::archive_dto(&state, archive).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -257,17 +259,13 @@ pub(crate) async fn update_archive(
     }
     if let Some(save) = request.save_remote_images {
         state.store.set_save_remote_images(archive_id, save).await?;
-        if save {
-            state.mailboxes.save_remote_images(archive_id);
-        }
     }
     let archive = state
         .store
         .get_archive(archive_id)
         .await?
         .ok_or_else(|| ApiError::not_found("archive"))?;
-    let stats = state.store.archive_stats(archive_id).await?;
-    Ok(Json(ArchiveDto::new(archive, stats)))
+    Ok(Json(crate::routes::archive_dto(&state, archive).await?))
 }
 
 #[utoipa::path(
@@ -388,4 +386,30 @@ pub(crate) async fn delete_account(
     }
     state.store.delete_account(account.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/archives/{id}/remote-images",
+    params(("id" = String, Path, description = "Archive id")),
+    request_body = RemoteImagesRequest,
+    responses((status = 202, description = "Started, or already running for this archive", body = TaskDto), (status = 400, description = "Saving is off, or an unknown job", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn start_remote_images(
+    State(state): AppState,
+    Path(raw): Path<String>,
+    Json(request): Json<RemoteImagesRequest>,
+) -> ApiResult<(StatusCode, Json<TaskDto>)> {
+    let archive_id = archive(&state, &raw).await?;
+    let job = match request.job.as_str() {
+        "older" => RemoteImageJob::Older,
+        "failed" => RemoteImageJob::Failed,
+        _ => return Err(ApiError::bad_request("job is `older` or `failed`")),
+    };
+    let task = state
+        .mailboxes
+        .start_remote_images(archive_id, job)
+        .await
+        .map_err(refused)?;
+    Ok((StatusCode::ACCEPTED, Json(task.into())))
 }

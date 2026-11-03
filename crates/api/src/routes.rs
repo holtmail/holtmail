@@ -33,8 +33,7 @@ pub(crate) async fn list_archives(
         if !readable.contains(&archive.id) {
             continue;
         }
-        let stats = state.store.archive_stats(archive.id).await?;
-        out.push(ArchiveDto::new(archive, stats));
+        out.push(archive_dto(&state, archive).await?);
     }
     Ok(Json(out))
 }
@@ -55,8 +54,32 @@ pub(crate) async fn get_archive(
         .get_archive(archive_id)
         .await?
         .ok_or_else(|| ApiError::not_found("archive"))?;
-    let stats = state.store.archive_stats(archive_id).await?;
-    Ok(Json(ArchiveDto::new(archive, stats)))
+    Ok(Json(archive_dto(&state, archive).await?))
+}
+
+pub(crate) async fn archive_dto(
+    state: &ApiState,
+    archive: holtmail_store::Archive,
+) -> ApiResult<ArchiveDto> {
+    let stats = state.store.archive_stats(archive.id).await?;
+    let totals = state.store.remote_copy_totals(archive.id).await?;
+    let older_pending = match archive.save_remote_images_since {
+        Some(since) => {
+            state
+                .store
+                .count_unscanned(archive.id, holtmail_store::ArchivedWhen::Before(since))
+                .await?
+        }
+        None => 0,
+    };
+    let remote_images = RemoteImagesDto {
+        since: archive.save_remote_images_since.map(|t| t.as_millis()),
+        images: totals.images,
+        bytes: totals.bytes,
+        failed: totals.failed,
+        older_pending,
+    };
+    Ok(ArchiveDto::new(archive, stats, remote_images))
 }
 
 #[utoipa::path(
@@ -283,7 +306,10 @@ fn origin(headers: &HeaderMap) -> String {
             status = 200,
             description = "The sanitized HTML body as a full document",
             content_type = "text/html",
-            headers(("x-holtmail-remote-blocked" = String, description = "`1` when remote content was blocked, else `0`")),
+            headers(
+                ("x-holtmail-remote-blocked" = String, description = "`1` when remote content was blocked, else `0`"),
+                ("x-holtmail-remote-saved" = String, description = "`1` when saved copies of remote images are shown, else `0`"),
+            ),
         ),
         (status = 400, description = "The message does not parse", body = ErrorDto),
         (status = 401, description = "Not signed in", body = ErrorDto),
@@ -322,18 +348,24 @@ pub(crate) async fn get_body(
         RemoteMode::Proxy => holtmail_sanitize::Remote::Proxy,
         RemoteMode::Direct => holtmail_sanitize::Remote::Direct,
     };
-    let saved = state
-        .store
-        .message_remote_copies(message.id)
-        .await?
-        .into_iter()
-        .map(|copy| copy.key)
-        .collect();
+    let use_saved = params.saved.unwrap_or(true);
+    let saved = if use_saved {
+        state
+            .store
+            .message_remote_copies(message.id)
+            .await?
+            .into_iter()
+            .map(|copy| copy.key)
+            .collect()
+    } else {
+        Default::default()
+    };
+    let route = if use_saved { "remote" } else { "live" };
     let sanitized = holtmail_sanitize::sanitize(
         &html,
         &holtmail_sanitize::Options {
             remote,
-            proxy_prefix: format!("{origin}/api/messages/{}/remote/", message.id),
+            proxy_prefix: format!("{origin}/api/messages/{}/{route}/", message.id),
             saved,
             inline_parts,
         },
@@ -352,6 +384,10 @@ pub(crate) async fn get_body(
     headers.insert(
         "x-holtmail-remote-blocked",
         HeaderValue::from_static(if sanitized.remote_blocked { "1" } else { "0" }),
+    );
+    headers.insert(
+        "x-holtmail-remote-saved",
+        HeaderValue::from_static(if sanitized.saved_shown { "1" } else { "0" }),
     );
     headers.insert(
         header::CACHE_CONTROL,

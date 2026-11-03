@@ -5,7 +5,7 @@ use holtmail_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::AccountStatus;
+use crate::{AccountStatus, ImageProxy, Task, TaskKind, TaskLevel, TaskState};
 use utoipa::{IntoParams, ToSchema};
 
 /// An archive with its totals.
@@ -18,6 +18,79 @@ pub struct ArchiveDto {
     /// Remote images linked from its messages are downloaded and kept with the archive.
     pub save_remote_images: bool,
     pub stats: StatsDto,
+    pub remote_images: RemoteImagesDto,
+}
+
+/// Remote images an archive keeps.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RemoteImagesDto {
+    /// When saving was turned on, Unix milliseconds; `null` while it is off.
+    pub since: Option<i64>,
+    /// Saved images, each counted once.
+    pub images: u64,
+    /// Their size.
+    pub bytes: u64,
+    /// Images that could not be saved.
+    pub failed: u64,
+    /// Messages archived before saving was turned on and not looked at yet.
+    pub older_pending: u64,
+}
+
+/// Which remote image work to start.
+#[derive(Deserialize, ToSchema)]
+pub struct RemoteImagesRequest {
+    /// `older`: images of mail archived before saving was turned on. `failed`: fetch again the
+    /// images that could not be saved.
+    pub job: String,
+}
+
+/// A background task.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TaskDto {
+    pub id: String,
+    /// `sync`, `import` or `remote_images`.
+    pub kind: String,
+    /// `running`, `done`, `failed` or `cancelled`.
+    pub state: String,
+    pub title: String,
+    pub archive_id: Option<String>,
+    pub account_id: Option<String>,
+    /// Unix milliseconds.
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+    pub done: u64,
+    /// `null` when the amount of work is not known.
+    pub total: Option<u64>,
+    pub summary: String,
+    pub cancellable: bool,
+    pub log: Vec<TaskLineDto>,
+}
+
+/// One line of a task's log.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TaskLineDto {
+    /// Unix milliseconds.
+    pub at: i64,
+    /// `info`, `warning` or `error`.
+    pub level: String,
+    pub text: String,
+}
+
+/// The outbound proxy for remote images.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ImageProxyDto {
+    /// `scheme://host:port`, without credentials; `null` without a proxy.
+    pub address: Option<String>,
+    /// Set in the server's config; the API cannot change it.
+    pub from_config: bool,
+}
+
+/// A new outbound proxy for remote images.
+#[derive(Deserialize, ToSchema)]
+pub struct ImageProxyRequest {
+    /// `http://`, `https://`, `socks5://` or `socks5h://` with an optional `user:password@`;
+    /// `null` or empty removes the proxy.
+    pub proxy: Option<String>,
 }
 
 /// Totals of an archive.
@@ -364,9 +437,12 @@ pub struct SearchParams {
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct BodyParams {
-    /// What to do with remote images; `block` when missing. Saved copies are always shown.
+    /// What to do with remote images; `block` when missing.
     #[param(inline)]
     pub remote: Option<RemoteMode>,
+    /// `false` loads images from the sender instead of the archive's saved copies, as `remote`
+    /// says. Saved copies are shown when missing.
+    pub saved: Option<bool>,
 }
 
 /// What to do with remote images in an HTML body.
@@ -396,13 +472,67 @@ pub fn addresses(list: &[Address]) -> Vec<AddressDto> {
     list.iter().map(AddressDto::from).collect()
 }
 
+impl From<Task> for TaskDto {
+    fn from(task: Task) -> Self {
+        Self {
+            id: task.id,
+            kind: match task.kind {
+                TaskKind::Sync => "sync",
+                TaskKind::Import => "import",
+                TaskKind::RemoteImages => "remote_images",
+            }
+            .into(),
+            state: match task.state {
+                TaskState::Running => "running",
+                TaskState::Done => "done",
+                TaskState::Failed => "failed",
+                TaskState::Cancelled => "cancelled",
+            }
+            .into(),
+            title: task.title,
+            archive_id: task.archive_id.map(|id| id.to_string()),
+            account_id: task.account_id.map(|id| id.to_string()),
+            started_at: task.started_at.as_millis(),
+            finished_at: task.finished_at.map(|t| t.as_millis()),
+            done: task.done,
+            total: task.total,
+            summary: task.summary,
+            cancellable: task.cancellable,
+            log: task
+                .log
+                .into_iter()
+                .map(|line| TaskLineDto {
+                    at: line.at.as_millis(),
+                    level: match line.level {
+                        TaskLevel::Info => "info",
+                        TaskLevel::Warning => "warning",
+                        TaskLevel::Error => "error",
+                    }
+                    .into(),
+                    text: line.text,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<ImageProxy> for ImageProxyDto {
+    fn from(proxy: ImageProxy) -> Self {
+        Self {
+            address: proxy.address,
+            from_config: proxy.from_config,
+        }
+    }
+}
+
 impl ArchiveDto {
-    pub fn new(archive: Archive, stats: ArchiveStats) -> Self {
+    pub fn new(archive: Archive, stats: ArchiveStats, remote_images: RemoteImagesDto) -> Self {
         Self {
             id: archive.id.to_string(),
             name: archive.name,
             created_at: archive.created_at.as_millis(),
             save_remote_images: archive.save_remote_images,
+            remote_images,
             stats: StatsDto {
                 messages: stats.messages,
                 attachments: stats.attachments,

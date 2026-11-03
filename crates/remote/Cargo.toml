@@ -1,0 +1,32 @@
+[package]
+name = "holtmail-remote"
+description = "Saving remote images linked from messages into the archive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-fetch.workspace = true
+holtmail-mime.workspace = true
+holtmail-sanitize.workspace = true
+holtmail-store.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-ingest.workspace = true
+holtmail-index.workspace = true
+holtmail-store-sqlite.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

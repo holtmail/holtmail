@@ -99,7 +99,7 @@ Requests its users keep making, worth planning for: attachment content search, f
 - [x] `MessageDetail`: `preview`, `in_reply_to`, `references`
 - [x] `FolderDto`: unread count
 - [ ] Attachment thumbnails endpoint (later: the reader shows image attachments full size for now)
-- [ ] Web: route-level code splitting (bundle 674 KB)
+- [x] Web: route-level code splitting (bundle 674 KB)
 
 ### Sign-in
 
@@ -110,6 +110,20 @@ Requests its users keep making, worth planning for: attachment content search, f
 
 - [x] GitHub Actions CI running `mise run check`
 - [x] Docs index and PLAN status updated
+
+### Phase 3: everything from the interface (night of 2026-11-03)
+
+The maintainer asked that everything be managed in the web app (the CLI stays) and that the lead keep going without asking, aiming for the most convenient and beautiful result. Roles: owner and admins manage the instance (archives, accounts, users); members read the archives granted to them.
+
+- [x] API: `Mailboxes` hook in `holtmail-api` (implemented by the server): add IMAP account (checks sign-in first), sync now, upload import, account status; `POST /api/archives`, `POST /api/archives/{id}/accounts`, `POST /api/archives/{id}/imports`, `POST /api/accounts/{id}/sync`; accept `application/octet-stream` uploads
+- [x] Server: `Mailboxes` implementation with one runner per account shared by the scheduler, uploads under `data_dir/uploads`
+- [x] Store: rename and delete archive, update and delete account, update user (name, role), delete user; conformance + SQLite
+- [x] Access: per-archive grants for members; owner/admin see everything; manage routes need owner/admin; `GET /api/archives` lists only what the user may read
+- [x] API: users (list, create with password, change role, remove), profile (name, password), archive rename/delete, account edit/remove/pause
+- [x] Web: onboarding when there are no archives (create archive → connect IMAP with provider presets, or drop a file), live progress
+- [x] Web: settings screen (archives and accounts with status and "sync now", import, users and access, profile and password), reachable from the sidebar, user menu and ⌘K
+- [x] Web: sidebar shows sync state per account; empty archive state offers to connect mail
+- [x] Regenerate the client, docs for every touched module, `mise run check`, Docker smoke test
 
 ## Log
 
@@ -139,6 +153,9 @@ Requests its users keep making, worth planning for: attachment content search, f
 
 ## Next (for the morning)
 
-- Review the work and commit it module by module (suggested order: core, blob, store, store-sqlite, mime, sanitize, index, query, index-tantivy, ingest, import, secret, secret-local, source, source-imap, sync, auth, api, server, web tooling, tokens, ui, api-client, web, docs/CI/Docker).
-- Look at the web app in a browser yourself: it has only been verified by types, lint, tests and builds.
+- Phase 3 (everything from the interface) is uncommitted. Suggested commits: store, store-sqlite, auth, source-imap, api, server, api-client, web, docs.
+- Look at the first-run screen and settings in a browser yourself: they are verified by types, lint, tests, builds and curl runs against the real server, not by eye.
 - Then: per-archive grants and role enforcement, XOAUTH2 for Gmail/Microsoft, Gmail labels via `X-GM-LABELS`, CONDSTORE flag sync, attachment thumbnails, code splitting, export and restore.
+- Phase 3 backend done: `Mailboxes` hook (server `Runner`: one run per account, status in memory, uploads in `data_dir/uploads`), store removal/user edits/grants (+ migration 0003, conformance), access middleware (members read granted archives only, 404 otherwise; managers do everything), users/profile/password/archive/account endpoints. 18 API tests. Next: web onboarding and settings.
+- Phase 3 web done: `/welcome` first run (archive name → connect IMAP with provider presets or upload files → live progress), `/settings` (archives with sources, status, sync now, pause, password, remove, rename/delete archive; people with roles and archive access; profile and password), sidebar source status, empty-archive state, palette actions, live refresh while syncing, lazy route chunks (main 356 KB). End-to-end smoke test with curl: setup → archive → upload mbox → search → member sees nothing and gets 403 on writes → delete archive removes blobs.
+- Lead review: `mise run check` green (98 Rust tests, 94 web tests, knip clean). Docker image rebuilt; setup → archive → upload → import works in the container.

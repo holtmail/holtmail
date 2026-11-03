@@ -4,7 +4,7 @@ A self-hosted email archiver. Holtmail connects to your mail accounts over IMAP,
 
 No open core, no enterprise edition: every feature, SSO included, is in this repository under one license.
 
-Status: early. Archiving from IMAP and from mbox, Maildir, `.eml` and zip files works, with search, threads and a safe reader. See the plan in [docs/PLAN.md](docs/PLAN.md).
+Status: early. Archiving from IMAP and from mbox, Maildir, `.eml` and zip files works, with search, threads, a safe reader, and people with per-archive access, all managed from the web app. See the plan in [docs/PLAN.md](docs/PLAN.md).
 
 ## Try it
 
@@ -17,7 +17,7 @@ bun install && bun run build
 HOLTMAIL_WEB_DIR=apps/web/dist ./target/release/holtmail serve
 ```
 
-On the first start the server prints a one-time setup link; open it to create the owner account. To archive a live mailbox:
+On the first start the server prints a one-time setup link; open it to create the owner account. Holtmail then walks you through connecting a mailbox (Gmail, Outlook, iCloud, Fastmail, Yandex or any IMAP server) or uploading mbox, `.eml` and zip exports. Everything else, from more archives to the people who may read them, lives in Settings. The same can be done from the command line:
 
 ```bash
 ./target/release/holtmail account add-imap --archive Personal --host imap.example.com --username ada@example.com

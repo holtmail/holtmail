@@ -26,6 +26,26 @@ struct FakeMailboxes {
     uploads: std::path::PathBuf,
     synced: std::sync::Mutex<Vec<holtmail_core::AccountId>>,
     imported: std::sync::Mutex<Vec<(holtmail_core::AccountId, String, Vec<u8>)>>,
+    saving: std::sync::Mutex<Vec<holtmail_core::ArchiveId>>,
+}
+
+#[derive(Default)]
+struct FakeFetcher {
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+#[async_trait::async_trait]
+impl holtmail_fetch::Fetcher for FakeFetcher {
+    async fn image(
+        &self,
+        url: &str,
+    ) -> Result<holtmail_fetch::RemoteImage, holtmail_fetch::FetchError> {
+        self.asked.lock().unwrap().push(url.to_owned());
+        Ok(holtmail_fetch::RemoteImage {
+            content_type: "image/gif".into(),
+            bytes: Bytes::from_static(b"GIF89a fetched"),
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -106,11 +126,18 @@ impl Mailboxes for FakeMailboxes {
             ..AccountStatus::default()
         }
     }
+
+    fn save_remote_images(&self, archive: holtmail_core::ArchiveId) {
+        self.saving.lock().unwrap().push(archive);
+    }
 }
 
 struct Fixture {
     app: Router,
     mailboxes: Arc<FakeMailboxes>,
+    fetcher: Arc<FakeFetcher>,
+    store: Arc<dyn Store>,
+    blobs: Arc<dyn BlobStore>,
     auth: Arc<Auth>,
     cookie: String,
     archive: String,
@@ -216,16 +243,21 @@ async fn empty_fixture() -> Fixture {
         ..FakeMailboxes::default()
     });
     let _ = mailboxes.store.set(store.clone());
+    let fetcher = Arc::new(FakeFetcher::default());
     Fixture {
         app: router(ApiState {
-            blobs,
-            store,
+            blobs: blobs.clone(),
+            store: store.clone(),
             index,
             auth: auth.clone(),
             mailboxes: mailboxes.clone(),
+            fetcher: fetcher.clone(),
             secure_cookies: false,
         }),
         mailboxes,
+        fetcher,
+        store,
+        blobs,
         auth,
         cookie: String::new(),
         archive: archive.to_string(),
@@ -1174,4 +1206,103 @@ async fn edits_and_removes_archives_and_accounts() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _, _) = f.get(&format!("/api/archives/{}", f.archive)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proxies_and_shows_saved_remote_images() {
+    let f = fixture().await;
+    let found = f
+        .json(&format!("/api/archives/{}/search?q=from:news", f.archive))
+        .await;
+    let id = found["items"][0]["id"].as_str().unwrap().to_owned();
+    let tracker = "https://tracker.example.com/p.gif";
+    let key = holtmail_sanitize::remote_key(tracker);
+    let proxied = format!("http://mail.example.com/api/messages/{id}/remote/{key}");
+
+    let (_, headers, body) = f
+        .get(&format!("/api/messages/{id}/body?remote=proxy"))
+        .await;
+    let body = String::from_utf8_lossy(&body);
+    assert!(body.contains(&proxied), "{body}");
+    assert!(!body.contains("tracker.example.com"), "{body}");
+    assert_eq!(headers["x-holtmail-remote-blocked"], "0");
+
+    let (_, _, body) = f
+        .get(&format!("/api/messages/{id}/body?remote=direct"))
+        .await;
+    assert!(String::from_utf8_lossy(&body).contains(tracker));
+
+    let (status, headers, bytes) = f.get(&format!("/api/messages/{id}/remote/{key}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "image/gif");
+    assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(&bytes[..], b"GIF89a fetched");
+    assert_eq!(*f.fetcher.asked.lock().unwrap(), [tracker]);
+
+    let other = holtmail_sanitize::remote_key("http://10.0.0.1/admin");
+    let (status, _, _) = f.get(&format!("/api/messages/{id}/remote/{other}")).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "the proxy fetched a URL the message does not link"
+    );
+    assert_eq!(f.fetcher.asked.lock().unwrap().len(), 1);
+
+    let message: holtmail_core::MessageId = id.parse().unwrap();
+    let blob = f
+        .blobs
+        .put(Bytes::from_static(b"GIF89a saved"))
+        .await
+        .unwrap();
+    f.store
+        .save_remote_copy(&holtmail_store::RemoteCopy {
+            key: key.clone(),
+            url: tracker.into(),
+            blob_id: Some(blob),
+            content_type: Some("image/gif".into()),
+            size: 12,
+            fetched_at: holtmail_core::Timestamp::from_secs(1),
+            error: None,
+        })
+        .await
+        .unwrap();
+    f.store
+        .record_remote_scan(message, std::slice::from_ref(&key))
+        .await
+        .unwrap();
+
+    let (_, headers, body) = f.get(&format!("/api/messages/{id}/body")).await;
+    assert!(
+        String::from_utf8_lossy(&body).contains(&proxied),
+        "a saved copy is hidden"
+    );
+    assert_eq!(headers["x-holtmail-remote-blocked"], "0");
+    let (_, _, bytes) = f.get(&format!("/api/messages/{id}/remote/{key}")).await;
+    assert_eq!(&bytes[..], b"GIF89a saved");
+    assert_eq!(
+        f.fetcher.asked.lock().unwrap().len(),
+        1,
+        "a saved copy was fetched again"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn turns_on_saving_remote_images() {
+    let f = fixture().await;
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/archives/{}", f.archive),
+            json!({ "save_remote_images": true }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let archive: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(archive["save_remote_images"], true);
+    assert_eq!(archive["name"], "Personal");
+    assert_eq!(
+        f.mailboxes.saving.lock().unwrap().len(),
+        1,
+        "saving the images of archived messages did not start"
+    );
 }

@@ -11,6 +11,7 @@ repository.workspace = true
 holtmail-auth.workspace = true
 holtmail-blob.workspace = true
 holtmail-core.workspace = true
+holtmail-fetch.workspace = true
 holtmail-index.workspace = true
 holtmail-mime.workspace = true
 holtmail-query.workspace = true
@@ -26,6 +27,7 @@ tokio.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+holtmail-fetch.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-index-tantivy.workspace = true
 holtmail-ingest.workspace = true

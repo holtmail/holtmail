@@ -60,7 +60,8 @@ The setup token comes from the setup link the server prints at start while there
 | `GET /api/archives/{id}/messages?folder&after&limit` | A page of message summaries, newest first; `next` continues. Each summary has `flags` (in `folder` when given, else the union over the folders it is in), `thread_count` and `folder_ids` |
 | `GET /api/archives/{id}/search?q&sort&offset&limit` | Search with the [query language](../../query/docs/README.md); `400` with the parser's message for a bad query |
 | `GET /api/messages/{id}` | The reader's view: headers, `preview`, `in_reply_to`, `references`, plain text, attachments, folders |
-| `GET /api/messages/{id}/body?remote` | The sanitized HTML body as a full document (`text/html`); a plain text body is escaped into `<pre>` |
+| `GET /api/messages/{id}/body?remote=block\|proxy\|direct` | The sanitized HTML body as a full document (`text/html`); a plain text body is escaped into `<pre>`. See [Remote images](#remote-images) |
+| `GET /api/messages/{id}/remote/{key}` | One remote image of the message: the archive's saved copy, or fetched now by the server. `404` when the message links no such image or the server will not fetch it, `502` when the remote server fails |
 | `GET /api/messages/{id}/raw` | The original bytes as `message/rfc822`, named after the subject |
 | `GET /api/messages/{id}/attachments/{ordinal}` | Attachment bytes |
 | `GET /api/threads/{id}` | Every message of the conversation, oldest first |
@@ -74,7 +75,7 @@ Owners and admins only.
 | Method and path | Body | Answers |
 | --- | --- | --- |
 | `POST /api/archives` | `{ "name" }` | `201` archive; `400` for an empty name or one over 100 characters |
-| `PATCH /api/archives/{id}` | `{ "name" }` | `200` archive |
+| `PATCH /api/archives/{id}` | `{ "name"?, "save_remote_images"? }` | `200` archive; turning saving on starts saving the images of messages already archived |
 | `DELETE /api/archives/{id}` | | `204` after removing the archive, its index entries and the blobs no other archive uses; `409` while one of its accounts syncs or imports |
 | `POST /api/archives/{id}/accounts` | `{ "host", "port"?, "security"? (tls, starttls, plain), "username", "password", "name"? }` | `201` account, first sync started; `400` with a readable reason when signing in fails |
 | `POST /api/archives/{id}/imports?name=` | the file, `application/octet-stream`, any size | `202` with the import account named after the file (reused for the same name); the import runs in the background. `400` for an empty file |
@@ -99,7 +100,7 @@ Errors are `{ "error": "..." }` with `400`, `401`, `403`, `404`, `409`, `415`, `
 
 ## Safety
 
-- `/body` runs [`holtmail-sanitize`](../../sanitize/docs/README.md): remote content is blocked unless `?remote=true`, and the response header `x-holtmail-remote-blocked: 1` tells the reader to offer loading it. Inline `cid:` images point at absolute attachment URLs built from the request's `Host` and `X-Forwarded-Proto`.
+- `/body` runs [`holtmail-sanitize`](../../sanitize/docs/README.md). Inline `cid:` images point at absolute attachment URLs built from the request's `Host` and `X-Forwarded-Proto`.
 - The web app shows `/body` in an iframe with `sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"` and no `allow-scripts`; the document's own CSP forbids scripts as well.
 - Attachments are served inline only for images and PDF; everything else, including HTML and SVG, is `application/octet-stream` with `Content-Disposition: attachment`. Every download has `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`.
 - File names in `Content-Disposition` are cleaned and sent both as ASCII and as RFC 5987 UTF-8.
@@ -107,3 +108,18 @@ Errors are `{ "error": "..." }` with `400`, `401`, `403`, `404`, `409`, `415`, `
 ## Not yet
 
 Passkeys, OIDC, API tokens, retention and export come with the milestones in [PLAN.md](../../../docs/PLAN.md).
+
+## Remote images
+
+`?remote=` on `/body` decides what happens to images and backgrounds hosted elsewhere:
+
+- `block` (default): left out; `x-holtmail-remote-blocked: 1` tells the reader to offer them.
+- `proxy`: pointed at `/api/messages/{id}/remote/{key}`, so the server fetches them and the reader's address stays private. Remote styles and fonts are still left out.
+- `direct`: original addresses kept and allowed by the document's CSP; the reader's browser contacts the sender's servers.
+
+Images the archive saved (see `save_remote_images`) are always pointed at `/remote/{key}`, whatever the mode, because showing them reaches no one.
+
+`/remote/{key}` serves only URLs that the message itself links, so it is not an open proxy. It answers with the saved copy when there is one (cached for a year) and otherwise fetches through the [`Fetcher`](../../fetch/docs/README.md), which never contacts private or local addresses (cached for a day). Responses carry `nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`; types other than common raster images are sent as `application/octet-stream`.
+
+`ApiState.fetcher` is the `Fetcher`; `Mailboxes::save_remote_images(archive)` starts saving in the background.
+

@@ -15,6 +15,8 @@ pub struct ArchiveDto {
     pub name: String,
     /// Unix milliseconds.
     pub created_at: i64,
+    /// Remote images linked from its messages are downloaded and kept with the archive.
+    pub save_remote_images: bool,
     pub stats: StatsDto,
 }
 
@@ -129,7 +131,10 @@ pub struct PasswordRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ArchiveUpdateRequest {
     /// Not empty, at most 100 characters.
-    pub name: String,
+    pub name: Option<String>,
+    /// Download remote images of its messages and keep them with the archive. Turning it on
+    /// starts saving the images of messages already archived.
+    pub save_remote_images: Option<bool>,
 }
 
 /// Changes to an account; missing fields stay as they are.
@@ -359,8 +364,23 @@ pub struct SearchParams {
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct BodyParams {
-    /// Load remote images and styles.
-    pub remote: Option<bool>,
+    /// What to do with remote images; `block` when missing. Saved copies are always shown.
+    #[param(inline)]
+    pub remote: Option<RemoteMode>,
+}
+
+/// What to do with remote images in an HTML body.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteMode {
+    /// Leave them out.
+    #[default]
+    Block,
+    /// Load them through `/api/messages/{id}/remote/{key}`, so the reader's address stays
+    /// private.
+    Proxy,
+    /// Keep the original addresses; the reader's browser contacts the sender's servers.
+    Direct,
 }
 
 impl From<&Address> for AddressDto {
@@ -382,6 +402,7 @@ impl ArchiveDto {
             id: archive.id.to_string(),
             name: archive.name,
             created_at: archive.created_at.as_millis(),
+            save_remote_images: archive.save_remote_images,
             stats: StatsDto {
                 messages: stats.messages,
                 attachments: stats.attachments,

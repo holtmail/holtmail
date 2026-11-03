@@ -36,6 +36,10 @@ pub trait Mailboxes: Send + Sync {
 
     /// What is happening to `account` now and how its last run ended.
     fn status(&self, account: AccountId) -> AccountStatus;
+
+    /// Starts saving the remote images of `archive`'s messages in the background, unless that is
+    /// already running. Does nothing for an archive with saving turned off.
+    fn save_remote_images(&self, archive: ArchiveId);
 }
 
 /// An IMAP account to add.

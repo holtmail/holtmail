@@ -10,6 +10,7 @@ mod dto;
 mod mailboxes;
 mod manage;
 mod people;
+mod remote;
 mod routes;
 mod session;
 
@@ -23,6 +24,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, patch, post};
 use holtmail_auth::Auth;
 use holtmail_blob::BlobStore;
+use holtmail_fetch::Fetcher;
 use holtmail_index::SearchIndex;
 use holtmail_store::Store;
 use utoipa::OpenApi;
@@ -45,6 +47,8 @@ pub struct ApiState {
     pub auth: Arc<Auth>,
     /// Adding, syncing and importing mail.
     pub mailboxes: Arc<dyn Mailboxes>,
+    /// Remote images for the reader's proxy.
+    pub fetcher: Arc<dyn Fetcher>,
     /// Mark the session cookie `Secure` on every response, for instances served over https.
     /// Without it the cookie is `Secure` only when `X-Forwarded-Proto` is `https`.
     pub secure_cookies: bool,
@@ -102,6 +106,7 @@ pub fn router(state: ApiState) -> Router {
             "/api/messages/{id}/attachments/{ordinal}",
             get(routes::get_attachment),
         )
+        .route("/api/messages/{id}/remote/{key}", get(remote::get_remote))
         .route("/api/threads/{id}", get(routes::get_thread))
         .route("/api/{*rest}", any(routes::unknown))
         .route_layer(from_fn_with_state(state.clone(), access::check))
@@ -162,6 +167,7 @@ pub fn openapi_json() -> String {
         routes::get_body,
         routes::get_raw,
         routes::get_attachment,
+        remote::get_remote,
         routes::get_thread,
     ),
     components(schemas(
@@ -178,6 +184,7 @@ pub fn openapi_json() -> String {
         PasswordRequest,
         ArchiveUpdateRequest,
         AccountUpdateRequest,
+        RemoteMode,
         FolderDto,
         AddressDto,
         MessageSummary,

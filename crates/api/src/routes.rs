@@ -160,7 +160,7 @@ async fn summaries(
         .collect())
 }
 
-async fn load(state: &ApiState, raw: &str) -> ApiResult<(Message, Vec<u8>)> {
+pub(crate) async fn load(state: &ApiState, raw: &str) -> ApiResult<(Message, Vec<u8>)> {
     let message_id: MessageId = id(raw, "message")?;
     let message = state
         .store
@@ -317,15 +317,32 @@ pub(crate) async fn get_body(
             ))
         })
         .collect();
-    let allow_remote = params.remote.unwrap_or(false);
+    let remote = match params.remote.unwrap_or_default() {
+        RemoteMode::Block => holtmail_sanitize::Remote::Block,
+        RemoteMode::Proxy => holtmail_sanitize::Remote::Proxy,
+        RemoteMode::Direct => holtmail_sanitize::Remote::Direct,
+    };
+    let saved = state
+        .store
+        .message_remote_copies(message.id)
+        .await?
+        .into_iter()
+        .map(|copy| copy.key)
+        .collect();
     let sanitized = holtmail_sanitize::sanitize(
         &html,
         &holtmail_sanitize::Options {
-            allow_remote,
+            remote,
+            proxy_prefix: format!("{origin}/api/messages/{}/remote/", message.id),
+            saved,
             inline_parts,
         },
     );
-    let document = holtmail_sanitize::document(&sanitized.html, allow_remote, &origin);
+    let document = holtmail_sanitize::document(
+        &sanitized.html,
+        remote == holtmail_sanitize::Remote::Direct,
+        &origin,
+    );
     let mut response = document.into_response();
     let headers = response.headers_mut();
     headers.insert(

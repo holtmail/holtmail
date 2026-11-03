@@ -251,8 +251,16 @@ pub(crate) async fn update_archive(
     Json(request): Json<ArchiveUpdateRequest>,
 ) -> ApiResult<Json<ArchiveDto>> {
     let archive_id = archive(&state, &raw).await?;
-    let name = name(&request.name, "the name")?;
-    state.store.rename_archive(archive_id, &name).await?;
+    if let Some(raw_name) = &request.name {
+        let name = name(raw_name, "the name")?;
+        state.store.rename_archive(archive_id, &name).await?;
+    }
+    if let Some(save) = request.save_remote_images {
+        state.store.set_save_remote_images(archive_id, save).await?;
+        if save {
+            state.mailboxes.save_remote_images(archive_id);
+        }
+    }
     let archive = state
         .store
         .get_archive(archive_id)

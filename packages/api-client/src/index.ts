@@ -28,6 +28,8 @@ export type UserUpdateRequest = Schemas['UserUpdateRequest']
 export type ProfileRequest = Schemas['ProfileRequest']
 export type PasswordRequest = Schemas['PasswordRequest']
 export type Role = 'owner' | 'admin' | 'member'
+export type RemoteMode = Schemas['RemoteMode']
+export type ArchiveUpdateRequest = Schemas['ArchiveUpdateRequest']
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -134,8 +136,8 @@ const archivePath = (id: string) => ({ params: { path: { id } } })
 export const createArchive = async (name: string) =>
   unwrap(await client.POST('/api/archives', { body: { name } }))
 
-export const renameArchive = async (id: string, name: string) =>
-  unwrap(await client.PATCH('/api/archives/{id}', { ...archivePath(id), body: { name } }))
+export const updateArchive = async (id: string, request: ArchiveUpdateRequest) =>
+  unwrap(await client.PATCH('/api/archives/{id}', { ...archivePath(id), body: request }))
 
 export const deleteArchive = async (id: string) =>
   done(await client.DELETE('/api/archives/{id}', { ...archivePath(id), headers: json }))
@@ -223,8 +225,8 @@ export function uploadImport(
 
 const encode = encodeURIComponent
 
-export const bodyUrl = (id: string, remote = false): string =>
-  `/api/messages/${encode(id)}/body${remote ? '?remote=true' : ''}`
+export const bodyUrl = (id: string, remote: RemoteMode = 'block'): string =>
+  `/api/messages/${encode(id)}/body${remote === 'block' ? '' : `?remote=${remote}`}`
 
 export const rawUrl = (id: string): string => `/api/messages/${encode(id)}/raw`
 
@@ -235,7 +237,7 @@ export interface MessageBody {
 
 export async function fetchBody(
   id: string,
-  remote = false,
+  remote: RemoteMode = 'block',
   signal?: AbortSignal,
 ): Promise<MessageBody> {
   const response = await fetch(bodyUrl(id, remote), { signal })
@@ -349,7 +351,7 @@ export const threadQuery = (id: string) =>
       unwrap(await client.GET('/api/threads/{id}', { params: { path: { id } }, signal })),
   })
 
-export const bodyQuery = (id: string, remote: boolean) =>
+export const bodyQuery = (id: string, remote: RemoteMode) =>
   queryOptions({
     queryKey: ['messages', id, 'body', remote],
     queryFn: ({ signal }) => fetchBody(id, remote, signal),

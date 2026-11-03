@@ -21,7 +21,7 @@ All requests are same-origin: paths start with `/api`, which the Vite dev server
 
 ### Types
 
-`Archive`, `Account`, `AccountStatus`, `Person`, `Role`, the request bodies (`ImapAccountRequest`, `AccountUpdateRequest`, `NewUserRequest`, `UserUpdateRequest`, `ProfileRequest`, `PasswordRequest`), `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
+`Archive`, `Account`, `AccountStatus`, `Person`, `Role`, `RemoteMode` (`block`, `proxy`, `direct`), the request bodies (`ArchiveUpdateRequest`, `ImapAccountRequest`, `AccountUpdateRequest`, `NewUserRequest`, `UserUpdateRequest`, `ProfileRequest`, `PasswordRequest`), `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
 
 ### Errors
 
@@ -40,7 +40,7 @@ Every failed request throws `ApiError` with `status` (HTTP status), `message`, w
 | `searchInfiniteQuery(archiveId, q)`    | `['archives', id, 'search', q]`           | Pages of `SearchResponse`; the page param is `next_offset`                        |
 | `messageQuery(id)`                     | `['messages', id]`                        | `MessageDetail`                                                                   |
 | `threadQuery(id)`                      | `['threads', id]`                         | `Thread`, oldest message first                                                    |
-| `bodyQuery(id, remote)`                | `['messages', id, 'body', remote]`        | `{ html, remoteBlocked }`, never stale                                            |
+| `bodyQuery(id, remote)`                | `['messages', id, 'body', remote]`        | `{ html, remoteBlocked }` for a `RemoteMode`, never stale                         |
 | `rawQuery(id)`                         | `['messages', id, 'raw']`                 | The original message as text, never stale                                         |
 
 Pages hold 100 messages. Spread a factory into `useQuery` / `useInfiniteQuery` to add options such as `enabled`.
@@ -49,7 +49,7 @@ Pages hold 100 messages. Spread a factory into `useQuery` / `useInfiniteQuery` t
 
 | Export                                    | Guarantee                                                                   |
 | ----------------------------------------- | --------------------------------------------------------------------------- |
-| `bodyUrl(id, remote = false)`             | `/api/messages/{id}/body`, with `?remote=true` when remote content may load |
+| `bodyUrl(id, remote = 'block')`           | `/api/messages/{id}/body`, with `?remote=proxy` or `?remote=direct`         |
 | `rawUrl(id)`                              | `/api/messages/{id}/raw`, the original bytes as a `.eml` download           |
 | `fetchBody(id, remote, sig?)`             | The sanitized HTML document and whether `x-holtmail-remote-blocked` was `1` |
 | `fetchRaw(id, sig?)`                      | The raw message as text                                                     |
@@ -62,14 +62,14 @@ Pages hold 100 messages. Spread a factory into `useQuery` / `useInfiniteQuery` t
 
 Each resolves with the changed record (or nothing for a delete) and throws `ApiError` otherwise. They do not touch the cache; callers invalidate what they show.
 
-| Export                                                                | Request                                                                                                                                                                                        |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createArchive(name)`, `renameArchive(id, name)`, `deleteArchive(id)` | `POST /api/archives`, `PATCH` / `DELETE /api/archives/{id}`                                                                                                                                    |
-| `addImapAccount(archiveId, request)`                                  | `POST /api/archives/{id}/accounts`; the server signs in first                                                                                                                                  |
-| `updateAccount(id, request)`, `deleteAccount(id)`, `syncAccount(id)`  | `PATCH` / `DELETE /api/accounts/{id}`, `POST /api/accounts/{id}/sync`                                                                                                                          |
-| `uploadImport(archiveId, file, { onProgress, signal })`               | `POST /api/archives/{id}/imports?name=` with the file as `application/octet-stream` over `XMLHttpRequest`, so `onProgress(loaded, total)` reports the upload; resolves with the import account |
-| `createUser`, `updateUser(id, request)`, `deleteUser(id)`             | `/api/users`                                                                                                                                                                                   |
-| `updateProfile(request)`, `changePassword(request)`                   | `PATCH /api/me`, `POST /api/me/password`; both resolve with the signed-in `User`                                                                                                               |
+| Export                                                                                          | Request                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createArchive(name)`, `updateArchive(id, { name?, save_remote_images? })`, `deleteArchive(id)` | `POST /api/archives`, `PATCH` / `DELETE /api/archives/{id}`                                                                                                                                    |
+| `addImapAccount(archiveId, request)`                                                            | `POST /api/archives/{id}/accounts`; the server signs in first                                                                                                                                  |
+| `updateAccount(id, request)`, `deleteAccount(id)`, `syncAccount(id)`                            | `PATCH` / `DELETE /api/accounts/{id}`, `POST /api/accounts/{id}/sync`                                                                                                                          |
+| `uploadImport(archiveId, file, { onProgress, signal })`                                         | `POST /api/archives/{id}/imports?name=` with the file as `application/octet-stream` over `XMLHttpRequest`, so `onProgress(loaded, total)` reports the upload; resolves with the import account |
+| `createUser`, `updateUser(id, request)`, `deleteUser(id)`                                       | `/api/users`                                                                                                                                                                                   |
+| `updateProfile(request)`, `changePassword(request)`                                             | `PATCH /api/me`, `POST /api/me/password`; both resolve with the signed-in `User`                                                                                                               |
 
 `accountsQuery` refetches every 2 seconds while any account syncs or imports and every minute otherwise. `usersQuery` (`['users']`) lists people with their grants.
 

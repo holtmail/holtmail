@@ -276,6 +276,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/messages/{id}/remote/{key}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_remote']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/session': {
     parameters: {
       query?: never
@@ -409,12 +425,19 @@ export interface components {
       created_at: number
       id: string
       name: string
+      /** @description Remote images linked from its messages are downloaded and kept with the archive. */
+      save_remote_images: boolean
       stats: components['schemas']['StatsDto']
     }
     /** @description Changes to an archive. */
     ArchiveUpdateRequest: {
       /** @description Not empty, at most 100 characters. */
-      name: string
+      name?: string | null
+      /**
+       * @description Download remote images of its messages and keep them with the archive. Turning it on
+       *     starts saving the images of messages already archived.
+       */
+      save_remote_images?: boolean | null
     }
     /** @description An attachment of a message. */
     AttachmentDto: {
@@ -589,6 +612,11 @@ export interface components {
       email?: string | null
       name?: string | null
     }
+    /**
+     * @description What to do with remote images in an HTML body.
+     * @enum {string}
+     */
+    RemoteMode: 'block' | 'proxy' | 'direct'
     /** @description One page of search results. */
     SearchResponse: {
       items: components['schemas']['MessageSummary'][]
@@ -1785,8 +1813,8 @@ export interface operations {
   get_body: {
     parameters: {
       query?: {
-        /** @description Load remote images and styles. */
-        remote?: boolean
+        /** @description What to do with remote images; `block` when missing. Saved copies are always shown. */
+        remote?: 'block' | 'proxy' | 'direct'
       }
       header?: never
       path: {
@@ -1887,6 +1915,58 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_remote: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+        /** @description BLAKE3 hex of the image URL, as used in the body */
+        key: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The saved copy, or the image fetched now by the server */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'image/*': unknown
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The message links no such image, or it is not an image the server will fetch */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The remote server could not be reached */
+      502: {
         headers: {
           [name: string]: unknown
         }

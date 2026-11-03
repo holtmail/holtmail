@@ -1400,10 +1400,12 @@
           {
             "name": "remote",
             "in": "query",
-            "description": "Load remote images and styles.",
+            "description": "What to do with remote images; `block` when missing. Saved copies are always shown.",
             "required": false,
             "schema": {
-              "type": "boolean"
+              "type": "string",
+              "description": "What to do with remote images in an HTML body.",
+              "enum": ["block", "proxy", "direct"]
             }
           }
         ],
@@ -1509,6 +1511,70 @@
           },
           "500": {
             "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/remote/{key}": {
+      "get": {
+        "tags": ["remote"],
+        "operationId": "get_remote",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "BLAKE3 hex of the image URL, as used in the body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved copy, or the image fetched now by the server",
+            "content": {
+              "image/*": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The message links no such image, or it is not an image the server will fetch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The remote server could not be reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -2082,7 +2148,7 @@
       "ArchiveDto": {
         "type": "object",
         "description": "An archive with its totals.",
-        "required": ["id", "name", "created_at", "stats"],
+        "required": ["id", "name", "created_at", "save_remote_images", "stats"],
         "properties": {
           "created_at": {
             "type": "integer",
@@ -2095,6 +2161,10 @@
           "name": {
             "type": "string"
           },
+          "save_remote_images": {
+            "type": "boolean",
+            "description": "Remote images linked from its messages are downloaded and kept with the archive."
+          },
           "stats": {
             "$ref": "#/components/schemas/StatsDto"
           }
@@ -2103,11 +2173,14 @@
       "ArchiveUpdateRequest": {
         "type": "object",
         "description": "Changes to an archive.",
-        "required": ["name"],
         "properties": {
           "name": {
-            "type": "string",
+            "type": ["string", "null"],
             "description": "Not empty, at most 100 characters."
+          },
+          "save_remote_images": {
+            "type": ["boolean", "null"],
+            "description": "Download remote images of its messages and keep them with the archive. Turning it on\nstarts saving the images of messages already archived."
           }
         }
       },
@@ -2561,6 +2634,11 @@
             "type": ["string", "null"]
           }
         }
+      },
+      "RemoteMode": {
+        "type": "string",
+        "description": "What to do with remote images in an HTML body.",
+        "enum": ["block", "proxy", "direct"]
       },
       "SearchResponse": {
         "type": "object",

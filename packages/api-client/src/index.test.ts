@@ -17,7 +17,9 @@ function stubFetch(response: Response) {
 describe('urls', () => {
   test('body and raw urls are same-origin and escape the id', () => {
     expect(bodyUrl('abc')).toBe('/api/messages/abc/body')
-    expect(bodyUrl('abc', true)).toBe('/api/messages/abc/body?remote=true')
+    expect(bodyUrl('abc', 'block')).toBe('/api/messages/abc/body')
+    expect(bodyUrl('abc', 'proxy')).toBe('/api/messages/abc/body?remote=proxy')
+    expect(bodyUrl('abc', 'direct')).toBe('/api/messages/abc/body?remote=direct')
     expect(rawUrl('a/b')).toBe('/api/messages/a%2Fb/raw')
   })
 })

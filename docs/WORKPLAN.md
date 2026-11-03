@@ -135,6 +135,15 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - [x] Server: fetcher composed, saving after syncs and imports, at start and when turned on
 - [x] Web: Reading settings (ask / through Holtmail / directly, with an IP warning), banner Show and Always show…, archive switch with a warning; `Switch` and `RadioGroup` in `@holtmail/ui`
 
+### Phase 5: image proxy, tasks, older mail on request (2026-11-03)
+
+- [x] `fetch-http`: outbound proxy (`http`, `https`, `socks5`, `socks5h`); `proxy_address`
+- [x] Store: `SettingsStore`, `save_remote_images_since`, scans by age, totals with failures, failed copies; migration 0005
+- [x] `holtmail-remote`: `Scope::New` / `Scope::Older`, progress, cancel, `retry_failed`
+- [x] API: tasks, cancel, `remote-images` jobs, image proxy, `?saved=false` and `/live/{key}` for originals
+- [x] Server: task registry in memory, syncs, imports and image work as tasks with logs; proxy sealed in settings, config wins, swapped at runtime
+- [x] Web: Tasks and Network settings, archive panel with older mail and retry, originals in the reader, running tasks in the sidebar
+
 ## Log
 
 - Plan written. Earlier work: `holtmail-blob`, `blob-fs`, `blob-s3`, `holtmail-mime` (committed and pushed).
@@ -170,4 +179,5 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - Phase 3 web done: `/welcome` first run (archive name → connect IMAP with provider presets or upload files → live progress), `/settings` (archives with sources, status, sync now, pause, password, remove, rename/delete archive; people with roles and archive access; profile and password), sidebar source status, empty-archive state, palette actions, live refresh while syncing, lazy route chunks (main 356 KB). End-to-end smoke test with curl: setup → archive → upload mbox → search → member sees nothing and gets 403 on writes → delete archive removes blobs.
 - Lead review: `mise run check` green (98 Rust tests, 94 web tests, knip clean). Docker image rebuilt; setup → archive → upload → import works in the container.
 - Phase 4 (remote images) done: proxy, three reading modes with an IP warning, per-archive saving with dedup by URL and by content. End-to-end with the real binary: blocked by default, proxied URLs rewritten, a loopback image refused (404), saving records "not a public address" and "host not found". Fetching from the real internet was not exercised; tests use fakes.
+- Phase 5 done: images of older mail only on request, retry of failed images, originals on request even with saved copies, outbound image proxy (UI or config, sealed), a task list with progress and logs. End-to-end with the real binary: enabling starts nothing, older mail runs as a task with a log, retry runs, an unreachable proxy is refused, a reachable one is stored without its password in the clear.
 

@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-fetch-http"
+description = "Fetching remote images over HTTP, public addresses only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-fetch.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["net"] }
+url.workspace = true
+
+[dev-dependencies]
+holtmail-fetch = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

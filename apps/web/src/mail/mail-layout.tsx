@@ -17,6 +17,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { useHotkeys } from '../hooks/use-hotkeys.ts'
 import { useLayout } from '../hooks/use-layout.ts'
+import { useLiveArchive } from '../hooks/use-live-archive.ts'
 import { findInbox } from '../lib/folders.ts'
 import { isMac, type KeyAction, keymap } from '../lib/keymap.ts'
 import { displayStroke } from '../lib/shortcuts.ts'
@@ -36,6 +37,7 @@ export function MailLayout() {
   const layout = useLayout()
   const navigate = useNavigate()
   const folders = useQuery(foldersQuery(archiveId))
+  useLiveArchive(archiveId)
   const list = useRef<ListController | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)

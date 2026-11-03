@@ -29,7 +29,7 @@ import { formatCount, formatListDate } from '../lib/format.ts'
 import { groupByDay, type ListRow } from '../lib/group.ts'
 import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
-import { EmptyState } from './empty-state.tsx'
+import { EmptyArchive, EmptyState } from './empty-state.tsx'
 import { SearchField } from './search-field.tsx'
 import { folderLabel } from './sidebar.tsx'
 
@@ -121,7 +121,9 @@ export function MessageListPane({ source }: { source: ListSource }) {
           </Button>
         </EmptyState>
       ) : items.length === 0 ? (
-        searchError ? null : (
+        searchError ? null : source.kind === 'all' ? (
+          <EmptyArchive />
+        ) : (
           <EmptyState
             icon={isSearch ? <SearchXIcon /> : <MailOpenIcon />}
             title={strings.list.emptyTitle}

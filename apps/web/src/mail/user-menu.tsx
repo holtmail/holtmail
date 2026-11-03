@@ -12,8 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@holtmail/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
-import { LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { LogOutIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
 
 import { initials } from '../lib/auth.ts'
 import { strings } from '../strings.ts'
@@ -74,6 +74,12 @@ export function UserMenu() {
           })}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <SettingsIcon />
+            {strings.user.settings}
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOutIcon />
           {strings.user.signOut}

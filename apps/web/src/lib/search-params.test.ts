@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
-import { parseMailSearch, parseSearchRouteSearch } from './search-params.ts'
+import {
+  parseArchivesSettingsSearch,
+  parseMailSearch,
+  parseSearchRouteSearch,
+} from './search-params.ts'
 
 describe('parseMailSearch', () => {
   test('keeps a message id', () => {
@@ -20,5 +24,16 @@ describe('parseSearchRouteSearch', () => {
   test('q defaults to empty', () => {
     expect(parseSearchRouteSearch({})).toEqual({ q: '' })
     expect(parseSearchRouteSearch({ q: 'from:ada', m: 'x' })).toEqual({ q: 'from:ada', m: 'x' })
+  })
+})
+
+describe('parseArchivesSettingsSearch', () => {
+  test('keeps a known action only with an archive', () => {
+    expect(parseArchivesSettingsSearch({ archive: ' a1 ', add: 'connect' })).toEqual({
+      archive: 'a1',
+      add: 'connect',
+    })
+    expect(parseArchivesSettingsSearch({ add: 'import' })).toEqual({})
+    expect(parseArchivesSettingsSearch({ archive: 'a1', add: 'delete' })).toEqual({ archive: 'a1' })
   })
 })

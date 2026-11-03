@@ -13,7 +13,7 @@ const item: Variants = {
   shown: { opacity: 1, y: 0, transition: transition.expressive.slow01 },
 }
 
-function Wordmark() {
+export function Wordmark() {
   return (
     <div className="grid w-fit gap-2">
       <div className="flex items-center gap-3">

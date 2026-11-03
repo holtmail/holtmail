@@ -1,9 +1,11 @@
 import {
+  type Account,
   accountsQuery,
   type Archive,
   archivesQuery,
   type Folder,
   foldersQuery,
+  sessionQuery,
 } from '@holtmail/api-client'
 import {
   Button,
@@ -24,6 +26,7 @@ import {
   FilePenIcon,
   FolderIcon,
   InboxIcon,
+  PlusIcon,
   type LucideIcon,
   MailIcon,
   SendIcon,
@@ -33,8 +36,12 @@ import {
 } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { useNow } from '../hooks/use-now.ts'
+import { accountState } from '../lib/accounts.ts'
 import { groupFolders } from '../lib/folders.ts'
 import { formatCount } from '../lib/format.ts'
+import { manages } from '../lib/roles.ts'
+import { StatusDot } from '../manage/account-list.tsx'
 import { strings } from '../strings.ts'
 import { useMail } from './context.ts'
 
@@ -173,6 +180,59 @@ export function Sidebar({
           </section>
         ))}
       </div>
+      <Sources accounts={accounts.data ?? []} archiveId={archiveId} onNavigate={onNavigate} />
+    </div>
+  )
+}
+
+function Sources({
+  accounts,
+  archiveId,
+  onNavigate,
+}: {
+  accounts: Account[]
+  archiveId: string
+  onNavigate?: () => void
+}) {
+  const now = useNow(30_000)
+  const user = useQuery(sessionQuery).data
+  const canManage = manages(user?.role)
+  if (accounts.length === 0 && !canManage) return null
+  return (
+    <div className="grid gap-1 border-t border-border py-2">
+      {accounts.map((account) => {
+        const state = accountState(account, now)
+        return (
+          <div
+            key={account.id}
+            className="flex h-6 items-center gap-2 px-4 text-xs text-fg-subtle"
+            title={`${account.name}: ${state.label}`}
+          >
+            <StatusDot tone={state.tone} />
+            <span className="truncate">{account.name}</span>
+            <span
+              className={cn(
+                'ml-auto shrink-0 truncate',
+                state.tone === 'error' ? 'text-danger' : 'text-fg-subtle',
+                state.tone !== 'running' && state.tone !== 'error' && 'max-w-24',
+              )}
+            >
+              {state.tone === 'error' ? '!' : state.tone === 'running' ? state.label : ''}
+            </span>
+          </div>
+        )
+      })}
+      {canManage && (
+        <Link
+          to="/settings/archives"
+          search={{ archive: archiveId, add: 'connect' }}
+          onClick={onNavigate}
+          className={cn(itemClass, 'pl-4 text-xs')}
+        >
+          <PlusIcon />
+          {strings.archive.emptyAction}
+        </Link>
+      )}
     </div>
   )
 }

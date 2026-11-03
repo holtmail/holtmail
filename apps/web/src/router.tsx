@@ -1,20 +1,24 @@
-import { archivesQuery, setupStatusQuery } from '@holtmail/api-client'
+import { archivesQuery, sessionQuery, setupStatusQuery } from '@holtmail/api-client'
 import type { QueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
   useParams,
   useSearch,
 } from '@tanstack/react-router'
 
-import { LoginScreen } from './auth/login.tsx'
 import { currentUser, requireSession } from './auth/session.ts'
-import { SetupScreen } from './auth/setup.tsx'
 import { parseLoginSearch, parseSetupSearch, safeNext } from './lib/auth.ts'
-import { parseMailSearch, parseSearchRouteSearch } from './lib/search-params.ts'
+import { manages } from './lib/roles.ts'
+import {
+  parseArchivesSettingsSearch,
+  parseMailSearch,
+  parseSearchRouteSearch,
+} from './lib/search-params.ts'
 import { MailLayout } from './mail/mail-layout.tsx'
 import { MessageListPane } from './mail/message-list.tsx'
 import { ArchivesFailed, NoArchives, NotFound, ServerFailed } from './pages.tsx'
@@ -32,12 +36,13 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: async ({ context, location }) => {
-    await requireSession(context.queryClient, location.href)
-    const archives = await context.queryClient.ensureQueryData(archivesQuery)
+    const user = await requireSession(context.queryClient, location.href)
+    const archives = await context.queryClient.fetchQuery(archivesQuery)
     const first = archives[0]
     if (first) {
       throw redirect({ to: '/a/$archiveId', params: { archiveId: first.id }, replace: true })
     }
+    if (manages(user.role)) throw redirect({ to: '/welcome', replace: true })
   },
   component: NoArchives,
   errorComponent: ArchivesFailed,
@@ -61,7 +66,7 @@ const loginRoute = createRoute({
       throw redirect({ href: safeNext(search.next), replace: true })
     }
   },
-  component: LoginScreen,
+  component: lazyRouteComponent(() => import('./auth/login.tsx'), 'LoginScreen'),
   errorComponent: ServerFailed,
 })
 
@@ -73,8 +78,65 @@ const setupRoute = createRoute({
     const status = await context.queryClient.fetchQuery(setupStatusQuery)
     if (!status.needed) throw redirect({ to: '/login', replace: true })
   },
-  component: SetupScreen,
+  component: lazyRouteComponent(() => import('./auth/setup.tsx'), 'SetupScreen'),
   errorComponent: ServerFailed,
+})
+
+const welcomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/welcome',
+  beforeLoad: async ({ context, location }) => {
+    const user = await requireSession(context.queryClient, location.href)
+    if (!manages(user.role)) throw redirect({ to: '/', replace: true })
+  },
+  component: lazyRouteComponent(() => import('./onboarding/welcome.tsx'), 'WelcomeScreen'),
+  errorComponent: ServerFailed,
+})
+
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  component: lazyRouteComponent(() => import('./settings/settings-layout.tsx'), 'SettingsLayout'),
+  errorComponent: ServerFailed,
+})
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: async ({ context }) => {
+    const user = await context.queryClient.ensureQueryData(sessionQuery)
+    throw redirect({
+      to: manages(user.role) ? '/settings/archives' : '/settings/profile',
+      replace: true,
+    })
+  },
+})
+
+const managersOnly = async ({ context }: { context: RouterContext }) => {
+  const user = await context.queryClient.ensureQueryData(sessionQuery)
+  if (!manages(user.role)) throw redirect({ to: '/settings/profile', replace: true })
+}
+
+const archivesSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'archives',
+  validateSearch: parseArchivesSettingsSearch,
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/archives-page.tsx'), 'ArchivesPage'),
+})
+
+const peopleSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'people',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/people-page.tsx'), 'PeoplePage'),
+})
+
+const profileSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'profile',
+  component: lazyRouteComponent(() => import('./settings/profile-page.tsx'), 'ProfilePage'),
 })
 
 const allMailRoute = createRoute({
@@ -106,6 +168,13 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
   indexRoute,
+  welcomeRoute,
+  settingsRoute.addChildren([
+    settingsIndexRoute,
+    archivesSettingsRoute,
+    peopleSettingsRoute,
+    profileSettingsRoute,
+  ]),
   archiveRoute.addChildren([allMailRoute, folderRoute, searchRoute]),
 ])
 

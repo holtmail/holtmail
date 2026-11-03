@@ -3,13 +3,17 @@ import { type ErrorComponentProps, Link } from '@tanstack/react-router'
 import { ArchiveIcon, CircleAlertIcon, CompassIcon } from 'lucide-react'
 
 import { EmptyState } from './mail/empty-state.tsx'
+import { UserMenu } from './mail/user-menu.tsx'
 import { strings } from './strings.ts'
 
 export function NoArchives() {
   return (
-    <main className="h-full bg-bg text-fg">
-      <EmptyState icon={<ArchiveIcon />} title={strings.archive.none}>
-        {strings.archive.noneHint}
+    <main className="relative h-full bg-bg text-fg">
+      <div className="absolute top-2 right-2">
+        <UserMenu />
+      </div>
+      <EmptyState icon={<ArchiveIcon />} title={strings.welcome.memberTitle}>
+        {strings.welcome.memberLead}
       </EmptyState>
     </main>
   )

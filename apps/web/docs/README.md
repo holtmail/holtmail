@@ -1,6 +1,6 @@
 # @holtmail/web
 
-The Holtmail web app: a calm, keyboard-first, read-only mail client for an archive. Vite, React 19, TypeScript, Tailwind CSS v4, TanStack Router, Query and Virtual, Motion. It talks to the server only through [`@holtmail/api-client`](../../../packages/api-client/docs/README.md), takes components from [`@holtmail/ui`](../../../packages/ui/docs/README.md) and every color, size and duration from [`@holtmail/tokens`](../../../packages/tokens/docs/README.md).
+The Holtmail web app: a calm, keyboard-first mail client for an archive, and the place where the owner sets everything up: archives, mail sources, uploads and people. Vite, React 19, TypeScript, Tailwind CSS v4, TanStack Router, Query and Virtual, Motion. It talks to the server only through [`@holtmail/api-client`](../../../packages/api-client/docs/README.md), takes components from [`@holtmail/ui`](../../../packages/ui/docs/README.md) and every color, size and duration from [`@holtmail/tokens`](../../../packages/tokens/docs/README.md).
 
 ## Commands
 
@@ -14,14 +14,19 @@ From the repository root:
 
 Code-based TanStack Router routes in `src/router.tsx`. Every mail route accepts `?m=<messageId>`, the open message, so a URL is a shareable view and back and forward move between messages.
 
-| Path                        | Shows                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `/`                         | Redirects to the first archive; an empty state when there is none                    |
-| `/a/$archiveId`             | All mail of the archive                                                              |
-| `/a/$archiveId/f/$folderId` | One folder                                                                           |
-| `/a/$archiveId/search?q=`   | Search results for `q` in the [query language](../../../crates/query/docs/README.md) |
-| `/login?next=`              | Sign-in; returns to `next` (a path on this site) afterwards                          |
-| `/setup?token=`             | Creates the owner with the one-time token from the setup link                        |
+| Path                               | Shows                                                                                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                | Redirects to the first readable archive; with none, owners and admins go to `/welcome`, members see that nothing is shared with them yet |
+| `/welcome`                         | First run: name the archive, then connect a mailbox or upload files, then watch the first sync                                           |
+| `/settings`                        | Goes to Archives (owners, admins) or Profile (members)                                                                                   |
+| `/settings/archives?archive=&add=` | Archives with their mail sources; `add=connect` or `add=import` opens that dialog for `archive`                                          |
+| `/settings/people`                 | People, roles and the archives members may read                                                                                          |
+| `/settings/profile`                | Your name, email and password                                                                                                            |
+| `/a/$archiveId`                    | All mail of the archive                                                                                                                  |
+| `/a/$archiveId/f/$folderId`        | One folder                                                                                                                               |
+| `/a/$archiveId/search?q=`          | Search results for `q` in the [query language](../../../crates/query/docs/README.md)                                                     |
+| `/login?next=`                     | Sign-in; returns to `next` (a path on this site) afterwards                                                                              |
+| `/setup?token=`                    | Creates the owner with the one-time token from the setup link                                                                            |
 
 Opening a message by click or `Enter` pushes a history entry; moving through the list with `j`/`k` replaces it.
 
@@ -32,6 +37,24 @@ The mail routes check `GET /api/session` before they load (cached for the visit)
 Both screens are one narrow centered column: the wordmark with a hairline that draws itself, then title, lead and form rising in one after another with the expressive curve (fades only under reduced motion). Fields are Carbon-style (label above, filled field with a bottom rule), focus starts in the first field, `Enter` submits, the password has a visibility toggle, and the autocomplete hints are `username`, `current-password` and `new-password`. Setup shows a live hint until the password has 10 characters. Errors from the API show under the form and move focus back to the field to fix; a `429` reads "Too many attempts, try again in N minutes" from `Retry-After`. `next` is accepted only as a same-site path that is not `/login` or `/setup`.
 
 The user menu at the right of the top bar shows the name and email, the theme (light, dark, system) and Sign out, which posts `/api/logout`, drops every cached query and goes to `/login`.
+
+## Setting up
+
+Nothing needs the command line. After the owner account is created, `/` finds no archive and opens `/welcome`: an archive name (prefilled "Personal") and two large choices, Connect a mailbox and Import files, with a hairline that draws under the hovered one. Each step slides in from the right.
+
+- **Connect a mailbox** asks only for the address and password. The domain picks a preset (Gmail, Outlook, iCloud, Yahoo, Fastmail, Yandex, Mail.ru, GMX, Proton Mail Bridge; `src/lib/providers.ts`), or `imap.<domain>` otherwise, and the password field explains where to get an app password, with a link. Server settings (host, port, TLS / STARTTLS / none, user name, sidebar name) fold open on demand and open by themselves when signing in fails for an unknown provider. The server signs in before saving, so a wrong password shows its reason under the form.
+- **Import files** takes files dropped or chosen (`.mbox`, `.eml`, `.zip`; files without an extension are tried as mbox). They upload one after another, each with a thin progress bar that turns green when the server has it.
+- The last step lists the sources with a live status: a pulsing accent square while syncing with the count of new messages, then "Synced 2 minutes ago". The archive can be opened right away; folders and messages appear while the sync runs.
+
+## Settings
+
+Reached from the user menu, the command palette or the "Add mail" link at the bottom of the sidebar. A section nav on the left (a top tab row on narrow screens) with an accent bar that glides between sections.
+
+- **Archives**: each archive with its totals, a menu to rename or delete it (deleting asks to type its name), and its mail sources. A source row shows its kind, address and live status; Sync now spins while it runs; the menu renames, pauses or resumes, changes the IMAP password (checked by signing in) or removes it (archived messages stay). Connect a mailbox and Import files open the same forms as the first run in a dialog. New archive creates one and opens Connect for it.
+- **People**: everyone who can sign in, with role and access. Add person sets email, name, a password to hand over, the role (members also get a checklist of archives). The row menu changes role, edits a member's archives, sets a new password (ending their sessions) or removes them. Only owners manage owners; nobody changes their own role or removes themselves.
+- **Profile**: name and email, and a password change that keeps this browser signed in and signs out the others.
+
+While any source of the shown archive syncs or imports, the app refreshes its archive totals, folders and message list every four seconds, and everything once more when the run ends. An archive without messages shows "This archive is empty" with an Add mail button, or "Archiving mail…" while its first sync runs. The sidebar lists the archive's sources with their status squares.
 
 ## Layout
 
@@ -53,7 +76,7 @@ The whole conversation (`/api/threads/{id}`), oldest first. The open message and
 
 ## Search and commands
 
-The search field sits in the list header. `Enter` opens the search route, an empty query goes back to all mail, and a `400` from the API shows its message under the field. While the field is focused or a search is shown, a row of operators (`from:` `to:` `subject:` `has:attachment` `before:` `after:` `in:` `is:unread`) inserts tokens at the caret. `⌘K` / `Ctrl+K` opens the command palette: run a search, jump to a folder or archive, toggle the theme, show shortcuts.
+The search field sits in the list header. `Enter` opens the search route, an empty query goes back to all mail, and a `400` from the API shows its message under the field. While the field is focused or a search is shown, a row of operators (`from:` `to:` `subject:` `has:attachment` `before:` `after:` `in:` `is:unread`) inserts tokens at the caret. `⌘K` / `Ctrl+K` opens the command palette: run a search, jump to a folder or archive, open settings, connect a mailbox, import files, sync every source now, toggle the theme, show shortcuts.
 
 ## Keyboard
 
@@ -76,17 +99,20 @@ Through `MotionProvider` and the token presets: the reader fades and rises 8px w
 
 ## Structure
 
-| Path             | What it does                                                                                             |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `src/main.tsx`   | Providers: TanStack Query (with the global `401` handler), `MotionProvider`, `TooltipProvider`, router   |
-| `src/router.tsx` | Routes and their search param validation                                                                 |
-| `src/pages.tsx`  | No archives, archives failed to load, not found                                                          |
-| `src/strings.ts` | Every user-facing string, ready for i18n                                                                 |
-| `src/auth/`      | Sign-in and setup screens, their fields, session checks for routes                                       |
-| `src/mail/`      | Layout, sidebar, list, search field, reader, thread, body, attachments, dialogs                          |
-| `src/hooks/`     | `useHotkeys`, `useLayout`, `useNow`                                                                      |
-| `src/lib/`       | Pure logic: day grouping, folder order, shortcuts, sizes and dates, links, query, flags, sign-in helpers |
-| `src/theme.ts`   | `useTheme()`, `toggleTheme()` and `parseTheme()`                                                         |
+| Path              | What it does                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `src/main.tsx`    | Providers: TanStack Query (with the global `401` handler), `MotionProvider`, `TooltipProvider`, router   |
+| `src/router.tsx`  | Routes and their search param validation                                                                 |
+| `src/pages.tsx`   | Nothing shared yet, archives failed to load, not found                                                   |
+| `src/onboarding/` | The first-run screen                                                                                     |
+| `src/settings/`   | Settings layout and the archives, people and profile pages                                               |
+| `src/manage/`     | Shared forms: connect a mailbox, import files, source list with status, confirm and text dialogs         |
+| `src/strings.ts`  | Every user-facing string, ready for i18n                                                                 |
+| `src/auth/`       | Sign-in and setup screens, their fields, session checks for routes                                       |
+| `src/mail/`       | Layout, sidebar, list, search field, reader, thread, body, attachments, dialogs                          |
+| `src/hooks/`      | `useHotkeys`, `useLayout`, `useNow`, `useLiveArchive`                                                    |
+| `src/lib/`        | Pure logic: day grouping, folder order, shortcuts, sizes and dates, links, query, flags, sign-in helpers |
+| `src/theme.ts`    | `useTheme()`, `toggleTheme()` and `parseTheme()`                                                         |
 
 Folders are grouped by account. Each shows its unread count emphasised next to the muted total; folders with nothing unread show the total only. Folders with a role come first (inbox, starred, important, drafts, sent, archive, all mail, junk, trash) and are never nested; the others follow alphabetically with natural number order and nest under their nearest existing parent path.
 
@@ -96,4 +122,6 @@ Chosen in the user menu or toggled from the command palette. The choice is store
 
 ## Tests
 
-`bun test apps/web` covers day grouping, date and size formatting, folder ordering and nesting, shortcut parsing and sequences, route search params, link detection, reply `mailto:` URLs and quoting, attachment kinds, operator insertion, flags, and the sign-in helpers (`next` validation, password length, `Retry-After` minutes, error messages).
+`bun test apps/web` covers day grouping, date and size formatting, folder ordering and nesting, shortcut parsing and sequences, route search params, link detection, reply `mailto:` URLs and quoting, attachment kinds, operator insertion, flags, the sign-in helpers (`next` validation, password length, `Retry-After` minutes, error messages), provider detection and server guesses, source status labels and relative times, upload file kinds and roles.
+
+The sign-in screens, the first-run screen and settings are separate chunks loaded when their route opens.

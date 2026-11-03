@@ -128,6 +128,15 @@ pub struct Services {
     pub index: Arc<dyn SearchIndex>,
 }
 
+/// Opens only the metadata store, so user commands work while `serve` holds the index.
+pub async fn open_store(config: &Config) -> anyhow::Result<Arc<dyn Store>> {
+    std::fs::create_dir_all(&config.data_dir)
+        .with_context(|| format!("creating {}", config.data_dir.display()))?;
+    Ok(Arc::new(
+        SqliteStore::open(config.data_dir.join("holtmail.db")).await?,
+    ))
+}
+
 impl Services {
     pub async fn open(config: &Config) -> anyhow::Result<Self> {
         std::fs::create_dir_all(&config.data_dir)

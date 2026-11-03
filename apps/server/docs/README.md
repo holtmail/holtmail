@@ -34,7 +34,7 @@ No users yet. Open http://127.0.0.1:8080/setup?token=... to create the owner; th
 
 Whoever opens it creates the owner account and is signed in. The link stops working once any user exists and a new one is printed on every start until then, so keep the log private. The link uses `public_url` when set, else the listen address (`localhost` for `0.0.0.0`).
 
-On headless installs, `user add` creates users directly; the first user becomes `owner` unless `--role` says otherwise, later ones `member`. `user add` and `user password` read the password from `HOLTMAIL_PASSWORD` or the first line of stdin; passwords need at least 10 characters. Passwords are stored as Argon2id hashes and never logged.
+On headless installs, `user add` creates users directly; the first user becomes `owner` unless `--role` says otherwise, later ones `member`. `user add` and `user password` read the password from `HOLTMAIL_PASSWORD` or the first line of stdin; passwords need at least 10 characters. Passwords are stored as Argon2id hashes and never logged. The `user` commands open only the metadata store, so they work while `serve` is running; in Docker, run them with `docker exec <container> holtmail user ...`.
 
 `import` creates the archive and an import account (named after the file, or `--account`) when missing, maps folder names to roles (`Sent`, `Отправленные`, `[Gmail]/All Mail`, ...), commits the index every 500 messages and prints progress. Running it again on the same files adds nothing: messages are recognised by their bytes. Files that are not messages are counted as failed and skipped.
 

@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
 use holtmail_api::ApiState;
 use holtmail_auth::{Auth, Signup};
 use holtmail_ingest::Ingest;
-use holtmail_store::InstanceRole;
+use holtmail_store::{InstanceRole, Store};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
@@ -189,8 +189,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::User(command) => {
             let config = Config::load(cli.config.as_deref())?;
-            let services = Services::open(&config).await?;
-            user_command(&services, command).await
+            user_command(config::open_store(&config).await?, command).await
         }
         Command::Sync { account } => {
             let config = Config::load(cli.config.as_deref())?;
@@ -341,18 +340,18 @@ fn read_password(variable: &str, whose: &str) -> anyhow::Result<String> {
     Ok(password)
 }
 
-fn auth(services: &Services) -> anyhow::Result<Arc<Auth>> {
+fn auth(store: Arc<dyn Store>) -> anyhow::Result<Arc<Auth>> {
     Ok(Arc::new(Auth::new(
-        services.store.clone(),
+        store,
         holtmail_auth::Options::default(),
     )?))
 }
 
-async fn user_command(services: &Services, command: UserCommand) -> anyhow::Result<()> {
-    let auth = auth(services)?;
+async fn user_command(store: Arc<dyn Store>, command: UserCommand) -> anyhow::Result<()> {
+    let auth = auth(store.clone())?;
     match command {
         UserCommand::List => {
-            for user in services.store.list_users().await? {
+            for user in store.list_users().await? {
                 println!(
                     "{}  {:<6}  {}  ({})",
                     user.id,
@@ -386,8 +385,7 @@ async fn user_command(services: &Services, command: UserCommand) -> anyhow::Resu
             Ok(())
         }
         UserCommand::Password { email } => {
-            let user = services
-                .store
+            let user = store
                 .find_user_by_email(&email)
                 .await?
                 .with_context(|| format!("no user {email}"))?;
@@ -401,7 +399,7 @@ async fn user_command(services: &Services, command: UserCommand) -> anyhow::Resu
 
 async fn serve(config: Config) -> anyhow::Result<()> {
     let services = Arc::new(Services::open(&config).await?);
-    let auth = auth(&services)?;
+    let auth = auth(services.store.clone())?;
     let runner = mailboxes::Runner::new(services.clone(), config.data_dir.join("uploads"));
     let mut app = holtmail_api::router(ApiState {
         blobs: services.blobs.clone(),

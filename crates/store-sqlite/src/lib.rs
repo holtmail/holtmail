@@ -92,6 +92,80 @@ impl ArchiveStore for SqliteStore {
             .collect()
     }
 
+    async fn rename_archive(&self, id: ArchiveId, name: &str) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let done = sqlx::query("UPDATE archives SET name = ? WHERE id = ?")
+            .bind(name)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("archive"));
+        }
+        Ok(())
+    }
+
+    async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError> {
+        let id = id.to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let blobs: Vec<String> = sqlx::query_scalar(
+            "SELECT blob_id FROM messages WHERE archive_id = ?1
+             UNION SELECT a.blob_id FROM attachments a JOIN messages m ON m.id = a.message_id
+             WHERE m.archive_id = ?1",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        for statement in [
+            "DELETE FROM sync_failures WHERE folder_id IN
+             (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
+            "DELETE FROM folder_cursors WHERE folder_id IN
+             (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
+            "DELETE FROM locations WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)
+             OR folder_id IN
+             (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
+            "DELETE FROM folders WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM accounts WHERE archive_id = ?1",
+            "DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
+            "DELETE FROM message_parents WHERE archive_id = ?1",
+            "DELETE FROM messages WHERE archive_id = ?1",
+        ] {
+            sqlx::query(statement)
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?;
+        }
+        let done = sqlx::query("DELETE FROM archives WHERE id = ?")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("archive"));
+        }
+        let mut orphans = Vec::new();
+        for blob in blobs {
+            let used: Option<i64> = sqlx::query_scalar(
+                "SELECT 1 FROM messages WHERE blob_id = ?1
+                 UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1 LIMIT 1",
+            )
+            .bind(&blob)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?;
+            if used.is_none() {
+                orphans.push(parse(&blob)?);
+            }
+        }
+        tx.commit().await.map_err(backend)?;
+        orphans.sort();
+        Ok(orphans)
+    }
+
     async fn archive_stats(&self, id: ArchiveId) -> Result<ArchiveStats, StoreError> {
         let row = sqlx::query(
             "SELECT COUNT(*) AS messages, COALESCE(SUM(size), 0) AS bytes,
@@ -189,6 +263,33 @@ impl ArchiveStore for SqliteStore {
             return Err(StoreError::NotFound("account"));
         }
         Ok(())
+    }
+
+    async fn delete_account(&self, id: AccountId) -> Result<(), StoreError> {
+        let id = id.to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        for statement in [
+            "DELETE FROM sync_failures WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
+            "DELETE FROM folder_cursors WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
+            "DELETE FROM locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
+            "DELETE FROM folders WHERE account_id = ?1",
+        ] {
+            sqlx::query(statement)
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?;
+        }
+        let done = sqlx::query("DELETE FROM accounts WHERE id = ?")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("account"));
+        }
+        tx.commit().await.map_err(backend)
     }
 
     async fn upsert_folder(
@@ -855,6 +956,77 @@ impl UserStore for SqliteStore {
             .map_err(backend)?
             .ok_or(StoreError::NotFound("user"))?;
         get(&row, "password_hash")
+    }
+
+    async fn update_user(&self, user: &User) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let done = sqlx::query(
+            "UPDATE users SET email = ?, email_key = ?, name = ?, role = ? WHERE id = ?",
+        )
+        .bind(&user.email)
+        .bind(email_key(&user.email))
+        .bind(&user.name)
+        .bind(user.role.as_str())
+        .bind(user.id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|error| unique(error, "a user with this email exists"))?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("user"));
+        }
+        Ok(())
+    }
+
+    async fn delete_user(&self, id: UserId) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let done = sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("user"));
+        }
+        Ok(())
+    }
+
+    async fn grants(&self, user: UserId) -> Result<Vec<ArchiveId>, StoreError> {
+        sqlx::query_scalar::<_, String>(
+            "SELECT archive_id FROM archive_grants WHERE user_id = ? ORDER BY archive_id",
+        )
+        .bind(user.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(|id| parse(id))
+        .collect()
+    }
+
+    async fn set_grants(&self, user: UserId, archives: &[ArchiveId]) -> Result<(), StoreError> {
+        if self.get_user(user).await?.is_none() {
+            return Err(StoreError::NotFound("user"));
+        }
+        let user = user.to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        sqlx::query("DELETE FROM archive_grants WHERE user_id = ?")
+            .bind(&user)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        for archive in archives {
+            sqlx::query(
+                "INSERT OR IGNORE INTO archive_grants (user_id, archive_id)
+                 SELECT ?, id FROM archives WHERE id = ?",
+            )
+            .bind(&user)
+            .bind(archive.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        }
+        tx.commit().await.map_err(backend)
     }
 
     async fn set_password_hash(&self, id: UserId, hash: &str) -> Result<(), StoreError> {

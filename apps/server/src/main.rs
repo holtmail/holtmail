@@ -3,6 +3,7 @@
 mod accounts;
 mod config;
 mod import;
+mod mailboxes;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -299,12 +300,8 @@ async fn account_command(services: &Services, command: AccountCommand) -> anyhow
             username,
             exclude,
         } => {
-            let security = match security.as_str() {
-                "tls" => holtmail_source_imap::Security::Tls,
-                "starttls" => holtmail_source_imap::Security::Starttls,
-                "plain" => holtmail_source_imap::Security::Plain,
-                other => anyhow::bail!("unknown security {other:?}; use tls, starttls or plain"),
-            };
+            let security = accounts::parse_security(&security)?;
+            let archive = import::find_or_create_archive(&*services.store, &archive).await?;
             let password = read_password("HOLTMAIL_IMAP_PASSWORD", &username)?;
             let account = accounts::add_imap(
                 &*services.store,
@@ -405,18 +402,19 @@ async fn user_command(services: &Services, command: UserCommand) -> anyhow::Resu
 async fn serve(config: Config) -> anyhow::Result<()> {
     let services = Arc::new(Services::open(&config).await?);
     let auth = auth(&services)?;
+    let runner = mailboxes::Runner::new(services.clone(), config.data_dir.join("uploads"));
     let mut app = holtmail_api::router(ApiState {
         blobs: services.blobs.clone(),
         store: services.store.clone(),
         index: services.index.clone(),
         auth: auth.clone(),
+        mailboxes: Arc::new(runner.clone()),
         secure_cookies: config.https(),
     });
     if config.sync_interval_minutes > 0 {
-        tokio::spawn(accounts::run_schedule(
-            services.clone(),
-            std::time::Duration::from_secs(config.sync_interval_minutes * 60),
-        ));
+        tokio::spawn(runner.run_schedule(std::time::Duration::from_secs(
+            config.sync_interval_minutes * 60,
+        )));
     }
     if let Some(web) = &config.web_dir {
         let index = web.join("index.html");

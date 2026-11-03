@@ -20,7 +20,9 @@ holtmail openapi                                 # the API description as JSON
 
 `account add-imap` reads the password from `HOLTMAIL_IMAP_PASSWORD` or the first line of stdin, seals it with the instance key (`<data_dir>/secret.key`, bound to the new account's id) and stores only the sealed bytes. `--security tls|starttls|plain`, `--port`, `--name` and repeated `--exclude <folder path>` are optional. `sync` prints one line per folder: new, known, removed, failed and any error.
 
-`serve` also syncs every enabled account one after another, every `sync_interval_minutes`, and removes expired sessions every hour.
+Everything the commands do can also be done in the web app by the owner or an admin: archives, IMAP accounts, uploads of mailbox files, syncing now, people and their access. The CLI stays for scripts and headless installs.
+
+`serve` syncs every enabled account one after another, every `sync_interval_minutes`, and removes expired sessions every hour. Syncs and imports started from the web and from the schedule share one runner that keeps at most one run per account and remembers the state of the last one (shown in the web app) until the server restarts. Uploaded files wait in `<data_dir>/uploads` and are removed once imported.
 
 ## Signing in
 
@@ -63,6 +65,7 @@ S3 credentials come only from `HOLTMAIL_S3_ACCESS_KEY_ID` and `HOLTMAIL_S3_SECRE
 | `blobs/`      | Message and attachment bytes, unless blobs are on S3 | Yes                                |
 | `secret.key`  | The key sealing account passwords                    | Yes, separately                    |
 | `index/`      | Search index                                         | No: `holtmail reindex` rebuilds it |
+| `uploads/`    | Uploaded files waiting to be imported                | No                                 |
 
 ## Logs
 

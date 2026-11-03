@@ -30,6 +30,7 @@ holtmail-store.workspace = true
 holtmail-store-sqlite.workspace = true
 holtmail-sync.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true
 serde.workspace = true

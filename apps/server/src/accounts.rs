@@ -1,7 +1,5 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use anyhow::{Context, bail};
+use holtmail_core::ArchiveId;
 use holtmail_ingest::Ingest;
 use holtmail_secret::SecretBox;
 use holtmail_source::Source;
@@ -13,7 +11,7 @@ use serde::Deserialize;
 use crate::config::Services;
 
 pub struct NewImapAccount {
-    pub archive: String,
+    pub archive: ArchiveId,
     pub name: Option<String>,
     pub host: String,
     pub port: Option<u16>,
@@ -28,7 +26,7 @@ pub async fn add_imap(
     secrets: &dyn SecretBox,
     new: NewImapAccount,
 ) -> anyhow::Result<Account> {
-    let archive = crate::import::find_or_create_archive(store, &new.archive).await?;
+    let archive = new.archive;
     let settings = ImapSettings {
         host: new.host,
         port: new.port,
@@ -73,6 +71,15 @@ fn options(account: &Account) -> SyncOptions {
         include: rules.include,
         exclude: rules.exclude,
         ..SyncOptions::default()
+    }
+}
+
+pub fn parse_security(raw: &str) -> anyhow::Result<Security> {
+    match raw {
+        "tls" => Ok(Security::Tls),
+        "starttls" => Ok(Security::Starttls),
+        "plain" => Ok(Security::Plain),
+        other => bail!("unknown security {other:?}; use tls, starttls or plain"),
     }
 }
 
@@ -133,30 +140,6 @@ pub fn syncer(services: &Services) -> Syncer {
     )
 }
 
-/// Syncs every enabled account, one after another, then waits `every` and starts again.
-pub async fn run_schedule(services: Arc<Services>, every: Duration) {
-    let syncer = syncer(&services);
-    loop {
-        match syncable_accounts(&*services.store).await {
-            Ok(accounts) => {
-                for account in accounts {
-                    match sync_one(&services, &syncer, &account).await {
-                        Ok(report) => tracing::info!(
-                            account = %account.id,
-                            new = report.new_messages(),
-                            folders = report.folders.len(),
-                            "synced"
-                        ),
-                        Err(error) => tracing::warn!(account = %account.id, %error, "sync failed"),
-                    }
-                }
-            }
-            Err(error) => tracing::warn!(%error, "listing accounts failed"),
-        }
-        tokio::time::sleep(every).await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use holtmail_secret_local::LocalSecretBox;
@@ -174,7 +157,9 @@ mod tests {
             &store,
             &secrets,
             NewImapAccount {
-                archive: "Personal".into(),
+                archive: crate::import::find_or_create_archive(&store, "Personal")
+                    .await
+                    .unwrap(),
                 name: None,
                 host: "imap.example.com".into(),
                 port: None,

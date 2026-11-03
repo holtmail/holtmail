@@ -11,7 +11,7 @@ pub fn remote_images(html: &str) -> Vec<String>;
 pub fn remote_key(url: &str) -> String;
 ```
 
-`Options { remote: Remote, proxy_prefix: String, saved: HashSet<String>, inline_parts: HashMap<String, String> }` with `Remote::{Block (default), Proxy, Direct}`, and `Sanitized { html, remote_blocked }`.
+`Options { remote: Remote, proxy_prefix: String, saved: HashSet<String>, inline_parts: HashMap<String, String> }` with `Remote::{Block (default), Proxy, Direct}`, and `Sanitized { html, remote_blocked, saved_shown }`; `saved_shown` is set when a URL was pointed at its saved copy.
 
 - `remote_images(html)`: the absolute `http(s)` URLs of remote images, `background` attributes and style `url(...)`s, in document order, each once. Protocol-relative URLs become `https:`; `@import` targets are not included.
 - `remote_key(url)`: BLAKE3 hex of the absolute URL, the name a remote image goes by in proxy URLs and in the store.

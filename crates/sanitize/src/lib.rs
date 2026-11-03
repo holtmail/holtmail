@@ -48,6 +48,8 @@ pub struct Sanitized {
     pub html: String,
     /// The message referenced remote content that was removed.
     pub remote_blocked: bool,
+    /// At least one remote image was pointed at its saved copy.
+    pub saved_shown: bool,
 }
 
 const GENERIC_ATTRIBUTES: &[&str] = &[
@@ -88,6 +90,7 @@ pub fn sanitize(html: &str, options: &Options) -> Sanitized {
     Sanitized {
         html,
         remote_blocked: *pass.blocked.lock().expect("not poisoned"),
+        saved_shown: *pass.saved_shown.lock().expect("not poisoned"),
     }
 }
 
@@ -98,6 +101,7 @@ struct Pass {
     saved: Arc<HashSet<String>>,
     parts: Arc<HashMap<String, String>>,
     blocked: Arc<Mutex<bool>>,
+    saved_shown: Arc<Mutex<bool>>,
     found: Arc<Mutex<Vec<String>>>,
 }
 
@@ -115,6 +119,7 @@ impl Pass {
             saved: Arc::new(options.saved.clone()),
             parts: Arc::new(options.inline_parts.clone()),
             blocked: Arc::default(),
+            saved_shown: Arc::default(),
             found: Arc::default(),
         }
     }
@@ -147,7 +152,11 @@ impl Pass {
         let url = absolute(url);
         let key = remote_key(&url);
         self.found.lock().expect("not poisoned").push(url);
-        if self.saved.contains(&key) || (self.remote == Remote::Proxy && !self.prefix.is_empty()) {
+        if self.saved.contains(&key) {
+            *self.saved_shown.lock().expect("not poisoned") = true;
+            return Fate::Replace(format!("{}{key}", self.prefix));
+        }
+        if self.remote == Remote::Proxy && !self.prefix.is_empty() {
             return Fate::Replace(format!("{}{key}", self.prefix));
         }
         if self.remote == Remote::Direct {
@@ -427,7 +436,7 @@ mod tests {
         );
         assert!(out.html.contains(&format!("{PREFIX}{}", remote_key(saved))));
         assert!(!out.html.contains("tracker.example.org"));
-        assert!(out.remote_blocked);
+        assert!(out.remote_blocked && out.saved_shown);
     }
 
     #[test]

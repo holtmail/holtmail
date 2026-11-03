@@ -16,6 +16,9 @@
 | `holtmail-store` | [Contract for metadata](../crates/store/docs/README.md) |
 | `holtmail-store-sqlite` | [Metadata on SQLite](../crates/store-sqlite/docs/README.md) |
 | `holtmail-sanitize` | [Safe message HTML](../crates/sanitize/docs/README.md) |
+| `holtmail-fetch` | [Contract for fetching remote images](../crates/fetch/docs/README.md) |
+| `holtmail-fetch-http` | [Fetching over HTTP, public addresses only](../crates/fetch-http/docs/README.md) |
+| `holtmail-remote` | [Saving remote images into the archive](../crates/remote/docs/README.md) |
 | `holtmail-index` | [Contract for search](../crates/index/docs/README.md) |
 | `holtmail-index-tantivy` | [Search on Tantivy](../crates/index-tantivy/docs/README.md) |
 | `holtmail-query` | [Search language](../crates/query/docs/README.md) |

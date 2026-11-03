@@ -125,6 +125,16 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - [x] Web: sidebar shows sync state per account; empty archive state offers to connect mail
 - [x] Regenerate the client, docs for every touched module, `mise run check`, Docker smoke test
 
+### Phase 4: remote images (2026-11-03)
+
+- [x] `holtmail-sanitize`: `Remote::{Block, Proxy, Direct}`, saved copies always shown through the proxy prefix, `remote_images`, `remote_key`
+- [x] `holtmail-fetch` contract (public addresses only, images only) with a no-network conformance suite; `holtmail-fetch-http` on reqwest with a resolver that drops private addresses
+- [x] Store: `Archive.save_remote_images`, `RemoteImageStore` (copies shared by URL key, scans, links), orphan handling in `delete_archive`; migration 0004
+- [x] `holtmail-remote`: saves each URL once, identical bytes once, failures recorded
+- [x] API: `?remote=block|proxy|direct`, `/api/messages/{id}/remote/{key}` (only URLs the message links), `PATCH /api/archives/{id}` `save_remote_images`
+- [x] Server: fetcher composed, saving after syncs and imports, at start and when turned on
+- [x] Web: Reading settings (ask / through Holtmail / directly, with an IP warning), banner Show and Always show…, archive switch with a warning; `Switch` and `RadioGroup` in `@holtmail/ui`
+
 ## Log
 
 - Plan written. Earlier work: `holtmail-blob`, `blob-fs`, `blob-s3`, `holtmail-mime` (committed and pushed).
@@ -159,3 +169,5 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - Phase 3 backend done: `Mailboxes` hook (server `Runner`: one run per account, status in memory, uploads in `data_dir/uploads`), store removal/user edits/grants (+ migration 0003, conformance), access middleware (members read granted archives only, 404 otherwise; managers do everything), users/profile/password/archive/account endpoints. 18 API tests. Next: web onboarding and settings.
 - Phase 3 web done: `/welcome` first run (archive name → connect IMAP with provider presets or upload files → live progress), `/settings` (archives with sources, status, sync now, pause, password, remove, rename/delete archive; people with roles and archive access; profile and password), sidebar source status, empty-archive state, palette actions, live refresh while syncing, lazy route chunks (main 356 KB). End-to-end smoke test with curl: setup → archive → upload mbox → search → member sees nothing and gets 403 on writes → delete archive removes blobs.
 - Lead review: `mise run check` green (98 Rust tests, 94 web tests, knip clean). Docker image rebuilt; setup → archive → upload → import works in the container.
+- Phase 4 (remote images) done: proxy, three reading modes with an IP warning, per-archive saving with dedup by URL and by content. End-to-end with the real binary: blocked by default, proxied URLs rewritten, a loopback image refused (404), saving records "not a public address" and "host not found". Fetching from the real internet was not exercised; tests use fakes.
+

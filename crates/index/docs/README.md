@@ -23,7 +23,7 @@ A `SearchQuery` is a list of `Clause`s that must all match; an empty list matche
 | `Before(t)`, `After(t)` | `date < t`, `date >= t` |
 | `Not(clause)` | The inner clause does not match |
 
-Words match whole words after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` finds `lunch`.
+Words match after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` finds `lunch`. Outside phrases, a word of three letters or more also finds words that start with it: `quart` finds `quarterly`. Shorter words match whole words only.
 
 ## SearchIndex
 

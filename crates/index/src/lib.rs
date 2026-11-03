@@ -126,7 +126,9 @@ pub trait SearchIndex: Send + Sync {
 
     /// Messages of `archive` that match `query`, skipping `offset` and returning at most `limit`.
     ///
-    /// Words match whole words after case folding and accent removal, so `Zoë` finds `zoe`.
+    /// Words match after case folding and accent removal, so `Zoë` finds `zoe`. Outside phrases,
+    /// a word of three letters or more also finds words that start with it, so `quart` finds
+    /// `quarterly`; shorter words match whole words only.
     async fn search(
         &self,
         archive: ArchiveId,

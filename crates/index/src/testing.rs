@@ -69,6 +69,13 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         ),
         (vec![Clause::Text("zoe".into())], vec![report.message_id]),
         (vec![Clause::Text("cafe".into())], vec![cafe.message_id]),
+        (vec![Clause::Text("quart".into())], vec![report.message_id]),
+        (
+            vec![Clause::Text("lun fri".into())],
+            vec![lunch.message_id, cafe.message_id],
+        ),
+        (vec![Clause::Text("lu".into())], vec![]),
+        (vec![Clause::From("car".into())], vec![cafe.message_id]),
         (
             vec![Clause::Phrase("on friday".into())],
             vec![lunch.message_id, cafe.message_id],

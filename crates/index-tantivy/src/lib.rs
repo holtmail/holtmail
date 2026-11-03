@@ -9,17 +9,24 @@ use holtmail_core::{ArchiveId, MessageId};
 use holtmail_index::*;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{AllQuery, BooleanQuery, Occur, PhraseQuery, Query, RangeQuery, TermQuery};
+use tantivy::query::{
+    AllQuery, BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, RangeQuery, TermQuery,
+};
 use tantivy::schema::{
     Field, INDEXED, IndexRecordOption, STORED, STRING, Schema, TextFieldIndexing, TextOptions,
     Value,
 };
-use tantivy::tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer};
+use tantivy::tokenizer::{
+    AsciiFoldingFilter, Language, LowerCaser, RawTokenizer, SimpleTokenizer, Stemmer, TextAnalyzer,
+};
 use tantivy::{
     DocAddress, Index, IndexReader, IndexWriter, Order, ReloadPolicy, TantivyDocument, Term,
 };
 
 const TOKENIZER: &str = "holtmail";
+const STEMMER: &str = "holtmail-stem";
+const MIN_PREFIX: usize = 3;
+const MIN_STEM: usize = 4;
 const WRITER_HEAP: usize = 64 * 1024 * 1024;
 const MAX_CLAUSES: usize = 64;
 
@@ -80,6 +87,13 @@ impl TantivyIndex {
             TextAnalyzer::builder(SimpleTokenizer::default())
                 .filter(LowerCaser)
                 .filter(AsciiFoldingFilter)
+                .build(),
+        );
+        index.tokenizers().register(
+            STEMMER,
+            TextAnalyzer::builder(RawTokenizer::default())
+                .filter(Stemmer::new(Language::English))
+                .filter(Stemmer::new(Language::Russian))
                 .build(),
         );
         let writer = index.writer(WRITER_HEAP).map_err(backend)?;
@@ -167,12 +181,12 @@ fn address_text(address: &holtmail_core::Address) -> String {
 }
 
 impl Inner {
-    fn words(&self, text: &str) -> Vec<String> {
+    fn analyze(&self, analyzer: &str, text: &str) -> Vec<String> {
         let mut analyzer = self
             .index
             .tokenizers()
-            .get(TOKENIZER)
-            .expect("tokenizer is registered");
+            .get(analyzer)
+            .expect("analyzer is registered");
         let mut stream = analyzer.token_stream(text);
         let mut words = Vec::new();
         while stream.advance() {
@@ -181,29 +195,42 @@ impl Inner {
         words
     }
 
-    fn words_query(&self, field: Field, text: &str, as_phrase: bool) -> Box<dyn Query> {
-        let terms: Vec<Term> = self
-            .words(text)
-            .iter()
-            .map(|w| Term::from_field_text(field, w))
-            .collect();
-        match terms.len() {
+    fn word_query(&self, field: Field, word: &str, stem: bool) -> Box<dyn Query> {
+        let term = |text: &str| Term::from_field_text(field, text);
+        if word.chars().count() < MIN_PREFIX {
+            return Box::new(TermQuery::new(term(word), IndexRecordOption::WithFreqs));
+        }
+        let starts_with = |text: &str| -> Box<dyn Query> {
+            Box::new(FuzzyTermQuery::new_prefix(term(text), 0, true))
+        };
+        let root = stem
+            .then(|| self.analyze(STEMMER, word).pop())
+            .flatten()
+            .filter(|root| root != word && root.chars().count() >= MIN_STEM);
+        match root {
+            Some(root) => Box::new(BooleanQuery::new(vec![
+                (Occur::Should, starts_with(word)),
+                (Occur::Should, starts_with(&root)),
+            ])),
+            None => starts_with(word),
+        }
+    }
+
+    fn words_query(&self, field: Field, text: &str, as_phrase: bool, stem: bool) -> Box<dyn Query> {
+        let words = self.analyze(TOKENIZER, text);
+        match words.len() {
             0 => Box::new(AllQuery),
-            1 => Box::new(TermQuery::new(
-                terms.into_iter().next().expect("one term"),
-                IndexRecordOption::WithFreqs,
+            1 => self.word_query(field, &words[0], stem),
+            _ if as_phrase => Box::new(PhraseQuery::new(
+                words
+                    .iter()
+                    .map(|w| Term::from_field_text(field, w))
+                    .collect(),
             )),
-            _ if as_phrase => Box::new(PhraseQuery::new(terms)),
             _ => Box::new(BooleanQuery::new(
-                terms
-                    .into_iter()
-                    .map(|t| {
-                        (
-                            Occur::Must,
-                            Box::new(TermQuery::new(t, IndexRecordOption::WithFreqs))
-                                as Box<dyn Query>,
-                        )
-                    })
+                words
+                    .iter()
+                    .map(|w| (Occur::Must, self.word_query(field, w, stem)))
                     .collect(),
             )),
         }
@@ -218,13 +245,13 @@ impl Inner {
             ))
         };
         let query: Box<dyn Query> = match clause {
-            Clause::Text(text) => self.words_query(f.all, text, false),
-            Clause::Phrase(text) => self.words_query(f.all, text, true),
-            Clause::From(text) => self.words_query(f.from, text, true),
-            Clause::To(text) => self.words_query(f.recipients, text, true),
-            Clause::Subject(text) => self.words_query(f.subject, text, false),
-            Clause::Body(text) => self.words_query(f.body, text, false),
-            Clause::Filename(text) => self.words_query(f.filenames, text, true),
+            Clause::Text(text) => self.words_query(f.all, text, false, true),
+            Clause::Phrase(text) => self.words_query(f.all, text, true, false),
+            Clause::From(text) => self.words_query(f.from, text, true, false),
+            Clause::To(text) => self.words_query(f.recipients, text, true, false),
+            Clause::Subject(text) => self.words_query(f.subject, text, false, true),
+            Clause::Body(text) => self.words_query(f.body, text, false, true),
+            Clause::Filename(text) => self.words_query(f.filenames, text, true, false),
             Clause::HasAttachment => Box::new(TermQuery::new(
                 Term::from_field_bool(f.has_attachments, true),
                 IndexRecordOption::Basic,
@@ -418,5 +445,56 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(results.total, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn finds_other_forms_of_russian_and_english_words() {
+        let index = TantivyIndex::in_memory().unwrap();
+        let archive = ArchiveId::new();
+        let message = |subject: &str, body: &str| IndexDocument {
+            message_id: MessageId::new(),
+            archive_id: archive,
+            thread_id: holtmail_core::ThreadId::new(),
+            subject: subject.into(),
+            from: Vec::new(),
+            recipients: Vec::new(),
+            body: body.into(),
+            attachment_names: Vec::new(),
+            attachment_text: String::new(),
+            folders: Vec::new(),
+            flags: Vec::new(),
+            date: holtmail_core::Timestamp::from_secs(1),
+            has_attachments: false,
+        };
+        let lease = message("Договор аренды", "Подписанный договор во вложении.");
+        let repairs = message("Lighthouse", "The repairs were finished on Monday.");
+        index
+            .put(vec![lease.clone(), repairs.clone()])
+            .await
+            .unwrap();
+        index.commit().await.unwrap();
+
+        for (words, expected) in [
+            ("договора", lease.message_id),
+            ("договорам", lease.message_id),
+            ("аренда", lease.message_id),
+            ("Подпис", lease.message_id),
+            ("repair", repairs.message_id),
+            ("repairing", repairs.message_id),
+        ] {
+            let found = index
+                .search(
+                    archive,
+                    &SearchQuery {
+                        clauses: vec![Clause::Text(words.into())],
+                    },
+                    SortOrder::Newest,
+                    0,
+                    10,
+                )
+                .await
+                .unwrap();
+            assert_eq!(found.hits, [expected], "{words}");
+        }
     }
 }

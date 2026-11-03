@@ -1305,6 +1305,7 @@ dependencies = [
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-core",
+ "holtmail-fetch",
  "holtmail-index",
  "holtmail-index-tantivy",
  "holtmail-ingest",
@@ -1384,6 +1385,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-fetch"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-fetch-http"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "holtmail-fetch",
+ "reqwest",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "holtmail-import"
 version = "0.0.0"
 dependencies = [
@@ -1456,10 +1478,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-remote"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "holtmail-blob",
+ "holtmail-blob-fs",
+ "holtmail-core",
+ "holtmail-fetch",
+ "holtmail-index",
+ "holtmail-index-tantivy",
+ "holtmail-ingest",
+ "holtmail-mime",
+ "holtmail-sanitize",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "holtmail-sanitize"
 version = "0.0.0"
 dependencies = [
  "ammonia",
+ "blake3",
 ]
 
 [[package]]
@@ -1492,10 +1538,13 @@ dependencies = [
  "holtmail-blob-fs",
  "holtmail-blob-s3",
  "holtmail-core",
+ "holtmail-fetch",
+ "holtmail-fetch-http",
  "holtmail-import",
  "holtmail-index",
  "holtmail-index-tantivy",
  "holtmail-ingest",
+ "holtmail-remote",
  "holtmail-secret",
  "holtmail-secret-local",
  "holtmail-source",

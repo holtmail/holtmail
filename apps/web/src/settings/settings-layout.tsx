@@ -3,7 +3,14 @@ import { distance, transition } from '@holtmail/tokens'
 import { Button, cn } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
-import { ArchiveIcon, ArrowLeftIcon, type LucideIcon, UserIcon, UsersIcon } from 'lucide-react'
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  BookOpenIcon,
+  type LucideIcon,
+  UserIcon,
+  UsersIcon,
+} from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 
@@ -14,7 +21,7 @@ import { strings } from '../strings.ts'
 const t = strings.settings
 
 interface Section {
-  to: '/settings/archives' | '/settings/people' | '/settings/profile'
+  to: '/settings/archives' | '/settings/people' | '/settings/reading' | '/settings/profile'
   label: string
   icon: LucideIcon
   managers: boolean
@@ -23,6 +30,7 @@ interface Section {
 const sections: Section[] = [
   { to: '/settings/archives', label: t.archives, icon: ArchiveIcon, managers: true },
   { to: '/settings/people', label: t.people, icon: UsersIcon, managers: true },
+  { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
 ]
 

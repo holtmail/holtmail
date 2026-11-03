@@ -76,6 +76,7 @@ export const strings = {
     copied: 'Link copied',
     remoteHidden: 'Remote images are hidden.',
     showRemote: 'Show',
+    alwaysShowRemote: 'Always show…',
     bodyTitle: (subject: string) => `Message body: ${subject}`,
     bodyFailed: 'Could not load the message body.',
     noBody: 'This message has no text.',
@@ -291,6 +292,35 @@ export const strings = {
     newPassword: 'New password',
     passwordChanged: 'Password changed. Other devices are signed out.',
     joined: (date: string) => `Joined ${date}`,
+    reading: 'Reading',
+    readingLead: 'How messages are shown in this browser.',
+    remoteImages: 'Remote images',
+    remoteImagesLead:
+      'Many messages show pictures stored on the sender’s servers. Loading them tells the sender that the message was opened.',
+    remoteOptions: {
+      ask: {
+        label: 'Hide, and ask each time',
+        hint: 'Messages open without remote images. Press Show to load them for one message, through Holtmail.',
+      },
+      proxy: {
+        label: 'Always show, through Holtmail',
+        hint: 'Your Holtmail server downloads them for you. Senders see the server’s IP address, not yours, and can still tell when a message was opened.',
+      },
+      direct: {
+        label: 'Always show, directly',
+        hint: 'Your browser downloads them from the sender’s servers, like most mail apps.',
+      },
+    },
+    directWarning:
+      'Senders and their tracking services will see your IP address, which reveals roughly where you are, and the exact time you open each message.',
+    savedCopiesNote:
+      'Images an archive has saved are always shown: they load from your server and reach no one else.',
+    thisBrowser: 'Saved in this browser only.',
+    saveImages: 'Save remote images',
+    saveImagesHint:
+      'Download images that messages link to while archiving, so they still show after the sender removes them. Each image is stored once, however many messages use it.',
+    saveImagesWarning:
+      'Downloading tells senders that the message was fetched, from your server’s IP address. Mail already in the archive is processed in the background.',
   },
   serverFailed: 'Could not reach the server',
   notFound: 'This page does not exist.',

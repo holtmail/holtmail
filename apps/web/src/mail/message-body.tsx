@@ -1,9 +1,12 @@
 import { bodyQuery, type MessageDetail } from '@holtmail/api-client'
 import { Button, Skeleton } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { ImageOffIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { useRemoteImages } from '../hooks/use-remote-images.ts'
+import { bodyMode } from '../lib/remote-images.ts'
 import { linkify, withLinkTarget } from '../lib/text.ts'
 import { strings } from '../strings.ts'
 
@@ -39,9 +42,11 @@ function TextBody({ text }: { text: string }) {
 }
 
 function HtmlBody({ message }: { message: MessageDetail }) {
-  const [remote, setRemote] = useState(false)
+  const [preference] = useRemoteImages()
+  const [shown, setShown] = useState(false)
+  const mode = bodyMode(preference, shown)
   const body = useQuery({
-    ...bodyQuery(message.id, remote),
+    ...bodyQuery(message.id, mode),
     placeholderData: (previous) => previous,
   })
   const srcDoc = useMemo(
@@ -53,13 +58,18 @@ function HtmlBody({ message }: { message: MessageDetail }) {
 
   return (
     <div className="grid gap-3">
-      {body.data?.remoteBlocked && !remote && (
-        <div className="flex items-center gap-3 border border-border bg-bg-subtle py-1 pr-1 pl-3 text-sm text-fg-muted">
+      {body.data?.remoteBlocked && mode === 'block' && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-border bg-bg-subtle py-1 pr-1 pl-3 text-sm text-fg-muted">
           <ImageOffIcon aria-hidden className="size-4 shrink-0" />
           <span className="flex-1">{strings.reader.remoteHidden}</span>
-          <Button size="sm" variant="ghost" onClick={() => setRemote(true)}>
-            {strings.reader.showRemote}
-          </Button>
+          <span className="flex">
+            <Button size="sm" variant="ghost" onClick={() => setShown(true)}>
+              {strings.reader.showRemote}
+            </Button>
+            <Button size="sm" variant="ghost" asChild>
+              <Link to="/settings/reading">{strings.reader.alwaysShowRemote}</Link>
+            </Button>
+          </span>
         </div>
       )}
       {srcDoc ? (

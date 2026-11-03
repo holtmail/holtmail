@@ -139,6 +139,12 @@ const profileSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/profile-page.tsx'), 'ProfilePage'),
 })
 
+const readingSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'reading',
+  component: lazyRouteComponent(() => import('./settings/reading-page.tsx'), 'ReadingPage'),
+})
+
 const allMailRoute = createRoute({
   getParentRoute: () => archiveRoute,
   path: '/',
@@ -173,6 +179,7 @@ const routeTree = rootRoute.addChildren([
     settingsIndexRoute,
     archivesSettingsRoute,
     peopleSettingsRoute,
+    readingSettingsRoute,
     profileSettingsRoute,
   ]),
   archiveRoute.addChildren([allMailRoute, folderRoute, searchRoute]),

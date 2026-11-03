@@ -3,7 +3,7 @@ import {
   archivesQuery,
   createArchive,
   deleteArchive,
-  renameArchive,
+  updateArchive,
 } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
 import {
@@ -19,8 +19,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Skeleton,
+  Switch,
 } from '@holtmail/ui'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowUpRightIcon,
@@ -30,11 +31,13 @@ import {
   PencilIcon,
   PlusIcon,
   Trash2Icon,
+  TriangleAlertIcon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import { useState } from 'react'
 
 import { useLiveArchive } from '../hooks/use-live-archive.ts'
+import { authErrorMessage } from '../lib/auth.ts'
 import { formatCount, formatSize } from '../lib/format.ts'
 import type { AddMail } from '../lib/search-params.ts'
 import { AccountList } from '../manage/account-list.tsx'
@@ -172,6 +175,8 @@ function ArchiveSection({ archive }: { archive: Archive }) {
         </div>
       </div>
 
+      <SaveImages archive={archive} />
+
       <Dialog open={adding !== undefined} onOpenChange={(open) => !open && setAdding(undefined)}>
         <DialogContent className="max-h-[calc(100dvh-var(--spacing)*8)] max-w-xl overflow-y-auto">
           <DialogHeader>
@@ -200,7 +205,7 @@ function ArchiveSection({ archive }: { archive: Archive }) {
         label={strings.welcome.archiveName}
         initial={archive.name}
         onSave={async (name) => {
-          await renameArchive(archive.id, name)
+          await updateArchive(archive.id, { name })
           await refresh()
         }}
       />
@@ -220,5 +225,53 @@ function ArchiveSection({ archive }: { archive: Archive }) {
         }}
       />
     </section>
+  )
+}
+
+function SaveImages({ archive }: { archive: Archive }) {
+  const queryClient = useQueryClient()
+  const id = `save-images-${archive.id}`
+  const mutation = useMutation({
+    mutationFn: (save: boolean) => updateArchive(archive.id, { save_remote_images: save }),
+    onSuccess: (updated) =>
+      queryClient.setQueryData(archivesQuery.queryKey, (list) =>
+        list?.map((item) => (item.id === updated.id ? updated : item)),
+      ),
+  })
+  const checked = mutation.isPending ? mutation.variables : archive.save_remote_images
+  return (
+    <div className="flex items-start gap-4 border-t border-border pt-6">
+      <div className="grid flex-1 gap-1">
+        <label htmlFor={id} className="text-sm text-fg">
+          {t.saveImages}
+        </label>
+        <p className="text-xs text-fg-muted">{t.saveImagesHint}</p>
+        <AnimatePresence initial={false}>
+          {checked && (
+            <m.p
+              key="warning"
+              className="flex items-start gap-2 overflow-hidden text-xs text-fg-muted"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto', transition: transition.expressive.moderate02 }}
+              exit={{ opacity: 0, height: 0, transition: transition.productiveExit.fast02 }}
+            >
+              <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+              {t.saveImagesWarning}
+            </m.p>
+          )}
+        </AnimatePresence>
+        {mutation.isError && (
+          <p role="alert" className="text-xs text-danger">
+            {authErrorMessage(mutation.error)}
+          </p>
+        )}
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        disabled={mutation.isPending}
+        onCheckedChange={(save) => mutation.mutate(save)}
+      />
+    </div>
   )
 }

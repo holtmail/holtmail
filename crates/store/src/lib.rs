@@ -47,9 +47,14 @@ pub trait ArchiveStore: Send + Sync {
     /// Renames the archive. `NotFound` when it does not exist.
     async fn rename_archive(&self, id: ArchiveId, name: &str) -> Result<(), StoreError>;
 
+    /// Turns saving remote images for an archive on or off. Fails with `NotFound` for an unknown
+    /// archive.
+    async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
+
     /// Removes the archive with its accounts, folders, messages, attachments, sync state and
-    /// grants. Returns the blobs that no message or attachment of any archive references any
-    /// more, so the caller can delete them. `NotFound` when the archive does not exist.
+    /// grants, and the remote copies no remaining message links to. Returns the blobs that no
+    /// message, attachment or remote copy references any more, so the caller can delete them.
+    /// `NotFound` when the archive does not exist.
     async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError>;
 
     /// Totals of the archive; zeros for an archive without messages.
@@ -263,7 +268,39 @@ pub trait UserStore: Send + Sync {
     async fn delete_expired_sessions(&self, now: Timestamp) -> Result<u64, StoreError>;
 }
 
-/// The whole metadata store.
-pub trait Store: ArchiveStore + MessageStore + SyncStore + UserStore {}
+/// Saved copies of remote images, shared by every message and archive that links the same URL.
+#[async_trait]
+pub trait RemoteImageStore: Send + Sync {
+    /// The copy or failure recorded for `key`, if any.
+    async fn remote_copy(&self, key: &str) -> Result<Option<RemoteCopy>, StoreError>;
 
-impl<T: ArchiveStore + MessageStore + SyncStore + UserStore> Store for T {}
+    /// Records a copy or a failure for `copy.key`, replacing what was recorded before.
+    async fn save_remote_copy(&self, copy: &RemoteCopy) -> Result<(), StoreError>;
+
+    /// Up to `limit` messages of `archive` whose remote images were never looked at, oldest
+    /// first.
+    async fn unscanned_messages(
+        &self,
+        archive: ArchiveId,
+        limit: u32,
+    ) -> Result<Vec<MessageId>, StoreError>;
+
+    /// Marks `message` as looked at and links it to the remote copies in `keys`, which were saved
+    /// with [`RemoteImageStore::save_remote_copy`] first; unknown keys are ignored. Idempotent.
+    async fn record_remote_scan(
+        &self,
+        message: MessageId,
+        keys: &[String],
+    ) -> Result<(), StoreError>;
+
+    /// The remote copies with saved bytes that `message` links to, in no particular order.
+    async fn message_remote_copies(
+        &self,
+        message: MessageId,
+    ) -> Result<Vec<RemoteCopy>, StoreError>;
+}
+
+/// The whole metadata store.
+pub trait Store: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore {}
+
+impl<T: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore> Store for T {}

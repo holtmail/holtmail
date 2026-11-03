@@ -24,6 +24,7 @@ pub async fn conformance(store: Arc<dyn Store>) {
     sessions(&*store).await;
     removal(&*store).await;
     user_changes_and_grants(&*store).await;
+    remote_copies(&*store).await;
 }
 
 /// A message with invented headers; `n` makes its bytes unique.
@@ -962,4 +963,102 @@ async fn user_changes_and_grants(store: &dyn Store) {
         Err(StoreError::NotFound(_))
     ));
     store.delete_archive(first).await.unwrap();
+}
+
+async fn remote_copies(store: &dyn Store) {
+    let first = store.create_archive("Newsletters").await.unwrap();
+    assert!(
+        !first.save_remote_images,
+        "saving remote images is on by default"
+    );
+    store.set_save_remote_images(first.id, true).await.unwrap();
+    assert!(
+        store
+            .get_archive(first.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .save_remote_images
+    );
+    assert!(matches!(
+        store.set_save_remote_images(ArchiveId::new(), true).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let second = store.create_archive("Elsewhere").await.unwrap().id;
+
+    let a = store
+        .insert_message(message(first.id, 9101, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    let b = store
+        .insert_message(message(first.id, 9102, 1_700_000_001))
+        .await
+        .unwrap()
+        .message_id;
+    let c = store
+        .insert_message(message(second, 9103, 1_700_000_002))
+        .await
+        .unwrap()
+        .message_id;
+    assert_eq!(
+        store.unscanned_messages(first.id, 10).await.unwrap(),
+        [a, b]
+    );
+
+    let logo_blob = BlobId::of(b"logo bytes");
+    let logo = RemoteCopy {
+        key: "logo".into(),
+        url: "https://example.com/logo.png".into(),
+        blob_id: Some(logo_blob),
+        content_type: Some("image/png".into()),
+        size: 10,
+        fetched_at: Timestamp::from_secs(1),
+        error: None,
+    };
+    let broken = RemoteCopy {
+        key: "broken".into(),
+        url: "https://example.org/gone.png".into(),
+        blob_id: None,
+        content_type: None,
+        size: 0,
+        fetched_at: Timestamp::from_secs(1),
+        error: Some("HTTP 404".into()),
+    };
+    store.save_remote_copy(&logo).await.unwrap();
+    store.save_remote_copy(&broken).await.unwrap();
+    store.save_remote_copy(&broken).await.unwrap();
+    assert_eq!(store.remote_copy("logo").await.unwrap(), Some(logo.clone()));
+    assert_eq!(store.remote_copy("missing").await.unwrap(), None);
+
+    let keys = ["logo".to_string(), "broken".into(), "unknown".into()];
+    store.record_remote_scan(a, &keys).await.unwrap();
+    store.record_remote_scan(a, &keys).await.unwrap();
+    store.record_remote_scan(c, &keys[..1]).await.unwrap();
+    assert!(matches!(
+        store.record_remote_scan(MessageId::new(), &[]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(store.unscanned_messages(first.id, 10).await.unwrap(), [b]);
+    assert_eq!(
+        store.message_remote_copies(a).await.unwrap(),
+        std::slice::from_ref(&logo),
+        "only copies with saved bytes are listed"
+    );
+    assert!(store.message_remote_copies(b).await.unwrap().is_empty());
+
+    let orphans = store.delete_archive(first.id).await.unwrap();
+    assert!(
+        !orphans.contains(&logo_blob),
+        "a copy another archive still links was orphaned"
+    );
+    assert_eq!(store.remote_copy("broken").await.unwrap(), None);
+    assert_eq!(store.remote_copy("logo").await.unwrap(), Some(logo));
+
+    let orphans = store.delete_archive(second).await.unwrap();
+    assert!(
+        orphans.contains(&logo_blob),
+        "the last link did not free the copy"
+    );
+    assert_eq!(store.remote_copy("logo").await.unwrap(), None);
 }

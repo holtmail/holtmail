@@ -13,6 +13,8 @@ pub struct Archive {
     pub name: String,
     /// When it was created.
     pub created_at: Timestamp,
+    /// Whether remote images linked from its messages are downloaded and kept with the archive.
+    pub save_remote_images: bool,
 }
 
 /// What kind of source an account reads mail from.
@@ -481,3 +483,22 @@ pub struct NewUser {
 
 /// The hash of a session token. Stores never see the token itself.
 pub type SessionHash = [u8; 32];
+
+/// What the archive knows about one remote image: a saved copy, or why there is none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCopy {
+    /// The key the URL is known by; see `holtmail_sanitize::remote_key`.
+    pub key: String,
+    /// The absolute URL.
+    pub url: String,
+    /// The saved bytes; `None` when fetching failed.
+    pub blob_id: Option<BlobId>,
+    /// Media type of the saved bytes.
+    pub content_type: Option<String>,
+    /// Size of the saved bytes; 0 without a copy.
+    pub size: u64,
+    /// When it was fetched or the fetch failed.
+    pub fetched_at: Timestamp,
+    /// Why fetching failed, without any message content.
+    pub error: Option<String>,
+}

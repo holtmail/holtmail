@@ -12,7 +12,8 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | --- | --- |
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
-| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, sync state and grants, and returns the blobs no message or attachment of any archive references any more, so the caller can delete them. `NotFound` for a missing archive |
+| `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives); `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, sync state and grants, and the remote copies no remaining message links. Returns the blobs no message, attachment or remote copy references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
@@ -71,6 +72,18 @@ A new message joins every thread that contains a message whose `Message-ID` is a
 | `delete_expired_sessions(now)` | Removes sessions with `expires_at <= now`, returns how many |
 
 `User` has `id`, `email`, `name`, `role` (`InstanceRole::Owner | Admin | Member`) and `created_at`; the password hash is not part of it and is read only through `password_hash`. Hashes are opaque PHC strings made by `holtmail-auth`. Sessions are keyed by `SessionHash` (`[u8; 32]`, the hash of the token); the store never sees a token.
+
+### RemoteImageStore
+
+Copies of remote images linked from messages, shared by every message and archive that links the same URL. A `RemoteCopy` has the `key` (BLAKE3 hex of the absolute URL, see [`holtmail-sanitize`](../../sanitize/docs/README.md)), `url`, and either `blob_id`, `content_type` and `size` of the saved bytes or an `error`, plus `fetched_at`.
+
+| Method | Guarantees |
+| --- | --- |
+| `remote_copy(key)` | The copy or failure recorded for the key, `None` when never fetched |
+| `save_remote_copy(copy)` | Records it, replacing what was recorded for the key |
+| `unscanned_messages(archive, limit)` | Messages of the archive whose remote images were never looked at, oldest first |
+| `record_remote_scan(message, keys)` | Marks the message as looked at and links it to the recorded copies among `keys`; unknown keys are ignored; idempotent. `NotFound` for a missing message |
+| `message_remote_copies(message)` | The linked copies that have saved bytes |
 
 ## Errors
 

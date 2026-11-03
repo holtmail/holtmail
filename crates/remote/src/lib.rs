@@ -8,12 +8,13 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::stream::{self, StreamExt};
 use holtmail_blob::{BlobError, BlobStore};
 use holtmail_core::{ArchiveId, MessageId, Timestamp};
 use holtmail_fetch::{FetchError, Fetcher};
-use holtmail_store::{RemoteCopy, Store, StoreError};
+use holtmail_store::{ArchivedWhen, RemoteCopy, Store, StoreError};
 
 /// Remote images saved for one message at most; the rest are left out.
 pub const MAX_IMAGES_PER_MESSAGE: usize = 100;
@@ -21,9 +22,22 @@ pub const MAX_IMAGES_PER_MESSAGE: usize = 100;
 const FETCHES_AT_ONCE: usize = 6;
 const MESSAGES_PER_BATCH: u32 = 50;
 
-/// What [`RemoteImages::save_archive`] did.
+/// Which messages [`RemoteImages::save_archive`] looks at, relative to when saving was turned on
+/// for the archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// Messages archived since saving was turned on: what runs after every sync and import.
+    New,
+    /// Messages archived before saving was turned on: run only on request, since an archive can
+    /// hold years of mail.
+    Older,
+}
+
+/// What [`RemoteImages::save_archive`] did so far.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Saved {
+    /// Messages to look at when the run started; more may arrive during a `New` run.
+    pub total: u64,
     /// Messages looked at.
     pub messages: u64,
     /// Images downloaded and stored.
@@ -32,6 +46,8 @@ pub struct Saved {
     pub known: u64,
     /// Images that could not be fetched.
     pub failed: u64,
+    /// The run stopped early because it was cancelled.
+    pub cancelled: bool,
 }
 
 /// Why saving stopped. Failures to fetch an image are recorded, not returned.
@@ -67,32 +83,91 @@ impl RemoteImages {
         }
     }
 
-    /// Saves the remote images of every message in `archive` that was not looked at yet, when the
+    /// Saves the remote images of the messages in `scope` that were not looked at yet, when the
     /// archive has saving turned on; does nothing otherwise.
     ///
-    /// A URL fetched or failed before, for any archive, is linked without fetching it again, so
-    /// failures are not retried. The image bytes are durable before any message links to them.
-    /// Safe to run while messages are being added: later messages are picked up by the next run.
-    pub async fn save_archive(&self, archive: ArchiveId) -> Result<Saved, RemoteError> {
+    /// `progress` is called after every message. The run checks `cancel` between messages and
+    /// stops with `cancelled` set; messages done so far stay done. A URL fetched or failed before,
+    /// for any archive, is linked without fetching it again, so failures are not retried. The image
+    /// bytes are durable before any message links to them. Safe to run while messages are being
+    /// added.
+    pub async fn save_archive(
+        &self,
+        archive: ArchiveId,
+        scope: Scope,
+        cancel: &AtomicBool,
+        progress: impl Fn(&Saved) + Send + Sync,
+    ) -> Result<Saved, RemoteError> {
         let mut saved = Saved::default();
-        let enabled = self
+        let Some(since) = self
             .store
             .get_archive(archive)
             .await?
-            .is_some_and(|archive| archive.save_remote_images);
-        if !enabled {
+            .and_then(|archive| archive.save_remote_images_since)
+        else {
             return Ok(saved);
-        }
+        };
+        let when = match scope {
+            Scope::New => ArchivedWhen::Since(since),
+            Scope::Older => ArchivedWhen::Before(since),
+        };
+        saved.total = self.store.count_unscanned(archive, when).await?;
+        progress(&saved);
         loop {
             let batch = self
                 .store
-                .unscanned_messages(archive, MESSAGES_PER_BATCH)
+                .unscanned_messages(archive, when, MESSAGES_PER_BATCH)
                 .await?;
             if batch.is_empty() {
                 return Ok(saved);
             }
             for message in batch {
+                if cancel.load(Ordering::Relaxed) {
+                    saved.cancelled = true;
+                    return Ok(saved);
+                }
                 self.save_message(message, &mut saved).await?;
+                saved.total = saved.total.max(saved.messages);
+                progress(&saved);
+            }
+        }
+    }
+
+    /// Fetches again every image of `archive` that could not be saved before, once each, and
+    /// records the new result. Progress and cancelling work as in
+    /// [`RemoteImages::save_archive`]; `messages` counts images here.
+    pub async fn retry_failed(
+        &self,
+        archive: ArchiveId,
+        cancel: &AtomicBool,
+        progress: impl Fn(&Saved) + Send + Sync,
+    ) -> Result<Saved, RemoteError> {
+        let started = Timestamp::now();
+        let mut saved = Saved {
+            total: self.store.remote_copy_totals(archive).await?.failed,
+            ..Saved::default()
+        };
+        progress(&saved);
+        loop {
+            let batch = self
+                .store
+                .failed_remote_copies(archive, started, MESSAGES_PER_BATCH)
+                .await?;
+            if batch.is_empty() {
+                return Ok(saved);
+            }
+            for copy in batch {
+                if cancel.load(Ordering::Relaxed) {
+                    saved.cancelled = true;
+                    return Ok(saved);
+                }
+                match self.fetch(copy.key, copy.url).await? {
+                    Outcome::Fetched => saved.fetched += 1,
+                    _ => saved.failed += 1,
+                }
+                saved.messages += 1;
+                saved.total = saved.total.max(saved.messages);
+                progress(&saved);
             }
         }
     }
@@ -139,6 +214,10 @@ impl RemoteImages {
         if self.store.remote_copy(&key).await?.is_some() {
             return Ok(Outcome::Known);
         }
+        self.fetch(key, url).await
+    }
+
+    async fn fetch(&self, key: String, url: String) -> Result<Outcome, RemoteError> {
         let mut copy = RemoteCopy {
             key,
             url,
@@ -189,13 +268,14 @@ mod tests {
     #[derive(Default)]
     struct FakeFetcher {
         asked: Mutex<Vec<String>>,
+        back: AtomicBool,
     }
 
     #[async_trait]
     impl Fetcher for FakeFetcher {
         async fn image(&self, url: &str) -> Result<RemoteImage, FetchError> {
             self.asked.lock().unwrap().push(url.to_owned());
-            if url.contains("gone") {
+            if url.contains("gone") && !self.back.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(FetchError::Unavailable("HTTP 404".into()));
             }
             let bytes = if url.contains("logo") {
@@ -218,6 +298,13 @@ mod tests {
         ))
     }
 
+    async fn run(remote: &RemoteImages, archive: ArchiveId, scope: Scope) -> Saved {
+        remote
+            .save_archive(archive, scope, &AtomicBool::new(false), |_| {})
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn saves_each_image_once_and_links_every_message() {
         let dir = tempfile::tempdir().unwrap();
@@ -230,63 +317,56 @@ mod tests {
         let archive = store.create_archive("News").await.unwrap().id;
         let fetcher = Arc::new(FakeFetcher::default());
         let remote = RemoteImages::new(fetcher.clone(), blobs.clone(), store.clone());
+        let mail = |n: u32, body: &'static str| {
+            let ingest = ingest.clone();
+            async move {
+                ingest
+                    .ingest(archive, newsletter(n, body), &Placement::default())
+                    .await
+                    .unwrap()
+                    .message_id
+            }
+        };
 
-        let first = ingest
-            .ingest(
-                archive,
-                newsletter(
-                    1,
-                    r#"<img src="https://example.com/logo.png"><img src="https://example.com/a.png"><img src="https://example.com/gone.png">"#,
-                ),
-                &Placement::default(),
-            )
-            .await
-            .unwrap()
-            .message_id;
+        let old = mail(
+            1,
+            r#"<img src="https://example.com/logo.png"><img src="https://example.com/old.png">"#,
+        )
+        .await;
         assert_eq!(
-            remote.save_archive(archive).await.unwrap(),
+            run(&remote, archive, Scope::Older).await,
             Saved::default(),
             "saved without being turned on"
         );
 
+        std::thread::sleep(std::time::Duration::from_millis(5));
         store.set_save_remote_images(archive, true).await.unwrap();
-        let report = remote.save_archive(archive).await.unwrap();
+        let first = mail(
+            2,
+            r#"<img src="https://example.com/logo.png"><img src="https://example.com/a.png"><img src="https://example.com/gone.png">"#,
+        )
+        .await;
         assert_eq!(
-            report,
+            run(&remote, archive, Scope::New).await,
             Saved {
+                total: 1,
                 messages: 1,
                 fetched: 2,
                 known: 0,
-                failed: 1
-            }
+                failed: 1,
+                cancelled: false,
+            },
+            "new mail was not saved, or older mail was"
         );
 
-        let second = ingest
-            .ingest(
-                archive,
-                newsletter(
-                    2,
-                    r#"<img src="https://example.com/logo.png"><img src="https://cdn.example.org/logo-copy.png"><img src="https://example.com/gone.png">"#,
-                ),
-                &Placement::default(),
-            )
-            .await
-            .unwrap()
-            .message_id;
-        let report = remote.save_archive(archive).await.unwrap();
-        assert_eq!(
-            report,
-            Saved {
-                messages: 1,
-                fetched: 1,
-                known: 2,
-                failed: 0
-            }
-        );
-        assert_eq!(
-            remote.save_archive(archive).await.unwrap(),
-            Saved::default()
-        );
+        let second = mail(
+            3,
+            r#"<img src="https://example.com/logo.png"><img src="https://cdn.example.org/logo-copy.png"><img src="https://example.com/gone.png">"#,
+        )
+        .await;
+        let report = run(&remote, archive, Scope::New).await;
+        assert_eq!((report.fetched, report.known), (1, 2));
+        assert_eq!(run(&remote, archive, Scope::New).await.messages, 0);
         assert_eq!(
             fetcher.asked.lock().unwrap().len(),
             4,
@@ -299,11 +379,47 @@ mod tests {
             copies[0].blob_id, copies[1].blob_id,
             "identical bytes behind two URLs were stored twice"
         );
-        let logo = &copies[0];
         assert_eq!(
-            blobs.get(logo.blob_id.as_ref().unwrap()).await.unwrap(),
+            blobs
+                .get(copies[0].blob_id.as_ref().unwrap())
+                .await
+                .unwrap(),
             Some(Bytes::from_static(b"the logo"))
         );
         assert_eq!(store.message_remote_copies(first).await.unwrap().len(), 2);
+        assert!(store.message_remote_copies(old).await.unwrap().is_empty());
+
+        let cancel = AtomicBool::new(true);
+        let stopped = remote
+            .save_archive(archive, Scope::Older, &cancel, |_| {})
+            .await
+            .unwrap();
+        assert!(stopped.cancelled && stopped.messages == 0);
+
+        let seen = std::sync::Mutex::new(Vec::new());
+        let older = remote
+            .save_archive(archive, Scope::Older, &AtomicBool::new(false), |p| {
+                seen.lock().unwrap().push((p.messages, p.total));
+            })
+            .await
+            .unwrap();
+        assert_eq!((older.messages, older.fetched, older.known), (1, 1, 1));
+        assert_eq!(*seen.lock().unwrap(), [(0, 1), (1, 1)]);
+        assert_eq!(store.message_remote_copies(old).await.unwrap().len(), 2);
+
+        fetcher
+            .back
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let retried = remote
+            .retry_failed(archive, &AtomicBool::new(false), |_| {})
+            .await
+            .unwrap();
+        assert_eq!((retried.total, retried.fetched, retried.failed), (1, 1, 0));
+        assert_eq!(store.message_remote_copies(first).await.unwrap().len(), 3);
+        assert_eq!(
+            store.remote_copy_totals(archive).await.unwrap().failed,
+            0,
+            "a retried image still counts as failed"
+        );
     }
 }

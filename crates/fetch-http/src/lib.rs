@@ -2,7 +2,8 @@
 //!
 //! Host names go through a resolver that drops every non-public address, so a name that points
 //! into a private network, or changes to one between checks, fails to connect. Addresses written
-//! in the URL and in redirects are checked before any connection.
+//! in the URL and in redirects are checked before any connection. Requests can go through an
+//! outbound proxy, so senders see the proxy's address instead of the server's.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use bytes::{Bytes, BytesMut};
 use holtmail_fetch::{FetchError, Fetcher, RemoteImage};
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
-use reqwest::redirect;
+use reqwest::{Proxy, redirect};
 use url::{Host, Url};
 
 /// Limits of an [`HttpFetcher`].
@@ -25,6 +26,10 @@ pub struct Options {
     pub timeout: Duration,
     /// Redirects followed before giving up.
     pub max_redirects: usize,
+    /// Outbound proxy for every request: `http://`, `https://`, `socks5://` or `socks5h://`, with
+    /// optional `user:password@`. With `socks5h` host names are resolved by the proxy and never
+    /// looked up locally.
+    pub proxy: Option<String>,
 }
 
 impl Default for Options {
@@ -33,6 +38,7 @@ impl Default for Options {
             max_bytes: 10 * 1024 * 1024,
             timeout: Duration::from_secs(15),
             max_redirects: 5,
+            proxy: None,
         }
     }
 }
@@ -42,13 +48,72 @@ impl Default for Options {
 pub struct HttpFetcher {
     client: reqwest::Client,
     max_bytes: usize,
+    remote_dns: bool,
+}
+
+/// Where an outbound proxy is, without its credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyAddress {
+    /// `http`, `https`, `socks5` or `socks5h`.
+    pub scheme: String,
+    /// Host name or address.
+    pub host: String,
+    /// Port, the scheme's default when the URL has none (1080 for SOCKS).
+    pub port: u16,
+}
+
+impl std::fmt::Display for ProxyAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}://{}:{}", self.scheme, self.host, self.port)
+    }
+}
+
+/// Checks a proxy URL and returns where it points, or a reason it cannot be used.
+pub fn proxy_address(proxy: &str) -> Result<ProxyAddress, String> {
+    let url = Url::parse(proxy.trim()).map_err(|_| "The proxy is not a URL.".to_owned())?;
+    let scheme = url.scheme().to_owned();
+    let port = match scheme.as_str() {
+        "http" => url.port().unwrap_or(80),
+        "https" => url.port().unwrap_or(443),
+        "socks5" | "socks5h" => url.port().unwrap_or(1080),
+        _ => return Err("Use an http://, https://, socks5:// or socks5h:// proxy.".into()),
+    };
+    let host = url
+        .host_str()
+        .filter(|host| !host.is_empty())
+        .ok_or("The proxy has no host.")?
+        .trim_matches(['[', ']'])
+        .to_owned();
+    if url.path() != "/" && !url.path().is_empty() || url.query().is_some() {
+        return Err(
+            "A proxy URL has only a scheme, host, port and optional user and password.".into(),
+        );
+    }
+    Ok(ProxyAddress { scheme, host, port })
 }
 
 impl HttpFetcher {
     /// A fetcher with these limits.
     pub fn new(options: Options) -> Result<Self, FetchError> {
         let max_redirects = options.max_redirects;
-        let client = reqwest::Client::builder()
+        let proxy = options
+            .proxy
+            .as_deref()
+            .map(|proxy| {
+                let address = proxy_address(proxy).map_err(FetchError::Refused)?;
+                let proxy =
+                    Proxy::all(proxy.trim()).map_err(|e| FetchError::Refused(e.to_string()))?;
+                Ok::<_, FetchError>((address, proxy))
+            })
+            .transpose()?;
+        let remote_dns = proxy
+            .as_ref()
+            .is_some_and(|(address, _)| address.scheme == "socks5h");
+        let mut builder = reqwest::Client::builder();
+        if let Some((_, proxy)) = proxy {
+            builder = builder.proxy(proxy);
+        }
+        let client = builder
             .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
             .timeout(options.timeout)
             .connect_timeout(options.timeout.min(Duration::from_secs(5)))
@@ -69,6 +134,7 @@ impl HttpFetcher {
         Ok(Self {
             client,
             max_bytes: options.max_bytes,
+            remote_dns,
         })
     }
 }
@@ -78,7 +144,7 @@ impl Fetcher for HttpFetcher {
     async fn image(&self, url: &str) -> Result<RemoteImage, FetchError> {
         let url = Url::parse(url).map_err(|_| FetchError::Refused("not a URL".into()))?;
         check_url(&url).map_err(|reason| FetchError::Refused(reason.into()))?;
-        if let Some(Host::Domain(host)) = url.host() {
+        if let Some(Host::Domain(host)) = url.host().filter(|_| !self.remote_dns) {
             let port = url.port_or_known_default().unwrap_or(80);
             if public_addrs(host, port).await?.is_empty() {
                 return Err(FetchError::Refused("not a public address".into()));
@@ -266,6 +332,53 @@ mod tests {
     async fn keeps_the_fetcher_contract() {
         let fetcher = HttpFetcher::new(Options::default()).unwrap();
         holtmail_fetch::testing::conformance(&fetcher).await;
+    }
+
+    #[tokio::test]
+    async fn keeps_the_contract_through_a_proxy() {
+        for proxy in [
+            "socks5h://127.0.0.1:9050",
+            "http://user:secret@proxy.example.com:3128",
+        ] {
+            let fetcher = HttpFetcher::new(Options {
+                proxy: Some(proxy.into()),
+                ..Options::default()
+            })
+            .unwrap();
+            holtmail_fetch::testing::conformance(&fetcher).await;
+        }
+    }
+
+    #[test]
+    fn reads_proxy_addresses() {
+        assert_eq!(
+            proxy_address("socks5h://127.0.0.1:9050")
+                .unwrap()
+                .to_string(),
+            "socks5h://127.0.0.1:9050"
+        );
+        assert_eq!(
+            proxy_address("http://user:secret@proxy.example.com")
+                .unwrap()
+                .to_string(),
+            "http://proxy.example.com:80",
+            "credentials leaked into the address"
+        );
+        assert_eq!(proxy_address("socks5://[::1]").unwrap().port, 1080);
+        for bad in [
+            "ftp://proxy.example.com",
+            "proxy.example.com:3128",
+            "http://proxy.example.com/path",
+        ] {
+            assert!(proxy_address(bad).is_err(), "{bad}");
+        }
+        assert!(
+            HttpFetcher::new(Options {
+                proxy: Some("ftp://proxy.example.com".into()),
+                ..Options::default()
+            })
+            .is_err()
+        );
     }
 
     #[test]

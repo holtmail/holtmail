@@ -9,7 +9,11 @@ let fetcher = HttpFetcher::new(Options::default())?;
 let image = fetcher.image("https://example.com/logo.png").await?;
 ```
 
-`Options { max_bytes, timeout, max_redirects }`, by default 10 MiB, 15 seconds for the whole request with redirects (5 seconds to connect) and 5 redirects. `is_public(ip)` tells whether an address is on the public internet.
+`Options { max_bytes, timeout, max_redirects, proxy }`, by default 10 MiB, 15 seconds for the whole request with redirects (5 seconds to connect), 5 redirects and no proxy. `is_public(ip)` tells whether an address is on the public internet. `proxy_address(url)` checks a proxy URL and returns `ProxyAddress { scheme, host, port }`, which prints as `scheme://host:port` without credentials.
+
+## Outbound proxy
+
+`proxy` sends every request through `http://`, `https://`, `socks5://` or `socks5h://`, with an optional `user:password@`, so senders see the proxy's address. The checks below still run before anything is sent. With `socks5h` host names are resolved by the proxy (as Tor needs) and never looked up locally, so names are only checked against the local-name list and the proxy decides where it can connect. With the other schemes names are resolved and checked locally first, but the proxy resolves them again when connecting.
 
 ## How it stays out of private networks
 

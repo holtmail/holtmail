@@ -407,8 +407,10 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         index: services.index.clone(),
         auth: auth.clone(),
         mailboxes: Arc::new(runner.clone()),
+        fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
     });
+    runner.save_all_remote_images().await;
     if config.sync_interval_minutes > 0 {
         tokio::spawn(runner.run_schedule(std::time::Duration::from_secs(
             config.sync_interval_minutes * 60,

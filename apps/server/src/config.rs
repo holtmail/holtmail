@@ -6,6 +6,8 @@ use anyhow::{Context, bail};
 use holtmail_blob::BlobStore;
 use holtmail_blob_fs::FsBlobStore;
 use holtmail_blob_s3::{S3BlobStore, S3Config};
+use holtmail_fetch::Fetcher;
+use holtmail_fetch_http::HttpFetcher;
 use holtmail_index::SearchIndex;
 use holtmail_index_tantivy::TantivyIndex;
 use holtmail_secret::SecretBox;
@@ -126,6 +128,7 @@ pub struct Services {
     pub blobs: Arc<dyn BlobStore>,
     pub store: Arc<dyn Store>,
     pub index: Arc<dyn SearchIndex>,
+    pub fetcher: Arc<dyn Fetcher>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -177,11 +180,13 @@ impl Services {
         )?);
         let store = Arc::new(SqliteStore::open(config.data_dir.join("holtmail.db")).await?);
         let index = Arc::new(TantivyIndex::open(config.data_dir.join("index"))?);
+        let fetcher = Arc::new(HttpFetcher::new(holtmail_fetch_http::Options::default())?);
         Ok(Self {
             secrets,
             blobs,
             store,
             index,
+            fetcher,
         })
     }
 }

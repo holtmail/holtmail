@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use holtmail_api::{AccountStatus, MailboxError, Mailboxes, NewImapAccount};
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
+use holtmail_remote::RemoteImages;
 use holtmail_source::{Source, SourceError};
 use holtmail_source_imap::{ImapSettings, ImapSource};
 use holtmail_store::{Account, AccountKind};
@@ -26,6 +27,14 @@ struct Inner {
     ingest: Ingest,
     uploads: PathBuf,
     status: Mutex<HashMap<AccountId, AccountStatus>>,
+    remote: RemoteImages,
+    saving: Mutex<Saving>,
+}
+
+#[derive(Default)]
+struct Saving {
+    running: HashSet<ArchiveId>,
+    again: HashSet<ArchiveId>,
 }
 
 impl Runner {
@@ -36,13 +45,64 @@ impl Runner {
             services.store.clone(),
             services.index.clone(),
         );
+        let remote = RemoteImages::new(
+            services.fetcher.clone(),
+            services.blobs.clone(),
+            services.store.clone(),
+        );
         Self(Arc::new(Inner {
             services,
             syncer,
             ingest,
             uploads,
             status: Mutex::new(HashMap::new()),
+            remote,
+            saving: Mutex::new(Saving::default()),
         }))
+    }
+
+    /// Starts saving remote images for every archive that has it turned on.
+    pub async fn save_all_remote_images(&self) {
+        match self.0.services.store.list_archives().await {
+            Ok(archives) => {
+                for archive in archives.into_iter().filter(|a| a.save_remote_images) {
+                    self.start_saving(archive.id);
+                }
+            }
+            Err(error) => tracing::warn!(%error, "listing archives failed"),
+        }
+    }
+
+    fn start_saving(&self, archive: ArchiveId) {
+        {
+            let mut saving = self.0.saving.lock().expect("saving lock");
+            if !saving.running.insert(archive) {
+                saving.again.insert(archive);
+                return;
+            }
+        }
+        let runner = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match runner.0.remote.save_archive(archive).await {
+                    Ok(saved) if saved.messages > 0 => tracing::info!(
+                        %archive,
+                        messages = saved.messages,
+                        fetched = saved.fetched,
+                        known = saved.known,
+                        failed = saved.failed,
+                        "saved remote images"
+                    ),
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(%archive, %error, "saving remote images failed"),
+                }
+                let mut saving = runner.0.saving.lock().expect("saving lock");
+                if !saving.again.remove(&archive) {
+                    saving.running.remove(&archive);
+                    return;
+                }
+            }
+        });
     }
 
     fn begin(&self, account: AccountId) -> bool {
@@ -95,6 +155,9 @@ impl Runner {
                         None => Ok(report.new_messages()),
                     },
                 );
+                if report.new_messages() > 0 {
+                    self.start_saving(account.archive_id);
+                }
             }
             Err(error) => {
                 tracing::warn!(account = %account.id, %error, "sync failed");
@@ -119,6 +182,9 @@ impl Runner {
             Ok(totals) => {
                 tracing::info!(account = %account.id, new = totals.new, known = totals.known, failed = totals.failed, "imported");
                 self.finish(account.id, Ok(totals.new));
+                if totals.new > 0 {
+                    self.start_saving(account.archive_id);
+                }
             }
             Err(error) => {
                 tracing::warn!(account = %account.id, %error, "import failed");
@@ -267,6 +333,10 @@ impl Mailboxes for Runner {
         let account = account.clone();
         tokio::spawn(async move { runner.import_now(account, file).await });
         Ok(())
+    }
+
+    fn save_remote_images(&self, archive: ArchiveId) {
+        self.start_saving(archive);
     }
 
     fn upload_dir(&self) -> &Path {

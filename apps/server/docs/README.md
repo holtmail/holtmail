@@ -24,6 +24,8 @@ Everything the commands do can also be done in the web app by the owner or an ad
 
 `serve` syncs every enabled account one after another, every `sync_interval_minutes`, and removes expired sessions every hour. Syncs and imports started from the web and from the schedule share one runner that keeps at most one run per account and remembers the state of the last one (shown in the web app) until the server restarts. Uploaded files wait in `<data_dir>/uploads` and are removed once imported.
 
+Remote images go through [`holtmail-fetch-http`](../../../crates/fetch-http/docs/README.md), which only contacts public addresses. For archives with "Save remote images" on, [`holtmail-remote`](../../../crates/remote/docs/README.md) saves the images of new messages in the background after every sync or import that brought any, once at start for messages left over, and for the whole archive when the setting is turned on; one run per archive at a time. The web reader's image proxy uses the same fetcher.
+
 ## Signing in
 
 While there are no users, `serve` logs a one-time setup link at start:
@@ -59,13 +61,13 @@ S3 credentials come only from `HOLTMAIL_S3_ACCESS_KEY_ID` and `HOLTMAIL_S3_SECRE
 
 ## Data directory
 
-| Path          | What                                                 | Back up                            |
-| ------------- | ---------------------------------------------------- | ---------------------------------- |
-| `holtmail.db` | Metadata (SQLite)                                    | Yes                                |
-| `blobs/`      | Message and attachment bytes, unless blobs are on S3 | Yes                                |
-| `secret.key`  | The key sealing account passwords                    | Yes, separately                    |
-| `index/`      | Search index                                         | No: `holtmail reindex` rebuilds it |
-| `uploads/`    | Uploaded files waiting to be imported                | No                                 |
+| Path          | What                                                                     | Back up                            |
+| ------------- | ------------------------------------------------------------------------ | ---------------------------------- |
+| `holtmail.db` | Metadata (SQLite)                                                        | Yes                                |
+| `blobs/`      | Message, attachment and saved remote image bytes, unless blobs are on S3 | Yes                                |
+| `secret.key`  | The key sealing account passwords                                        | Yes, separately                    |
+| `index/`      | Search index                                                             | No: `holtmail reindex` rebuilds it |
+| `uploads/`    | Uploaded files waiting to be imported                                    | No                                 |
 
 ## Logs
 

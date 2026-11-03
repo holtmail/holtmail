@@ -52,6 +52,21 @@ pub(crate) fn archive(row: &SqliteRow) -> Result<Archive, StoreError> {
         id: parse(&get::<String>(row, "id")?)?,
         name: get(row, "name")?,
         created_at: timestamp(row, "created_at")?,
+        save_remote_images: get::<i64>(row, "save_remote_images")? != 0,
+    })
+}
+
+pub(crate) fn remote_copy(row: &SqliteRow) -> Result<RemoteCopy, StoreError> {
+    Ok(RemoteCopy {
+        key: get(row, "key")?,
+        url: get(row, "url")?,
+        blob_id: get::<Option<String>>(row, "blob_id")?
+            .map(|id| parse(&id))
+            .transpose()?,
+        content_type: get(row, "content_type")?,
+        size: unsigned(get(row, "size")?),
+        fetched_at: timestamp(row, "fetched_at")?,
+        error: get(row, "error")?,
     })
 }
 

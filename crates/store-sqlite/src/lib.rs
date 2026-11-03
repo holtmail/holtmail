@@ -60,6 +60,7 @@ impl ArchiveStore for SqliteStore {
             id: ArchiveId::new(),
             name: name.to_owned(),
             created_at: Timestamp::now(),
+            save_remote_images: false,
         };
         let _write = self.writer.lock().await;
         sqlx::query("INSERT INTO archives (id, name, created_at) VALUES (?, ?, ?)")
@@ -106,13 +107,35 @@ impl ArchiveStore for SqliteStore {
         Ok(())
     }
 
+    async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let done = sqlx::query("UPDATE archives SET save_remote_images = ? WHERE id = ?")
+            .bind(i64::from(save))
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("archive"));
+        }
+        Ok(())
+    }
+
     async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError> {
         let id = id.to_string();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
-        let blobs: Vec<String> = sqlx::query_scalar(
+        let mut blobs: Vec<String> = sqlx::query_scalar(
             "SELECT blob_id FROM messages WHERE archive_id = ?1
              UNION SELECT a.blob_id FROM attachments a JOIN messages m ON m.id = a.message_id
+             WHERE m.archive_id = ?1",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        let linked: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT l.key FROM message_remote_images l JOIN messages m ON m.id = l.message_id
              WHERE m.archive_id = ?1",
         )
         .bind(&id)
@@ -131,6 +154,8 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM accounts WHERE archive_id = ?1",
             "DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM message_parents WHERE archive_id = ?1",
+            "DELETE FROM message_remote_images WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
+            "DELETE FROM remote_scans WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM messages WHERE archive_id = ?1",
         ] {
             sqlx::query(statement)
@@ -147,11 +172,26 @@ impl ArchiveStore for SqliteStore {
         if done.rows_affected() == 0 {
             return Err(StoreError::NotFound("archive"));
         }
+        for key in linked {
+            let gone: Option<Option<String>> = sqlx::query_scalar(
+                "DELETE FROM remote_images WHERE key = ?1
+                 AND NOT EXISTS (SELECT 1 FROM message_remote_images WHERE key = ?1)
+                 RETURNING blob_id",
+            )
+            .bind(&key)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?;
+            blobs.extend(gone.flatten());
+        }
+        blobs.sort();
+        blobs.dedup();
         let mut orphans = Vec::new();
         for blob in blobs {
             let used: Option<i64> = sqlx::query_scalar(
                 "SELECT 1 FROM messages WHERE blob_id = ?1
-                 UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1 LIMIT 1",
+                 UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1
+                 UNION ALL SELECT 1 FROM remote_images WHERE blob_id = ?1 LIMIT 1",
             )
             .bind(&blob)
             .fetch_optional(&mut *tx)
@@ -1125,6 +1165,111 @@ fn decode_cursor(cursor: &PageCursor) -> Result<(i64, String), StoreError> {
     let date = date.parse().map_err(|_| invalid())?;
     MessageId::from_str(id).map_err(|_| invalid())?;
     Ok((date, id.to_owned()))
+}
+
+#[async_trait]
+impl RemoteImageStore for SqliteStore {
+    async fn remote_copy(&self, key: &str) -> Result<Option<RemoteCopy>, StoreError> {
+        sqlx::query("SELECT * FROM remote_images WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(backend)?
+            .map(|row| remote_copy(&row))
+            .transpose()
+    }
+
+    async fn save_remote_copy(&self, copy: &RemoteCopy) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        sqlx::query(
+            "INSERT INTO remote_images (key, url, blob_id, content_type, size, fetched_at, error)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (key) DO UPDATE SET url = excluded.url, blob_id = excluded.blob_id,
+             content_type = excluded.content_type, size = excluded.size,
+             fetched_at = excluded.fetched_at, error = excluded.error",
+        )
+        .bind(&copy.key)
+        .bind(&copy.url)
+        .bind(copy.blob_id.as_ref().map(ToString::to_string))
+        .bind(&copy.content_type)
+        .bind(signed(copy.size)?)
+        .bind(copy.fetched_at.as_millis())
+        .bind(&copy.error)
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn unscanned_messages(
+        &self,
+        archive: ArchiveId,
+        limit: u32,
+    ) -> Result<Vec<MessageId>, StoreError> {
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT m.id FROM messages m WHERE m.archive_id = ?
+             AND NOT EXISTS (SELECT 1 FROM remote_scans s WHERE s.message_id = m.id)
+             ORDER BY m.id LIMIT ?",
+        )
+        .bind(archive.to_string())
+        .bind(limit.min(MAX_PAGE))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?;
+        ids.iter().map(|id| parse(id)).collect()
+    }
+
+    async fn record_remote_scan(
+        &self,
+        message: MessageId,
+        keys: &[String],
+    ) -> Result<(), StoreError> {
+        let message = message.to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let done = sqlx::query(
+            "INSERT INTO remote_scans (message_id, scanned_at)
+             SELECT id, ? FROM messages WHERE id = ?
+             ON CONFLICT (message_id) DO UPDATE SET scanned_at = excluded.scanned_at",
+        )
+        .bind(Timestamp::now().as_millis())
+        .bind(&message)
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("message"));
+        }
+        for key in keys {
+            sqlx::query(
+                "INSERT OR IGNORE INTO message_remote_images (message_id, key)
+                 SELECT ?, key FROM remote_images WHERE key = ?",
+            )
+            .bind(&message)
+            .bind(key)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        }
+        tx.commit().await.map_err(backend)
+    }
+
+    async fn message_remote_copies(
+        &self,
+        message: MessageId,
+    ) -> Result<Vec<RemoteCopy>, StoreError> {
+        sqlx::query(
+            "SELECT r.* FROM remote_images r JOIN message_remote_images l ON l.key = r.key
+             WHERE l.message_id = ? AND r.blob_id IS NOT NULL",
+        )
+        .bind(message.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(remote_copy)
+        .collect()
+    }
 }
 
 #[cfg(test)]

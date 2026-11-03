@@ -22,6 +22,8 @@ pub async fn conformance(store: Arc<dyn Store>) {
     sync_state(&*store).await;
     users(&*store).await;
     sessions(&*store).await;
+    removal(&*store).await;
+    user_changes_and_grants(&*store).await;
 }
 
 /// A message with invented headers; `n` makes its bytes unique.
@@ -768,4 +770,196 @@ async fn sessions(store: &dyn Store) {
         Some(other),
         "delete_user_sessions ended another user's session"
     );
+}
+
+async fn removal(store: &dyn Store) {
+    let gone = store.create_archive("Old").await.unwrap().id;
+    let kept = store.create_archive("Kept").await.unwrap().id;
+    store.rename_archive(kept, "Kept mail").await.unwrap();
+    assert_eq!(
+        store.get_archive(kept).await.unwrap().unwrap().name,
+        "Kept mail"
+    );
+    assert!(matches!(
+        store.rename_archive(ArchiveId::new(), "x").await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let attachment = BlobId::of(b"attachment only in the old archive");
+    let mut shared = message(gone, 9001, 1_700_000_000);
+    shared.attachments.push(Attachment {
+        ordinal: 0,
+        blob_id: attachment,
+        filename: Some("a.txt".into()),
+        content_type: "text/plain".into(),
+        size: 3,
+        content_id: None,
+        inline: false,
+    });
+    let own = message(gone, 9002, 1_700_000_001);
+    let own_blob = own.blob_id;
+    let in_gone = store.insert_message(shared).await.unwrap().message_id;
+    store.insert_message(own).await.unwrap();
+    let in_kept = store
+        .insert_message(message(kept, 9001, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+
+    let account = import_account(store, gone).await;
+    let folder = store
+        .upsert_folder(account.id, "INBOX", Some(FolderRole::Inbox))
+        .await
+        .unwrap()
+        .id;
+    store
+        .record_location(in_gone, folder, Some(1), &[], Timestamp::from_secs(1))
+        .await
+        .unwrap();
+    store
+        .set_cursor(
+            folder,
+            &FolderCursor {
+                last_uid: Some(1),
+                ..FolderCursor::default()
+            },
+        )
+        .await
+        .unwrap();
+    store
+        .record_failure(folder, 2, "broken", Timestamp::from_secs(1))
+        .await
+        .unwrap();
+
+    let mut orphans = vec![attachment, own_blob];
+    orphans.sort();
+    assert_eq!(
+        store.delete_archive(gone).await.unwrap(),
+        orphans,
+        "orphaned blobs are wrong; a blob still used by another archive must not be listed"
+    );
+    assert!(store.get_archive(gone).await.unwrap().is_none());
+    assert!(store.get_account(account.id).await.unwrap().is_none());
+    assert!(store.get_message(in_gone).await.unwrap().is_none());
+    assert!(store.get_message(in_kept).await.unwrap().is_some());
+    assert!(matches!(
+        store.delete_archive(gone).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let account = import_account(store, kept).await;
+    let folder = store
+        .upsert_folder(account.id, "Sent", None)
+        .await
+        .unwrap()
+        .id;
+    store
+        .record_location(in_kept, folder, Some(5), &[], Timestamp::from_secs(1))
+        .await
+        .unwrap();
+    store
+        .record_failure(folder, 6, "broken", Timestamp::from_secs(1))
+        .await
+        .unwrap();
+    store.delete_account(account.id).await.unwrap();
+    assert!(store.get_account(account.id).await.unwrap().is_none());
+    assert!(store.list_folders(kept).await.unwrap().is_empty());
+    assert!(
+        store.get_message(in_kept).await.unwrap().is_some(),
+        "removing an account removed its messages"
+    );
+    assert!(store.locations(in_kept).await.unwrap().is_empty());
+    assert!(matches!(
+        store.delete_account(account.id).await,
+        Err(StoreError::NotFound(_))
+    ));
+    store.delete_archive(kept).await.unwrap();
+}
+
+async fn user_changes_and_grants(store: &dyn Store) {
+    let grace = store
+        .create_user(new_user("grace@example.com", InstanceRole::Member))
+        .await
+        .unwrap();
+    let alan = store
+        .create_user(new_user("alan@example.org", InstanceRole::Member))
+        .await
+        .unwrap();
+    let changed = User {
+        email: "Grace@Example.org".into(),
+        name: "Grace Hopper".into(),
+        role: InstanceRole::Admin,
+        ..grace.clone()
+    };
+    store.update_user(&changed).await.unwrap();
+    assert_eq!(store.get_user(grace.id).await.unwrap().unwrap(), changed);
+    assert_eq!(
+        store
+            .find_user_by_email("grace@example.org")
+            .await
+            .unwrap()
+            .map(|u| u.id),
+        Some(grace.id)
+    );
+    assert!(matches!(
+        store
+            .update_user(&User {
+                email: "ALAN@example.org".into(),
+                ..changed.clone()
+            })
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .update_user(&User {
+                id: UserId::new(),
+                ..changed.clone()
+            })
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let first = store.create_archive("First").await.unwrap().id;
+    let second = store.create_archive("Second").await.unwrap().id;
+    assert!(store.grants(alan.id).await.unwrap().is_empty());
+    store
+        .set_grants(alan.id, &[second, ArchiveId::new(), first, first])
+        .await
+        .unwrap();
+    assert_eq!(store.grants(alan.id).await.unwrap(), [first, second]);
+    store.set_grants(alan.id, &[second]).await.unwrap();
+    assert_eq!(store.grants(alan.id).await.unwrap(), [second]);
+    assert!(matches!(
+        store.set_grants(UserId::new(), &[first]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    store.delete_archive(second).await.unwrap();
+    assert!(
+        store.grants(alan.id).await.unwrap().is_empty(),
+        "a removed archive stayed granted"
+    );
+
+    store.set_grants(alan.id, &[first]).await.unwrap();
+    let hash: SessionHash = [42; 32];
+    store
+        .create_session(&hash, alan.id, Timestamp::from_secs(4_000_000_000))
+        .await
+        .unwrap();
+    store.delete_user(alan.id).await.unwrap();
+    assert!(store.get_user(alan.id).await.unwrap().is_none());
+    assert!(
+        store
+            .session_user(&hash, Timestamp::from_secs(1))
+            .await
+            .unwrap()
+            .is_none(),
+        "a removed user kept a session"
+    );
+    assert!(store.grants(alan.id).await.unwrap().is_empty());
+    assert!(matches!(
+        store.delete_user(alan.id).await,
+        Err(StoreError::NotFound(_))
+    ));
+    store.delete_archive(first).await.unwrap();
 }

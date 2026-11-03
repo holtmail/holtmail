@@ -44,6 +44,14 @@ pub trait ArchiveStore: Send + Sync {
     /// Every archive, oldest first.
     async fn list_archives(&self) -> Result<Vec<Archive>, StoreError>;
 
+    /// Renames the archive. `NotFound` when it does not exist.
+    async fn rename_archive(&self, id: ArchiveId, name: &str) -> Result<(), StoreError>;
+
+    /// Removes the archive with its accounts, folders, messages, attachments, sync state and
+    /// grants. Returns the blobs that no message or attachment of any archive references any
+    /// more, so the caller can delete them. `NotFound` when the archive does not exist.
+    async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError>;
+
     /// Totals of the archive; zeros for an archive without messages.
     async fn archive_stats(&self, id: ArchiveId) -> Result<ArchiveStats, StoreError>;
 
@@ -58,6 +66,10 @@ pub trait ArchiveStore: Send + Sync {
 
     /// Replaces every field of the account except `id`, `archive_id`, `kind` and `created_at`.
     async fn update_account(&self, account: &Account) -> Result<(), StoreError>;
+
+    /// Removes the account with its folders, locations and sync state. Its messages stay in the
+    /// archive. `NotFound` when the account does not exist.
+    async fn delete_account(&self, id: AccountId) -> Result<(), StoreError>;
 
     /// The folder with `path` in the account, created when missing. Idempotent; a different `role`
     /// updates the stored one.
@@ -202,6 +214,20 @@ pub trait UserStore: Send + Sync {
 
     /// Every user, oldest first.
     async fn list_users(&self) -> Result<Vec<User>, StoreError>;
+
+    /// Replaces the user's email, name and role. `NotFound` when the user does not exist;
+    /// `Invalid` when another user has the email, compared without regard to letter case.
+    async fn update_user(&self, user: &User) -> Result<(), StoreError>;
+
+    /// Removes the user with their sessions and grants. `NotFound` when the user does not exist.
+    async fn delete_user(&self, id: UserId) -> Result<(), StoreError>;
+
+    /// The archives the user was granted, oldest archive first. Empty for an unknown user.
+    async fn grants(&self, user: UserId) -> Result<Vec<ArchiveId>, StoreError>;
+
+    /// Replaces the user's grants with `archives`; unknown archives are skipped. `NotFound` when
+    /// the user does not exist.
+    async fn set_grants(&self, user: UserId, archives: &[ArchiveId]) -> Result<(), StoreError>;
 
     /// The user's PHC password hash; `None` when the user has no password. `NotFound` when the
     /// user does not exist.

@@ -11,9 +11,12 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | Method | Guarantees |
 | --- | --- |
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
+| `rename_archive(id, name)` | `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, sync state and grants, and returns the blobs no message or attachment of any archive references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
+| `delete_account(id)` | Removes the account with its folders, locations, cursors and failures; its messages stay in the archive. `NotFound` for a missing account |
 | `upsert_folder(account, path, role)` | Idempotent per `(account, path)`; a new role replaces the stored one |
 | `list_folders(archive)` | Every folder of the archive's accounts with the count of messages located there and not removed, and of those without `\Seen` (any letter case), by account then path |
 
@@ -58,6 +61,9 @@ A new message joins every thread that contains a message whose `Message-ID` is a
 | `count_users`, `get_user`, `list_users` | `list_users` is oldest first |
 | `create_user(NewUser)` | `Invalid` when another user has the same email, compared without regard to letter case; the email is kept as entered |
 | `find_user_by_email` | Case-insensitive |
+| `update_user(user)` | Replaces email, name and role; `NotFound` for a missing user, `Invalid` when another user has the email (any letter case) |
+| `delete_user(id)` | Removes the user with their sessions and grants; `NotFound` for a missing user |
+| `grants(user)`, `set_grants(user, archives)` | The archives a member may read, oldest first; `set_grants` replaces them, skips unknown archives and answers `NotFound` for a missing user. Grants go away with their archive or user |
 | `password_hash(user)`, `set_password_hash(user, hash)` | `NotFound` for a missing user; `None` for a user without a password |
 | `create_session(hash, user, expires_at)` | `NotFound` for a missing user, `Invalid` for a hash already in use |
 | `session_user(hash, now)` | The session's user, `None` when unknown or expired (`expires_at <= now`) |

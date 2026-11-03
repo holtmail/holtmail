@@ -61,6 +61,7 @@ impl ArchiveStore for SqliteStore {
             name: name.to_owned(),
             created_at: Timestamp::now(),
             save_remote_images: false,
+            save_remote_images_since: None,
         };
         let _write = self.writer.lock().await;
         sqlx::query("INSERT INTO archives (id, name, created_at) VALUES (?, ?, ?)")
@@ -109,12 +110,18 @@ impl ArchiveStore for SqliteStore {
 
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError> {
         let _write = self.writer.lock().await;
-        let done = sqlx::query("UPDATE archives SET save_remote_images = ? WHERE id = ?")
-            .bind(i64::from(save))
-            .bind(id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(backend)?;
+        let done = sqlx::query(
+            "UPDATE archives SET save_remote_images = ?1,
+             save_remote_images_since = CASE WHEN ?1 = 0 THEN NULL
+             ELSE COALESCE(save_remote_images_since, ?2) END
+             WHERE id = ?3",
+        )
+        .bind(i64::from(save))
+        .bind(Timestamp::now().as_millis())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
         if done.rows_affected() == 0 {
             return Err(StoreError::NotFound("archive"));
         }
@@ -1204,19 +1211,86 @@ impl RemoteImageStore for SqliteStore {
     async fn unscanned_messages(
         &self,
         archive: ArchiveId,
+        when: ArchivedWhen,
         limit: u32,
     ) -> Result<Vec<MessageId>, StoreError> {
+        let (since, before) = archived_bounds(when);
         let ids: Vec<String> = sqlx::query_scalar(
-            "SELECT m.id FROM messages m WHERE m.archive_id = ?
+            "SELECT m.id FROM messages m WHERE m.archive_id = ?1
+             AND m.archived_at >= ?2 AND m.archived_at < ?3
              AND NOT EXISTS (SELECT 1 FROM remote_scans s WHERE s.message_id = m.id)
-             ORDER BY m.id LIMIT ?",
+             ORDER BY m.archived_at, m.id LIMIT ?4",
         )
         .bind(archive.to_string())
+        .bind(since)
+        .bind(before)
         .bind(limit.min(MAX_PAGE))
         .fetch_all(&self.pool)
         .await
         .map_err(backend)?;
         ids.iter().map(|id| parse(id)).collect()
+    }
+
+    async fn count_unscanned(
+        &self,
+        archive: ArchiveId,
+        when: ArchivedWhen,
+    ) -> Result<u64, StoreError> {
+        let (since, before) = archived_bounds(when);
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages m WHERE m.archive_id = ?1
+             AND m.archived_at >= ?2 AND m.archived_at < ?3
+             AND NOT EXISTS (SELECT 1 FROM remote_scans s WHERE s.message_id = m.id)",
+        )
+        .bind(archive.to_string())
+        .bind(since)
+        .bind(before)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(unsigned(count))
+    }
+
+    async fn remote_copy_totals(&self, archive: ArchiveId) -> Result<RemoteCopyTotals, StoreError> {
+        let row = sqlx::query(
+            "SELECT COUNT(blob_id) AS images, COALESCE(SUM(size), 0) AS bytes,
+                    COUNT(*) - COUNT(blob_id) AS failed
+             FROM remote_images WHERE key IN
+             (SELECT l.key FROM message_remote_images l JOIN messages m ON m.id = l.message_id
+              WHERE m.archive_id = ?)",
+        )
+        .bind(archive.to_string())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(RemoteCopyTotals {
+            images: unsigned(get(&row, "images")?),
+            bytes: unsigned(get(&row, "bytes")?),
+            failed: unsigned(get(&row, "failed")?),
+        })
+    }
+
+    async fn failed_remote_copies(
+        &self,
+        archive: ArchiveId,
+        tried_before: Timestamp,
+        limit: u32,
+    ) -> Result<Vec<RemoteCopy>, StoreError> {
+        sqlx::query(
+            "SELECT * FROM remote_images WHERE blob_id IS NULL AND fetched_at < ?2 AND key IN
+             (SELECT l.key FROM message_remote_images l JOIN messages m ON m.id = l.message_id
+              WHERE m.archive_id = ?1)
+             ORDER BY fetched_at, key LIMIT ?3",
+        )
+        .bind(archive.to_string())
+        .bind(tried_before.as_millis())
+        .bind(limit.min(MAX_PAGE))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(remote_copy)
+        .collect()
     }
 
     async fn record_remote_scan(
@@ -1269,6 +1343,40 @@ impl RemoteImageStore for SqliteStore {
         .iter()
         .map(remote_copy)
         .collect()
+    }
+}
+
+#[async_trait]
+impl SettingsStore for SqliteStore {
+    async fn setting(&self, key: &str) -> Result<Option<String>, StoreError> {
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(backend)
+    }
+
+    async fn set_setting(&self, key: &str, value: Option<&str>) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let query = match value {
+            Some(value) => sqlx::query(
+                "INSERT INTO settings (key, value) VALUES (?, ?)
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(key)
+            .bind(value),
+            None => sqlx::query("DELETE FROM settings WHERE key = ?").bind(key),
+        };
+        query.execute(&self.pool).await.map_err(backend)?;
+        Ok(())
+    }
+}
+
+fn archived_bounds(when: ArchivedWhen) -> (i64, i64) {
+    match when {
+        ArchivedWhen::Any => (i64::MIN, i64::MAX),
+        ArchivedWhen::Since(at) => (at.as_millis(), i64::MAX),
+        ArchivedWhen::Before(at) => (i64::MIN, at.as_millis()),
     }
 }
 

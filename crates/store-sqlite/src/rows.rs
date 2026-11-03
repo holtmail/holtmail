@@ -53,6 +53,7 @@ pub(crate) fn archive(row: &SqliteRow) -> Result<Archive, StoreError> {
         name: get(row, "name")?,
         created_at: timestamp(row, "created_at")?,
         save_remote_images: get::<i64>(row, "save_remote_images")? != 0,
+        save_remote_images_since: optional_timestamp(row, "save_remote_images_since")?,
     })
 }
 

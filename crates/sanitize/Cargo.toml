@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 ammonia.workspace = true
+blake3.workspace = true
 
 [lints]
 workspace = true

@@ -7,15 +7,24 @@ Makes message HTML safe to show in the reader. Built on [`ammonia`](https://docs
 ```rust
 pub fn sanitize(html: &str, options: &Options) -> Sanitized;
 pub fn document(body: &str, allow_remote: bool, inline_origin: &str) -> String;
+pub fn remote_images(html: &str) -> Vec<String>;
+pub fn remote_key(url: &str) -> String;
 ```
 
-`Options { allow_remote: bool, inline_parts: HashMap<String, String> }` and `Sanitized { html, remote_blocked }`.
+`Options { remote: Remote, proxy_prefix: String, saved: HashSet<String>, inline_parts: HashMap<String, String> }` with `Remote::{Block (default), Proxy, Direct}`, and `Sanitized { html, remote_blocked }`.
+
+- `remote_images(html)`: the absolute `http(s)` URLs of remote images, `background` attributes and style `url(...)`s, in document order, each once. Protocol-relative URLs become `https:`; `@import` targets are not included.
+- `remote_key(url)`: BLAKE3 hex of the absolute URL, the name a remote image goes by in proxy URLs and in the store.
 
 ## What `sanitize` does
 
 - **Removes** scripts, event handlers, forms and inputs, frames, objects, embeds, comments, `javascript:` and relative URLs, `data:` anywhere except `<img src>` with an image type.
 - **Keeps** what email layouts need: tables with `width`, `align`, `bgcolor`, `cellpadding` and friends, `<font>`, `<center>`, `class`, inline `style` attributes and `<style>` blocks.
-- **Blocks remote content** unless `allow_remote`: `http(s)` and protocol-relative `src`, `srcset` and `background` are dropped; `url(...)` with a remote address in styles becomes `none`; `@import` is disabled. `remote_blocked` tells the reader to offer "Show remote content".
+- **Remote content** in `src`, `background` (on `table`, `td`, `th`) and style `url(...)`:
+  - a URL whose key is in `saved` becomes `proxy_prefix + key`, in every mode;
+  - `Block` drops the rest: attributes go, `url(...)` becomes `none`, `@import` is disabled, and `remote_blocked` is set;
+  - `Proxy` points the rest at `proxy_prefix + key` and still disables `@import`;
+  - `Direct` keeps the original addresses.
 - **Rewrites inline parts**: `cid:` references become the absolute URLs from `inline_parts`, matched case-insensitively; unknown ones are dropped.
 - **Links** get `target="_blank"` and `rel="noopener noreferrer"`.
 

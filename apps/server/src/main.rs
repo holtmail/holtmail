@@ -2,8 +2,10 @@
 
 mod accounts;
 mod config;
+mod image_proxy;
 mod import;
 mod mailboxes;
+mod tasks;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -410,7 +412,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
     });
-    runner.save_all_remote_images().await;
+    runner.save_new_remote_images().await;
     if config.sync_interval_minutes > 0 {
         tokio::spawn(runner.run_schedule(std::time::Duration::from_secs(
             config.sync_interval_minutes * 60,

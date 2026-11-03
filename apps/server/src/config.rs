@@ -6,8 +6,6 @@ use anyhow::{Context, bail};
 use holtmail_blob::BlobStore;
 use holtmail_blob_fs::FsBlobStore;
 use holtmail_blob_s3::{S3BlobStore, S3Config};
-use holtmail_fetch::Fetcher;
-use holtmail_fetch_http::HttpFetcher;
 use holtmail_index::SearchIndex;
 use holtmail_index_tantivy::TantivyIndex;
 use holtmail_secret::SecretBox;
@@ -15,6 +13,8 @@ use holtmail_secret_local::LocalSecretBox;
 use holtmail_store::Store;
 use holtmail_store_sqlite::SqliteStore;
 use serde::Deserialize;
+
+use crate::image_proxy::ProxiedFetcher;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +34,10 @@ pub struct Config {
     /// Minutes between scheduled syncs in `serve`; 0 turns scheduling off.
     #[serde(default = "default_sync_minutes")]
     pub sync_interval_minutes: u64,
+    /// Outbound proxy for remote images, e.g. `socks5h://127.0.0.1:9050`. When set, the web app
+    /// shows it and cannot change it.
+    #[serde(default)]
+    pub image_proxy: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -95,6 +99,9 @@ impl Config {
         if let Ok(url) = std::env::var("HOLTMAIL_PUBLIC_URL") {
             config.public_url = Some(url);
         }
+        if let Ok(proxy) = std::env::var("HOLTMAIL_IMAGE_PROXY") {
+            config.image_proxy = Some(proxy).filter(|p| !p.trim().is_empty());
+        }
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
                 url.starts_with("http://") || url.starts_with("https://"),
@@ -128,7 +135,7 @@ pub struct Services {
     pub blobs: Arc<dyn BlobStore>,
     pub store: Arc<dyn Store>,
     pub index: Arc<dyn SearchIndex>,
-    pub fetcher: Arc<dyn Fetcher>,
+    pub fetcher: Arc<ProxiedFetcher>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -180,7 +187,14 @@ impl Services {
         )?);
         let store = Arc::new(SqliteStore::open(config.data_dir.join("holtmail.db")).await?);
         let index = Arc::new(TantivyIndex::open(config.data_dir.join("index"))?);
-        let fetcher = Arc::new(HttpFetcher::new(holtmail_fetch_http::Options::default())?);
+        let fetcher = Arc::new(
+            ProxiedFetcher::open(
+                config.image_proxy.as_deref(),
+                store.clone(),
+                secrets.clone(),
+            )
+            .await?,
+        );
         Ok(Self {
             secrets,
             blobs,

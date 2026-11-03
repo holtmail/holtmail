@@ -24,7 +24,9 @@ Everything the commands do can also be done in the web app by the owner or an ad
 
 `serve` syncs every enabled account one after another, every `sync_interval_minutes`, and removes expired sessions every hour. Syncs and imports started from the web and from the schedule share one runner that keeps at most one run per account and remembers the state of the last one (shown in the web app) until the server restarts. Uploaded files wait in `<data_dir>/uploads` and are removed once imported.
 
-Remote images go through [`holtmail-fetch-http`](../../../crates/fetch-http/docs/README.md), which only contacts public addresses. For archives with "Save remote images" on, [`holtmail-remote`](../../../crates/remote/docs/README.md) saves the images of new messages in the background after every sync or import that brought any, once at start for messages left over, and for the whole archive when the setting is turned on; one run per archive at a time. The web reader's image proxy uses the same fetcher.
+Remote images go through [`holtmail-fetch-http`](../../../crates/fetch-http/docs/README.md), which only contacts public addresses, optionally through an outbound proxy (`image_proxy` in the config, or set by an owner or admin in the web app, stored sealed with `secret.key`; the config wins). The proxy can change while the server runs. For archives with "Save remote images" on, [`holtmail-remote`](../../../crates/remote/docs/README.md) saves the images of new messages after every sync or import that brought any and once at start; mail archived before saving was turned on, and failed images, only when asked from the web app. One remote image task per archive at a time. The web reader's image proxy uses the same fetcher.
+
+Syncs, imports and remote image work run as tasks with progress and a log (counts, folder names and reasons, never message content), listed in the web app under Settings → Tasks. Remote image tasks can be stopped between messages. The last 50 finished tasks are kept in memory until the server restarts; logs keep their first 50 and last 450 lines.
 
 ## Signing in
 
@@ -49,6 +51,7 @@ listen = "127.0.0.1:8080" # HOLTMAIL_LISTEN
 data_dir = "data" # HOLTMAIL_DATA_DIR: holtmail.db, index/, blobs/
 web_dir = "apps/web/dist" # HOLTMAIL_WEB_DIR: serve the built web app; unknown paths get index.html
 sync_interval_minutes = 15 # 0 turns scheduled sync off
+# image_proxy = "socks5h://127.0.0.1:9050" # HOLTMAIL_IMAGE_PROXY: outbound proxy for remote images
 
 [blobs]
 kind = "fs" # blobs in <data_dir>/blobs

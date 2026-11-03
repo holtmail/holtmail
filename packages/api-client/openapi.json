@@ -936,6 +936,95 @@
         }
       }
     },
+    "/api/archives/{id}/remote-images": {
+      "post": {
+        "tags": ["manage"],
+        "operationId": "start_remote_images",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteImagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Started, or already running for this archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Saving is off, or an unknown job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/search": {
       "get": {
         "tags": ["routes"],
@@ -1032,6 +1121,98 @@
           },
           "500": {
             "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/image-proxy": {
+      "get": {
+        "tags": ["tasks"],
+        "operationId": "get_image_proxy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageProxyDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["tasks"],
+        "operationId": "set_image_proxy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageProxyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageProxyDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad or unreachable proxy, or one set in the server's config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
             "content": {
               "application/json": {
                 "schema": {
@@ -1400,12 +1581,21 @@
           {
             "name": "remote",
             "in": "query",
-            "description": "What to do with remote images; `block` when missing. Saved copies are always shown.",
+            "description": "What to do with remote images; `block` when missing.",
             "required": false,
             "schema": {
               "type": "string",
               "description": "What to do with remote images in an HTML body.",
               "enum": ["block", "proxy", "direct"]
+            }
+          },
+          {
+            "name": "saved",
+            "in": "query",
+            "description": "`false` loads images from the sender instead of the archive's saved copies, as `remote`\nsays. Saved copies are shown when missing.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1418,6 +1608,12 @@
                   "type": "string"
                 },
                 "description": "`1` when remote content was blocked, else `0`"
+              },
+              "x-holtmail-remote-saved": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`1` when saved copies of remote images are shown, else `0`"
               }
             },
             "content": {
@@ -1456,6 +1652,70 @@
           },
           "500": {
             "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/live/{key}": {
+      "get": {
+        "tags": ["remote"],
+        "operationId": "get_live",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "BLAKE3 hex of the image URL, as used in the body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image fetched now by the server, ignoring any saved copy",
+            "content": {
+              "image/*": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The message links no such image, or it is not an image the server will fetch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The remote server could not be reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -1707,6 +1967,99 @@
           }
         },
         "security": [{}]
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "tags": ["tasks"],
+        "operationId": "list_tasks",
+        "responses": {
+          "200": {
+            "description": "Running tasks and the most recent finished ones, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/cancel": {
+      "post": {
+        "tags": ["tasks"],
+        "operationId": "cancel_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Asked to stop; it stops after the current step"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Unknown, finished or not cancellable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/threads/{id}": {
@@ -2148,7 +2501,7 @@
       "ArchiveDto": {
         "type": "object",
         "description": "An archive with its totals.",
-        "required": ["id", "name", "created_at", "save_remote_images", "stats"],
+        "required": ["id", "name", "created_at", "save_remote_images", "stats", "remote_images"],
         "properties": {
           "created_at": {
             "type": "integer",
@@ -2160,6 +2513,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "remote_images": {
+            "$ref": "#/components/schemas/RemoteImagesDto"
           },
           "save_remote_images": {
             "type": "boolean",
@@ -2257,6 +2613,31 @@
             "format": "int64",
             "description": "Messages in the folder without the `\\Seen` flag there.",
             "minimum": 0
+          }
+        }
+      },
+      "ImageProxyDto": {
+        "type": "object",
+        "description": "The outbound proxy for remote images.",
+        "required": ["from_config"],
+        "properties": {
+          "address": {
+            "type": ["string", "null"],
+            "description": "`scheme://host:port`, without credentials; `null` without a proxy."
+          },
+          "from_config": {
+            "type": "boolean",
+            "description": "Set in the server's config; the API cannot change it."
+          }
+        }
+      },
+      "ImageProxyRequest": {
+        "type": "object",
+        "description": "A new outbound proxy for remote images.",
+        "properties": {
+          "proxy": {
+            "type": ["string", "null"],
+            "description": "`http://`, `https://`, `socks5://` or `socks5h://` with an optional `user:password@`;\n`null` or empty removes the proxy."
           }
         }
       },
@@ -2635,6 +3016,53 @@
           }
         }
       },
+      "RemoteImagesDto": {
+        "type": "object",
+        "description": "Remote images an archive keeps.",
+        "required": ["images", "bytes", "failed", "older_pending"],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Their size.",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Images that could not be saved.",
+            "minimum": 0
+          },
+          "images": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Saved images, each counted once.",
+            "minimum": 0
+          },
+          "older_pending": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages archived before saving was turned on and not looked at yet.",
+            "minimum": 0
+          },
+          "since": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When saving was turned on, Unix milliseconds; `null` while it is off."
+          }
+        }
+      },
+      "RemoteImagesRequest": {
+        "type": "object",
+        "description": "Which remote image work to start.",
+        "required": ["job"],
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "`older`: images of mail archived before saving was turned on. `failed`: fetch again the\nimages that could not be saved."
+          }
+        }
+      },
       "RemoteMode": {
         "type": "string",
         "description": "What to do with remote images in an HTML body.",
@@ -2733,6 +3161,94 @@
           "oldest": {
             "type": ["integer", "null"],
             "format": "int64"
+          }
+        }
+      },
+      "TaskDto": {
+        "type": "object",
+        "description": "A background task.",
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "title",
+          "started_at",
+          "done",
+          "summary",
+          "cancellable",
+          "log"
+        ],
+        "properties": {
+          "account_id": {
+            "type": ["string", "null"]
+          },
+          "archive_id": {
+            "type": ["string", "null"]
+          },
+          "cancellable": {
+            "type": "boolean"
+          },
+          "done": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "finished_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`sync`, `import` or `remote_images`."
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskLineDto"
+            }
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "state": {
+            "type": "string",
+            "description": "`running`, `done`, `failed` or `cancelled`."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "total": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "`null` when the amount of work is not known.",
+            "minimum": 0
+          }
+        }
+      },
+      "TaskLineDto": {
+        "type": "object",
+        "description": "One line of a task's log.",
+        "required": ["at", "level", "text"],
+        "properties": {
+          "at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "level": {
+            "type": "string",
+            "description": "`info`, `warning` or `error`."
+          },
+          "text": {
+            "type": "string"
           }
         }
       },

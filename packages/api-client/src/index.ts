@@ -30,6 +30,10 @@ export type PasswordRequest = Schemas['PasswordRequest']
 export type Role = 'owner' | 'admin' | 'member'
 export type RemoteMode = Schemas['RemoteMode']
 export type ArchiveUpdateRequest = Schemas['ArchiveUpdateRequest']
+export type Task = Schemas['TaskDto']
+export type TaskLine = Schemas['TaskLineDto']
+export type ImageProxy = Schemas['ImageProxyDto']
+export type RemoteImageJob = 'older' | 'failed'
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -156,6 +160,20 @@ export const deleteAccount = async (id: string) =>
 export const syncAccount = async (id: string) =>
   unwrap(await client.POST('/api/accounts/{id}/sync', { ...archivePath(id), headers: json }))
 
+export const startRemoteImages = async (archiveId: string, job: RemoteImageJob) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/remote-images', {
+      ...archivePath(archiveId),
+      body: { job },
+    }),
+  )
+
+export const cancelTask = async (id: string) =>
+  done(await client.POST('/api/tasks/{id}/cancel', { ...archivePath(id), headers: json }))
+
+export const setImageProxy = async (proxy: string | null) =>
+  unwrap(await client.PUT('/api/image-proxy', { body: { proxy } }))
+
 export const createUser = async (request: NewUserRequest) =>
   unwrap(await client.POST('/api/users', { body: request }))
 
@@ -225,26 +243,34 @@ export function uploadImport(
 
 const encode = encodeURIComponent
 
-export const bodyUrl = (id: string, remote: RemoteMode = 'block'): string =>
-  `/api/messages/${encode(id)}/body${remote === 'block' ? '' : `?remote=${remote}`}`
+export function bodyUrl(id: string, remote: RemoteMode = 'block', saved = true): string {
+  const params = new URLSearchParams()
+  if (remote !== 'block') params.set('remote', remote)
+  if (!saved) params.set('saved', 'false')
+  const query = params.toString()
+  return `/api/messages/${encode(id)}/body${query ? `?${query}` : ''}`
+}
 
 export const rawUrl = (id: string): string => `/api/messages/${encode(id)}/raw`
 
 export interface MessageBody {
   html: string
   remoteBlocked: boolean
+  savedShown: boolean
 }
 
 export async function fetchBody(
   id: string,
   remote: RemoteMode = 'block',
+  saved = true,
   signal?: AbortSignal,
 ): Promise<MessageBody> {
-  const response = await fetch(bodyUrl(id, remote), { signal })
+  const response = await fetch(bodyUrl(id, remote, saved), { signal })
   if (!response.ok) throw await failure(response)
   return {
     html: await response.text(),
     remoteBlocked: response.headers.get('x-holtmail-remote-blocked') === '1',
+    savedShown: response.headers.get('x-holtmail-remote-saved') === '1',
   }
 }
 
@@ -287,6 +313,18 @@ export const accountsQuery = (archiveId: string) =>
     refetchInterval: (query) =>
       query.state.data?.some((account) => account.status.running) ? 2_000 : 60_000,
   })
+
+export const tasksQuery = queryOptions({
+  queryKey: ['tasks'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/tasks', { signal })),
+  refetchInterval: (query) =>
+    query.state.data?.some((task) => task.state === 'running') ? 1_000 : 10_000,
+})
+
+export const imageProxyQuery = queryOptions({
+  queryKey: ['image-proxy'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/image-proxy', { signal })),
+})
 
 export const usersQuery = queryOptions({
   queryKey: ['users'],
@@ -351,10 +389,10 @@ export const threadQuery = (id: string) =>
       unwrap(await client.GET('/api/threads/{id}', { params: { path: { id } }, signal })),
   })
 
-export const bodyQuery = (id: string, remote: RemoteMode) =>
+export const bodyQuery = (id: string, remote: RemoteMode, saved = true) =>
   queryOptions({
-    queryKey: ['messages', id, 'body', remote],
-    queryFn: ({ signal }) => fetchBody(id, remote, signal),
+    queryKey: ['messages', id, 'body', remote, saved],
+    queryFn: ({ signal }) => fetchBody(id, remote, saved, signal),
     staleTime: Infinity,
   })
 

@@ -20,6 +20,7 @@ describe('urls', () => {
     expect(bodyUrl('abc', 'block')).toBe('/api/messages/abc/body')
     expect(bodyUrl('abc', 'proxy')).toBe('/api/messages/abc/body?remote=proxy')
     expect(bodyUrl('abc', 'direct')).toBe('/api/messages/abc/body?remote=direct')
+    expect(bodyUrl('abc', 'proxy', false)).toBe('/api/messages/abc/body?remote=proxy&saved=false')
     expect(rawUrl('a/b')).toBe('/api/messages/a%2Fb/raw')
   })
 })
@@ -27,9 +28,15 @@ describe('urls', () => {
 describe('fetchBody', () => {
   test('reads the html and the remote-blocked header', async () => {
     const stub = stubFetch(
-      new Response('<p>hi</p>', { headers: { 'x-holtmail-remote-blocked': '1' } }),
+      new Response('<p>hi</p>', {
+        headers: { 'x-holtmail-remote-blocked': '1', 'x-holtmail-remote-saved': '1' },
+      }),
     )
-    expect(await fetchBody('m1')).toEqual({ html: '<p>hi</p>', remoteBlocked: true })
+    expect(await fetchBody('m1')).toEqual({
+      html: '<p>hi</p>',
+      remoteBlocked: true,
+      savedShown: true,
+    })
     expect(stub.mock.calls[0]?.[0]).toBe('/api/messages/m1/body')
   })
 

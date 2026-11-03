@@ -132,6 +132,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/remote-images': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start_remote_images']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/search': {
     parameters: {
       query?: never
@@ -141,6 +157,22 @@ export interface paths {
     }
     get: operations['search']
     put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/image-proxy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_image_proxy']
+    put: operations['set_image_proxy']
     post?: never
     delete?: never
     options?: never
@@ -260,6 +292,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/messages/{id}/live/{key}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_live']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/messages/{id}/raw': {
     parameters: {
       query?: never
@@ -318,6 +366,38 @@ export interface paths {
     get: operations['setup_status']
     put?: never
     post: operations['setup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_tasks']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/tasks/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['cancel_task']
     delete?: never
     options?: never
     head?: never
@@ -425,6 +505,7 @@ export interface components {
       created_at: number
       id: string
       name: string
+      remote_images: components['schemas']['RemoteImagesDto']
       /** @description Remote images linked from its messages are downloaded and kept with the archive. */
       save_remote_images: boolean
       stats: components['schemas']['StatsDto']
@@ -472,6 +553,21 @@ export interface components {
        * @description Messages in the folder without the `\Seen` flag there.
        */
       unread: number
+    }
+    /** @description The outbound proxy for remote images. */
+    ImageProxyDto: {
+      /** @description `scheme://host:port`, without credentials; `null` without a proxy. */
+      address?: string | null
+      /** @description Set in the server's config; the API cannot change it. */
+      from_config: boolean
+    }
+    /** @description A new outbound proxy for remote images. */
+    ImageProxyRequest: {
+      /**
+       * @description `http://`, `https://`, `socks5://` or `socks5h://` with an optional `user:password@`;
+       *     `null` or empty removes the proxy.
+       */
+      proxy?: string | null
     }
     /** @description An IMAP account to add. */
     ImapAccountRequest: {
@@ -612,6 +708,42 @@ export interface components {
       email?: string | null
       name?: string | null
     }
+    /** @description Remote images an archive keeps. */
+    RemoteImagesDto: {
+      /**
+       * Format: int64
+       * @description Their size.
+       */
+      bytes: number
+      /**
+       * Format: int64
+       * @description Images that could not be saved.
+       */
+      failed: number
+      /**
+       * Format: int64
+       * @description Saved images, each counted once.
+       */
+      images: number
+      /**
+       * Format: int64
+       * @description Messages archived before saving was turned on and not looked at yet.
+       */
+      older_pending: number
+      /**
+       * Format: int64
+       * @description When saving was turned on, Unix milliseconds; `null` while it is off.
+       */
+      since?: number | null
+    }
+    /** @description Which remote image work to start. */
+    RemoteImagesRequest: {
+      /**
+       * @description `older`: images of mail archived before saving was turned on. `failed`: fetch again the
+       *     images that could not be saved.
+       */
+      job: string
+    }
     /**
      * @description What to do with remote images in an HTML body.
      * @enum {string}
@@ -658,6 +790,45 @@ export interface components {
       newest?: number | null
       /** Format: int64 */
       oldest?: number | null
+    }
+    /** @description A background task. */
+    TaskDto: {
+      account_id?: string | null
+      archive_id?: string | null
+      cancellable: boolean
+      /** Format: int64 */
+      done: number
+      /** Format: int64 */
+      finished_at?: number | null
+      id: string
+      /** @description `sync`, `import` or `remote_images`. */
+      kind: string
+      log: components['schemas']['TaskLineDto'][]
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      started_at: number
+      /** @description `running`, `done`, `failed` or `cancelled`. */
+      state: string
+      summary: string
+      title: string
+      /**
+       * Format: int64
+       * @description `null` when the amount of work is not known.
+       */
+      total?: number | null
+    }
+    /** @description One line of a task's log. */
+    TaskLineDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      at: number
+      /** @description `info`, `warning` or `error`. */
+      level: string
+      text: string
     }
     /** @description A conversation, oldest message first. */
     ThreadDto: {
@@ -1453,6 +1624,78 @@ export interface operations {
       }
     }
   }
+  start_remote_images: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RemoteImagesRequest']
+      }
+    }
+    responses: {
+      /** @description Started, or already running for this archive */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskDto']
+        }
+      }
+      /** @description Saving is off, or an unknown job */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   search: {
     parameters: {
       query: {
@@ -1510,6 +1753,93 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_image_proxy: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ImageProxyDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  set_image_proxy: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ImageProxyRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ImageProxyDto']
+        }
+      }
+      /** @description A bad or unreachable proxy, or one set in the server's config */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -1813,8 +2143,13 @@ export interface operations {
   get_body: {
     parameters: {
       query?: {
-        /** @description What to do with remote images; `block` when missing. Saved copies are always shown. */
+        /** @description What to do with remote images; `block` when missing. */
         remote?: 'block' | 'proxy' | 'direct'
+        /**
+         * @description `false` loads images from the sender instead of the archive's saved copies, as `remote`
+         *     says. Saved copies are shown when missing.
+         */
+        saved?: boolean
       }
       header?: never
       path: {
@@ -1830,6 +2165,8 @@ export interface operations {
         headers: {
           /** @description `1` when remote content was blocked, else `0` */
           'x-holtmail-remote-blocked'?: string
+          /** @description `1` when saved copies of remote images are shown, else `0` */
+          'x-holtmail-remote-saved'?: string
           [name: string]: unknown
         }
         content: {
@@ -1865,6 +2202,58 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_live: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+        /** @description BLAKE3 hex of the image URL, as used in the body */
+        key: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The image fetched now by the server, ignoring any saved copy */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'image/*': unknown
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The message links no such image, or it is not an image the server will fetch */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The remote server could not be reached */
+      502: {
         headers: {
           [name: string]: unknown
         }
@@ -2083,6 +2472,92 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_tasks: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Running tasks and the most recent finished ones, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  cancel_task: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Task id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Asked to stop; it stops after the current step */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Unknown, finished or not cancellable */
+      409: {
         headers: {
           [name: string]: unknown
         }

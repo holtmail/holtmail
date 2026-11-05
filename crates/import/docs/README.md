@@ -26,6 +26,7 @@ Messages are read one at a time, in file order. An error for one message does no
 
 ## Details
 
+- mbox is read as mboxrd: a line `>From `, `>>From `, ... loses one `>`, and the empty line before the next `From ` line (`\n` or `\r\n`) belongs to the file, not the message, so it is dropped. A message written by `holtmail-export` therefore reads back to the same bytes, as long as it ended with a line break. Files imported before this kept that empty line, so importing the same mbox again stores those messages once more.
 - A first line that is not a header, such as Outlook's `Microsoft Mail Internet Headers Version 2.0` or an mbox `From ` line in a single `.eml`, is removed before the message is returned.
 - Zip entries are read through their enclosed name, so entries like `../escape.eml` are skipped.
 - Other files in a tree or zip (`.txt`, attachments) are ignored.

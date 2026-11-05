@@ -166,10 +166,20 @@ fn read_mbox(path: &Path, folder: Option<String>) -> Result<Messages, ImportErro
             folder: folder.clone(),
             received_at: (date > 0).then(|| Timestamp::from_secs(i64::try_from(date).unwrap_or(0))),
             flags: Vec::new(),
-            raw: Bytes::from(message.unwrap_contents()),
+            raw: Bytes::from(without_separator_line(message.unwrap_contents())),
         })
     });
     Ok(Box::new(messages))
+}
+
+/// Drops the empty line an mbox puts after each message: it belongs to the file, not the message.
+fn without_separator_line(mut raw: Vec<u8>) -> Vec<u8> {
+    if raw.ends_with(b"\n\n") {
+        raw.pop();
+    } else if raw.ends_with(b"\n\r\n") {
+        raw.truncate(raw.len() - 2);
+    }
+    raw
 }
 
 fn is_maildir(path: &Path) -> bool {
@@ -377,6 +387,31 @@ mod tests {
         assert_eq!(
             messages[0].received_at,
             Some(Timestamp::from_secs(1_741_942_800))
+        );
+    }
+
+    #[test]
+    fn reads_mboxrd_back_to_the_original_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Quoted.mbox");
+        fs::write(
+            &path,
+            b"From ada@example.com Fri Mar 14 09:00:00 2025\n\
+              Subject: One\n\n>From here\n>>From there\n\n\n\
+              From bob@example.org Fri Mar 14 10:00:00 2025\n\
+              Subject: Two\r\n\r\nHi\r\n\r\n\
+              From bob@example.org Fri Mar 14 11:00:00 2025\n\
+              Subject: Three\n\nlast",
+        )
+        .unwrap();
+        let raw: Vec<Bytes> = all(&path).into_iter().map(|m| m.raw).collect();
+        assert_eq!(
+            raw,
+            [
+                Bytes::from_static(b"Subject: One\n\nFrom here\n>From there\n\n"),
+                Bytes::from_static(b"Subject: Two\r\n\r\nHi\r\n"),
+                Bytes::from_static(b"Subject: Three\n\nlast"),
+            ]
         );
     }
 

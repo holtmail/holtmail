@@ -242,6 +242,51 @@ The full list lives in [VERIFY.md](VERIFY.md).
 - [ ] Fetch remote images from the internet directly, through an HTTP proxy and through a SOCKS proxy.
 - [ ] The maintainer walks through the web app by eye: first run, connecting mail, reading, search, settings, tasks, network, and a message with images.
 
+### Contacts and calendars
+
+The design is in [PIM.md](PIM.md); each phase follows its order of work.
+
+#### Phase 13: model, storage and file import
+
+- [ ] `holtmail-pim`: JSContact and JSCalendar views over `calcard`, field diff between two versions, identity keys (event `UID` + `RECURRENCE-ID`, normalized emails and E.164 phones)
+- [ ] Store: collections, items, item versions (raw blob, ETag, seen, removed), derived `pim_index`; conformance + SQLite
+- [ ] Import `.vcf` and `.ics` files and Google Takeout contacts and calendars as an import source
+
+#### Phase 14: events from invitations in mail
+
+- [ ] Ingest: `text/calendar` parts (iMIP `REQUEST`, `REPLY`, `CANCEL`) become event versions with the message as their source; old mail through a background pass
+- [ ] API and reader: "this invitation is in your calendar" with its history
+
+#### Phase 15: CardDAV and CalDAV
+
+- [ ] `holtmail-collection` contract (collections, changes since a token, fetch, list versions for recovery), fake and conformance suite
+- [ ] `collection-dav`: discovery (RFC 6764, principal, home sets), `sync-collection`, `multiget`, ETag listing; password and OAuth bearer
+- [ ] `holtmail-pim-sync`: versions, removals, token recovery; scheduler and tasks; "also archive contacts and calendars" per account, Google CardDAV and CalDAV scopes
+
+#### Phase 16: contacts and people
+
+- [ ] Derived people (by email or phone, with the reason), people from mail, links to correspondence
+- [ ] API and web: contacts page, person page with per-field sources, correspondence, meetings and the timeline
+
+#### Phase 17: calendar
+
+- [ ] `holtmail-recur`: recurrence expansion with time zones; derived occurrences for a window
+- [ ] Grouping copies by `UID`, newest by `SEQUENCE`/`DTSTAMP`, differences between copies
+- [ ] API and web: month, week and agenda views, event page with copies, attendees, mail thread and timeline; index `is:event`, `is:contact`, `with:`
+
+#### Phase 18: Microsoft Graph contacts and calendars
+
+- [ ] `collection-graph`: contacts and events with delta, mapped into JSContact and JSCalendar, raw JSON kept; Graph scopes `Contacts.Read`, `Calendars.Read`
+
+#### Phase 19: JMAP contacts and calendars
+
+- [ ] `collection-jmap`: JMAP for Contacts (RFC 9610); calendars where the server offers them
+
+#### Phase 20: people by hand, differences, export
+
+- [ ] Manual split and join of people (the only stored state), "has differences" filter
+- [ ] Export `.vcf` and `.ics` of the latest versions, or of every version as a zip
+
 ### Later
 
 - [x] `holtmail account edit` in the CLI (connection, interval, pause)

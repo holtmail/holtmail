@@ -3,6 +3,7 @@
 - [Plan](PLAN.md) — what Holtmail is, its principles and modules
 - [Interface design](design.md) — how the web app should look and feel
 - [Work plan](WORKPLAN.md) — the current checklist, decisions and lessons from Mail-Archiver
+- [Contacts and calendars](PIM.md) — plan for archiving contacts and events with their history and links to mail
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 
 ## Modules

@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-oauth-http"
+description = "The OAuth token endpoint over HTTPS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-oauth.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+holtmail-oauth = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["net", "io-util", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -48,7 +48,7 @@ Every crate, app and package has `docs/README.md`:
 3. For a contract: what an implementation must do, and how to run the conformance suite.
 4. For an implementation: its config, its limits and the provider quirks it deals with.
 
-Longer topics go in more files in the same `docs/` folder. A change to a module's behavior or public API updates its `docs/` in the same change. Link every new module from [docs/README.md](docs/README.md).
+Longer topics go in more files in the same `docs/` folder. A change to a module's behavior or public API updates its `docs/` in the same change. Link every new module from [docs/README.md](docs/README.md). Anything a change could not prove with tests (real services, real data, the interface by eye) goes into [docs/VERIFY.md](docs/VERIFY.md).
 
 ## Rules
 

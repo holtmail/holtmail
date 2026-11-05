@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-import { ApiError, bodyUrl, fetchBody, isUnauthorized, login, logout, rawUrl } from './index.ts'
+import {
+  ApiError,
+  bodyUrl,
+  exportUrl,
+  fetchBody,
+  isUnauthorized,
+  login,
+  logout,
+  rawUrl,
+} from './index.ts'
 
 const realFetch = globalThis.fetch
 
@@ -22,6 +31,23 @@ describe('urls', () => {
     expect(bodyUrl('abc', 'direct')).toBe('/api/messages/abc/body?remote=direct')
     expect(bodyUrl('abc', 'proxy', false)).toBe('/api/messages/abc/body?remote=proxy&saved=false')
     expect(rawUrl('a/b')).toBe('/api/messages/a%2Fb/raw')
+  })
+
+  test('builds export addresses with one scope', () => {
+    expect(exportUrl('a1', 'mbox')).toBe('/api/archives/a1/export?format=mbox')
+    expect(exportUrl('a1', 'zip', { folder: 'f1' })).toBe(
+      '/api/archives/a1/export?format=zip&folder=f1',
+    )
+    expect(exportUrl('a1', 'zip', { label: 'News & updates' })).toBe(
+      '/api/archives/a1/export?format=zip&label=News+%26+updates',
+    )
+    expect(exportUrl('a1', 'mbox', { q: ' from:ada ' })).toBe(
+      '/api/archives/a1/export?format=mbox&q=from%3Aada',
+    )
+    expect(exportUrl('a1', 'mbox', { q: '   ' })).toBe('/api/archives/a1/export?format=mbox')
+    expect(exportUrl('a1', 'zip', { folder: 'f1', q: 'x' })).toBe(
+      '/api/archives/a1/export?format=zip&folder=f1',
+    )
   })
 })
 

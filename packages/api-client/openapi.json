@@ -116,7 +116,7 @@
             }
           },
           "400": {
-            "description": "An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password",
+            "description": "An empty name, a connection or password on an import account, an interval above a week, a minimum age above ten years, a change while syncing, or the server refused the new connection or password",
             "content": {
               "application/json": {
                 "schema": {
@@ -684,6 +684,196 @@
         }
       }
     },
+    "/api/archives/{id}/accounts/jmap": {
+      "post": {
+        "tags": ["manage"],
+        "operationId": "add_jmap_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JmapAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Stored; the first sync has started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad settings, or the server refused to sign in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/export": {
+      "get": {
+        "tags": ["export"],
+        "operationId": "export",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`mbox` for one mbox file, `zip` for a zip of `.eml` files in folder directories.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "description": "Only the messages of this folder id.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "description": "Only the messages with this label.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only the messages matching this search, e.g. `from:ada@example.com`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages as one mbox file (`application/mbox`) or a zip of `.eml` files (`application/zip`), streamed as they are read; a download cut short means the export failed",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "Unknown format, more than one of folder, label and q, or a query that does not parse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive or folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/folders": {
       "get": {
         "tags": ["routes"],
@@ -839,6 +1029,68 @@
         }
       }
     },
+    "/api/archives/{id}/labels": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "list_labels",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Labels carried by at least one message, by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LabelDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/messages": {
       "get": {
         "tags": ["routes"],
@@ -857,6 +1109,15 @@
             "name": "folder",
             "in": "query",
             "description": "Only messages in this folder.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "description": "Only messages carrying this label, compared exactly.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1564,6 +1825,72 @@
         }
       }
     },
+    "/api/messages/{id}/attachments/{ordinal}/thumbnail": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_thumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ordinal",
+            "in": "path",
+            "description": "The attachment's position, from 0",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A preview of the image at most 320 pixels on its longest side, made on first request and kept",
+            "content": {
+              "image/jpeg": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message or attachment, not a PNG, JPEG, GIF or WebP image, or one that does not decode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/messages/{id}/body": {
       "get": {
         "tags": ["routes"],
@@ -1835,6 +2162,192 @@
           },
           "502": {
             "description": "The remote server could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/callback": {
+      "get": {
+        "tags": ["oauth"],
+        "operationId": "callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "description": "The one-time code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "The sign-in it answers",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "Why access was not granted",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Back to the page the sign-in started from, with `oauth=done&account=<id>` or `oauth_error=<reason>` added"
+          }
+        },
+        "security": [{}]
+      }
+    },
+    "/api/oauth/finish": {
+      "post": {
+        "tags": ["oauth"],
+        "operationId": "finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthFinishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in; the account is stored and syncing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a sign-in answer, an unknown or expired sign-in, access refused, or the mail server refused the token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/start": {
+      "post": {
+        "tags": ["oauth"],
+        "operationId": "start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStartDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown provider or kind, Graph with Google, a missing address, both or neither of archive_id and account_id, an import or JMAP account, or a bad return_to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive or account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2511,7 +3024,7 @@
       "AccountDto": {
         "type": "object",
         "description": "A mail account of an archive.",
-        "required": ["id", "name", "kind", "enabled", "status"],
+        "required": ["id", "name", "kind", "enabled", "status", "needs_sign_in"],
         "properties": {
           "address": {
             "type": ["string", "null"]
@@ -2520,7 +3033,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ImapConnectionDto",
-                "description": "How an IMAP account connects; `null` for imports."
+                "description": "How an IMAP account connects; `null` for other kinds and for members."
               },
               {
                 "type": "null"
@@ -2533,12 +3046,37 @@
           "id": {
             "type": "string"
           },
+          "jmap": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JmapConnectionDto",
+                "description": "How a JMAP account connects; `null` for other kinds and for members."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "type": "string",
             "description": "`imap`, `graph`, `jmap` or `import`."
           },
+          "min_age_days": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Only messages at least this many days old are archived; younger ones wait for a later\nsync. `null` archives every message.",
+            "minimum": 0
+          },
           "name": {
             "type": "string"
+          },
+          "needs_sign_in": {
+            "type": "boolean",
+            "description": "The provider no longer accepts the sign-in: it does not sync until someone signs in again."
+          },
+          "oauth_provider": {
+            "type": ["string", "null"],
+            "description": "`google` or `microsoft` when it signs in with OAuth; `null` for a password."
           },
           "status": {
             "$ref": "#/components/schemas/AccountStatusDto"
@@ -2590,7 +3128,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ConnectionRequest",
-                "description": "A new server, user name and excluded folders; checked by signing in, with `password`\nwhen given and the stored one otherwise."
+                "description": "A new server, user name and excluded folders; checked by signing in, with `password`\nwhen given and the stored one otherwise. Another host or port, or a move to `plain`,\nneeds `password`; OAuth accounts keep their server, port and security."
               },
               {
                 "type": "null"
@@ -2601,12 +3139,29 @@
             "type": ["boolean", "null"],
             "description": "Paused accounts are not synced."
           },
+          "jmap": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JmapConnectionRequest",
+                "description": "For a JMAP account: a new address, user name, sign-in kind and excluded mailboxes;\nchecked by signing in, with `password` when given and the stored secret otherwise. An\naddress on another origin needs `password`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "min_age_days": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Archive only messages at least this many days old, 1 to 3650; `null` or 0 archives every\nmessage. Missing keeps it.",
+            "minimum": 0
+          },
           "name": {
             "type": ["string", "null"]
           },
           "password": {
             "type": ["string", "null"],
-            "description": "A new password; checked by signing in before it is stored."
+            "description": "A new password, or a new token for a JMAP account that signs in with one; checked by\nsigning in before it is stored."
           },
           "sync_interval_minutes": {
             "type": ["integer", "null"],
@@ -2694,6 +3249,10 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "thumbnail_url": {
+            "type": ["string", "null"],
+            "description": "Where to get a small preview image, for PNG, JPEG, GIF and WebP images. The preview can\nstill be missing (`404`) when the image does not decode."
           },
           "url": {
             "type": "string",
@@ -2861,6 +3420,108 @@
           }
         }
       },
+      "JmapAccountRequest": {
+        "type": "object",
+        "description": "A JMAP account to add.",
+        "required": ["url", "password"],
+        "properties": {
+          "auth": {
+            "type": ["string", "null"],
+            "description": "`password` (default; HTTP Basic) or `token` (bearer token, such as a Fastmail API token)."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "Shown in the sidebar; the user name, or the server's host for a token, when missing."
+          },
+          "password": {
+            "type": "string",
+            "description": "The password, app password or API token."
+          },
+          "url": {
+            "type": "string",
+            "description": "The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's\naddress, where `/.well-known/jmap` is asked. `https` only."
+          },
+          "username": {
+            "type": "string",
+            "description": "Needed for `password`; may be empty for `token`."
+          }
+        }
+      },
+      "JmapConnectionDto": {
+        "type": "object",
+        "description": "How a JMAP account connects. The password or token is never returned.",
+        "required": ["url", "username", "auth", "exclude"],
+        "properties": {
+          "auth": {
+            "type": "string",
+            "description": "`password` (HTTP Basic) or `token` (bearer token)."
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mailbox paths that are not archived."
+          },
+          "url": {
+            "type": "string",
+            "description": "The session address."
+          },
+          "username": {
+            "type": "string",
+            "description": "Empty for a token without a user name."
+          }
+        }
+      },
+      "JmapConnectionRequest": {
+        "type": "object",
+        "description": "A new connection for a JMAP account, checked by signing in before it is stored. Moving\nbetween `password` and `token` needs a new secret in `password`.",
+        "required": ["url"],
+        "properties": {
+          "auth": {
+            "type": ["string", "null"],
+            "description": "`password` (default) or `token`."
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mailbox paths not to archive."
+          },
+          "url": {
+            "type": "string",
+            "description": "The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's\naddress, where `/.well-known/jmap` is asked."
+          },
+          "username": {
+            "type": "string",
+            "description": "Needed for `password`; may be empty for `token`."
+          }
+        }
+      },
+      "LabelDto": {
+        "type": "object",
+        "description": "A label of an archive's messages, as Gmail has them.",
+        "required": ["name", "messages", "unread"],
+        "properties": {
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages carrying it.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "The label, e.g. `Inbox` or `Projects/2025`; nested labels use `/`."
+          },
+          "unread": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Of those, the ones not read in any folder they are in.",
+            "minimum": 0
+          }
+        }
+      },
       "LocationDto": {
         "type": "object",
         "description": "A folder a message is in.",
@@ -2915,7 +3576,8 @@
           "references",
           "has_html",
           "attachments",
-          "locations"
+          "locations",
+          "labels"
         ],
         "properties": {
           "archive_id": {
@@ -2966,6 +3628,13 @@
               "type": "string"
             },
             "description": "`In-Reply-To` ids without angle brackets."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Its labels, sorted."
           },
           "locations": {
             "type": "array",
@@ -3055,13 +3724,19 @@
           "size",
           "flags",
           "thread_count",
-          "folder_ids"
+          "folder_ids",
+          "labels",
+          "attachment_match"
         ],
         "properties": {
           "attachment_count": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "attachment_match": {
+            "type": "boolean",
+            "description": "In search results: the words were found only in text inside its attachments. Always\n`false` in folder and label lists."
           },
           "date": {
             "type": "integer",
@@ -3090,6 +3765,13 @@
           },
           "id": {
             "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Its labels, sorted."
           },
           "preview": {
             "type": "string"
@@ -3155,6 +3837,78 @@
           "role": {
             "type": ["string", "null"],
             "description": "`owner`, `admin` or `member` (default). Only an owner adds owners."
+          }
+        }
+      },
+      "OAuthFinishRequest": {
+        "type": "object",
+        "description": "Finishes a sign-in.",
+        "required": ["pasted_url"],
+        "properties": {
+          "pasted_url": {
+            "type": "string",
+            "description": "The address the browser landed on after sign-in, or its query."
+          }
+        }
+      },
+      "OAuthStartDto": {
+        "type": "object",
+        "description": "A started sign-in.",
+        "required": ["authorize_url", "state", "needs_paste", "thunderbird_client", "expires_at"],
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Open this page to sign in with the provider."
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the sign-in stops being accepted, Unix milliseconds."
+          },
+          "needs_paste": {
+            "type": "boolean",
+            "description": "After sign-in the browser lands on a page that does not load; paste its address to\n`/api/oauth/finish`. When `false`, the provider returns to `/api/oauth/callback`, which\nfinishes on its own and sends the browser back to `return_to`."
+          },
+          "state": {
+            "type": "string",
+            "description": "Ties the answer to this sign-in."
+          },
+          "thunderbird_client": {
+            "type": "boolean",
+            "description": "Thunderbird's public client is used, so the consent screen names Thunderbird."
+          }
+        }
+      },
+      "OAuthStartRequest": {
+        "type": "object",
+        "description": "Starts a Gmail or Microsoft sign-in. Give `archive_id` for a new account, or `account_id` to\nsign in again to an existing IMAP or Graph account.",
+        "required": ["provider"],
+        "properties": {
+          "account_id": {
+            "type": ["string", "null"]
+          },
+          "archive_id": {
+            "type": ["string", "null"]
+          },
+          "email": {
+            "type": "string",
+            "description": "The address to sign in as. Ignored when signing in again to an OAuth account."
+          },
+          "kind": {
+            "type": ["string", "null"],
+            "description": "How a new account reads mail: `imap` (the default) or `graph` (Microsoft Graph, for\n`microsoft` only). Ignored when signing in again: the account's kind decides."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "Shown in the sidebar for a new account; the address when missing."
+          },
+          "provider": {
+            "type": "string",
+            "description": "`google` or `microsoft`."
+          },
+          "return_to": {
+            "type": ["string", "null"],
+            "description": "A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing."
           }
         }
       },
@@ -3437,7 +4191,7 @@
           },
           "state": {
             "type": "string",
-            "description": "`running`, `done`, `failed` or `cancelled`."
+            "description": "`running`, `done`, `failed`, `cancelled`, or `interrupted` when the server stopped while it\nran."
           },
           "summary": {
             "type": "string"

@@ -10,6 +10,7 @@ export type Address = Schemas['AddressDto']
 export type Archive = Schemas['ArchiveDto']
 export type Attachment = Schemas['AttachmentDto']
 export type Folder = Schemas['FolderDto']
+export type Label = Schemas['LabelDto']
 export type MessageLocation = Schemas['LocationDto']
 export type MessageDetail = Schemas['MessageDetail']
 export type MessageSummary = Schemas['MessageSummary']
@@ -21,6 +22,7 @@ export type LoginRequest = Schemas['LoginRequest']
 export type SetupRequest = Schemas['SetupRequest']
 export type AccountStatus = Schemas['AccountStatusDto']
 export type ImapAccountRequest = Schemas['ImapAccountRequest']
+export type JmapAccountRequest = Schemas['JmapAccountRequest']
 export type AccountUpdateRequest = Schemas['AccountUpdateRequest']
 export type Person = Schemas['PersonDto']
 export type NewUserRequest = Schemas['NewUserRequest']
@@ -36,7 +38,17 @@ export type ImageProxy = Schemas['ImageProxyDto']
 export type RemoteImageJob = 'older' | 'failed'
 export type ImapConnection = Schemas['ImapConnectionDto']
 export type ConnectionRequest = Schemas['ConnectionRequest']
+export type JmapConnection = Schemas['JmapConnectionDto']
+export type JmapConnectionRequest = Schemas['JmapConnectionRequest']
+export type JmapAuth = 'password' | 'token'
 export type SyncSchedule = Schemas['SyncScheduleDto']
+export type OAuthProvider = 'google' | 'microsoft'
+export type OAuthKind = 'imap' | 'graph'
+export type OAuthStartRequest = Omit<Schemas['OAuthStartRequest'], 'provider' | 'kind'> & {
+  provider: OAuthProvider
+  kind?: OAuthKind | null
+}
+export type OAuthStart = Schemas['OAuthStartDto']
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -154,6 +166,14 @@ export const addImapAccount = async (archiveId: string, request: ImapAccountRequ
     await client.POST('/api/archives/{id}/accounts', { ...archivePath(archiveId), body: request }),
   )
 
+export const addJmapAccount = async (archiveId: string, request: JmapAccountRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/accounts/jmap', {
+      ...archivePath(archiveId),
+      body: request,
+    }),
+  )
+
 export const updateAccount = async (id: string, request: AccountUpdateRequest) =>
   unwrap(await client.PATCH('/api/accounts/{id}', { ...archivePath(id), body: request }))
 
@@ -162,6 +182,12 @@ export const deleteAccount = async (id: string) =>
 
 export const syncAccount = async (id: string) =>
   unwrap(await client.POST('/api/accounts/{id}/sync', { ...archivePath(id), headers: json }))
+
+export const startOAuth = async (request: OAuthStartRequest) =>
+  unwrap(await client.POST('/api/oauth/start', { body: request }))
+
+export const finishOAuth = async (pastedUrl: string) =>
+  unwrap(await client.POST('/api/oauth/finish', { body: { pasted_url: pastedUrl } }))
 
 export const startRemoteImages = async (archiveId: string, job: RemoteImageJob) =>
   unwrap(
@@ -259,6 +285,26 @@ export function bodyUrl(id: string, remote: RemoteMode = 'block', saved = true):
 
 export const rawUrl = (id: string): string => `/api/messages/${encode(id)}/raw`
 
+export type ExportFormat = 'mbox' | 'zip'
+
+export interface ExportScope {
+  folder?: string
+  label?: string
+  q?: string
+}
+
+export function exportUrl(
+  archiveId: string,
+  format: ExportFormat,
+  scope: ExportScope = {},
+): string {
+  const params = new URLSearchParams({ format })
+  if (scope.folder) params.set('folder', scope.folder)
+  else if (scope.label) params.set('label', scope.label)
+  else if (scope.q?.trim()) params.set('q', scope.q.trim())
+  return `/api/archives/${encode(archiveId)}/export?${params.toString()}`
+}
+
 export interface MessageBody {
   html: string
   remoteBlocked: boolean
@@ -354,16 +400,28 @@ export const foldersQuery = (archiveId: string) =>
       ),
   })
 
-export const messagesInfiniteQuery = (archiveId: string, folderId?: string) =>
+export const labelsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'labels'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/labels', {
+          params: { path: { id: archiveId } },
+          signal,
+        }),
+      ),
+  })
+
+export const messagesInfiniteQuery = (archiveId: string, folderId?: string, label?: string) =>
   infiniteQueryOptions({
-    queryKey: ['archives', archiveId, 'messages', folderId ?? null],
+    queryKey: ['archives', archiveId, 'messages', folderId ?? null, label ?? null],
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) =>
       unwrap(
         await client.GET('/api/archives/{id}/messages', {
           params: {
             path: { id: archiveId },
-            query: { folder: folderId, after: pageParam, limit: pageSize },
+            query: { folder: folderId, label, after: pageParam, limit: pageSize },
           },
           signal,
         }),

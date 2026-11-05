@@ -84,6 +84,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/accounts/jmap': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['add_jmap_account']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['export']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/folders': {
     parameters: {
       query?: never
@@ -110,6 +142,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['import_file']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/labels': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_labels']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -276,6 +324,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/messages/{id}/attachments/{ordinal}/thumbnail': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_thumbnail']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/messages/{id}/body': {
     parameters: {
       query?: never
@@ -334,6 +398,54 @@ export interface paths {
     get: operations['get_remote']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/oauth/callback': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['callback']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/oauth/finish': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['finish']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/oauth/start': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['start']
     delete?: never
     options?: never
     head?: never
@@ -478,9 +590,20 @@ export interface components {
       connection?: components['schemas']['ImapConnectionDto'] | null
       enabled: boolean
       id: string
+      jmap?: components['schemas']['JmapConnectionDto'] | null
       /** @description `imap`, `graph`, `jmap` or `import`. */
       kind: string
+      /**
+       * Format: int32
+       * @description Only messages at least this many days old are archived; younger ones wait for a later
+       *     sync. `null` archives every message.
+       */
+      min_age_days?: number | null
       name: string
+      /** @description The provider no longer accepts the sign-in: it does not sync until someone signs in again. */
+      needs_sign_in: boolean
+      /** @description `google` or `microsoft` when it signs in with OAuth; `null` for a password. */
+      oauth_provider?: string | null
       status: components['schemas']['AccountStatusDto']
       /**
        * Format: int64
@@ -515,8 +638,18 @@ export interface components {
       connection?: components['schemas']['ConnectionRequest'] | null
       /** @description Paused accounts are not synced. */
       enabled?: boolean | null
+      jmap?: components['schemas']['JmapConnectionRequest'] | null
+      /**
+       * Format: int32
+       * @description Archive only messages at least this many days old, 1 to 3650; `null` or 0 archives every
+       *     message. Missing keeps it.
+       */
+      min_age_days?: number | null
       name?: string | null
-      /** @description A new password; checked by signing in before it is stored. */
+      /**
+       * @description A new password, or a new token for a JMAP account that signs in with one; checked by
+       *     signing in before it is stored.
+       */
       password?: string | null
       /**
        * Format: int64
@@ -563,6 +696,11 @@ export interface components {
       ordinal: number
       /** Format: int64 */
       size: number
+      /**
+       * @description Where to get a small preview image, for PNG, JPEG, GIF and WebP images. The preview can
+       *     still be missing (`404`) when the image does not decode.
+       */
+      thumbnail_url?: string | null
       /** @description Where to download it. */
       url: string
     }
@@ -643,6 +781,65 @@ export interface components {
       security: string
       username: string
     }
+    /** @description A JMAP account to add. */
+    JmapAccountRequest: {
+      /** @description `password` (default; HTTP Basic) or `token` (bearer token, such as a Fastmail API token). */
+      auth?: string | null
+      /** @description Shown in the sidebar; the user name, or the server's host for a token, when missing. */
+      name?: string | null
+      /** @description The password, app password or API token. */
+      password: string
+      /**
+       * @description The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's
+       *     address, where `/.well-known/jmap` is asked. `https` only.
+       */
+      url: string
+      /** @description Needed for `password`; may be empty for `token`. */
+      username?: string
+    }
+    /** @description How a JMAP account connects. The password or token is never returned. */
+    JmapConnectionDto: {
+      /** @description `password` (HTTP Basic) or `token` (bearer token). */
+      auth: string
+      /** @description Mailbox paths that are not archived. */
+      exclude: string[]
+      /** @description The session address. */
+      url: string
+      /** @description Empty for a token without a user name. */
+      username: string
+    }
+    /**
+     * @description A new connection for a JMAP account, checked by signing in before it is stored. Moving
+     *     between `password` and `token` needs a new secret in `password`.
+     */
+    JmapConnectionRequest: {
+      /** @description `password` (default) or `token`. */
+      auth?: string | null
+      /** @description Mailbox paths not to archive. */
+      exclude?: string[]
+      /**
+       * @description The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's
+       *     address, where `/.well-known/jmap` is asked.
+       */
+      url: string
+      /** @description Needed for `password`; may be empty for `token`. */
+      username?: string
+    }
+    /** @description A label of an archive's messages, as Gmail has them. */
+    LabelDto: {
+      /**
+       * Format: int64
+       * @description Messages carrying it.
+       */
+      messages: number
+      /** @description The label, e.g. `Inbox` or `Projects/2025`; nested labels use `/`. */
+      name: string
+      /**
+       * Format: int64
+       * @description Of those, the ones not read in any folder they are in.
+       */
+      unread: number
+    }
     /** @description A folder a message is in. */
     LocationDto: {
       flags: string[]
@@ -674,6 +871,8 @@ export interface components {
       id: string
       /** @description `In-Reply-To` ids without angle brackets. */
       in_reply_to: string[]
+      /** @description Its labels, sorted. */
+      labels: string[]
       locations: components['schemas']['LocationDto'][]
       /** @description One line from the start of the body. */
       preview: string
@@ -704,6 +903,11 @@ export interface components {
       /** Format: int32 */
       attachment_count: number
       /**
+       * @description In search results: the words were found only in text inside its attachments. Always
+       *     `false` in folder and label lists.
+       */
+      attachment_match: boolean
+      /**
        * Format: int64
        * @description Unix milliseconds; what lists sort by.
        */
@@ -717,6 +921,8 @@ export interface components {
       folder_ids: string[]
       from: components['schemas']['AddressDto'][]
       id: string
+      /** @description Its labels, sorted. */
+      labels: string[]
       preview: string
       /** Format: int64 */
       size: number
@@ -744,6 +950,52 @@ export interface components {
       password: string
       /** @description `owner`, `admin` or `member` (default). Only an owner adds owners. */
       role?: string | null
+    }
+    /** @description Finishes a sign-in. */
+    OAuthFinishRequest: {
+      /** @description The address the browser landed on after sign-in, or its query. */
+      pasted_url: string
+    }
+    /** @description A started sign-in. */
+    OAuthStartDto: {
+      /** @description Open this page to sign in with the provider. */
+      authorize_url: string
+      /**
+       * Format: int64
+       * @description When the sign-in stops being accepted, Unix milliseconds.
+       */
+      expires_at: number
+      /**
+       * @description After sign-in the browser lands on a page that does not load; paste its address to
+       *     `/api/oauth/finish`. When `false`, the provider returns to `/api/oauth/callback`, which
+       *     finishes on its own and sends the browser back to `return_to`.
+       */
+      needs_paste: boolean
+      /** @description Ties the answer to this sign-in. */
+      state: string
+      /** @description Thunderbird's public client is used, so the consent screen names Thunderbird. */
+      thunderbird_client: boolean
+    }
+    /**
+     * @description Starts a Gmail or Microsoft sign-in. Give `archive_id` for a new account, or `account_id` to
+     *     sign in again to an existing IMAP or Graph account.
+     */
+    OAuthStartRequest: {
+      account_id?: string | null
+      archive_id?: string | null
+      /** @description The address to sign in as. Ignored when signing in again to an OAuth account. */
+      email?: string
+      /**
+       * @description How a new account reads mail: `imap` (the default) or `graph` (Microsoft Graph, for
+       *     `microsoft` only). Ignored when signing in again: the account's kind decides.
+       */
+      kind?: string | null
+      /** @description Shown in the sidebar for a new account; the address when missing. */
+      name?: string | null
+      /** @description `google` or `microsoft`. */
+      provider: string
+      /** @description A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing. */
+      return_to?: string | null
     }
     /** @description A password change. */
     PasswordRequest: {
@@ -886,7 +1138,10 @@ export interface components {
        * @description Unix milliseconds.
        */
       started_at: number
-      /** @description `running`, `done`, `failed` or `cancelled`. */
+      /**
+       * @description `running`, `done`, `failed`, `cancelled`, or `interrupted` when the server stopped while it
+       *     ran.
+       */
       state: string
       summary: string
       title: string
@@ -1029,7 +1284,7 @@ export interface operations {
           'application/json': components['schemas']['AccountDto']
         }
       }
-      /** @description An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password */
+      /** @description An empty name, a connection or password on an import account, an interval above a week, a minimum age above ten years, a change while syncing, or the server refused the new connection or password */
       400: {
         headers: {
           [name: string]: unknown
@@ -1520,6 +1775,146 @@ export interface operations {
       }
     }
   }
+  add_jmap_account: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['JmapAccountRequest']
+      }
+    }
+    responses: {
+      /** @description Stored; the first sync has started */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description Bad settings, or the server refused to sign in */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  export: {
+    parameters: {
+      query: {
+        /** @description `mbox` for one mbox file, `zip` for a zip of `.eml` files in folder directories. */
+        format: string
+        /** @description Only the messages of this folder id. */
+        folder?: string
+        /** @description Only the messages with this label. */
+        label?: string
+        /** @description Only the messages matching this search, e.g. `from:ada@example.com`. */
+        q?: string
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The messages as one mbox file (`application/mbox`) or a zip of `.eml` files (`application/zip`), streamed as they are read; a download cut short means the export failed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/octet-stream': unknown
+        }
+      }
+      /** @description Unknown format, more than one of folder, label and q, or a query that does not parse */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or folder */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_folders: {
     parameters: {
       query?: never
@@ -1636,11 +2031,63 @@ export interface operations {
       }
     }
   }
+  list_labels: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Labels carried by at least one message, by name */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LabelDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_messages: {
     parameters: {
       query?: {
         /** @description Only messages in this folder. */
         folder?: string
+        /** @description Only messages carrying this label, compared exactly. */
+        label?: string
         /** @description `next` from the previous page. */
         after?: string
         /** @description Page size, at most 500; 50 by default. */
@@ -2217,6 +2664,58 @@ export interface operations {
       }
     }
   }
+  get_thumbnail: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+        /** @description The attachment's position, from 0 */
+        ordinal: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A preview of the image at most 320 pixels on its longest side, made on first request and kept */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'image/jpeg': unknown
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message or attachment, not a PNG, JPEG, GIF or WebP image, or one that does not decode */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_body: {
     parameters: {
       query?: {
@@ -2433,6 +2932,159 @@ export interface operations {
       }
       /** @description The remote server could not be reached */
       502: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  callback: {
+    parameters: {
+      query?: {
+        /** @description The one-time code */
+        code?: string
+        /** @description The sign-in it answers */
+        state?: string
+        /** @description Why access was not granted */
+        error?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Back to the page the sign-in started from, with `oauth=done&account=<id>` or `oauth_error=<reason>` added */
+      303: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  finish: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OAuthFinishRequest']
+      }
+    }
+    responses: {
+      /** @description Signed in; the account is stored and syncing */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountDto']
+        }
+      }
+      /** @description Not a sign-in answer, an unknown or expired sign-in, access refused, or the mail server refused the token */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  start: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OAuthStartRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OAuthStartDto']
+        }
+      }
+      /** @description An unknown provider or kind, Graph with Google, a missing address, both or neither of archive_id and account_id, an import or JMAP account, or a bad return_to */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
         headers: {
           [name: string]: unknown
         }

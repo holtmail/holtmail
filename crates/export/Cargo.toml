@@ -1,0 +1,30 @@
+[package]
+name = "holtmail-export"
+description = "Writing archived messages out as mbox or a zip of .eml files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-index.workspace = true
+holtmail-store.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "rt"] }
+zip.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-import.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-store-sqlite.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

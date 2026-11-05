@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 holtmail-core.workspace = true
 holtmail-ingest.workspace = true
+holtmail-mime.workspace = true
 holtmail-source.workspace = true
 holtmail-store.workspace = true
 serde.workspace = true

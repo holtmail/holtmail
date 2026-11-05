@@ -59,6 +59,22 @@ fn mail(n: u32) -> Vec<u8> {
 }
 
 impl Fixture {
+    async fn find(&self, clause: Clause) -> Vec<holtmail_core::MessageId> {
+        self.index
+            .search(
+                self.account.archive_id,
+                &SearchQuery {
+                    clauses: vec![clause],
+                },
+                SortOrder::Newest,
+                0,
+                50,
+            )
+            .await
+            .unwrap()
+            .hits
+    }
+
     async fn sync(&self) -> SyncReport {
         self.sync_with(&SyncOptions {
             batch: 2,
@@ -83,6 +99,7 @@ impl Fixture {
             .list_messages(&MessageQuery {
                 archive_id: self.account.archive_id,
                 folder_id: None,
+                label: None,
                 after: None,
                 limit: 500,
             })
@@ -229,4 +246,365 @@ async fn honours_folder_rules_and_reports_sign_in_errors() {
         .await
         .unwrap_err();
     assert!(matches!(error, SyncError::Source(SourceError::Auth(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn archives_gmail_once_from_all_mail_with_labels() {
+    let f = fixture().await;
+    f.server.enable_condstore();
+    f.server
+        .add_folder("[Gmail]/All Mail", Some(FolderRole::All));
+    f.server.add_folder("[Gmail]/Spam", Some(FolderRole::Junk));
+    f.server.add_folder("Work", None);
+    for label_folder in ["INBOX", "Sent", "Work"] {
+        f.server.mark_label(label_folder);
+    }
+    f.server.deliver("INBOX", &mail(1), &[]);
+    f.server.deliver("Work", &mail(1), &[]);
+    let all = f.server.deliver_labeled(
+        "[Gmail]/All Mail",
+        &mail(1),
+        &["\\Seen"],
+        &["Inbox", "Work"],
+    );
+    f.server
+        .deliver_labeled("[Gmail]/All Mail", &mail(2), &[], &["Sent"]);
+    f.server.deliver("[Gmail]/Spam", &mail(3), &[]);
+
+    let report = f.sync().await;
+    let mut paths: Vec<_> = report.folders.iter().map(|r| r.path.as_str()).collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        ["[Gmail]/All Mail", "[Gmail]/Spam"],
+        "label folders were downloaded again"
+    );
+    assert_eq!(f.count().await, 3);
+    let labels = f.store.list_labels(f.account.archive_id).await.unwrap();
+    let names: Vec<_> = labels
+        .iter()
+        .map(|l| (l.name.as_str(), l.messages, l.unread))
+        .collect();
+    assert_eq!(names, [("Inbox", 1, 0), ("Sent", 1, 1), ("Work", 1, 0)]);
+    assert_eq!(f.find(Clause::Label("work".into())).await.len(), 1);
+
+    f.server
+        .set_labels("[Gmail]/All Mail", all, &["Work", "Done"]);
+    let report = f.sync().await;
+    assert_eq!(f.folder(&report, "[Gmail]/All Mail").flags_changed, 1);
+    assert!(f.find(Clause::Label("inbox".into())).await.is_empty());
+    assert_eq!(f.find(Clause::Label("done".into())).await.len(), 1);
+
+    let named = f
+        .sync_with(&SyncOptions {
+            include: Some(vec!["[Gmail]/All Mail".into(), "Work".into()]),
+            ..SyncOptions::default()
+        })
+        .await;
+    assert!(
+        named.folders.iter().any(|r| r.path == "Work"),
+        "a label folder named in the rules was skipped"
+    );
+    let without_all = f
+        .sync_with(&SyncOptions {
+            exclude: vec!["[Gmail]/All Mail".into()],
+            ..SyncOptions::default()
+        })
+        .await;
+    assert!(
+        without_all.folders.iter().any(|r| r.path == "INBOX"),
+        "label folders skipped while all mail is excluded"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn takes_in_flag_changes_since_the_last_modseq() {
+    let f = fixture().await;
+    f.server.enable_condstore();
+    let first = f.server.deliver("INBOX", &mail(1), &[]);
+    f.server.deliver("INBOX", &mail(2), &[]);
+    f.sync().await;
+    assert!(
+        f.server.flag_reads().is_empty(),
+        "flags read on the first sync"
+    );
+    assert!(f.find(Clause::Flag("\\Seen".into())).await.is_empty());
+
+    let quiet = f.sync().await;
+    assert_eq!(f.folder(&quiet, "INBOX").flags_changed, 0);
+    assert!(
+        f.server.flag_reads().is_empty(),
+        "flags read without changes"
+    );
+
+    f.server.set_flags("INBOX", first, &["\\Seen", "\\Flagged"]);
+    let changed = f.sync().await;
+    assert_eq!(f.folder(&changed, "INBOX").flags_changed, 1);
+    let reads = f.server.flag_reads();
+    assert_eq!(reads.len(), 1);
+    assert!(reads[0].1.is_some(), "changes read without CHANGEDSINCE");
+    assert_eq!(f.find(Clause::Flag("\\Seen".into())).await.len(), 1);
+    let inbox = f.store.list_folders(f.account.archive_id).await.unwrap();
+    let inbox = inbox.iter().find(|s| s.folder.path == "INBOX").unwrap();
+    assert_eq!(inbox.unread, 1);
+
+    f.sync().await;
+    assert_eq!(f.server.flag_reads().len(), 1, "the same change read twice");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scans_flags_once_a_day_without_condstore() {
+    let f = fixture().await;
+    let first = f.server.deliver("INBOX", &mail(1), &[]);
+    for n in 2..6 {
+        f.server.deliver("INBOX", &mail(n), &[]);
+    }
+    f.sync().await;
+    f.server.set_flags("INBOX", first, &["\\Seen"]);
+    let soon = f.sync().await;
+    assert_eq!(f.folder(&soon, "INBOX").flags_changed, 0);
+    assert!(
+        f.server.flag_reads().is_empty(),
+        "flags scanned before a day passed"
+    );
+
+    let options = SyncOptions {
+        flag_scan_interval: std::time::Duration::ZERO,
+        flag_batch: 2,
+        ..SyncOptions::default()
+    };
+    let scanned = f.sync_with(&options).await;
+    assert_eq!(f.folder(&scanned, "INBOX").flags_changed, 1);
+    let inbox: Vec<_> = f
+        .server
+        .flag_reads()
+        .into_iter()
+        .filter(|(_, since)| since.is_none())
+        .map(|(range, _)| range)
+        .collect();
+    assert_eq!(inbox, [1..=2, 3..=4, 5..=5], "not read in bounded batches");
+    assert_eq!(f.find(Clause::Flag("\\Seen".into())).await.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_every_flag_once_for_folders_archived_before_flag_checks() {
+    let f = fixture().await;
+    f.server.enable_condstore();
+    let uid = f.server.deliver("INBOX", &mail(1), &[]);
+    f.sync().await;
+    let inbox = f
+        .store
+        .list_folders(f.account.archive_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.folder.path == "INBOX")
+        .unwrap()
+        .folder
+        .id;
+    let mut cursor = f.store.cursor(inbox).await.unwrap();
+    cursor.flags_checked_at = None;
+    f.store.set_cursor(inbox, &cursor).await.unwrap();
+    f.server.set_flags("INBOX", uid, &["\\Seen"]);
+
+    let report = f.sync().await;
+    assert_eq!(f.folder(&report, "INBOX").flags_changed, 1);
+    assert_eq!(
+        f.server.flag_reads().last().unwrap().1,
+        None,
+        "an upgraded folder trusted a mod-sequence nobody read changes for"
+    );
+    assert!(
+        f.store
+            .cursor(inbox)
+            .await
+            .unwrap()
+            .flags_checked_at
+            .is_some()
+    );
+}
+
+fn dated(n: u32, date: &str) -> Vec<u8> {
+    format!("From: ada@example.com\r\nDate: {date}\r\nSubject: Message {n}\r\nMessage-ID: <{n}@example.com>\r\n\r\nBody {n}\r\n").into_bytes()
+}
+
+fn days_ago(days: i64) -> Timestamp {
+    Timestamp::from_millis(Timestamp::now().as_millis() - days * 24 * 60 * 60 * 1000)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn leaves_young_mail_for_a_later_sync() {
+    let f = fixture().await;
+    f.server.deliver_received("INBOX", &mail(1), days_ago(40));
+    f.server.deliver_received("INBOX", &mail(2), days_ago(35));
+    let young = f.server.deliver_received("INBOX", &mail(3), days_ago(2));
+    f.server.deliver_received("INBOX", &mail(4), days_ago(50));
+    f.server.deliver_received("INBOX", &mail(5), days_ago(1));
+    let thirty_days = SyncOptions {
+        batch: 2,
+        min_age: Some(Duration::from_secs(30 * 24 * 60 * 60)),
+        ..SyncOptions::default()
+    };
+
+    let first = f.sync_with(&thirty_days).await;
+    let inbox = f.folder(&first, "INBOX");
+    assert_eq!((inbox.new, inbox.deferred), (2, 3));
+    assert_eq!(f.count().await, 2);
+    let folder = f
+        .store
+        .list_folders(f.account.archive_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.folder.path == "INBOX")
+        .unwrap()
+        .folder;
+    assert_eq!(
+        f.store.cursor(folder.id).await.unwrap().last_uid,
+        Some(young - 1),
+        "the cursor moved past a message that was left on the server"
+    );
+    assert!(
+        f.server.fetches().iter().all(|batch| !batch.contains(&5)),
+        "the sync went on fetching after the first young message"
+    );
+
+    let again = f.sync_with(&thirty_days).await;
+    assert_eq!(
+        (
+            f.folder(&again, "INBOX").new,
+            f.folder(&again, "INBOX").deferred
+        ),
+        (0, 3)
+    );
+
+    let one_day = SyncOptions {
+        batch: 2,
+        min_age: Some(Duration::from_secs(36 * 60 * 60)),
+        ..SyncOptions::default()
+    };
+    let later = f.sync_with(&one_day).await;
+    assert_eq!(
+        (
+            f.folder(&later, "INBOX").new,
+            f.folder(&later, "INBOX").deferred
+        ),
+        (2, 1),
+        "mail old enough by now was not picked up"
+    );
+
+    let all = f.sync().await;
+    assert_eq!(
+        (
+            f.folder(&all, "INBOX").new,
+            f.folder(&all, "INBOX").deferred
+        ),
+        (1, 0)
+    );
+    assert_eq!(f.count().await, 5, "a message was lost");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn judges_age_by_the_date_header_without_a_received_time() {
+    let f = fixture().await;
+    f.server
+        .deliver("INBOX", &dated(1, "Mon, 01 Jan 2024 10:00:00 +0000"), &[]);
+    f.server
+        .deliver("INBOX", &dated(2, "Fri, 01 Jan 2100 10:00:00 +0000"), &[]);
+    f.server.deliver("INBOX", &mail(3), &[]);
+    let report = f
+        .sync_with(&SyncOptions {
+            min_age: Some(Duration::from_secs(24 * 60 * 60)),
+            ..SyncOptions::default()
+        })
+        .await;
+    let inbox = f.folder(&report, "INBOX");
+    assert_eq!((inbox.new, inbox.deferred), (1, 2));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finds_new_mail_below_archived_uids_when_uids_do_not_ascend() {
+    let f = fixture().await;
+    f.server.mark_unordered("INBOX");
+    f.server.deliver_at("INBOX", 500, &mail(1), &[]);
+    f.server.deliver_at("INBOX", 900, &mail(2), &[]);
+    let first = f.sync().await;
+    assert_eq!(f.folder(&first, "INBOX").new, 2);
+
+    f.server.deliver_at("INBOX", 700, &mail(3), &["\\Seen"]);
+    f.server.deliver_at("INBOX", 100, b"\x00\x01 not mail", &[]);
+    let fetches_before = f.server.fetches().len();
+    let second = f.sync().await;
+    let inbox = f.folder(&second, "INBOX");
+    assert_eq!((inbox.new, inbox.failed), (1, 1));
+    assert_eq!(
+        f.server.fetches()[fetches_before..],
+        [vec![100, 700]],
+        "archived mail was fetched again or new mail below the watermark was missed"
+    );
+    assert_eq!(f.count().await, 3);
+
+    for _ in 0..10 {
+        f.sync().await;
+    }
+    let fetches_before = f.server.fetches().len();
+    f.sync().await;
+    assert!(
+        f.server.fetches()[fetches_before..].is_empty(),
+        "a message that keeps failing is fetched forever"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn skips_unchanged_folders_until_something_is_left_behind() {
+    let f = fixture().await;
+    f.server.track_changes();
+    f.server.mark_unordered("INBOX");
+    f.server.deliver_at("INBOX", 500, &mail(1), &[]);
+    f.server.deliver("Sent", &mail(2), &[]);
+    let first = f.sync().await;
+    assert_eq!(f.folder(&first, "INBOX").new, 1);
+    assert!(!f.folder(&first, "INBOX").unchanged);
+
+    let listings = f.server.listings();
+    let quiet = f.sync().await;
+    assert!(f.folder(&quiet, "INBOX").unchanged && f.folder(&quiet, "Sent").unchanged);
+    assert_eq!(
+        f.server.listings(),
+        listings,
+        "an unchanged folder was listed"
+    );
+
+    f.server.deliver_at("INBOX", 100, b"\x00\x01 not mail", &[]);
+    let broken = f.sync().await;
+    assert_eq!(f.folder(&broken, "INBOX").failed, 1);
+    let retried = f.sync().await;
+    assert!(
+        !f.folder(&retried, "INBOX").unchanged,
+        "a message left to retry was skipped"
+    );
+    assert_eq!(f.folder(&retried, "INBOX").failed, 1);
+    for _ in 0..5 {
+        f.sync().await;
+    }
+    let given_up = f.sync().await;
+    assert!(f.folder(&given_up, "INBOX").unchanged);
+
+    f.server
+        .deliver_received("Sent", &mail(3), Timestamp::now());
+    let wait = SyncOptions {
+        batch: 2,
+        min_age: Some(Duration::from_secs(24 * 60 * 60)),
+        ..SyncOptions::default()
+    };
+    assert_eq!(f.folder(&f.sync_with(&wait).await, "Sent").deferred, 1);
+    let later = f.sync_with(&wait).await;
+    assert!(
+        !f.folder(&later, "Sent").unchanged,
+        "a deferred message was skipped"
+    );
+    let all = f.sync().await;
+    assert_eq!(f.folder(&all, "Sent").new, 1);
+    assert!(f.folder(&f.sync().await, "Sent").unchanged);
+    assert_eq!(f.count().await, 3);
 }

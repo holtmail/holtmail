@@ -1,21 +1,39 @@
 //! Archiving an account's folders incrementally.
 //!
 //! For each folder the sync remembers `UIDVALIDITY` and the highest archived UID, fetches only newer
-//! messages in batches, records messages that fail instead of stalling on them, and notices
-//! messages that disappeared from the server without deleting them from the archive.
+//! messages in batches (every UID not archived yet on sources whose UIDs do not ascend with
+//! arrival), records messages that fail instead of stalling on them, and notices
+//! messages that disappeared from the server without deleting them from the archive. Flags and
+//! labels changed on the server after archiving are taken in too: since the last mod-sequence on
+//! servers with `CONDSTORE`, by reading every archived message's flags once a day otherwise.
+//!
+//! When a source keeps a state per folder (a Graph delta link), the state is stored with the
+//! cursor after a sync that left nothing behind (nothing deferred, no failure left to retry), and
+//! the next sync skips the folder when the source says nothing changed since it. Any other sync
+//! drops the stored state first, so an interrupted sync never skips unfinished work.
+//!
+//! With a minimum age, a folder's sync stops before its first message that is too young, so the
+//! UID cursor never passes a message that was not archived yet.
+//!
+//! On Gmail, labels shown as folders are skipped while the all-mail folder is synced: their
+//! messages arrive once, from all mail, with their labels attached.
 
 use std::collections::BTreeSet;
+use std::time::Duration;
 
 use holtmail_core::{FolderId, Timestamp};
 use holtmail_ingest::{Ingest, IngestError, Placement};
-use holtmail_source::{RemoteFolder, Source, SourceError, SourceSession};
-use holtmail_store::{Account, FolderCursor, Store, StoreError};
+use holtmail_source::{
+    FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError, SourceSession,
+};
+use holtmail_store::{Account, FolderCursor, FolderRole, Store, StoreError};
 use serde::Serialize;
 
 /// Which folders to archive and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncOptions {
-    /// Only these folder paths, when set.
+    /// Only these folder paths, when set. A label folder named here is synced even when the
+    /// all-mail folder is.
     pub include: Option<Vec<String>>,
     /// Never these folder paths.
     pub exclude: Vec<String>,
@@ -23,6 +41,16 @@ pub struct SyncOptions {
     pub batch: usize,
     /// A message that failed this many times is not retried.
     pub max_attempts: u32,
+    /// On servers without mod-sequences, how often the flags of every archived message in a
+    /// folder are read again.
+    pub flag_scan_interval: Duration,
+    /// UIDs covered by one flag read on such servers.
+    pub flag_batch: usize,
+    /// Archive only messages at least this old, by when the server received them, or by their
+    /// `Date` header when the server does not say. A folder's sync stops at its first newer
+    /// message: that message and every later one are left on the server for a sync once they
+    /// are old enough, so none is skipped for good. Messages without either date are archived.
+    pub min_age: Option<Duration>,
 }
 
 impl Default for SyncOptions {
@@ -32,6 +60,9 @@ impl Default for SyncOptions {
             exclude: Vec::new(),
             batch: 50,
             max_attempts: 5,
+            flag_scan_interval: Duration::from_secs(24 * 60 * 60),
+            flag_batch: 1000,
+            min_age: None,
         }
     }
 }
@@ -47,10 +78,17 @@ pub struct FolderReport {
     pub known: u64,
     /// Messages no longer on the server.
     pub removed: u64,
+    /// Archived messages whose flags or labels changed on the server.
+    pub flags_changed: u64,
     /// Messages that could not be archived this time.
     pub failed: u64,
+    /// New messages left for a later sync because the first of them is younger than
+    /// [`SyncOptions::min_age`].
+    pub deferred: u64,
     /// The server renumbered the folder (`UIDVALIDITY` changed).
     pub renumbered: bool,
+    /// The source said nothing changed since the folder's stored state, so it was not listed.
+    pub unchanged: bool,
     /// Why the folder was not finished, when it was not.
     pub error: Option<String>,
 }
@@ -111,7 +149,12 @@ impl Syncer {
         let mut report = SyncReport::default();
         let mut folders = session.folders().await?;
         folders.sort_by(|a, b| a.path.cmp(&b.path));
-        for remote in folders.into_iter().filter(|f| wanted(f, options)) {
+        let all_mail = folders
+            .iter()
+            .any(|f| f.role == Some(FolderRole::All) && wanted(f, options));
+        for remote in folders.into_iter().filter(|f| {
+            wanted(f, options) && !(f.label && all_mail && !named(f, options.include.as_deref()))
+        }) {
             let folder = self
                 .store
                 .upsert_folder(account.id, &remote.path, remote.role)
@@ -164,13 +207,24 @@ impl Syncer {
             report.renumbered = true;
         }
         cursor.uid_validity = Some(status.uid_validity);
+        let archived_up_to = cursor.last_uid;
+
+        if let Some(state) = cursor.state.take() {
+            if let Some(kept) = session.unchanged_since(&state).await? {
+                cursor.state = Some(kept);
+                cursor.synced_at = Some(Timestamp::now());
+                self.store.set_cursor(folder, &cursor).await?;
+                report.unchanged = true;
+                return Ok(());
+            }
+            self.store.set_cursor(folder, &cursor).await?;
+        }
 
         let on_server: BTreeSet<u64> = session.uids().await?.into_iter().collect();
-        let gone: Vec<u64> = self
-            .store
-            .folder_uids(folder)
-            .await?
-            .into_iter()
+        let archived: BTreeSet<u64> = self.store.folder_uids(folder).await?.into_iter().collect();
+        let gone: Vec<u64> = archived
+            .iter()
+            .copied()
             .filter(|uid| !on_server.contains(uid))
             .collect();
         if !gone.is_empty() {
@@ -189,28 +243,74 @@ impl Syncer {
             report.removed = gone.len() as u64;
         }
 
-        let retry: BTreeSet<u64> = self
-            .store
-            .failures(folder)
-            .await?
-            .into_iter()
+        self.refresh_flags(
+            session,
+            folder,
+            &status,
+            &mut cursor,
+            archived_up_to,
+            &on_server,
+            options,
+            report,
+        )
+        .await?;
+        self.store.set_cursor(folder, &cursor).await?;
+
+        let failures = self.store.failures(folder).await?;
+        let retry: BTreeSet<u64> = failures
+            .iter()
             .filter(|f| f.attempts < options.max_attempts && on_server.contains(&f.uid))
             .map(|f| f.uid)
             .collect();
+        let given_up: BTreeSet<u64> = failures
+            .iter()
+            .filter(|f| f.attempts >= options.max_attempts)
+            .map(|f| f.uid)
+            .collect();
         let last = cursor.last_uid.unwrap_or(0);
+        let fresh = |uid: u64| {
+            if status.uids_ascend {
+                uid > last
+            } else {
+                !retry.contains(&uid)
+            }
+        };
         let wanted: Vec<u64> = on_server
             .iter()
             .copied()
-            .filter(|uid| *uid > last || retry.contains(uid))
+            .filter(|uid| {
+                if status.uids_ascend {
+                    *uid > last || retry.contains(uid)
+                } else {
+                    !archived.contains(uid) && !given_up.contains(uid)
+                }
+            })
             .collect();
 
+        let cutoff = options.min_age.map(|age| {
+            Timestamp::from_millis(
+                Timestamp::now()
+                    .as_millis()
+                    .saturating_sub(i64::try_from(age.as_millis()).unwrap_or(i64::MAX)),
+            )
+        });
         for batch in wanted.chunks(options.batch.max(1)) {
-            let fetched = session.fetch(batch).await?;
+            let mut fetched = session.fetch(batch).await?;
+            fetched.sort_by_key(|m| m.uid);
+            let mut young = None;
             for message in fetched {
+                if let Some(cutoff) = cutoff
+                    && fresh(message.uid)
+                    && newer_than(&message, cutoff)
+                {
+                    young = Some(message.uid);
+                    break;
+                }
                 let placement = Placement {
                     folder: Some(folder),
                     uid: Some(message.uid),
                     flags: message.flags,
+                    labels: message.labels,
                     received_at: message.received_at,
                 };
                 match self
@@ -242,20 +342,129 @@ impl Syncer {
                     Err(error) => return Err(ingest_error(error)),
                 }
             }
-            if let Some(max) = batch.iter().copied().filter(|uid| *uid > last).max() {
+            let before = young.unwrap_or(u64::MAX);
+            if let Some(max) = batch
+                .iter()
+                .copied()
+                .filter(|uid| *uid > last && *uid < before)
+                .max()
+            {
                 cursor.last_uid = Some(cursor.last_uid.unwrap_or(0).max(max));
             }
-            cursor.highest_modseq = status.highest_modseq;
             self.store.set_cursor(folder, &cursor).await?;
             self.ingest.commit().await.map_err(ingest_error)?;
+            if let Some(young) = young {
+                report.deferred = wanted.iter().filter(|uid| **uid >= young).count() as u64;
+                break;
+            }
         }
 
+        let pending = report.deferred > 0
+            || self
+                .store
+                .failures(folder)
+                .await?
+                .iter()
+                .any(|f| f.attempts < options.max_attempts && on_server.contains(&f.uid));
+        cursor.state = if pending { None } else { session.state() };
         cursor.synced_at = Some(Timestamp::now());
-        cursor.highest_modseq = status.highest_modseq;
         self.store.set_cursor(folder, &cursor).await?;
         self.ingest.commit().await.map_err(ingest_error)?;
         Ok(())
     }
+
+    /// Takes in flag and label changes of messages archived up to `archived_up_to` and moves the
+    /// cursor's mod-sequence and flag check time on.
+    #[allow(clippy::too_many_arguments)]
+    async fn refresh_flags(
+        &self,
+        session: &mut dyn SourceSession,
+        folder: FolderId,
+        status: &FolderStatus,
+        cursor: &mut FolderCursor,
+        archived_up_to: Option<u64>,
+        on_server: &BTreeSet<u64>,
+        options: &SyncOptions,
+        report: &mut FolderReport,
+    ) -> Result<(), SyncError> {
+        let now = Timestamp::now();
+        let Some(up_to) = archived_up_to else {
+            cursor.highest_modseq = status.highest_modseq;
+            cursor.flags_checked_at = Some(now);
+            return Ok(());
+        };
+        let checked = cursor.flags_checked_at.is_some();
+        let changes = match (status.highest_modseq, cursor.highest_modseq) {
+            (Some(current), Some(previous)) if checked && current == previous => Vec::new(),
+            (Some(current), Some(previous)) if checked && current > previous => {
+                session.flags(1..=up_to, Some(previous)).await?
+            }
+            (current, previous) => {
+                let interval =
+                    i64::try_from(options.flag_scan_interval.as_millis()).unwrap_or(i64::MAX);
+                let due = current.is_some()
+                    || previous.is_some()
+                    || cursor.flags_checked_at.is_none_or(|checked| {
+                        now.as_millis().saturating_sub(checked.as_millis()) >= interval
+                    });
+                if !due {
+                    cursor.highest_modseq = current;
+                    return Ok(());
+                }
+                let archived: Vec<u64> = on_server.range(..=up_to).copied().collect();
+                let mut changes = Vec::new();
+                for chunk in archived.chunks(options.flag_batch.max(1)) {
+                    let (Some(first), Some(last)) = (chunk.first(), chunk.last()) else {
+                        continue;
+                    };
+                    changes.extend(session.flags(*first..=*last, None).await?);
+                }
+                cursor.flags_checked_at = Some(now);
+                changes
+            }
+        };
+        for change in changes.into_iter().filter(|c| c.uid <= up_to) {
+            if self.apply(folder, change).await? {
+                report.flags_changed += 1;
+            }
+        }
+        if report.flags_changed > 0 {
+            self.ingest.commit().await.map_err(ingest_error)?;
+        }
+        cursor.highest_modseq = status.highest_modseq;
+        Ok(())
+    }
+
+    async fn apply(&self, folder: FolderId, change: RemoteFlags) -> Result<bool, SyncError> {
+        let Some(message) = self.store.message_at_uid(folder, change.uid).await? else {
+            return Ok(false);
+        };
+        let mut changed = self
+            .store
+            .set_flags(folder, change.uid, &change.flags)
+            .await?;
+        if let Some(labels) = &change.labels {
+            changed |= self.store.set_labels(message, labels).await?;
+        }
+        if changed {
+            self.ingest.reindex(message).await.map_err(ingest_error)?;
+        }
+        Ok(changed)
+    }
+}
+
+fn newer_than(message: &RemoteMessage, cutoff: Timestamp) -> bool {
+    let date = message.received_at.or_else(|| {
+        holtmail_mime::parse(&message.raw)
+            .ok()
+            .and_then(|parsed| parsed.sent_at)
+            .map(Timestamp::from_secs)
+    });
+    date.is_some_and(|date| date > cutoff)
+}
+
+fn named(folder: &RemoteFolder, include: Option<&[String]>) -> bool {
+    include.is_some_and(|include| include.iter().any(|p| p == &folder.path))
 }
 
 fn wanted(folder: &RemoteFolder, options: &SyncOptions) -> bool {

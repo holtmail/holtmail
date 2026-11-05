@@ -16,6 +16,9 @@ holtmail-blob = { path = "crates/blob" }
 holtmail-blob-fs = { path = "crates/blob-fs" }
 holtmail-blob-s3 = { path = "crates/blob-s3" }
 holtmail-core = { path = "crates/core" }
+holtmail-export = { path = "crates/export" }
+holtmail-extract = { path = "crates/extract" }
+holtmail-extract-basic = { path = "crates/extract-basic" }
 holtmail-fetch = { path = "crates/fetch" }
 holtmail-fetch-http = { path = "crates/fetch-http" }
 holtmail-import = { path = "crates/import" }
@@ -23,16 +26,21 @@ holtmail-index = { path = "crates/index" }
 holtmail-index-tantivy = { path = "crates/index-tantivy" }
 holtmail-ingest = { path = "crates/ingest" }
 holtmail-mime = { path = "crates/mime" }
+holtmail-oauth = { path = "crates/oauth" }
+holtmail-oauth-http = { path = "crates/oauth-http" }
 holtmail-query = { path = "crates/query" }
 holtmail-remote = { path = "crates/remote" }
 holtmail-sanitize = { path = "crates/sanitize" }
 holtmail-secret = { path = "crates/secret" }
 holtmail-secret-local = { path = "crates/secret-local" }
 holtmail-source = { path = "crates/source" }
+holtmail-source-graph = { path = "crates/source-graph" }
 holtmail-source-imap = { path = "crates/source-imap" }
+holtmail-source-jmap = { path = "crates/source-jmap" }
 holtmail-store = { path = "crates/store" }
 holtmail-store-sqlite = { path = "crates/store-sqlite" }
 holtmail-sync = { path = "crates/sync" }
+holtmail-thumbnail = { path = "crates/thumbnail" }
 
 ammonia = "4"
 anyhow = "1"
@@ -47,11 +55,15 @@ bytes = "1"
 chacha20poly1305 = "0.11"
 futures = "0.3"
 getrandom = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+lopdf = { version = "0.47", default-features = false }
 mail-parser = { version = "1", features = ["full_encoding"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "socks"] }
+quick-xml = "0.41"
 object_store = { version = "0.14", features = ["aws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.11"
 subtle = "2"
 sqlx = { version = "0.9", default-features = false, features = [
   "runtime-tokio",
@@ -60,6 +72,7 @@ sqlx = { version = "0.9", default-features = false, features = [
   "macros",
 ] }
 tantivy = "0.27"
+tar = { version = "0.4", default-features = false }
 tempfile = "3"
 thiserror = "2"
 toml = "1"

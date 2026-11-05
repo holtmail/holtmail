@@ -13,12 +13,16 @@ from:ada@example.com has:attachment before:2024-01-01 "quarterly report" -in:tra
 | `word` | `Text` |
 | `"several words"` | `Phrase` |
 | `from:` `to:` `subject:` `body:` `filename:` `in:` with a word or `"quoted value"` | The field clause |
+| `attachment:invoice` / `attachment:"draft copy"` | `Attachment`: words in the text extracted from attachments only |
+| `label:Work` / `label:"Muy importante"` | `Label`: the whole label name, any letter case |
 | `has:attachment` | `HasAttachment` |
 | `is:read` / `is:seen` | `Flag("\Seen")` |
 | `is:unread` / `is:unseen` | `Not(Flag("\Seen"))` |
 | `is:flagged` / `is:starred` | `Flag("\Flagged")` |
 | `before:` / `after:` with `YYYY`, `YYYY-MM` or `YYYY-MM-DD` | `Before` / `After` at the start of that day, month or year in UTC |
 | `-term` | `Not(term)` |
+
+Plain words and phrases search attachment text too, alongside the subject, addresses, body and file names; `attachment:` searches only inside attachments, and `filename:` only their names. `has:attachment` keeps messages with any attachment that is not inline and combines with both: `has:attachment budget` finds messages with attachments that mention "budget" anywhere, `attachment:budget` those whose attachments do.
 
 Operator names are case-insensitive. An unknown `name:value` (`re:hello`, a URL) is searched as plain text. An unclosed quote runs to the end of the input.
 

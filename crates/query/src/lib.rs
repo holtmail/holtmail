@@ -21,7 +21,8 @@ pub enum QueryError {
 /// Parses `input`.
 ///
 /// - Words match anywhere; `"quoted words"` match as a phrase.
-/// - `from:`, `to:`, `subject:`, `body:`, `filename:`, `in:` take a word or a quoted value.
+/// - `from:`, `to:`, `subject:`, `body:`, `filename:`, `attachment:`, `in:`, `label:` take a word
+///   or a quoted value; `label:"Muy importante"` matches the whole label name.
 /// - `has:attachment`; `is:read`, `is:unread`, `is:flagged` (also `is:starred`).
 /// - `before:` and `after:` take `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in UTC; `before:2024` means
 ///   before 1 January 2024, `after:2024-03` means from 1 March 2024 on.
@@ -99,7 +100,18 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
     let name = name.to_ascii_lowercase();
     let known = matches!(
         name.as_str(),
-        "from" | "to" | "subject" | "body" | "filename" | "in" | "has" | "is" | "before" | "after"
+        "from"
+            | "to"
+            | "subject"
+            | "body"
+            | "filename"
+            | "attachment"
+            | "in"
+            | "label"
+            | "has"
+            | "is"
+            | "before"
+            | "after"
     );
     if !known {
         return Ok(free(text, quoted));
@@ -114,7 +126,9 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
         "subject" => Clause::Subject(value),
         "body" => Clause::Body(value),
         "filename" => Clause::Filename(value),
+        "attachment" => Clause::Attachment(value),
         "in" => Clause::In(value),
+        "label" => Clause::Label(value),
         "has" if value.eq_ignore_ascii_case("attachment") => Clause::HasAttachment,
         "is" => match value.to_ascii_lowercase().as_str() {
             "read" | "seen" => Clause::Flag("\\Seen".into()),
@@ -199,12 +213,34 @@ mod tests {
     }
 
     #[test]
+    fn searches_attachment_text() {
+        assert_eq!(
+            clauses(r#"attachment:invoice -attachment:"draft copy""#),
+            vec![
+                Clause::Attachment("invoice".into()),
+                Clause::Not(Box::new(Clause::Attachment("draft copy".into()))),
+            ]
+        );
+    }
+
+    #[test]
     fn negates_with_a_dash() {
         assert_eq!(
             clauses("-in:trash - word"),
             vec![
                 Clause::Not(Box::new(Clause::In("trash".into()))),
                 Clause::Text("word".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_labels() {
+        assert_eq!(
+            clauses(r#"label:Projects/2025 -label:"Muy importante""#),
+            vec![
+                Clause::Label("Projects/2025".into()),
+                Clause::Not(Box::new(Clause::Label("Muy importante".into()))),
             ]
         );
     }

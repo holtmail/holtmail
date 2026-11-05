@@ -1,0 +1,29 @@
+[package]
+name = "holtmail-source-graph"
+description = "Reading mail from Microsoft 365 and Outlook.com through Microsoft Graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-source.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

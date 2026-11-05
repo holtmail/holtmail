@@ -51,6 +51,31 @@ impl SqliteStore {
             writer: Mutex::new(()),
         })
     }
+
+    /// Closes every connection, waiting for them to finish, so the database file is complete on
+    /// disk. Calls after this fail.
+    pub async fn close(&self) {
+        self.pool.close().await;
+    }
+
+    /// Writes a consistent copy of the whole database to `path`, which must not exist yet. Safe
+    /// while other tasks read and write: the copy holds every write committed before it started
+    /// and none after.
+    pub async fn snapshot(&self, path: impl AsRef<Path>) -> Result<(), StoreError> {
+        let path = path.as_ref();
+        if path.exists() {
+            return Err(StoreError::Invalid(format!("{} exists", path.display())));
+        }
+        let target = path
+            .to_str()
+            .ok_or_else(|| StoreError::Invalid("the snapshot path is not UTF-8".into()))?;
+        sqlx::query("VACUUM INTO ?")
+            .bind(target)
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -158,9 +183,12 @@ impl ArchiveStore for SqliteStore {
              OR folder_id IN
              (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
             "DELETE FROM folders WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM account_runs WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM accounts WHERE archive_id = ?1",
             "DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM message_parents WHERE archive_id = ?1",
+            "DELETE FROM message_labels WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
+            "DELETE FROM labels WHERE archive_id = ?1",
             "DELETE FROM message_remote_images WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM remote_scans WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM messages WHERE archive_id = ?1",
@@ -195,21 +223,25 @@ impl ArchiveStore for SqliteStore {
         blobs.dedup();
         let mut orphans = Vec::new();
         for blob in blobs {
-            let used: Option<i64> = sqlx::query_scalar(
-                "SELECT 1 FROM messages WHERE blob_id = ?1
-                 UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1
-                 UNION ALL SELECT 1 FROM remote_images WHERE blob_id = ?1 LIMIT 1",
-            )
-            .bind(&blob)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(backend)?;
-            if used.is_none() {
-                orphans.push(parse(&blob)?);
+            if blob_used(&mut tx, &blob).await? {
+                continue;
+            }
+            let made: Vec<Option<String>> =
+                sqlx::query_scalar("DELETE FROM derived WHERE source_blob = ? RETURNING blob_id")
+                    .bind(&blob)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(backend)?;
+            orphans.push(parse(&blob)?);
+            for derived in made.into_iter().flatten() {
+                if !blob_used(&mut tx, &derived).await? {
+                    orphans.push(parse(&derived)?);
+                }
             }
         }
         tx.commit().await.map_err(backend)?;
         orphans.sort();
+        orphans.dedup();
         Ok(orphans)
     }
 
@@ -321,6 +353,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM folder_cursors WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folders WHERE account_id = ?1",
+            "DELETE FROM account_runs WHERE account_id = ?1",
         ] {
             sqlx::query(statement)
                 .bind(&id)
@@ -610,36 +643,35 @@ impl MessageStore for SqliteStore {
             Some(cursor) => decode_cursor(cursor)?,
             None => (i64::MAX, String::from("~")),
         };
-        let rows = match query.folder_id {
-            Some(folder) => {
-                sqlx::query(
-                    "SELECT m.* FROM messages m JOIN locations l ON l.message_id = m.id
-                     WHERE l.folder_id = ? AND l.removed_at IS NULL AND m.archive_id = ?
-                       AND (m.date, m.id) < (?, ?)
-                     ORDER BY m.date DESC, m.id DESC LIMIT ?",
-                )
-                .bind(folder.to_string())
-                .bind(query.archive_id.to_string())
-                .bind(date)
-                .bind(&id)
-                .bind(i64::from(limit) + 1)
-                .fetch_all(&self.pool)
-                .await
-            }
-            None => {
-                sqlx::query(
-                    "SELECT * FROM messages WHERE archive_id = ? AND (date, id) < (?, ?)
-                     ORDER BY date DESC, id DESC LIMIT ?",
-                )
-                .bind(query.archive_id.to_string())
-                .bind(date)
-                .bind(&id)
-                .bind(i64::from(limit) + 1)
-                .fetch_all(&self.pool)
-                .await
-            }
+        let mut sql = String::from("SELECT m.* FROM messages m");
+        if query.folder_id.is_some() {
+            sql.push_str(" JOIN locations l ON l.message_id = m.id AND l.removed_at IS NULL AND l.folder_id = ?");
         }
-        .map_err(backend)?;
+        if query.label.is_some() {
+            sql.push_str(
+                " JOIN message_labels ml ON ml.message_id = m.id
+                  JOIN labels lb ON lb.id = ml.label_id AND lb.name = ?",
+            );
+        }
+        sql.push_str(
+            " WHERE m.archive_id = ? AND (m.date, m.id) < (?, ?)
+              ORDER BY m.date DESC, m.id DESC LIMIT ?",
+        );
+        let mut statement = sqlx::query(AssertSqlSafe(sql));
+        if let Some(folder) = query.folder_id {
+            statement = statement.bind(folder.to_string());
+        }
+        if let Some(label) = &query.label {
+            statement = statement.bind(label.clone());
+        }
+        let rows = statement
+            .bind(query.archive_id.to_string())
+            .bind(date)
+            .bind(&id)
+            .bind(i64::from(limit) + 1)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(backend)?;
         let mut items = rows.iter().map(message).collect::<Result<Vec<_>, _>>()?;
         let next = if items.len() > limit as usize {
             items.truncate(limit as usize);
@@ -696,10 +728,25 @@ impl MessageStore for SqliteStore {
                 }
                 extras.folder_ids.push(folder_id);
             }
+            let named = format!(
+                "SELECT ml.message_id, lb.name FROM message_labels ml
+                 JOIN labels lb ON lb.id = ml.label_id WHERE ml.message_id IN ({marks})"
+            );
+            let mut query = sqlx::query(AssertSqlSafe(named));
+            for id in chunk {
+                query = query.bind(id.to_string());
+            }
+            for row in query.fetch_all(&self.pool).await.map_err(backend)? {
+                let message: MessageId = parse(&get::<String>(&row, "message_id")?)?;
+                if let Some(extras) = out.get_mut(&message) {
+                    extras.labels.push(get(&row, "name")?);
+                }
+            }
         }
         for extras in out.values_mut() {
             extras.flags.sort();
             extras.flags.dedup();
+            extras.labels.sort();
         }
         Ok(out)
     }
@@ -829,6 +876,146 @@ impl MessageStore for SqliteStore {
             .map_err(backend)?;
         Ok(())
     }
+
+    async fn set_flags(
+        &self,
+        folder: FolderId,
+        uid: u64,
+        flags: &[String],
+    ) -> Result<bool, StoreError> {
+        let mut wanted = flags.to_vec();
+        wanted.sort();
+        wanted.dedup();
+        let _write = self.writer.lock().await;
+        let Some(row) = sqlx::query("SELECT flags FROM locations WHERE folder_id = ? AND uid = ?")
+            .bind(folder.to_string())
+            .bind(signed(uid)?)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(backend)?
+        else {
+            return Ok(false);
+        };
+        let mut stored = rows::flags(&row)?;
+        stored.sort();
+        stored.dedup();
+        if stored == wanted {
+            return Ok(false);
+        }
+        sqlx::query("UPDATE locations SET flags = ? WHERE folder_id = ? AND uid = ?")
+            .bind(json(&wanted)?)
+            .bind(folder.to_string())
+            .bind(signed(uid)?)
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        Ok(true)
+    }
+}
+
+#[async_trait]
+impl LabelStore for SqliteStore {
+    async fn set_labels(&self, message: MessageId, labels: &[String]) -> Result<bool, StoreError> {
+        let mut wanted: Vec<String> = labels.iter().filter(|l| !l.is_empty()).cloned().collect();
+        wanted.sort();
+        wanted.dedup();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let archive: String = sqlx::query_scalar("SELECT archive_id FROM messages WHERE id = ?")
+            .bind(message.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?
+            .ok_or(StoreError::NotFound("message"))?;
+        let mut current: Vec<String> = sqlx::query_scalar(
+            "SELECT lb.name FROM message_labels ml JOIN labels lb ON lb.id = ml.label_id
+             WHERE ml.message_id = ?",
+        )
+        .bind(message.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        current.sort();
+        if current == wanted {
+            return Ok(false);
+        }
+        let dropped: Vec<i64> = sqlx::query_scalar(
+            "DELETE FROM message_labels WHERE message_id = ? RETURNING label_id",
+        )
+        .bind(message.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        for name in &wanted {
+            sqlx::query(
+                "INSERT INTO labels (archive_id, name) VALUES (?, ?)
+                 ON CONFLICT (archive_id, name) DO NOTHING",
+            )
+            .bind(&archive)
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+            sqlx::query(
+                "INSERT INTO message_labels (message_id, label_id)
+                 SELECT ?, id FROM labels WHERE archive_id = ? AND name = ?",
+            )
+            .bind(message.to_string())
+            .bind(&archive)
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        }
+        for label in dropped {
+            sqlx::query(
+                "DELETE FROM labels WHERE id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM message_labels WHERE label_id = ?1)",
+            )
+            .bind(label)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        }
+        tx.commit().await.map_err(backend)?;
+        Ok(true)
+    }
+
+    async fn labels(&self, message: MessageId) -> Result<Vec<String>, StoreError> {
+        sqlx::query_scalar(
+            "SELECT lb.name FROM message_labels ml JOIN labels lb ON lb.id = ml.label_id
+             WHERE ml.message_id = ? ORDER BY lb.name",
+        )
+        .bind(message.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)
+    }
+
+    async fn list_labels(&self, archive: ArchiveId) -> Result<Vec<LabelSummary>, StoreError> {
+        sqlx::query(
+            "SELECT lb.name, COUNT(*) AS messages,
+                    SUM(NOT EXISTS (
+                        SELECT 1 FROM locations l, json_each(l.flags)
+                        WHERE l.message_id = ml.message_id AND l.removed_at IS NULL
+                          AND lower(json_each.value) = '\\seen')) AS unread
+             FROM labels lb JOIN message_labels ml ON ml.label_id = lb.id
+             WHERE lb.archive_id = ? GROUP BY lb.id ORDER BY lb.name",
+        )
+        .bind(archive.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(|row| {
+            Ok(LabelSummary {
+                name: get(row, "name")?,
+                messages: unsigned(get(row, "messages")?),
+                unread: unsigned(get(row, "unread")?),
+            })
+        })
+        .collect()
+    }
 }
 
 #[async_trait]
@@ -846,6 +1033,8 @@ impl SyncStore for SqliteStore {
             uid_validity: get::<Option<i64>>(&row, "uid_validity")?.map(unsigned),
             last_uid: get::<Option<i64>>(&row, "last_uid")?.map(unsigned),
             highest_modseq: get::<Option<i64>>(&row, "highest_modseq")?.map(unsigned),
+            flags_checked_at: get::<Option<i64>>(&row, "flags_checked_at")?
+                .map(Timestamp::from_millis),
             state: get(&row, "state")?,
             synced_at: get::<Option<i64>>(&row, "synced_at")?.map(Timestamp::from_millis),
         })
@@ -855,17 +1044,20 @@ impl SyncStore for SqliteStore {
         let _write = self.writer.lock().await;
         sqlx::query(
             "INSERT INTO folder_cursors
-             (folder_id, uid_validity, last_uid, highest_modseq, state, synced_at)
-             VALUES (?, ?, ?, ?, ?, ?)
+             (folder_id, uid_validity, last_uid, highest_modseq, flags_checked_at, state,
+              synced_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (folder_id) DO UPDATE SET
                uid_validity = excluded.uid_validity, last_uid = excluded.last_uid,
-               highest_modseq = excluded.highest_modseq, state = excluded.state,
+               highest_modseq = excluded.highest_modseq,
+               flags_checked_at = excluded.flags_checked_at, state = excluded.state,
                synced_at = excluded.synced_at",
         )
         .bind(folder.to_string())
         .bind(cursor.uid_validity.map(signed).transpose()?)
         .bind(cursor.last_uid.map(signed).transpose()?)
         .bind(cursor.highest_modseq.map(signed).transpose()?)
+        .bind(cursor.flags_checked_at.map(|t| t.as_millis()))
         .bind(&cursor.state)
         .bind(cursor.synced_at.map(|t| t.as_millis()))
         .execute(&self.pool)
@@ -927,6 +1119,224 @@ impl SyncStore for SqliteStore {
             })
             .collect()
     }
+
+    async fn set_last_run(&self, account: AccountId, run: &AccountRun) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let done = sqlx::query(
+            "INSERT INTO account_runs (account_id, finished_at, new_messages, error)
+             SELECT id, ?2, ?3, ?4 FROM accounts WHERE id = ?1
+             ON CONFLICT (account_id) DO UPDATE SET
+               finished_at = excluded.finished_at, new_messages = excluded.new_messages,
+               error = excluded.error",
+        )
+        .bind(account.to_string())
+        .bind(run.finished_at.as_millis())
+        .bind(signed(run.new_messages)?)
+        .bind(&run.error)
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::NotFound("account"));
+        }
+        Ok(())
+    }
+
+    async fn last_runs(&self) -> Result<HashMap<AccountId, AccountRun>, StoreError> {
+        sqlx::query("SELECT * FROM account_runs")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(backend)?
+            .iter()
+            .map(|row| {
+                Ok((
+                    parse(&get::<String>(row, "account_id")?)?,
+                    AccountRun {
+                        finished_at: Timestamp::from_millis(get(row, "finished_at")?),
+                        new_messages: unsigned(get(row, "new_messages")?),
+                        error: get(row, "error")?,
+                    },
+                ))
+            })
+            .collect()
+    }
+}
+
+#[async_trait]
+impl TaskStore for SqliteStore {
+    async fn save_task(&self, task: &TaskRecord) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        sqlx::query(
+            "INSERT INTO tasks
+             (id, kind, archive_id, account_id, title, state, started_at, finished_at, done, total,
+              summary, cancellable, job)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET
+               kind = excluded.kind, archive_id = excluded.archive_id,
+               account_id = excluded.account_id, title = excluded.title, state = excluded.state,
+               started_at = excluded.started_at, finished_at = excluded.finished_at,
+               done = excluded.done, total = excluded.total, summary = excluded.summary,
+               cancellable = excluded.cancellable, job = excluded.job",
+        )
+        .bind(&task.id)
+        .bind(task.kind.as_str())
+        .bind(task.archive_id.map(|id| id.to_string()))
+        .bind(task.account_id.map(|id| id.to_string()))
+        .bind(&task.title)
+        .bind(task.state.as_str())
+        .bind(task.started_at.as_millis())
+        .bind(task.finished_at.map(|t| t.as_millis()))
+        .bind(signed(task.done)?)
+        .bind(task.total.map(signed).transpose()?)
+        .bind(&task.summary)
+        .bind(task.cancellable)
+        .bind(&task.job)
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn append_task_log(&self, id: &str, lines: &[TaskLine]) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let next: i64 = sqlx::query_scalar("SELECT log_next FROM tasks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?
+            .ok_or(StoreError::NotFound("task"))?;
+        let mut seq = next;
+        for line in lines {
+            sqlx::query(
+                "INSERT INTO task_log (task_id, seq, at, level, text) VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(seq)
+            .bind(line.at.as_millis())
+            .bind(line.level.as_str())
+            .bind(&line.text)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+            seq += 1;
+        }
+        sqlx::query("UPDATE tasks SET log_next = ? WHERE id = ?")
+            .bind(seq)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        let head = TASK_LOG_HEAD as i64;
+        let tail = (TASK_LOG_LINES - TASK_LOG_HEAD) as i64;
+        sqlx::query("DELETE FROM task_log WHERE task_id = ? AND seq >= ? AND seq < ?")
+            .bind(id)
+            .bind(head)
+            .bind(seq - tail)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        tx.commit().await.map_err(backend)
+    }
+
+    async fn recent_tasks(&self, limit: u32) -> Result<Vec<StoredTask>, StoreError> {
+        let rows = sqlx::query("SELECT * FROM tasks ORDER BY started_at DESC, id DESC LIMIT ?")
+            .bind(i64::from(limit))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(backend)?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let record = task_record(row)?;
+            let log = sqlx::query("SELECT * FROM task_log WHERE task_id = ? ORDER BY seq")
+                .bind(&record.id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(backend)?
+                .iter()
+                .map(|line| {
+                    Ok(TaskLine {
+                        at: Timestamp::from_millis(get(line, "at")?),
+                        level: TaskLevel::parse(&get::<String>(line, "level")?)
+                            .unwrap_or(TaskLevel::Info),
+                        text: get(line, "text")?,
+                    })
+                })
+                .collect::<Result<_, StoreError>>()?;
+            out.push(StoredTask { record, log });
+        }
+        Ok(out)
+    }
+
+    async fn interrupt_tasks(&self, at: Timestamp) -> Result<Vec<TaskRecord>, StoreError> {
+        let _write = self.writer.lock().await;
+        sqlx::query(
+            "UPDATE tasks SET state = 'interrupted', finished_at = ? WHERE state = 'running'
+             RETURNING *",
+        )
+        .bind(at.as_millis())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(task_record)
+        .collect()
+    }
+
+    async fn prune_tasks(&self, keep: u32) -> Result<u64, StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let old: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM tasks WHERE state != 'running'
+             ORDER BY started_at DESC, id DESC LIMIT -1 OFFSET ?",
+        )
+        .bind(i64::from(keep))
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        for id in &old {
+            for statement in [
+                "DELETE FROM task_log WHERE task_id = ?",
+                "DELETE FROM tasks WHERE id = ?",
+            ] {
+                sqlx::query(statement)
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(backend)?;
+            }
+        }
+        tx.commit().await.map_err(backend)?;
+        Ok(old.len() as u64)
+    }
+}
+
+fn corrupt(value: &str) -> StoreError {
+    StoreError::Invalid(format!("corrupt value {value:?} in the database"))
+}
+
+fn task_record(row: &sqlx::sqlite::SqliteRow) -> Result<TaskRecord, StoreError> {
+    let kind: String = get(row, "kind")?;
+    let state: String = get(row, "state")?;
+    Ok(TaskRecord {
+        id: get(row, "id")?,
+        kind: TaskKind::parse(&kind).ok_or_else(|| corrupt(&kind))?,
+        archive_id: get::<Option<String>>(row, "archive_id")?
+            .map(|id| parse(&id))
+            .transpose()?,
+        account_id: get::<Option<String>>(row, "account_id")?
+            .map(|id| parse(&id))
+            .transpose()?,
+        title: get(row, "title")?,
+        state: TaskState::parse(&state).ok_or_else(|| corrupt(&state))?,
+        started_at: Timestamp::from_millis(get(row, "started_at")?),
+        finished_at: get::<Option<i64>>(row, "finished_at")?.map(Timestamp::from_millis),
+        done: unsigned(get(row, "done")?),
+        total: get::<Option<i64>>(row, "total")?.map(unsigned),
+        summary: get(row, "summary")?,
+        cancellable: get(row, "cancellable")?,
+        job: get(row, "job")?,
+    })
 }
 
 #[async_trait]
@@ -1372,6 +1782,124 @@ impl SettingsStore for SqliteStore {
     }
 }
 
+async fn blob_used(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    blob: &str,
+) -> Result<bool, StoreError> {
+    let used: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM messages WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM remote_images WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM derived WHERE blob_id = ?1 LIMIT 1",
+    )
+    .bind(blob)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(backend)?;
+    Ok(used.is_some())
+}
+
+#[async_trait]
+impl DerivedStore for SqliteStore {
+    async fn derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+    ) -> Result<Option<Derived>, StoreError> {
+        let row: Option<Option<String>> =
+            sqlx::query_scalar("SELECT blob_id FROM derived WHERE source_blob = ? AND kind = ?")
+                .bind(source.to_string())
+                .bind(kind.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(backend)?;
+        row.map(|blob| match blob {
+            Some(blob) => parse(&blob).map(Derived::Blob),
+            None => Ok(Derived::Nothing),
+        })
+        .transpose()
+    }
+
+    async fn set_derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+        derived: &Derived,
+    ) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let blob = match derived {
+            Derived::Blob(blob) => Some(blob.to_string()),
+            Derived::Nothing => None,
+        };
+        sqlx::query(
+            "INSERT INTO derived (source_blob, kind, blob_id, created_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (source_blob, kind) DO UPDATE
+             SET blob_id = excluded.blob_id, created_at = excluded.created_at",
+        )
+        .bind(source.to_string())
+        .bind(kind.as_str())
+        .bind(blob)
+        .bind(Timestamp::now().as_millis())
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn clear_derived(&self, kind: DerivedKind) -> Result<Vec<BlobId>, StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let rows: Vec<Option<String>> =
+            sqlx::query_scalar("DELETE FROM derived WHERE kind = ? RETURNING blob_id")
+                .bind(kind.as_str())
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(backend)?;
+        let mut made: Vec<String> = rows.into_iter().flatten().collect();
+        made.sort();
+        made.dedup();
+        let mut orphans = Vec::new();
+        for blob in made {
+            if !blob_used(&mut tx, &blob).await? {
+                orphans.push(parse(&blob)?);
+            }
+        }
+        tx.commit().await.map_err(backend)?;
+        orphans.sort();
+        Ok(orphans)
+    }
+}
+
+#[async_trait]
+impl InventoryStore for SqliteStore {
+    async fn referenced_blobs(
+        &self,
+        after: Option<&BlobId>,
+        limit: u32,
+    ) -> Result<Vec<BlobId>, StoreError> {
+        let after = after.map(BlobId::to_string).unwrap_or_default();
+        let limit = i64::from(limit.min(10_000));
+        let rows: Vec<String> = sqlx::query_scalar(
+            "SELECT blob_id FROM (
+                 SELECT * FROM (SELECT DISTINCT blob_id FROM messages WHERE blob_id > ?1
+                                ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM attachments WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM remote_images WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM derived WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+             ) ORDER BY blob_id LIMIT ?2",
+        )
+        .bind(after)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?;
+        rows.iter().map(|blob| parse(blob)).collect()
+    }
+}
+
 fn archived_bounds(when: ArchivedWhen) -> (i64, i64) {
     match when {
         ArchivedWhen::Any => (i64::MIN, i64::MAX),
@@ -1393,6 +1921,23 @@ mod tests {
             .await
             .unwrap();
         holtmail_store::testing::conformance(Arc::new(store)).await;
+    }
+
+    #[tokio::test]
+    async fn snapshots_while_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(dir.path().join("holtmail.db"))
+            .await
+            .unwrap();
+        let id = store.create_archive("Snap").await.unwrap().id;
+        let copy = dir.path().join("copy.db");
+        store.snapshot(&copy).await.unwrap();
+        store.create_archive("After").await.unwrap();
+        assert!(store.snapshot(&copy).await.is_err(), "never overwrites");
+        let snapshot = SqliteStore::open(&copy).await.unwrap();
+        let archives = snapshot.list_archives().await.unwrap();
+        assert_eq!(archives.len(), 1);
+        assert_eq!(archives[0].id, id);
     }
 
     #[tokio::test]
@@ -1419,6 +1964,7 @@ mod tests {
         let archive = store.create_archive("A").await.unwrap().id;
         let result = store
             .list_messages(&MessageQuery {
+                label: None,
                 archive_id: archive,
                 folder_id: None,
                 after: Some(PageCursor("garbage".into())),

@@ -1,11 +1,11 @@
 use holtmail_core::Address;
 use holtmail_store::{
-    Account, Archive, ArchiveStats, Attachment, FolderSummary, Location, Message, MessageExtras,
-    User,
+    Account, Archive, ArchiveStats, Attachment, FolderSummary, LabelSummary, Location, Message,
+    MessageExtras, User,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{AccountDetails, AccountStatus, ImageProxy, Task, TaskKind, TaskLevel, TaskState};
+use crate::{AccountDetails, AccountStatus, ImageProxy, OAuthStarted, Task};
 use utoipa::{IntoParams, ToSchema};
 
 /// An archive with its totals.
@@ -50,7 +50,8 @@ pub struct TaskDto {
     pub id: String,
     /// `sync`, `import` or `remote_images`.
     pub kind: String,
-    /// `running`, `done`, `failed` or `cancelled`.
+    /// `running`, `done`, `failed`, `cancelled`, or `interrupted` when the server stopped while it
+    /// ran.
     pub state: String,
     pub title: String,
     pub archive_id: Option<String>,
@@ -113,10 +114,19 @@ pub struct AccountDto {
     pub address: Option<String>,
     pub enabled: bool,
     pub status: AccountStatusDto,
-    /// How an IMAP account connects; `null` for imports.
+    /// How an IMAP account connects; `null` for other kinds and for members.
     pub connection: Option<ImapConnectionDto>,
+    /// How a JMAP account connects; `null` for other kinds and for members.
+    pub jmap: Option<JmapConnectionDto>,
     /// Its own minutes between syncs, 0 for only on request; `null` follows the server's.
     pub sync_interval_minutes: Option<u64>,
+    /// Only messages at least this many days old are archived; younger ones wait for a later
+    /// sync. `null` archives every message.
+    pub min_age_days: Option<u32>,
+    /// `google` or `microsoft` when it signs in with OAuth; `null` for a password.
+    pub oauth_provider: Option<String>,
+    /// The provider no longer accepts the sign-in: it does not sync until someone signs in again.
+    pub needs_sign_in: bool,
 }
 
 /// How an IMAP account connects. The password is never returned.
@@ -128,6 +138,36 @@ pub struct ImapConnectionDto {
     pub security: String,
     pub username: String,
     /// Folder paths that are not archived.
+    pub exclude: Vec<String>,
+}
+
+/// How a JMAP account connects. The password or token is never returned.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct JmapConnectionDto {
+    /// The session address.
+    pub url: String,
+    /// Empty for a token without a user name.
+    pub username: String,
+    /// `password` (HTTP Basic) or `token` (bearer token).
+    pub auth: String,
+    /// Mailbox paths that are not archived.
+    pub exclude: Vec<String>,
+}
+
+/// A new connection for a JMAP account, checked by signing in before it is stored. Moving
+/// between `password` and `token` needs a new secret in `password`.
+#[derive(Deserialize, ToSchema)]
+pub struct JmapConnectionRequest {
+    /// The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's
+    /// address, where `/.well-known/jmap` is asked.
+    pub url: String,
+    /// Needed for `password`; may be empty for `token`.
+    #[serde(default)]
+    pub username: String,
+    /// `password` (default) or `token`.
+    pub auth: Option<String>,
+    /// Mailbox paths not to archive.
+    #[serde(default)]
     pub exclude: Vec<String>,
 }
 
@@ -197,6 +237,67 @@ pub struct ImapAccountRequest {
     pub password: String,
 }
 
+/// A JMAP account to add.
+#[derive(Deserialize, ToSchema)]
+pub struct JmapAccountRequest {
+    /// Shown in the sidebar; the user name, or the server's host for a token, when missing.
+    pub name: Option<String>,
+    /// The session address, e.g. `https://api.fastmail.com/jmap/session`, or the server's
+    /// address, where `/.well-known/jmap` is asked. `https` only.
+    pub url: String,
+    /// Needed for `password`; may be empty for `token`.
+    #[serde(default)]
+    pub username: String,
+    /// `password` (default; HTTP Basic) or `token` (bearer token, such as a Fastmail API token).
+    pub auth: Option<String>,
+    /// The password, app password or API token.
+    pub password: String,
+}
+
+/// Starts a Gmail or Microsoft sign-in. Give `archive_id` for a new account, or `account_id` to
+/// sign in again to an existing IMAP or Graph account.
+#[derive(Deserialize, ToSchema)]
+pub struct OAuthStartRequest {
+    /// `google` or `microsoft`.
+    pub provider: String,
+    /// The address to sign in as. Ignored when signing in again to an OAuth account.
+    #[serde(default)]
+    pub email: String,
+    pub archive_id: Option<String>,
+    pub account_id: Option<String>,
+    /// Shown in the sidebar for a new account; the address when missing.
+    pub name: Option<String>,
+    /// How a new account reads mail: `imap` (the default) or `graph` (Microsoft Graph, for
+    /// `microsoft` only). Ignored when signing in again: the account's kind decides.
+    pub kind: Option<String>,
+    /// A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing.
+    pub return_to: Option<String>,
+}
+
+/// A started sign-in.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OAuthStartDto {
+    /// Open this page to sign in with the provider.
+    pub authorize_url: String,
+    /// Ties the answer to this sign-in.
+    pub state: String,
+    /// After sign-in the browser lands on a page that does not load; paste its address to
+    /// `/api/oauth/finish`. When `false`, the provider returns to `/api/oauth/callback`, which
+    /// finishes on its own and sends the browser back to `return_to`.
+    pub needs_paste: bool,
+    /// Thunderbird's public client is used, so the consent screen names Thunderbird.
+    pub thunderbird_client: bool,
+    /// When the sign-in stops being accepted, Unix milliseconds.
+    pub expires_at: i64,
+}
+
+/// Finishes a sign-in.
+#[derive(Deserialize, ToSchema)]
+pub struct OAuthFinishRequest {
+    /// The address the browser landed on after sign-in, or its query.
+    pub pasted_url: String,
+}
+
 /// A user as owners and admins see them.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PersonDto {
@@ -264,16 +365,27 @@ pub struct AccountUpdateRequest {
     pub name: Option<String>,
     /// Paused accounts are not synced.
     pub enabled: Option<bool>,
-    /// A new password; checked by signing in before it is stored.
+    /// A new password, or a new token for a JMAP account that signs in with one; checked by
+    /// signing in before it is stored.
     pub password: Option<String>,
     /// A new server, user name and excluded folders; checked by signing in, with `password`
-    /// when given and the stored one otherwise.
+    /// when given and the stored one otherwise. Another host or port, or a move to `plain`,
+    /// needs `password`; OAuth accounts keep their server, port and security.
     pub connection: Option<ConnectionRequest>,
+    /// For a JMAP account: a new address, user name, sign-in kind and excluded mailboxes;
+    /// checked by signing in, with `password` when given and the stored secret otherwise. An
+    /// address on another origin needs `password`.
+    pub jmap: Option<JmapConnectionRequest>,
     /// Its own minutes between syncs, 0 for only on request; `null` follows the server's again.
     /// Missing keeps it.
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<u64>)]
     pub sync_interval_minutes: Option<Option<u64>>,
+    /// Archive only messages at least this many days old, 1 to 3650; `null` or 0 archives every
+    /// message. Missing keeps it.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u32>)]
+    pub min_age_days: Option<Option<u32>>,
 }
 
 fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -308,6 +420,27 @@ pub struct FolderDto {
     pub unread: u64,
 }
 
+/// A label of an archive's messages, as Gmail has them.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LabelDto {
+    /// The label, e.g. `Inbox` or `Projects/2025`; nested labels use `/`.
+    pub name: String,
+    /// Messages carrying it.
+    pub messages: u64,
+    /// Of those, the ones not read in any folder they are in.
+    pub unread: u64,
+}
+
+impl From<LabelSummary> for LabelDto {
+    fn from(label: LabelSummary) -> Self {
+        Self {
+            name: label.name,
+            messages: label.messages,
+            unread: label.unread,
+        }
+    }
+}
+
 /// One mailbox of an address header.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AddressDto {
@@ -335,6 +468,11 @@ pub struct MessageSummary {
     pub thread_count: u32,
     /// Folders the message is in now.
     pub folder_ids: Vec<String>,
+    /// Its labels, sorted.
+    pub labels: Vec<String>,
+    /// In search results: the words were found only in text inside its attachments. Always
+    /// `false` in folder and label lists.
+    pub attachment_match: bool,
 }
 
 /// One page of a message list.
@@ -364,6 +502,9 @@ pub struct AttachmentDto {
     pub inline: bool,
     /// Where to download it.
     pub url: String,
+    /// Where to get a small preview image, for PNG, JPEG, GIF and WebP images. The preview can
+    /// still be missing (`404`) when the image does not decode.
+    pub thumbnail_url: Option<String>,
 }
 
 /// A folder a message is in.
@@ -405,6 +546,8 @@ pub struct MessageDetail {
     pub has_html: bool,
     pub attachments: Vec<AttachmentDto>,
     pub locations: Vec<LocationDto>,
+    /// Its labels, sorted.
+    pub labels: Vec<String>,
 }
 
 /// A conversation, oldest message first.
@@ -478,6 +621,8 @@ pub struct LoginRequest {
 pub struct ListParams {
     /// Only messages in this folder.
     pub folder: Option<String>,
+    /// Only messages carrying this label, compared exactly.
+    pub label: Option<String>,
     /// `next` from the previous page.
     pub after: Option<String>,
     /// Page size, at most 500; 50 by default.
@@ -495,6 +640,20 @@ pub struct SearchParams {
     pub offset: Option<u32>,
     /// Page size, at most 200; 50 by default.
     pub limit: Option<u32>,
+}
+
+/// What to export.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ExportParams {
+    /// `mbox` for one mbox file, `zip` for a zip of `.eml` files in folder directories.
+    pub format: String,
+    /// Only the messages of this folder id.
+    pub folder: Option<String>,
+    /// Only the messages with this label.
+    pub label: Option<String>,
+    /// Only the messages matching this search, e.g. `from:ada@example.com`.
+    pub q: Option<String>,
 }
 
 /// How to render an HTML body.
@@ -540,19 +699,8 @@ impl From<Task> for TaskDto {
     fn from(task: Task) -> Self {
         Self {
             id: task.id,
-            kind: match task.kind {
-                TaskKind::Sync => "sync",
-                TaskKind::Import => "import",
-                TaskKind::RemoteImages => "remote_images",
-            }
-            .into(),
-            state: match task.state {
-                TaskState::Running => "running",
-                TaskState::Done => "done",
-                TaskState::Failed => "failed",
-                TaskState::Cancelled => "cancelled",
-            }
-            .into(),
+            kind: task.kind.as_str().into(),
+            state: task.state.as_str().into(),
             title: task.title,
             archive_id: task.archive_id.map(|id| id.to_string()),
             account_id: task.account_id.map(|id| id.to_string()),
@@ -567,12 +715,7 @@ impl From<Task> for TaskDto {
                 .into_iter()
                 .map(|line| TaskLineDto {
                     at: line.at.as_millis(),
-                    level: match line.level {
-                        TaskLevel::Info => "info",
-                        TaskLevel::Warning => "warning",
-                        TaskLevel::Error => "error",
-                    }
-                    .into(),
+                    level: line.level.as_str().into(),
                     text: line.text,
                 })
                 .collect(),
@@ -630,7 +773,28 @@ impl AccountDto {
                 username: c.username,
                 exclude: c.exclude,
             }),
+            jmap: details.jmap.map(|c| JmapConnectionDto {
+                url: c.url,
+                username: c.username,
+                auth: c.auth,
+                exclude: c.exclude,
+            }),
             sync_interval_minutes: details.sync_interval_minutes,
+            min_age_days: details.min_age_days,
+            oauth_provider: details.oauth_provider,
+            needs_sign_in: details.needs_sign_in,
+        }
+    }
+}
+
+impl From<OAuthStarted> for OAuthStartDto {
+    fn from(started: OAuthStarted) -> Self {
+        Self {
+            authorize_url: started.authorize_url,
+            state: started.state,
+            needs_paste: started.needs_paste,
+            thunderbird_client: started.thunderbird_client,
+            expires_at: started.expires_at.as_millis(),
         }
     }
 }
@@ -672,6 +836,8 @@ impl MessageSummary {
             folder_ids: extras
                 .map(|e| e.folder_ids.iter().map(ToString::to_string).collect())
                 .unwrap_or_default(),
+            labels: extras.map(|e| e.labels.clone()).unwrap_or_default(),
+            attachment_match: false,
         }
     }
 }
@@ -687,6 +853,14 @@ pub fn attachment_dto(message: &Message, attachment: &Attachment) -> AttachmentD
             "/api/messages/{}/attachments/{}",
             message.id, attachment.ordinal
         ),
+        thumbnail_url: (holtmail_thumbnail::supports(&attachment.content_type)
+            && attachment.size <= holtmail_thumbnail::MAX_SOURCE as u64)
+            .then(|| {
+                format!(
+                    "/api/messages/{}/attachments/{}/thumbnail",
+                    message.id, attachment.ordinal
+                )
+            }),
     }
 }
 

@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId};
 use holtmail_index::SortOrder;
-use holtmail_store::{Message, MessageQuery, PageCursor};
+use holtmail_store::{Derived, DerivedKind, Message, MessageQuery, PageCursor};
 
 use crate::dto::*;
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
@@ -99,6 +99,21 @@ pub(crate) async fn list_folders(
 
 #[utoipa::path(
     get,
+    path = "/api/archives/{id}/labels",
+    params(("id" = String, Path, description = "Archive id")),
+    responses((status = 200, description = "Labels carried by at least one message, by name", body = Vec<LabelDto>), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "Malformed archive id", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn list_labels(
+    State(state): AppState,
+    Path(raw): Path<String>,
+) -> ApiResult<Json<Vec<LabelDto>>> {
+    let archive: ArchiveId = id(&raw, "archive")?;
+    let labels = state.store.list_labels(archive).await?;
+    Ok(Json(labels.into_iter().map(LabelDto::from).collect()))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/archives/{id}/messages",
     params(("id" = String, Path, description = "Archive id"), ListParams),
     responses((status = 200, body = MessagePage), (status = 400, description = "A malformed cursor", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "Malformed archive or folder id", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
@@ -119,6 +134,7 @@ pub(crate) async fn list_messages(
         .list_messages(&MessageQuery {
             archive_id: archive,
             folder_id,
+            label: params.label.filter(|l| !l.is_empty()),
             after: params.after.map(PageCursor),
             limit: params.limit.unwrap_or(50),
         })
@@ -163,8 +179,12 @@ pub(crate) async fn search(
         })?;
     let messages = state.store.get_messages(&results.hits).await?;
     let end = u64::from(offset) + results.hits.len() as u64;
+    let mut items = summaries(&state, &messages, None).await?;
+    for (item, message) in items.iter_mut().zip(&messages) {
+        item.attachment_match = results.attachment_hits.contains(&message.id);
+    }
     Ok(Json(SearchResponse {
-        items: summaries(&state, &messages, None).await?,
+        items,
         total: results.total,
         next_offset: (end < results.total).then(|| u32::try_from(end).unwrap_or(u32::MAX)),
     }))
@@ -237,6 +257,7 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
             .map(|a| attachment_dto(&message, a))
             .collect(),
         locations: locations.into_iter().map(LocationDto::from).collect(),
+        labels: state.store.labels(message.id).await?,
     })
 }
 
@@ -468,13 +489,95 @@ pub(crate) async fn get_attachment(
     Ok(download(bytes.to_vec(), content_type, &name, showable))
 }
 
-fn download(bytes: Vec<u8>, content_type: &str, filename: &str, inline: bool) -> Response {
-    let disposition = format!(
+static THUMBNAILS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+#[utoipa::path(
+    get,
+    path = "/api/messages/{id}/attachments/{ordinal}/thumbnail",
+    params(("id" = String, Path, description = "Message id"), ("ordinal" = u32, Path, description = "The attachment's position, from 0")),
+    responses((status = 200, description = "A preview of the image at most 320 pixels on its longest side, made on first request and kept", content_type = "image/jpeg"), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such message or attachment, not a PNG, JPEG, GIF or WebP image, or one that does not decode", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn get_thumbnail(
+    State(state): AppState,
+    Path((raw, ordinal)): Path<(String, u32)>,
+) -> ApiResult<Response> {
+    let message_id: MessageId = id(&raw, "message")?;
+    let attachment = state
+        .store
+        .attachments(message_id)
+        .await?
+        .into_iter()
+        .find(|a| a.ordinal == ordinal)
+        .ok_or_else(|| ApiError::not_found("attachment"))?;
+    if !holtmail_thumbnail::supports(&attachment.content_type)
+        || attachment.size > holtmail_thumbnail::MAX_SOURCE as u64
+    {
+        return Err(ApiError::not_found("thumbnail"));
+    }
+    let source = attachment.blob_id;
+    match state.store.derived(&source, DerivedKind::Thumbnail).await? {
+        Some(Derived::Nothing) => return Err(ApiError::not_found("thumbnail")),
+        Some(Derived::Blob(blob)) => {
+            if let Some(bytes) = state.blobs.get(&blob).await? {
+                return Ok(thumbnail_response(bytes.to_vec()));
+            }
+        }
+        None => {}
+    }
+    let bytes = state
+        .blobs
+        .get(&source)
+        .await?
+        .ok_or_else(|| ApiError::not_found("attachment bytes"))?;
+    let made = {
+        let _permit = THUMBNAILS.acquire().await?;
+        tokio::task::spawn_blocking(move || holtmail_thumbnail::thumbnail(&bytes)).await?
+    };
+    match made {
+        Ok(thumbnail) => {
+            let blob = state
+                .blobs
+                .put(bytes::Bytes::from(thumbnail.bytes.clone()))
+                .await?;
+            state
+                .store
+                .set_derived(&source, DerivedKind::Thumbnail, &Derived::Blob(blob))
+                .await?;
+            Ok(thumbnail_response(thumbnail.bytes))
+        }
+        Err(_) => {
+            state
+                .store
+                .set_derived(&source, DerivedKind::Thumbnail, &Derived::Nothing)
+                .await?;
+            Err(ApiError::not_found("thumbnail"))
+        }
+    }
+}
+
+fn thumbnail_response(bytes: Vec<u8>) -> Response {
+    let (content_type, name) = if bytes.starts_with(b"\x89PNG") {
+        ("image/png", "thumbnail.png")
+    } else {
+        ("image/jpeg", "thumbnail.jpg")
+    };
+    download(bytes, content_type, name, true)
+}
+
+pub(crate) fn disposition(filename: &str, inline: bool) -> String {
+    format!(
         "{}; filename=\"{}\"; filename*=UTF-8''{}",
         if inline { "inline" } else { "attachment" },
-        filename.replace(|c: char| !c.is_ascii() || c == '"' || c == '\\', "_"),
+        filename.replace(
+            |c: char| !c.is_ascii() || c.is_ascii_control() || c == '"' || c == '\\',
+            "_"
+        ),
         percent_encode(filename)
-    );
+    )
+}
+
+fn download(bytes: Vec<u8>, content_type: &str, filename: &str, inline: bool) -> Response {
+    let disposition = disposition(filename, inline);
     let mut response = bytes.into_response();
     let headers = response.headers_mut();
     if let Ok(value) = HeaderValue::from_str(content_type) {

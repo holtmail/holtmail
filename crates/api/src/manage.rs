@@ -12,7 +12,8 @@ use tokio::io::AsyncWriteExt;
 
 use crate::dto::*;
 use crate::mailboxes::{
-    AccountChange, ConnectionChange, MailboxError, NewImapAccount, RemoteImageJob,
+    AccountChange, ConnectionChange, JmapConnectionChange, MailboxError, NewImapAccount,
+    NewJmapAccount, RemoteImageJob,
 };
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
@@ -20,11 +21,11 @@ type AppState = State<Arc<ApiState>>;
 
 const MAX_NAME: usize = 100;
 
-fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
+pub(crate) fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
     raw.parse().map_err(|_| ApiError::not_found(what))
 }
 
-fn name(raw: &str, what: &str) -> ApiResult<String> {
+pub(crate) fn name(raw: &str, what: &str) -> ApiResult<String> {
     let name = raw.trim();
     if name.is_empty() {
         return Err(ApiError::bad_request(format!("{what} is empty")));
@@ -37,20 +38,20 @@ fn name(raw: &str, what: &str) -> ApiResult<String> {
     Ok(name.to_owned())
 }
 
-fn refused(error: MailboxError) -> ApiError {
+pub(crate) fn refused(error: MailboxError) -> ApiError {
     match error {
         MailboxError::Invalid(message) => ApiError::bad_request(message),
         MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
     }
 }
 
-fn account_dto(state: &ApiState, account: Account) -> AccountDto {
+pub(crate) fn account_dto(state: &ApiState, account: Account) -> AccountDto {
     let status = state.mailboxes.status(account.id);
     let details = state.mailboxes.details(&account);
     AccountDto::new(account, status, details)
 }
 
-async fn archive(state: &ApiState, raw: &str) -> ApiResult<ArchiveId> {
+pub(crate) async fn archive(state: &ApiState, raw: &str) -> ApiResult<ArchiveId> {
     let archive: ArchiveId = id(raw, "archive")?;
     state
         .store
@@ -81,6 +82,7 @@ pub(crate) async fn list_accounts(
                 let mut dto = account_dto(&state, a);
                 if !manages {
                     dto.connection = None;
+                    dto.jmap = None;
                 }
                 dto
             })
@@ -145,6 +147,64 @@ pub(crate) async fn add_imap_account(
                 security,
                 username,
                 password: request.password,
+            },
+        )
+        .await
+        .map_err(refused)?;
+    Ok((StatusCode::CREATED, Json(account_dto(&state, account))))
+}
+
+fn jmap_auth(raw: Option<String>) -> ApiResult<String> {
+    let auth = raw.unwrap_or_else(|| "password".to_owned());
+    if !matches!(auth.as_str(), "password" | "token") {
+        return Err(ApiError::bad_request("auth is `password` or `token`"));
+    }
+    Ok(auth)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/archives/{id}/accounts/jmap",
+    params(("id" = String, Path, description = "Archive id")),
+    request_body = JmapAccountRequest,
+    responses((status = 201, description = "Stored; the first sync has started", body = AccountDto), (status = 400, description = "Bad settings, or the server refused to sign in", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn add_jmap_account(
+    State(state): AppState,
+    Path(raw): Path<String>,
+    Json(request): Json<JmapAccountRequest>,
+) -> ApiResult<(StatusCode, Json<AccountDto>)> {
+    let archive = archive(&state, &raw).await?;
+    let url = request.url.trim().to_owned();
+    if url.is_empty() || url.len() > 2000 {
+        return Err(ApiError::bad_request("the address is empty or too long"));
+    }
+    let auth = jmap_auth(request.auth)?;
+    let username = request.username.trim().to_owned();
+    if auth == "password" && username.is_empty() {
+        return Err(ApiError::bad_request("the user name is empty"));
+    }
+    if request.password.is_empty() {
+        return Err(ApiError::bad_request(if auth == "token" {
+            "the token is empty"
+        } else {
+            "the password is empty"
+        }));
+    }
+    let account = state
+        .mailboxes
+        .add_jmap(
+            archive,
+            NewJmapAccount {
+                name: request
+                    .name
+                    .as_deref()
+                    .map(|n| name(n, "the name"))
+                    .transpose()?,
+                url,
+                username,
+                auth,
+                secret: request.password,
             },
         )
         .await
@@ -305,6 +365,7 @@ pub(crate) async fn delete_archive(
             .list_messages(&MessageQuery {
                 archive_id,
                 folder_id: None,
+                label: None,
                 after,
                 limit: 500,
             })
@@ -326,7 +387,7 @@ pub(crate) async fn delete_archive(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn account(state: &ApiState, raw: &str) -> ApiResult<Account> {
+pub(crate) async fn account(state: &ApiState, raw: &str) -> ApiResult<Account> {
     let account_id: AccountId = id(raw, "account")?;
     state
         .store
@@ -340,7 +401,7 @@ async fn account(state: &ApiState, raw: &str) -> ApiResult<Account> {
     path = "/api/accounts/{id}",
     params(("id" = String, Path, description = "Account id")),
     request_body = AccountUpdateRequest,
-    responses((status = 200, body = AccountDto), (status = 400, description = "An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 200, body = AccountDto), (status = 400, description = "An empty name, a connection or password on an import account, an interval above a week, a minimum age above ten years, a change while syncing, or the server refused the new connection or password", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn update_account(
     State(state): AppState,
@@ -359,8 +420,22 @@ pub(crate) async fn update_account(
             username: c.username,
             exclude: c.exclude,
         }),
+        jmap: request
+            .jmap
+            .map(|c| {
+                Ok::<_, ApiError>(JmapConnectionChange {
+                    url: c.url,
+                    username: c.username,
+                    auth: jmap_auth(c.auth)?,
+                    exclude: c.exclude,
+                })
+            })
+            .transpose()?,
         password: request.password,
         sync_interval_minutes: request.sync_interval_minutes,
+        min_age_days: request
+            .min_age_days
+            .map(|days| days.filter(|days| *days > 0)),
     };
     if change != AccountChange::default() {
         account = state

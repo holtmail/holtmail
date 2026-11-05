@@ -11,31 +11,38 @@ repository.workspace = true
 holtmail-auth.workspace = true
 holtmail-blob.workspace = true
 holtmail-core.workspace = true
+holtmail-export.workspace = true
 holtmail-fetch.workspace = true
 holtmail-index.workspace = true
 holtmail-mime.workspace = true
 holtmail-query.workspace = true
 holtmail-sanitize.workspace = true
 holtmail-store.workspace = true
+holtmail-thumbnail.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+bytes.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync", "io-util", "rt"] }
+tracing.workspace = true
+url.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
 holtmail-fetch.workspace = true
 holtmail-blob-fs.workspace = true
+holtmail-extract-basic.workspace = true
 holtmail-index-tantivy.workspace = true
 holtmail-ingest.workspace = true
 holtmail-store-sqlite.workspace = true
-bytes.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tower.workspace = true
+url.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

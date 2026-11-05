@@ -30,6 +30,14 @@ struct FakeMailboxes {
     proxy: std::sync::Mutex<ImageProxy>,
     schedule: std::sync::Mutex<SyncSchedule>,
     cancelled: std::sync::Mutex<Vec<String>>,
+    oauth: std::sync::Mutex<std::collections::HashMap<String, OAuthStart>>,
+}
+
+fn answer_pairs(answer: &str) -> std::collections::HashMap<String, String> {
+    let query = answer.rsplit_once('?').map_or(answer, |(_, q)| q);
+    url::form_urlencoded::parse(query.trim().as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect()
 }
 
 fn fake_task(archive: holtmail_core::ArchiveId) -> Task {
@@ -100,11 +108,62 @@ impl Mailboxes for FakeMailboxes {
         Ok(created)
     }
 
+    async fn add_jmap(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        account: NewJmapAccount,
+    ) -> Result<holtmail_store::Account, MailboxError> {
+        if account.secret != "right" {
+            return Err(MailboxError::Invalid("The server refused".into()));
+        }
+        let store = self.store.get().unwrap();
+        let created = store
+            .create_account(NewAccount {
+                archive_id: archive,
+                kind: AccountKind::Jmap,
+                name: account.name.unwrap_or_else(|| account.url.clone()),
+                address: None,
+                settings: json!({ "url": account.url, "username": account.username, "auth": account.auth }),
+                sealed_secret: None,
+                enabled: true,
+            })
+            .await
+            .map_err(|e| MailboxError::Backend(e.to_string()))?;
+        self.synced.lock().unwrap().push(created.id);
+        Ok(created)
+    }
+
     async fn configure(
         &self,
         account: &holtmail_store::Account,
         change: AccountChange,
     ) -> Result<holtmail_store::Account, MailboxError> {
+        if let Some(jmap) = &change.jmap {
+            if change.password.as_deref() != Some("right") {
+                return Err(MailboxError::Invalid("The server refused".into()));
+            }
+            let mut account = account.clone();
+            account.settings["url"] = json!(jmap.url);
+            account.settings["auth"] = json!(jmap.auth);
+            account.settings["exclude"] = json!(jmap.exclude);
+            self.store
+                .get()
+                .unwrap()
+                .update_account(&account)
+                .await
+                .map_err(|e| MailboxError::Backend(e.to_string()))?;
+            return Ok(account);
+        }
+        if change.password.is_none()
+            && change
+                .connection
+                .as_ref()
+                .is_some_and(|c| account.settings["host"] != json!(c.host))
+        {
+            return Err(MailboxError::Invalid(
+                "Enter the password again when changing the server.".into(),
+            ));
+        }
         if change.password.as_deref().is_some_and(|p| p != "right")
             || change
                 .connection
@@ -125,6 +184,9 @@ impl Mailboxes for FakeMailboxes {
         if let Some(minutes) = change.sync_interval_minutes {
             account.settings["every"] = json!(minutes);
         }
+        if let Some(days) = change.min_age_days {
+            account.settings["min_age"] = json!(days);
+        }
         self.store
             .get()
             .unwrap()
@@ -136,6 +198,16 @@ impl Mailboxes for FakeMailboxes {
 
     fn details(&self, account: &holtmail_store::Account) -> AccountDetails {
         AccountDetails {
+            jmap: account.settings.get("url").map(|url| JmapConnection {
+                url: url.as_str().unwrap_or_default().into(),
+                username: account.settings["username"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .into(),
+                auth: account.settings["auth"].as_str().unwrap_or_default().into(),
+                exclude: serde_json::from_value(account.settings["exclude"].clone())
+                    .unwrap_or_default(),
+            }),
             connection: account.settings.get("host").map(|host| ImapConnection {
                 host: host.as_str().unwrap_or_default().into(),
                 port: 993,
@@ -148,6 +220,15 @@ impl Mailboxes for FakeMailboxes {
                     .unwrap_or_default(),
             }),
             sync_interval_minutes: account.settings.get("every").and_then(Value::as_u64),
+            min_age_days: account
+                .settings
+                .get("min_age")
+                .and_then(Value::as_u64)
+                .map(|days| days as u32),
+            oauth_provider: account.settings["oauth"]["provider"]
+                .as_str()
+                .map(str::to_owned),
+            needs_sign_in: account.settings["oauth"]["needs_sign_in"] == json!(true),
         }
     }
 
@@ -225,6 +306,70 @@ impl Mailboxes for FakeMailboxes {
         Ok(fake_task(archive))
     }
 
+    async fn start_oauth(&self, start: OAuthStart) -> Result<OAuthStarted, MailboxError> {
+        let state = format!("state-{}", self.oauth.lock().unwrap().len() + 1);
+        let started = OAuthStarted {
+            authorize_url: format!(
+                "https://accounts.example.com/auth?state={state}&login_hint={}",
+                start.email
+            ),
+            state: state.clone(),
+            needs_paste: start.provider == "google",
+            thunderbird_client: true,
+            expires_at: holtmail_core::Timestamp::from_secs(600),
+        };
+        self.oauth.lock().unwrap().insert(state, start);
+        Ok(started)
+    }
+
+    async fn finish_oauth(&self, answer: &str) -> Result<OAuthFinished, MailboxError> {
+        let pairs = answer_pairs(answer);
+        if pairs.contains_key("error") {
+            return Err(MailboxError::Invalid("Access was not granted.".into()));
+        }
+        let start = pairs
+            .get("state")
+            .and_then(|state| self.oauth.lock().unwrap().remove(state))
+            .ok_or_else(|| MailboxError::Invalid("This sign-in is unknown or expired.".into()))?;
+        if pairs.get("code").map(String::as_str) != Some("good") {
+            return Err(MailboxError::Invalid("The code was refused.".into()));
+        }
+        let store = self.store.get().unwrap();
+        let account = match start.target {
+            OAuthTarget::NewAccount { archive, name } => store
+                .create_account(NewAccount {
+                    archive_id: archive,
+                    kind: start.kind,
+                    name: name.unwrap_or_else(|| start.email.clone()),
+                    address: Some(start.email.clone()),
+                    settings: json!({ "oauth": { "provider": start.provider } }),
+                    sealed_secret: None,
+                    enabled: true,
+                })
+                .await
+                .map_err(|e| MailboxError::Backend(e.to_string()))?,
+            OAuthTarget::Account(id) => {
+                let mut account = store.get_account(id).await.unwrap().unwrap();
+                account.settings["oauth"] = json!({ "provider": start.provider });
+                store.update_account(&account).await.unwrap();
+                account
+            }
+        };
+        Ok(OAuthFinished {
+            account,
+            return_to: start.return_to,
+        })
+    }
+
+    fn oauth_return_to(&self, answer: &str) -> Option<String> {
+        let state = answer_pairs(answer).remove("state")?;
+        self.oauth
+            .lock()
+            .unwrap()
+            .get(&state)
+            .map(|s| s.return_to.clone())
+    }
+
     fn image_proxy(&self) -> ImageProxy {
         self.proxy.lock().unwrap().clone()
     }
@@ -248,6 +393,7 @@ struct Fixture {
     fetcher: Arc<FakeFetcher>,
     store: Arc<dyn Store>,
     blobs: Arc<dyn BlobStore>,
+    ingest: Ingest,
     auth: Arc<Auth>,
     cookie: String,
     archive: String,
@@ -323,14 +469,16 @@ async fn empty_fixture() -> Fixture {
         .await
         .unwrap()
         .id;
-    let ingest = Ingest::new(blobs.clone(), store.clone(), index.clone());
-    for (uid, raw, flags) in [
+    let ingest = Ingest::new(blobs.clone(), store.clone(), index.clone())
+        .with_extractor(Arc::new(holtmail_extract_basic::BasicExtractor::new()));
+    for (uid, raw, flags, labels) in [
         (
             1,
             NEWSLETTER,
             vec!["\\Seen".to_owned(), "\\Flagged".to_owned()],
+            Some(vec!["Inbox".to_owned(), "News & updates".to_owned()]),
         ),
-        (2, PLAIN, Vec::new()),
+        (2, PLAIN, Vec::new(), Some(vec!["Inbox".to_owned()])),
     ] {
         ingest
             .ingest(
@@ -340,6 +488,7 @@ async fn empty_fixture() -> Fixture {
                     folder: Some(folder),
                     uid: Some(uid),
                     flags,
+                    labels,
                     ..Placement::default()
                 },
             )
@@ -368,6 +517,7 @@ async fn empty_fixture() -> Fixture {
         fetcher,
         store,
         blobs,
+        ingest,
         auth,
         cookie: String::new(),
         archive: archive.to_string(),
@@ -467,6 +617,58 @@ async fn lists_archives_folders_and_messages() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn lists_labels_and_filters_by_them() {
+    let f = fixture().await;
+    let labels = f.json(&format!("/api/archives/{}/labels", f.archive)).await;
+    assert_eq!(
+        labels,
+        json!([
+            { "name": "Inbox", "messages": 2, "unread": 1 },
+            { "name": "News & updates", "messages": 1, "unread": 0 },
+        ])
+    );
+
+    let page = f
+        .json(&format!(
+            "/api/archives/{}/messages?label=News%20%26%20updates",
+            f.archive
+        ))
+        .await;
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["subject"], "Weekly news");
+    assert_eq!(items[0]["labels"], json!(["Inbox", "News & updates"]));
+    let id = items[0]["id"].as_str().unwrap();
+    let detail = f.json(&format!("/api/messages/{id}")).await;
+    assert_eq!(detail["labels"], json!(["Inbox", "News & updates"]));
+
+    let unknown = f
+        .json(&format!("/api/archives/{}/messages?label=Nope", f.archive))
+        .await;
+    assert!(unknown["items"].as_array().unwrap().is_empty());
+
+    let found = f
+        .json(&format!(
+            "/api/archives/{}/search?q=label:%22news%20%26%20updates%22",
+            f.archive
+        ))
+        .await;
+    assert_eq!(found["total"], 1);
+    assert_eq!(
+        found["items"][0]["labels"],
+        json!(["Inbox", "News & updates"])
+    );
+
+    let (status, _, _) = f
+        .get(&format!(
+            "/api/archives/{}/labels",
+            holtmail_core::ArchiveId::new()
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "labels of an unknown archive");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn searches_with_the_query_language() {
     let f = fixture().await;
     let found = f
@@ -483,6 +685,80 @@ async fn searches_with_the_query_language() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(String::from_utf8_lossy(&body).contains("not a date"));
+}
+
+const PHOTOS: &[u8] = b"From: Carol <carol@example.org>\r\nTo: ada@example.com\r\nSubject: Holiday pictures\r\nMessage-ID: <p1@example.org>\r\nDate: Wed, 12 Mar 2025 08:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\nContent-Type: text/plain\r\n\r\nHoliday pictures attached.\r\n--m\r\nContent-Type: image/png; name=dot.png\r\nContent-Disposition: attachment; filename=dot.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\r\n--m\r\nContent-Type: image/png; name=broken.png\r\nContent-Disposition: attachment; filename=broken.png\r\n\r\nnot a png\r\n--m\r\nContent-Type: text/plain; name=notes.txt\r\nContent-Disposition: attachment; filename=notes.txt\r\n\r\nLighthouse keeper rota\r\n--m--\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn previews_images_and_marks_attachment_matches() {
+    let f = fixture().await;
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let ingested = f
+        .ingest
+        .ingest(archive, Bytes::from_static(PHOTOS), &Placement::default())
+        .await
+        .unwrap();
+    f.ingest.commit().await.unwrap();
+    let id = ingested.message_id;
+
+    let detail = f.json(&format!("/api/messages/{id}")).await;
+    let attachments = detail["attachments"].as_array().unwrap();
+    assert_eq!(
+        attachments[0]["thumbnail_url"],
+        format!("/api/messages/{id}/attachments/0/thumbnail")
+    );
+    assert_eq!(attachments[2]["thumbnail_url"], Value::Null);
+
+    let uri = format!("/api/messages/{id}/attachments/0/thumbnail");
+    let (status, headers, first) = f.get(&uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "image/png");
+    assert_eq!(headers["x-content-type-options"], "nosniff");
+    assert_eq!(headers[header::CONTENT_SECURITY_POLICY], "sandbox");
+    assert!(first.starts_with(b"\x89PNG"));
+    let source = f.store.attachments(id).await.unwrap()[0].blob_id;
+    let Some(holtmail_store::Derived::Blob(cached)) = f
+        .store
+        .derived(&source, holtmail_store::DerivedKind::Thumbnail)
+        .await
+        .unwrap()
+    else {
+        panic!("the thumbnail was not kept");
+    };
+    assert_eq!(f.blobs.get(&cached).await.unwrap().unwrap(), first);
+    let (_, _, again) = f.get(&uri).await;
+    assert_eq!(again, first);
+
+    for ordinal in [1, 2, 9] {
+        let (status, _, _) = f
+            .get(&format!(
+                "/api/messages/{id}/attachments/{ordinal}/thumbnail"
+            ))
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "attachment {ordinal}");
+    }
+    let broken = f.store.attachments(id).await.unwrap()[1].blob_id;
+    assert_eq!(
+        f.store
+            .derived(&broken, holtmail_store::DerivedKind::Thumbnail)
+            .await
+            .unwrap(),
+        Some(holtmail_store::Derived::Nothing)
+    );
+
+    let found = f
+        .json(&format!("/api/archives/{}/search?q=lighthouse", f.archive))
+        .await;
+    assert_eq!(found["items"][0]["id"], id.to_string());
+    assert_eq!(found["items"][0]["attachment_match"], true);
+    let found = f
+        .json(&format!("/api/archives/{}/search?q=holiday", f.archive))
+        .await;
+    assert_eq!(found["items"][0]["attachment_match"], false);
+    let listed = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await;
+    assert_eq!(listed["items"][0]["attachment_match"], false);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -731,6 +1007,7 @@ async fn protects_every_other_route() {
         format!("/api/messages/{message}/body"),
         format!("/api/messages/{message}/raw"),
         format!("/api/messages/{message}/attachments/0"),
+        format!("/api/messages/{message}/attachments/0/thumbnail"),
         format!("/api/threads/{}", holtmail_core::ThreadId::new()),
         "/api/no-such-endpoint".to_string(),
     ];
@@ -1542,20 +1819,23 @@ async fn edits_the_connection_and_the_schedule() {
         StatusCode::BAD_REQUEST,
         "a refused connection was stored"
     );
-    let (status, _, body) = f
-        .send(request(
-            "PATCH",
-            &uri,
-            json!({
-                "connection": {
-                    "host": "mail.example.org",
-                    "username": "ada@example.org",
-                    "exclude": ["Junk"]
-                },
-                "sync_interval_minutes": 60
-            }),
-        ))
-        .await;
+    let moved = json!({
+        "connection": {
+            "host": "mail.example.org",
+            "username": "ada@example.org",
+            "exclude": ["Junk"]
+        },
+        "sync_interval_minutes": 60
+    });
+    let (status, _, body) = f.send(request("PATCH", &uri, moved.clone())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["error"],
+        "Enter the password again when changing the server."
+    );
+    let mut with_password = moved;
+    with_password["password"] = json!("right");
+    let (status, _, body) = f.send(request("PATCH", &uri, with_password)).await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let account: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(account["connection"]["host"], "mail.example.org");
@@ -1580,6 +1860,30 @@ async fn edits_the_connection_and_the_schedule() {
         .await;
     let account: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(account["sync_interval_minutes"], Value::Null);
+    assert_eq!(account["min_age_days"], Value::Null);
+
+    let (_, _, body) = f
+        .send(request("PATCH", &uri, json!({ "min_age_days": 30 })))
+        .await;
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["min_age_days"], 30);
+    let (_, _, body) = f
+        .send(request("PATCH", &uri, json!({ "name": "Work" })))
+        .await;
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        account["min_age_days"], 30,
+        "a missing minimum age was a change"
+    );
+    let (_, _, body) = f
+        .send(request("PATCH", &uri, json!({ "min_age_days": 0 })))
+        .await;
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        account["min_age_days"],
+        Value::Null,
+        "0 did not archive all mail"
+    );
 
     let schedule = f.json("/api/sync-schedule").await;
     assert_eq!(schedule["minutes"], 0);
@@ -1603,4 +1907,384 @@ async fn edits_the_connection_and_the_schedule() {
         ))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signs_in_with_oauth_from_a_pasted_address() {
+    let f = fixture().await;
+    let start = |body: Value| f.send(post_json("/api/oauth/start", body));
+    let (status, _, body) = start(json!({
+        "provider": "google",
+        "email": "ada@example.com",
+        "archive_id": f.archive,
+        "return_to": "/welcome"
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let started: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(started["needs_paste"], true);
+    assert_eq!(started["thunderbird_client"], true);
+    assert_eq!(started["expires_at"], 600_000);
+    let state = started["state"].as_str().unwrap().to_owned();
+
+    for (body, expected) in [
+        (
+            json!({ "provider": "yahoo", "email": "ada@example.com", "archive_id": f.archive }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            json!({ "provider": "google", "email": "ada", "archive_id": f.archive }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            json!({ "provider": "google", "email": "ada@example.com" }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            json!({ "provider": "google", "email": "ada@example.com", "archive_id": f.archive, "return_to": "https://example.org/" }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            json!({ "provider": "google", "email": "ada@example.com", "archive_id": holtmail_core::ArchiveId::new().to_string() }),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        assert_eq!(start(body.clone()).await.0, expected, "{body}");
+    }
+
+    let finish = |pasted: String| {
+        f.send(post_json(
+            "/api/oauth/finish",
+            json!({ "pasted_url": pasted }),
+        ))
+    };
+    let (status, _, body) = finish("http://127.0.0.1/?code=good&state=forged".into()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("unknown or expired"));
+    let (status, _, body) = finish(format!("http://127.0.0.1/?code=good&state={state}")).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["oauth_provider"], "google");
+    assert_eq!(account["needs_sign_in"], false);
+    assert_eq!(account["address"], "ada@example.com");
+    let (status, _, _) = finish(format!("http://127.0.0.1/?code=good&state={state}")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a sign-in was used twice");
+
+    let id = account["id"].as_str().unwrap();
+    let (status, _, body) = start(json!({ "provider": "google", "account_id": id })).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let again = serde_json::from_slice::<Value>(&body).unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, _) = finish(format!("?code=good&state={again}")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    for body in [
+        json!({ "provider": "google", "kind": "graph", "email": "ada@example.com", "archive_id": f.archive }),
+        json!({ "provider": "microsoft", "kind": "pop3", "email": "ada@example.com", "archive_id": f.archive }),
+    ] {
+        assert_eq!(
+            start(body.clone()).await.0,
+            StatusCode::BAD_REQUEST,
+            "{body}"
+        );
+    }
+    let (status, _, body) = start(json!({
+        "provider": "microsoft",
+        "kind": "graph",
+        "email": "ada@example.org",
+        "archive_id": f.archive
+    }))
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let graph = serde_json::from_slice::<Value>(&body).unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, body) = finish(format!("?code=good&state={graph}")).await;
+    assert_eq!(status, StatusCode::OK);
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["kind"], "graph");
+    assert_eq!(account["oauth_provider"], "microsoft");
+    let (status, _, body) =
+        start(json!({ "provider": "microsoft", "account_id": account["id"] })).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let again = serde_json::from_slice::<Value>(&body).unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        f.mailboxes.oauth.lock().unwrap()[&again].kind,
+        AccountKind::Graph,
+        "signing in again did not keep the account's kind"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finishes_own_client_sign_ins_through_the_callback() {
+    let f = fixture().await;
+    let (_, _, body) = f
+        .send(post_json(
+            "/api/oauth/start",
+            json!({ "provider": "microsoft", "email": "ada@example.com", "archive_id": f.archive, "return_to": "/settings?tab=archives" }),
+        ))
+        .await;
+    let started: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(started["needs_paste"], false);
+    let state = started["state"].as_str().unwrap();
+
+    let callback = |query: String| {
+        f.send(
+            Request::get(format!("/api/oauth/callback?{query}"))
+                .header(header::COOKIE, "x=y")
+                .body(Body::empty())
+                .unwrap(),
+        )
+    };
+    let (status, headers, _) = callback(format!("code=good&state={state}")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let location = headers[header::LOCATION].to_str().unwrap();
+    assert!(
+        location.starts_with("/settings?tab=archives&oauth=done&account="),
+        "{location}"
+    );
+    let (status, headers, _) = callback(format!("code=good&state={state}")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let location = headers[header::LOCATION].to_str().unwrap();
+    assert!(location.starts_with("/settings?oauth_error="), "{location}");
+    let (_, headers, _) = callback("error=access_denied&state=x".into()).await;
+    assert!(
+        headers[header::LOCATION]
+            .to_str()
+            .unwrap()
+            .contains("oauth_error=Access+was+not+granted")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_managers_sign_in_accounts() {
+    let f = fixture().await;
+    f.send(post_json(
+        "/api/users",
+        json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+    ))
+    .await;
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    for (uri, body) in [
+        (
+            "/api/oauth/start",
+            json!({ "provider": "google", "email": "grace@example.org", "archive_id": f.archive }),
+        ),
+        (
+            "/api/oauth/finish",
+            json!({ "pasted_url": "?code=good&state=state-1" }),
+        ),
+    ] {
+        let (status, _, _) = f.send_as(&member, post_json(uri, body)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+    }
+    let (status, _, _) = f
+        .send(
+            Request::post("/api/oauth/start")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, "x=y")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exports_mbox_and_zip() {
+    let f = fixture().await;
+    let base = format!("/api/archives/{}/export", f.archive);
+
+    let (status, headers, body) = f.get(&format!("{base}?format=mbox")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/mbox");
+    assert_eq!(
+        headers[header::CONTENT_DISPOSITION],
+        "attachment; filename=\"Personal.mbox\"; filename*=UTF-8''Personal.mbox"
+    );
+    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    let text = body_text(&body);
+    assert_eq!(text.matches("\nFrom ").count() + 1, 2);
+    assert!(text.starts_with("From "));
+    assert!(text.contains(&String::from_utf8_lossy(PLAIN).into_owned()));
+
+    let (status, headers, body) = f
+        .get(&format!("{base}?format=zip&folder={}", f.folder))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/zip");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(body.to_vec())).unwrap();
+    assert_eq!(zip.len(), 2);
+    assert!(
+        zip.by_index(0)
+            .unwrap()
+            .name()
+            .unwrap()
+            .starts_with("INBOX/")
+    );
+
+    let (status, _, body) = f
+        .get(&format!("{base}?format=mbox&label=News%20%26%20updates"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body_text(&body).matches("Subject: ").count(), 1);
+    let (status, _, body) = f.get(&format!("{base}?format=mbox&q=from:bob")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body_text(&body).contains("Re: Weekly news"));
+
+    for (uri, expected) in [
+        (format!("{base}?format=pdf"), StatusCode::BAD_REQUEST),
+        (
+            format!("{base}?format=zip&label=A&q=b"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("{base}?format=zip&q=before:soon"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!(
+                "{base}?format=zip&folder={}",
+                holtmail_core::FolderId::new()
+            ),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            format!(
+                "/api/archives/{}/export?format=zip",
+                holtmail_core::ArchiveId::new()
+            ),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let (status, _, _) = f.get(&uri).await;
+        assert_eq!(status, expected, "{uri}");
+    }
+
+    let (status, _, _) = f
+        .send(
+            Request::get(format!("{base}?format=zip"))
+                .header(header::COOKIE, "holtmail_session=nope")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    f.send(post_json(
+        "/api/users",
+        json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+    ))
+    .await;
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let export = format!("{base}?format=mbox");
+    let (status, _, _) = f
+        .send_as(&member, Request::get(&export).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "not granted");
+    let grace = f
+        .store
+        .find_user_by_email("grace@example.org")
+        .await
+        .unwrap()
+        .unwrap();
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    f.store.set_grants(grace.id, &[archive]).await.unwrap();
+    let (status, _, _) = f
+        .send_as(&member, Request::get(&export).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "granted members export what they read"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn adds_and_edits_jmap_accounts_for_managers_only() {
+    let f = fixture().await;
+    let uri = format!("/api/archives/{}/accounts/jmap", f.archive);
+    for (body, why) in [
+        (
+            json!({ "url": "", "auth": "token", "password": "right" }),
+            "an empty address",
+        ),
+        (
+            json!({ "url": "https://api.example.com", "auth": "oauth", "password": "right" }),
+            "an unknown sign-in",
+        ),
+        (
+            json!({ "url": "https://api.example.com", "password": "right" }),
+            "a password without a user name",
+        ),
+        (
+            json!({ "url": "https://api.example.com", "auth": "token", "password": "" }),
+            "an empty token",
+        ),
+        (
+            json!({ "url": "https://api.example.com", "auth": "token", "password": "wrong" }),
+            "a refused token",
+        ),
+    ] {
+        let (status, _, _) = f.send(post_json(&uri, body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{why} was accepted");
+    }
+    let (status, _, body) = f
+        .send(post_json(
+            &uri,
+            json!({ "url": "https://api.example.com/jmap/session", "auth": "token", "password": "right", "name": "Fastmail" }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["kind"], "jmap");
+    assert_eq!(account["name"], "Fastmail");
+    assert_eq!(account["connection"], Value::Null);
+    assert_eq!(
+        account["jmap"]["url"],
+        "https://api.example.com/jmap/session"
+    );
+    assert_eq!(account["jmap"]["auth"], "token");
+    assert!(account["jmap"].get("password").is_none());
+    let id = account["id"].as_str().unwrap().to_owned();
+
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/accounts/{id}"),
+            json!({ "jmap": { "url": "https://jmap.example.org", "username": "ada", "auth": "password", "exclude": ["Spam"] }, "password": "right" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["jmap"]["auth"], "password");
+    assert_eq!(account["jmap"]["exclude"], json!(["Spam"]));
+
+    f.send(post_json(
+        "/api/users",
+        json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+    ))
+    .await;
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let (status, _, _) = f
+        .send_as(
+            &member,
+            post_json(
+                &uri,
+                json!({ "url": "https://api.example.com", "auth": "token", "password": "right" }),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

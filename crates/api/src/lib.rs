@@ -1,5 +1,5 @@
-//! Holtmail's HTTP API: sign-in, archives, folders, message lists, search, the reader and
-//! downloads.
+//! Holtmail's HTTP API: sign-in, archives, folders, labels, message lists, search, the reader
+//! and downloads.
 //!
 //! Every response is JSON except bodies, raw messages and attachments. Every route except the
 //! sign-in routes and the OpenAPI description needs a session cookie. The OpenAPI description is
@@ -7,8 +7,10 @@
 
 mod access;
 mod dto;
+mod export;
 mod mailboxes;
 mod manage;
+mod oauth;
 mod people;
 mod remote;
 mod routes;
@@ -34,8 +36,9 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use dto::*;
 pub use mailboxes::{
     AccountChange, AccountDetails, AccountStatus, ConnectionChange, ImageProxy, ImapConnection,
-    MailboxError, Mailboxes, NewImapAccount, RemoteImageJob, SyncSchedule, Task, TaskKind,
-    TaskLevel, TaskLine, TaskState,
+    JmapConnection, JmapConnectionChange, MailboxError, Mailboxes, NewImapAccount, NewJmapAccount,
+    OAuthFinished, OAuthStart, OAuthStarted, OAuthTarget, RemoteImageJob, SyncSchedule, Task,
+    TaskKind, TaskLevel, TaskLine, TaskState,
 };
 pub use session::{CurrentUser, SESSION_COOKIE};
 
@@ -90,7 +93,13 @@ pub fn router(state: ApiState) -> Router {
             "/api/accounts/{id}",
             patch(manage::update_account).delete(manage::delete_account),
         )
+        .route(
+            "/api/archives/{id}/accounts/jmap",
+            post(manage::add_jmap_account),
+        )
         .route("/api/accounts/{id}/sync", post(manage::sync_account))
+        .route("/api/oauth/start", post(oauth::start))
+        .route("/api/oauth/finish", post(oauth::finish))
         .route(
             "/api/users",
             get(people::list_users).post(people::create_user),
@@ -102,14 +111,20 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/me", patch(people::update_me))
         .route("/api/me/password", post(people::change_password))
         .route("/api/archives/{id}/folders", get(routes::list_folders))
+        .route("/api/archives/{id}/labels", get(routes::list_labels))
         .route("/api/archives/{id}/messages", get(routes::list_messages))
         .route("/api/archives/{id}/search", get(routes::search))
+        .route("/api/archives/{id}/export", get(export::export))
         .route("/api/messages/{id}", get(routes::get_message))
         .route("/api/messages/{id}/body", get(routes::get_body))
         .route("/api/messages/{id}/raw", get(routes::get_raw))
         .route(
             "/api/messages/{id}/attachments/{ordinal}",
             get(routes::get_attachment),
+        )
+        .route(
+            "/api/messages/{id}/attachments/{ordinal}/thumbnail",
+            get(routes::get_thumbnail),
         )
         .route("/api/messages/{id}/remote/{key}", get(remote::get_remote))
         .route("/api/messages/{id}/live/{key}", get(remote::get_live))
@@ -140,6 +155,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/login", post(session::login))
         .route("/api/logout", post(session::logout))
         .route("/api/openapi.json", get(routes::openapi))
+        .route("/api/oauth/callback", get(oauth::callback))
         .merge(protected)
         .layer(from_fn(session::guard_writes))
         .with_state(state)
@@ -168,8 +184,12 @@ pub fn openapi_json() -> String {
         routes::get_archive,
         manage::list_accounts,
         manage::add_imap_account,
+        manage::add_jmap_account,
         manage::import_file,
         manage::sync_account,
+        oauth::start,
+        oauth::finish,
+        oauth::callback,
         manage::update_archive,
         manage::delete_archive,
         manage::update_account,
@@ -181,12 +201,15 @@ pub fn openapi_json() -> String {
         people::update_me,
         people::change_password,
         routes::list_folders,
+        routes::list_labels,
         routes::list_messages,
         routes::search,
+        export::export,
         routes::get_message,
         routes::get_body,
         routes::get_raw,
         routes::get_attachment,
+        routes::get_thumbnail,
         remote::get_remote,
         remote::get_live,
         manage::start_remote_images,
@@ -205,6 +228,7 @@ pub fn openapi_json() -> String {
         AccountStatusDto,
         NewArchiveRequest,
         ImapAccountRequest,
+        JmapAccountRequest,
         PersonDto,
         NewUserRequest,
         UserUpdateRequest,
@@ -221,9 +245,15 @@ pub fn openapi_json() -> String {
         ImageProxyRequest,
         ImapConnectionDto,
         ConnectionRequest,
+        JmapConnectionDto,
+        JmapConnectionRequest,
         SyncScheduleDto,
         SyncScheduleRequest,
+        OAuthStartRequest,
+        OAuthStartDto,
+        OAuthFinishRequest,
         FolderDto,
+        LabelDto,
         AddressDto,
         MessageSummary,
         MessagePage,

@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
-use holtmail_store::Account;
+use holtmail_store::{Account, AccountKind};
+pub use holtmail_store::{TaskKind, TaskLevel, TaskLine, TaskState};
 
 /// Work the API hands to the server because it needs implementation crates: talking to mail
 /// servers, sealing passwords and reading mailbox files.
@@ -18,10 +19,23 @@ pub trait Mailboxes: Send + Sync {
         account: NewImapAccount,
     ) -> Result<Account, MailboxError>;
 
+    /// Signs in to the JMAP server and lists its mailboxes, then stores the account in `archive`
+    /// with its password or token sealed and starts its first sync in the background.
+    ///
+    /// Nothing is stored when signing in fails.
+    async fn add_jmap(
+        &self,
+        archive: ArchiveId,
+        account: NewJmapAccount,
+    ) -> Result<Account, MailboxError>;
+
     /// Changes how `account` connects and how often it is synced, as `change` says. A new
     /// connection or password is checked by signing in first, and nothing is stored when that
     /// fails. Returns the stored account. `Invalid` for an import account, for a change while the
-    /// account syncs, or for an interval out of range.
+    /// account syncs, or for an interval or minimum age out of range. A stored password or token
+    /// is never sent to another server: a connection to another server without a new
+    /// `password` is `Invalid`, and so is any change of server, port or security on an account
+    /// that signs in with OAuth.
     async fn configure(
         &self,
         account: &Account,
@@ -68,6 +82,23 @@ pub trait Mailboxes: Send + Sync {
         job: RemoteImageJob,
     ) -> Result<Task, MailboxError>;
 
+    /// Starts a Gmail or Microsoft sign-in for a new account or for an existing one: returns
+    /// the provider's sign-in page and a `state` that stays valid for a few minutes and can be
+    /// used once. `Invalid` for an unknown provider, archive or account, or an import account.
+    async fn start_oauth(&self, start: OAuthStart) -> Result<OAuthStarted, MailboxError>;
+
+    /// Finishes a sign-in from the address the provider sent the browser to, or just its query:
+    /// exchanges the code, checks that the mail server accepts the token, stores the refresh
+    /// token sealed and starts a sync. For a new account it is created; for an existing one its
+    /// sign-in is replaced and it syncs again on schedule. Nothing is stored when any step
+    /// fails. `Invalid` for an unknown, used or expired `state`, a refusal at the sign-in page,
+    /// or a token the server refuses.
+    async fn finish_oauth(&self, answer: &str) -> Result<OAuthFinished, MailboxError>;
+
+    /// The page the sign-in answered by `answer` goes back to, while it is waiting; nothing is
+    /// used up.
+    fn oauth_return_to(&self, answer: &str) -> Option<String>;
+
     /// The outbound proxy remote images are fetched through.
     fn image_proxy(&self) -> ImageProxy;
 
@@ -86,56 +117,11 @@ pub enum RemoteImageJob {
     Failed,
 }
 
-/// What a background task does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskKind {
-    /// Syncing an account.
-    Sync,
-    /// Importing an uploaded file.
-    Import,
-    /// Saving remote images.
-    RemoteImages,
-}
-
-/// Where a task is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskState {
-    /// Still working.
-    Running,
-    /// Finished without errors.
-    Done,
-    /// Stopped by an error, or finished with some.
-    Failed,
-    /// Stopped on request.
-    Cancelled,
-}
-
-/// How serious a task log line is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskLevel {
-    /// Progress.
-    Info,
-    /// Something was skipped.
-    Warning,
-    /// Something failed.
-    Error,
-}
-
-/// One line of a task's log. Holds counts, names and reasons, never message content or secrets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskLine {
-    /// When it was written.
-    pub at: Timestamp,
-    /// How serious it is.
-    pub level: TaskLevel,
-    /// The text.
-    pub text: String,
-}
-
-/// A background task with its progress and log, kept in memory until the server restarts.
+/// A background task with its progress and log. Finished tasks stay listed after a restart, and
+/// tasks a restart stopped show as [`TaskState::Interrupted`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
-    /// Unique while the server runs.
+    /// Unique among tasks, also across restarts.
     pub id: String,
     /// What it does.
     pub kind: TaskKind,
@@ -189,6 +175,76 @@ pub struct NewImapAccount {
     pub password: String,
 }
 
+/// A JMAP account to add.
+#[derive(Debug, Clone)]
+pub struct NewJmapAccount {
+    /// Shown in the sidebar; the user name, or the server's host for a token, when `None`.
+    pub name: Option<String>,
+    /// The session address, or the server's address where `/.well-known/jmap` answers.
+    pub url: String,
+    /// User name for `password`; may be empty for `token`.
+    pub username: String,
+    /// `password` (HTTP Basic) or `token` (a bearer token, such as a Fastmail API token).
+    pub auth: String,
+    /// The password, app password or API token. Never logged or returned.
+    pub secret: String,
+}
+
+/// What an OAuth sign-in is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OAuthTarget {
+    /// A new account in this archive, named `name` or after the address.
+    NewAccount {
+        /// The archive the mail goes to.
+        archive: ArchiveId,
+        /// Shown in the sidebar.
+        name: Option<String>,
+    },
+    /// Sign in again to this account, or move it from a password to OAuth.
+    Account(AccountId),
+}
+
+/// A sign-in to start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OAuthStart {
+    /// `google` or `microsoft`.
+    pub provider: String,
+    /// The address to sign in as; suggested to the provider.
+    pub email: String,
+    /// What it is for.
+    pub target: OAuthTarget,
+    /// The kind of a new account: [`AccountKind::Imap`] or, for Microsoft,
+    /// [`AccountKind::Graph`]. Signing in again keeps the account's own kind.
+    pub kind: AccountKind,
+    /// A path in the web app the callback sends the browser back to.
+    pub return_to: String,
+}
+
+/// A started sign-in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OAuthStarted {
+    /// The provider's sign-in page.
+    pub authorize_url: String,
+    /// Ties the answer to this sign-in.
+    pub state: String,
+    /// The provider sends the browser to an address that does not load, so its address has to
+    /// be pasted back; otherwise the callback finishes on its own.
+    pub needs_paste: bool,
+    /// The client is Thunderbird's, so the consent screen names Thunderbird.
+    pub thunderbird_client: bool,
+    /// When the sign-in stops being accepted.
+    pub expires_at: Timestamp,
+}
+
+/// A finished sign-in.
+#[derive(Debug, Clone)]
+pub struct OAuthFinished {
+    /// The new or updated account.
+    pub account: Account,
+    /// The page to go back to.
+    pub return_to: String,
+}
+
 /// The state of an account's sync or import.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AccountStatus {
@@ -219,6 +275,33 @@ pub struct ImapConnection {
     pub exclude: Vec<String>,
 }
 
+/// How a JMAP account connects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JmapConnection {
+    /// The session address.
+    pub url: String,
+    /// User name; empty for a token without one.
+    pub username: String,
+    /// `password` or `token`.
+    pub auth: String,
+    /// Mailbox paths that are not archived.
+    pub exclude: Vec<String>,
+}
+
+/// A new connection for a JMAP account. Moving between `password` and `token` needs a new
+/// secret in [`AccountChange::password`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JmapConnectionChange {
+    /// The session address, or the server's address.
+    pub url: String,
+    /// User name; may be empty for `token`.
+    pub username: String,
+    /// `password` or `token`.
+    pub auth: String,
+    /// Mailbox paths not to archive.
+    pub exclude: Vec<String>,
+}
+
 /// A new connection for an IMAP account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionChange {
@@ -239,11 +322,17 @@ pub struct ConnectionChange {
 pub struct AccountChange {
     /// Where and as whom to sign in.
     pub connection: Option<ConnectionChange>,
-    /// A new password; never logged or returned.
+    /// Where and how a JMAP account signs in.
+    pub jmap: Option<JmapConnectionChange>,
+    /// A new password, or a new token for a JMAP account that signs in with one; never logged
+    /// or returned.
     pub password: Option<String>,
     /// The account's own sync interval in minutes, 0 for only on request; `Some(None)` follows
     /// the server's interval again.
     pub sync_interval_minutes: Option<Option<u64>>,
+    /// Archive only messages at least this many days old; `Some(None)` archives every message
+    /// again.
+    pub min_age_days: Option<Option<u32>>,
 }
 
 /// What [`Mailboxes::details`] knows about an account.
@@ -251,8 +340,17 @@ pub struct AccountChange {
 pub struct AccountDetails {
     /// For IMAP accounts.
     pub connection: Option<ImapConnection>,
+    /// For JMAP accounts.
+    pub jmap: Option<JmapConnection>,
     /// Its own sync interval in minutes; `None` follows the server's.
     pub sync_interval_minutes: Option<u64>,
+    /// Messages younger than this many days are left for a later sync; `None` archives every
+    /// message.
+    pub min_age_days: Option<u32>,
+    /// `google` or `microsoft` for accounts that sign in with OAuth.
+    pub oauth_provider: Option<String>,
+    /// The provider no longer accepts the sign-in; syncs stop until someone signs in again.
+    pub needs_sign_in: bool,
 }
 
 /// The sync interval of accounts without their own.

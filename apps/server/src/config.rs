@@ -31,9 +31,10 @@ pub struct Config {
     pub public_url: Option<String>,
     #[serde(default)]
     pub blobs: BlobConfig,
-    /// Minutes between scheduled syncs in `serve`; 0 turns scheduling off.
-    #[serde(default = "default_sync_minutes")]
-    pub sync_interval_minutes: u64,
+    /// Minutes between syncs of accounts without their own interval; 0 syncs them only on
+    /// request. When set, the web app shows it and cannot change it.
+    #[serde(default)]
+    pub sync_interval_minutes: Option<u64>,
     /// Outbound proxy for remote images, e.g. `socks5h://127.0.0.1:9050`. When set, the web app
     /// shows it and cannot change it.
     #[serde(default)]
@@ -69,10 +70,6 @@ fn default_data_dir() -> PathBuf {
     PathBuf::from("data")
 }
 
-fn default_sync_minutes() -> u64 {
-    15
-}
-
 fn default_region() -> String {
     "us-east-1".into()
 }
@@ -98,6 +95,9 @@ impl Config {
         }
         if let Ok(url) = std::env::var("HOLTMAIL_PUBLIC_URL") {
             config.public_url = Some(url);
+        }
+        if let Ok(minutes) = std::env::var("HOLTMAIL_SYNC_INTERVAL") {
+            config.sync_interval_minutes = Some(minutes.parse().context("HOLTMAIL_SYNC_INTERVAL")?);
         }
         if let Ok(proxy) = std::env::var("HOLTMAIL_IMAGE_PROXY") {
             config.image_proxy = Some(proxy).filter(|p| !p.trim().is_empty());

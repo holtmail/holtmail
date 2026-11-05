@@ -5,6 +5,7 @@ mod config;
 mod image_proxy;
 mod import;
 mod mailboxes;
+mod schedule;
 mod tasks;
 
 use std::net::SocketAddr;
@@ -402,7 +403,11 @@ async fn user_command(store: Arc<dyn Store>, command: UserCommand) -> anyhow::Re
 async fn serve(config: Config) -> anyhow::Result<()> {
     let services = Arc::new(Services::open(&config).await?);
     let auth = auth(services.store.clone())?;
-    let runner = mailboxes::Runner::new(services.clone(), config.data_dir.join("uploads"));
+    let schedule = Arc::new(
+        schedule::Schedule::open(config.sync_interval_minutes, services.store.clone()).await?,
+    );
+    let runner =
+        mailboxes::Runner::new(services.clone(), config.data_dir.join("uploads"), schedule);
     let mut app = holtmail_api::router(ApiState {
         blobs: services.blobs.clone(),
         store: services.store.clone(),
@@ -413,11 +418,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         secure_cookies: config.https(),
     });
     runner.save_new_remote_images().await;
-    if config.sync_interval_minutes > 0 {
-        tokio::spawn(runner.run_schedule(std::time::Duration::from_secs(
-            config.sync_interval_minutes * 60,
-        )));
-    }
+    tokio::spawn(runner.clone().run_schedule());
     if let Some(web) = &config.web_dir {
         let index = web.join("index.html");
         app = app.fallback_service(ServeDir::new(web).fallback(ServeFile::new(index)));

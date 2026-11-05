@@ -22,7 +22,7 @@ holtmail openapi                                 # the API description as JSON
 
 Everything the commands do can also be done in the web app by the owner or an admin: archives, IMAP accounts, uploads of mailbox files, syncing now, people and their access. The CLI stays for scripts and headless installs.
 
-`serve` syncs every enabled account one after another, every `sync_interval_minutes`, and removes expired sessions every hour. Syncs and imports started from the web and from the schedule share one runner that keeps at most one run per account and remembers the state of the last one (shown in the web app) until the server restarts. Uploaded files wait in `<data_dir>/uploads` and are removed once imported.
+`serve` checks every 30 seconds which enabled accounts are due and syncs them one after another, and removes expired sessions every hour. An account is due at start and then every `sync_interval_minutes` after its last run ended; each account can have its own interval (`sync_interval_minutes` in its settings, set from the web app), `0` meaning only on request. The server-wide interval comes from the config when set there, else from the web app (stored in the settings), else 15 minutes. Changing an account's server, user name or excluded folders from the web app signs in with the new settings first; the account keeps its archive, and messages it already has are recognized by their bytes, so nothing is stored twice. Syncs and imports started from the web and from the schedule share one runner that keeps at most one run per account and remembers the state of the last one (shown in the web app) until the server restarts. Uploaded files wait in `<data_dir>/uploads` and are removed once imported.
 
 Remote images go through [`holtmail-fetch-http`](../../../crates/fetch-http/docs/README.md), which only contacts public addresses, optionally through an outbound proxy (`image_proxy` in the config, or set by an owner or admin in the web app, stored sealed with `secret.key`; the config wins). The proxy can change while the server runs. For archives with "Save remote images" on, [`holtmail-remote`](../../../crates/remote/docs/README.md) saves the images of new messages after every sync or import that brought any and once at start; mail archived before saving was turned on, and failed images, only when asked from the web app. One remote image task per archive at a time. The web reader's image proxy uses the same fetcher.
 
@@ -50,7 +50,7 @@ Optional TOML file (`-c holtmail.toml` or `HOLTMAIL_CONFIG`). Every key has a de
 listen = "127.0.0.1:8080" # HOLTMAIL_LISTEN
 data_dir = "data" # HOLTMAIL_DATA_DIR: holtmail.db, index/, blobs/
 web_dir = "apps/web/dist" # HOLTMAIL_WEB_DIR: serve the built web app; unknown paths get index.html
-sync_interval_minutes = 15 # 0 turns scheduled sync off
+# sync_interval_minutes = 15 # HOLTMAIL_SYNC_INTERVAL: accounts without their own interval; 0 syncs them only on request; when set, the web app cannot change it
 # image_proxy = "socks5h://127.0.0.1:9050" # HOLTMAIL_IMAGE_PROXY: outbound proxy for remote images
 
 [blobs]

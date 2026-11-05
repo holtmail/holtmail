@@ -8,6 +8,8 @@ use holtmail_store::{Account, AccountKind, NewAccount, Store};
 use holtmail_sync::{SyncOptions, SyncReport, Syncer};
 use serde::Deserialize;
 
+use holtmail_api::{ConnectionChange, ImapConnection};
+
 use crate::config::Services;
 
 pub struct NewImapAccount {
@@ -72,6 +74,96 @@ fn options(account: &Account) -> SyncOptions {
         exclude: rules.exclude,
         ..SyncOptions::default()
     }
+}
+
+/// The account's own sync interval in minutes, when it has one.
+pub fn sync_interval(account: &Account) -> Option<u64> {
+    account
+        .settings
+        .get("sync_interval_minutes")
+        .and_then(serde_json::Value::as_u64)
+}
+
+pub fn security_name(security: Security) -> &'static str {
+    match security {
+        Security::Tls => "tls",
+        Security::Starttls => "starttls",
+        Security::Plain => "plain",
+    }
+}
+
+/// How an IMAP account connects, as stored.
+pub fn connection(account: &Account) -> Option<ImapConnection> {
+    if account.kind != AccountKind::Imap {
+        return None;
+    }
+    let settings = ImapSettings::from_json(&account.settings).ok()?;
+    Some(ImapConnection {
+        port: settings.port(),
+        security: security_name(settings.security).to_owned(),
+        host: settings.host,
+        username: settings.username,
+        exclude: options(account).exclude,
+    })
+}
+
+/// The account's settings with `change` applied; other keys, such as folder includes, stay.
+pub fn with_connection(
+    settings: &serde_json::Value,
+    change: &ConnectionChange,
+) -> anyhow::Result<(serde_json::Value, ImapSettings)> {
+    let imap = ImapSettings {
+        host: change.host.trim().to_owned(),
+        port: change.port,
+        security: parse_security(&change.security)?,
+        username: change.username.trim().to_owned(),
+    };
+    anyhow::ensure!(!imap.host.is_empty(), "the server is empty");
+    anyhow::ensure!(!imap.username.is_empty(), "the user name is empty");
+    let mut json = match settings {
+        serde_json::Value::Object(_) => settings.clone(),
+        _ => serde_json::json!({}),
+    };
+    let fields = serde_json::to_value(&imap)?;
+    if let (Some(target), Some(fields)) = (json.as_object_mut(), fields.as_object()) {
+        target.remove("port");
+        for (key, value) in fields {
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    let exclude: Vec<String> = change
+        .exclude
+        .iter()
+        .map(|path| path.trim().to_owned())
+        .filter(|path| !path.is_empty())
+        .collect();
+    let mut folders = json
+        .get("folders")
+        .cloned()
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    folders["exclude"] = serde_json::json!(exclude);
+    json["folders"] = folders;
+    Ok((json, imap))
+}
+
+/// The account's settings with its own sync interval set, or removed for `None`.
+pub fn with_sync_interval(settings: &serde_json::Value, minutes: Option<u64>) -> serde_json::Value {
+    let mut json = match settings {
+        serde_json::Value::Object(_) => settings.clone(),
+        _ => serde_json::json!({}),
+    };
+    if let Some(object) = json.as_object_mut() {
+        match minutes {
+            Some(minutes) => {
+                object.insert("sync_interval_minutes".into(), minutes.into());
+            }
+            None => {
+                object.remove("sync_interval_minutes");
+            }
+        }
+    }
+    json
 }
 
 pub fn parse_security(raw: &str) -> anyhow::Result<Security> {
@@ -142,6 +234,59 @@ pub fn syncer(services: &Services) -> Syncer {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn changes_the_connection_and_keeps_other_settings() {
+        let stored = serde_json::json!({
+            "host": "imap.example.com",
+            "port": 1993,
+            "security": "tls",
+            "username": "ada",
+            "folders": { "include": ["INBOX"], "exclude": ["Junk"] },
+            "sync_interval_minutes": 5
+        });
+        let (json, imap) = super::with_connection(
+            &stored,
+            &holtmail_api::ConnectionChange {
+                host: " mail.example.org ".into(),
+                port: None,
+                security: "starttls".into(),
+                username: "ada@example.org".into(),
+                exclude: vec!["Trash".into(), " ".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            imap.port(),
+            143,
+            "the old port survived a change to the default"
+        );
+        assert_eq!(json["host"], "mail.example.org");
+        assert_eq!(json["folders"]["include"], serde_json::json!(["INBOX"]));
+        assert_eq!(json["folders"]["exclude"], serde_json::json!(["Trash"]));
+        assert_eq!(json["sync_interval_minutes"], 5);
+        assert!(
+            super::with_connection(
+                &stored,
+                &holtmail_api::ConnectionChange {
+                    host: "x".into(),
+                    port: None,
+                    security: "ssl".into(),
+                    username: "ada".into(),
+                    exclude: Vec::new(),
+                },
+            )
+            .is_err()
+        );
+
+        let json = super::with_sync_interval(&json, Some(60));
+        assert_eq!(json["sync_interval_minutes"], 60);
+        assert!(
+            super::with_sync_interval(&json, None)
+                .get("sync_interval_minutes")
+                .is_none()
+        );
+    }
+
     use holtmail_secret_local::LocalSecretBox;
     use holtmail_store::ArchiveStore;
     use holtmail_store_sqlite::SqliteStore;

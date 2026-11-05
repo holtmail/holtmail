@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use holtmail_api::{
-    AccountStatus, ImageProxy, MailboxError, Mailboxes, NewImapAccount, RemoteImageJob, Task,
-    TaskKind, TaskLevel, TaskState,
+    AccountChange, AccountDetails, AccountStatus, ImageProxy, MailboxError, Mailboxes,
+    NewImapAccount, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
 };
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
@@ -19,6 +19,7 @@ use holtmail_sync::Syncer;
 use crate::accounts;
 use crate::config::Services;
 use crate::import;
+use crate::schedule::{self, Schedule};
 use crate::tasks::{NewTask, TaskHandle, Tasks};
 
 const LOG_EVERY: u64 = 250;
@@ -37,6 +38,8 @@ struct Inner {
     remote: RemoteImages,
     tasks: Arc<Tasks>,
     again: Mutex<HashSet<ArchiveId>>,
+    schedule: Arc<Schedule>,
+    next: Mutex<HashMap<AccountId, Timestamp>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -76,7 +79,7 @@ fn saved_summary(job: Job, saved: &Saved) -> String {
 }
 
 impl Runner {
-    pub fn new(services: Arc<Services>, uploads: PathBuf) -> Self {
+    pub fn new(services: Arc<Services>, uploads: PathBuf, schedule: Arc<Schedule>) -> Self {
         let syncer = accounts::syncer(&services);
         let ingest = Ingest::new(
             services.blobs.clone(),
@@ -97,6 +100,8 @@ impl Runner {
             remote,
             tasks: Arc::new(Tasks::default()),
             again: Mutex::new(HashSet::new()),
+            schedule,
+            next: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -388,18 +393,34 @@ impl Runner {
         }
     }
 
-    /// Syncs every enabled account, one after another, then waits `every` and starts again.
-    pub async fn run_schedule(self, every: Duration) {
+    /// Checks every 30 seconds which enabled accounts are due, by their own interval or the
+    /// server's, and syncs those one after another. Accounts are due at start.
+    pub async fn run_schedule(self) {
         loop {
             match accounts::syncable_accounts(&*self.0.services.store).await {
                 Ok(list) => {
+                    let mut next = HashMap::new();
+                    let mut due = Vec::new();
+                    let now = Timestamp::now();
+                    let every = self.0.schedule.get().minutes;
                     for account in list {
+                        let minutes = accounts::sync_interval(&account).unwrap_or(every);
+                        let last = self.status(account.id).finished_at;
+                        if let Some(at) = schedule::next_sync(last, minutes, now) {
+                            next.insert(account.id, at);
+                            if at <= now {
+                                due.push(account);
+                            }
+                        }
+                    }
+                    *self.0.next.lock().expect("next lock") = next;
+                    for account in due {
                         self.sync_now(&account).await;
                     }
                 }
                 Err(error) => tracing::warn!(%error, "listing accounts failed"),
             }
-            tokio::time::sleep(every).await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
         }
     }
 }
@@ -492,24 +513,95 @@ impl Mailboxes for Runner {
         Ok(stored)
     }
 
-    async fn set_password(&self, account: &Account, password: String) -> Result<(), MailboxError> {
-        let settings = ImapSettings::from_json(&account.settings)
-            .map_err(|e| MailboxError::Invalid(e.to_string()))?;
-        check_sign_in(&settings, &password).await?;
-        let mut account = account.clone();
-        account.sealed_secret = Some(
-            self.0
-                .services
-                .secrets
-                .seal(&account.id.to_string(), password.as_bytes())
-                .map_err(backend)?,
-        );
+    async fn configure(
+        &self,
+        account: &Account,
+        change: AccountChange,
+    ) -> Result<Account, MailboxError> {
+        let connects = change.connection.is_some() || change.password.is_some();
+        if account.kind == AccountKind::Import
+            && (connects || change.sync_interval_minutes.is_some())
+        {
+            return Err(MailboxError::Invalid(
+                "An import account has no server.".into(),
+            ));
+        }
+        if connects && self.status(account.id).running {
+            return Err(MailboxError::Invalid(
+                "The account is syncing; change it when the sync is done.".into(),
+            ));
+        }
+        let mut updated = account.clone();
+        if let Some(Some(minutes)) = change.sync_interval_minutes {
+            schedule::check_minutes(minutes)?;
+        }
+        if connects {
+            let secrets = &self.0.services.secrets;
+            let (settings, imap) = match &change.connection {
+                Some(connection) => accounts::with_connection(&account.settings, connection)
+                    .map_err(|e| MailboxError::Invalid(format!("{e:#}")))?,
+                None => (
+                    account.settings.clone(),
+                    ImapSettings::from_json(&account.settings)
+                        .map_err(|e| MailboxError::Invalid(e.to_string()))?,
+                ),
+            };
+            let password = match &change.password {
+                Some(password) => password.clone(),
+                None => {
+                    let sealed = account.sealed_secret.as_deref().ok_or_else(|| {
+                        MailboxError::Invalid("Enter the password for this account.".into())
+                    })?;
+                    String::from_utf8(
+                        secrets
+                            .open(&account.id.to_string(), sealed)
+                            .map_err(backend)?,
+                    )
+                    .map_err(backend)?
+                }
+            };
+            check_sign_in(&imap, &password).await?;
+            if let Some(connection) = &change.connection
+                && let Some(old) = accounts::connection(account)
+                && connection.username.trim() != old.username
+                && (account.address.is_none() || account.address.as_deref() == Some(&old.username))
+            {
+                updated.address = imap.username.contains('@').then(|| imap.username.clone());
+            }
+            updated.settings = settings;
+            if change.password.is_some() {
+                updated.sealed_secret = Some(
+                    secrets
+                        .seal(&account.id.to_string(), password.as_bytes())
+                        .map_err(backend)?,
+                );
+            }
+        }
+        if let Some(minutes) = change.sync_interval_minutes {
+            updated.settings = accounts::with_sync_interval(&updated.settings, minutes);
+        }
         self.0
             .services
             .store
-            .update_account(&account)
+            .update_account(&updated)
             .await
-            .map_err(backend)
+            .map_err(backend)?;
+        Ok(updated)
+    }
+
+    fn details(&self, account: &Account) -> AccountDetails {
+        AccountDetails {
+            connection: accounts::connection(account),
+            sync_interval_minutes: accounts::sync_interval(account),
+        }
+    }
+
+    fn sync_schedule(&self) -> SyncSchedule {
+        self.0.schedule.get()
+    }
+
+    async fn set_sync_schedule(&self, minutes: u64) -> Result<SyncSchedule, MailboxError> {
+        self.0.schedule.set(minutes).await
     }
 
     async fn sync(&self, account: &Account) -> Result<(), MailboxError> {
@@ -576,12 +668,23 @@ impl Mailboxes for Runner {
     }
 
     fn status(&self, account: AccountId) -> AccountStatus {
-        self.0
+        let mut status = self
+            .0
             .status
             .lock()
             .expect("status lock")
             .get(&account)
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if !status.running {
+            status.next_sync_at = self
+                .0
+                .next
+                .lock()
+                .expect("next lock")
+                .get(&account)
+                .copied();
+        }
+        status
     }
 }

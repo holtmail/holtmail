@@ -5,7 +5,9 @@ import {
   createArchive,
   deleteArchive,
   type RemoteImageJob,
+  setSyncSchedule,
   startRemoteImages,
+  syncScheduleQuery,
   tasksQuery,
   updateArchive,
 } from '@holtmail/api-client'
@@ -20,6 +22,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Skeleton,
@@ -29,6 +33,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowUpRightIcon,
+  ChevronDownIcon,
+  ClockIcon,
   DownloadIcon,
   EllipsisIcon,
   FileUpIcon,
@@ -47,6 +53,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLiveArchive } from '../hooks/use-live-archive.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { formatCount, formatSize } from '../lib/format.ts'
+import { formatInterval, intervalChoices } from '../lib/schedule.ts'
 import type { AddMail } from '../lib/search-params.ts'
 import { remoteImagesTask } from '../lib/tasks.ts'
 import { AccountList } from '../manage/account-list.tsx'
@@ -76,6 +83,7 @@ export function ArchivesPage() {
         </Button>
       }
     >
+      <SyncScheduleCard />
       {archives.isPending && <Skeleton className="h-48" />}
       <div className="grid gap-12">
         <AnimatePresence initial={false}>
@@ -401,5 +409,66 @@ function SavedImages({ archive }: { archive: Archive }) {
         </p>
       )}
     </div>
+  )
+}
+
+function SyncScheduleCard() {
+  const queryClient = useQueryClient()
+  const schedule = useQuery(syncScheduleQuery)
+  const mutation = useMutation({
+    mutationFn: (minutes: number) => setSyncSchedule(minutes),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(syncScheduleQuery.queryKey, updated)
+      await queryClient.invalidateQueries({ queryKey: ['archives'] })
+    },
+  })
+  const minutes = mutation.isPending ? mutation.variables : schedule.data?.minutes
+  const fromConfig = schedule.data?.from_config ?? false
+  const choices: number[] = [...intervalChoices]
+  if (minutes !== undefined && !choices.includes(minutes)) choices.push(minutes)
+  return (
+    <section
+      aria-labelledby="sync-schedule"
+      className="flex flex-wrap items-start gap-4 border border-border bg-bg-subtle px-4 py-3"
+    >
+      <ClockIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-fg-subtle" />
+      <div className="grid min-w-0 flex-1 gap-1">
+        <h3 id="sync-schedule" className="text-sm text-fg">
+          {strings.schedule.title}
+        </h3>
+        <p className="text-xs text-fg-muted">
+          {fromConfig ? strings.schedule.fromConfig : strings.schedule.lead}
+        </p>
+        {mutation.isError && (
+          <p role="alert" className="text-xs text-danger">
+            {authErrorMessage(mutation.error)}
+          </p>
+        )}
+      </div>
+      {schedule.isPending ? (
+        <Skeleton className="h-8 w-48" />
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={fromConfig || mutation.isPending}>
+            <Button variant="secondary" aria-label={strings.schedule.title}>
+              {minutes === undefined ? '' : formatInterval(minutes)}
+              <ChevronDownIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuRadioGroup
+              value={String(minutes)}
+              onValueChange={(value) => mutation.mutate(Number(value))}
+            >
+              {choices.map((choice) => (
+                <DropdownMenuRadioItem key={choice} value={String(choice)}>
+                  {formatInterval(choice)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </section>
   )
 }

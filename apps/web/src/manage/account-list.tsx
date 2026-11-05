@@ -3,6 +3,7 @@ import {
   accountsQuery,
   deleteAccount,
   syncAccount,
+  syncScheduleQuery,
   updateAccount,
 } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
@@ -12,14 +13,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Skeleton,
 } from '@holtmail/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ClockIcon,
   EllipsisIcon,
   FileArchiveIcon,
+  ServerCogIcon,
   KeyRoundIcon,
   MailIcon,
   PauseIcon,
@@ -33,8 +41,10 @@ import { useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { type AccountTone, accountState } from '../lib/accounts.ts'
+import { formatInterval, formatNextSync, intervalChoices } from '../lib/schedule.ts'
 import { strings } from '../strings.ts'
 import { ConfirmDialog, TextDialog } from './confirm-dialog.tsx'
+import { EditConnectionDialog } from './edit-connection.tsx'
 
 const t = strings.accounts
 
@@ -103,7 +113,8 @@ function AccountRow({
 }) {
   const now = useNow(30_000)
   const queryClient = useQueryClient()
-  const [dialog, setDialog] = useState<'rename' | 'password' | 'remove' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'password' | 'edit' | 'remove' | null>(null)
+  const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
   const state = accountState(account, now)
   const imported = account.kind === 'import'
   const Icon = imported ? FileArchiveIcon : MailIcon
@@ -114,6 +125,15 @@ function AccountRow({
     mutationFn: () => updateAccount(account.id, { enabled: !account.enabled }),
     onSettled: refresh,
   })
+  const every = useMutation({
+    mutationFn: (minutes: number | null) =>
+      updateAccount(account.id, { sync_interval_minutes: minutes }),
+    onSettled: refresh,
+  })
+  const next =
+    !imported && account.enabled && !account.status.running && account.status.next_sync_at
+      ? formatNextSync(account.status.next_sync_at, now)
+      : undefined
 
   return (
     <div className="flex min-h-14 items-center gap-4 py-3">
@@ -137,6 +157,7 @@ function AccountRow({
           >
             {state.label}
           </span>
+          {next && <span className="hidden shrink-0 text-fg-subtle sm:inline">· {next}</span>}
         </span>
       </div>
       {manage && (
@@ -174,6 +195,40 @@ function AccountRow({
                     <KeyRoundIcon />
                     {t.password}
                   </DropdownMenuItem>
+                  {account.connection && (
+                    <DropdownMenuItem onSelect={() => setDialog('edit')}>
+                      <ServerCogIcon />
+                      {t.edit}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <ClockIcon />
+                      {t.schedule}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-64">
+                      <DropdownMenuRadioGroup
+                        value={
+                          account.sync_interval_minutes == null
+                            ? 'server'
+                            : String(account.sync_interval_minutes)
+                        }
+                        onValueChange={(value) =>
+                          every.mutate(value === 'server' ? null : Number(value))
+                        }
+                      >
+                        <DropdownMenuRadioItem value="server">
+                          {t.likeServer(formatInterval(schedule.data?.minutes ?? 15))}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuSeparator />
+                        {intervalChoices.map((minutes) => (
+                          <DropdownMenuRadioItem key={minutes} value={String(minutes)}>
+                            {formatInterval(minutes)}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </>
               )}
               <DropdownMenuSeparator />
@@ -212,6 +267,11 @@ function AccountRow({
           await updateAccount(account.id, { password })
           await refresh()
         }}
+      />
+      <EditConnectionDialog
+        account={account}
+        open={dialog === 'edit'}
+        onOpenChange={(open) => setDialog(open ? 'edit' : null)}
       />
       <ConfirmDialog
         open={dialog === 'remove'}

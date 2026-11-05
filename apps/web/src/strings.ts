@@ -223,6 +223,21 @@ export const strings = {
     saving: 'Saving…',
     imap: 'IMAP',
     import: 'Imported files',
+    edit: 'Edit connection…',
+    editTitle: 'Edit connection',
+    editLead:
+      'Holtmail signs in with the new settings before it saves them. Mail already archived stays, and nothing is downloaded twice.',
+    keepPassword: 'Leave empty to keep the current password.',
+    excluded: 'Folders not to archive',
+    excludedHint: 'Folder paths separated by commas or new lines, e.g. Junk, Trash.',
+    schedule: 'Check for new mail',
+    likeServer: (label: string) => `Like the server (${label.toLowerCase()})`,
+  },
+  schedule: {
+    title: 'Checking for new mail',
+    lead: 'How often Holtmail syncs mail sources that have no schedule of their own. Each source can choose its own in its menu.',
+    fromConfig:
+      'Set in the server’s config (sync_interval_minutes or HOLTMAIL_SYNC_INTERVAL); change it there.',
   },
   welcome: {
     title: 'Let’s bring your mail in',

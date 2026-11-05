@@ -144,6 +144,13 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - [x] Server: task registry in memory, syncs, imports and image work as tasks with logs; proxy sealed in settings, config wins, swapped at runtime
 - [x] Web: Tasks and Network settings, archive panel with older mail and retry, originals in the reader, running tasks in the sidebar
 
+### Phase 6: sync schedule and editable connections (2026-11-03)
+
+- [x] Server: scheduler checks every 30 s, per-account interval in its settings, server-wide interval from config, settings or 15 min; `HOLTMAIL_SYNC_INTERVAL`
+- [x] Server: change server, port, security, user name and excluded folders, signed in first; password optional
+- [x] API: `connection`, `sync_interval_minutes` and `next_sync_at` on accounts (connection hidden from members), `PATCH` with `connection` and interval, `/api/sync-schedule`
+- [x] Web: Edit connection dialog, Check for new mail submenu per source, next sync in the row, server-wide interval above the archives
+
 ## Log
 
 - Plan written. Earlier work: `holtmail-blob`, `blob-fs`, `blob-s3`, `holtmail-mime` (committed and pushed).
@@ -180,4 +187,5 @@ The maintainer asked that everything be managed in the web app (the CLI stays) a
 - Lead review: `mise run check` green (98 Rust tests, 94 web tests, knip clean). Docker image rebuilt; setup → archive → upload → import works in the container.
 - Phase 4 (remote images) done: proxy, three reading modes with an IP warning, per-archive saving with dedup by URL and by content. End-to-end with the real binary: blocked by default, proxied URLs rewritten, a loopback image refused (404), saving records "not a public address" and "host not found". Fetching from the real internet was not exercised; tests use fakes.
 - Phase 5 done: images of older mail only on request, retry of failed images, originals on request even with saved copies, outbound image proxy (UI or config, sealed), a task list with progress and logs. End-to-end with the real binary: enabling starts nothing, older mail runs as a task with a log, retry runs, an unreachable proxy is refused, a reachable one is stored without its password in the clear.
+- Phase 6 done: per-account and server-wide sync intervals from the web app, next sync shown, connections editable with a sign-in check. Checked with the real binary: intervals change the next sync time, an unreachable new server is refused and nothing is stored, failed syncs show in Tasks.
 

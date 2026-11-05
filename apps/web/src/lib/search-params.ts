@@ -21,6 +21,14 @@ export function parseSearchRouteSearch(search: Record<string, unknown>): SearchR
   return { q: text(search.q) ?? '', ...parseMailSearch(search) }
 }
 
+export interface LabelRouteSearch extends MailSearch {
+  name: string
+}
+
+export function parseLabelRouteSearch(search: Record<string, unknown>): LabelRouteSearch {
+  return { name: text(search.name) ?? '', ...parseMailSearch(search) }
+}
+
 export type AddMail = 'connect' | 'import'
 
 export interface ArchivesSettingsSearch {

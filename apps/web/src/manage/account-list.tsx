@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -24,11 +25,13 @@ import {
 } from '@holtmail/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ArchiveIcon,
   ClockIcon,
   EllipsisIcon,
   FileArchiveIcon,
   ServerCogIcon,
   KeyRoundIcon,
+  LogInIcon,
   MailIcon,
   PauseIcon,
   PencilIcon,
@@ -41,10 +44,18 @@ import { useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { type AccountTone, accountState } from '../lib/accounts.ts'
-import { formatInterval, formatNextSync, intervalChoices } from '../lib/schedule.ts'
+import { isOAuthProvider, oauthProviderNames, switchableProvider } from '../lib/oauth.ts'
+import {
+  formatInterval,
+  formatMinAge,
+  formatNextSync,
+  intervalChoices,
+  minAgeOptions,
+} from '../lib/schedule.ts'
 import { strings } from '../strings.ts'
 import { ConfirmDialog, TextDialog } from './confirm-dialog.tsx'
 import { EditConnectionDialog } from './edit-connection.tsx'
+import { OAuthSignInDialog } from './oauth-sign-in.tsx'
 
 const t = strings.accounts
 
@@ -113,11 +124,17 @@ function AccountRow({
 }) {
   const now = useNow(30_000)
   const queryClient = useQueryClient()
-  const [dialog, setDialog] = useState<'rename' | 'password' | 'edit' | 'remove' | null>(null)
+  const [dialog, setDialog] = useState<
+    'rename' | 'password' | 'edit' | 'remove' | 'sign-in' | null
+  >(null)
   const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
   const state = accountState(account, now)
   const imported = account.kind === 'import'
   const Icon = imported ? FileArchiveIcon : MailIcon
+  const oauth = isOAuthProvider(account.oauth_provider) ? account.oauth_provider : undefined
+  const switchTo = switchableProvider(account)
+  const signInWith = oauth ?? switchTo
+  const token = account.jmap?.auth === 'token'
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['archives'] })
   const sync = useMutation({ mutationFn: () => syncAccount(account.id), onSettled: refresh })
@@ -128,6 +145,10 @@ function AccountRow({
   const every = useMutation({
     mutationFn: (minutes: number | null) =>
       updateAccount(account.id, { sync_interval_minutes: minutes }),
+    onSettled: refresh,
+  })
+  const minAge = useMutation({
+    mutationFn: (days: number | null) => updateAccount(account.id, { min_age_days: days }),
     onSettled: refresh,
   })
   const next =
@@ -149,6 +170,17 @@ function AccountRow({
           {account.address && account.address !== account.name && (
             <span className="truncate font-mono text-xs text-fg-subtle">{account.address}</span>
           )}
+          {oauth && (
+            <span className="hidden shrink-0 text-xs text-fg-subtle sm:inline">
+              {strings.oauth.provider(oauthProviderNames[oauth])}
+            </span>
+          )}
+          {account.kind === 'jmap' && (
+            <span className="hidden shrink-0 text-xs text-fg-subtle sm:inline">{t.jmap}</span>
+          )}
+          {account.kind === 'graph' && (
+            <span className="hidden shrink-0 text-xs text-fg-subtle sm:inline">{t.graph}</span>
+          )}
         </span>
         <span className="flex min-w-0 items-center gap-2 text-xs">
           <StatusDot tone={state.tone} />
@@ -162,17 +194,24 @@ function AccountRow({
       </div>
       {manage && (
         <>
-          {!imported && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t.syncNow}
-              title={t.syncNow}
-              disabled={account.status.running || sync.isPending}
-              onClick={() => sync.mutate()}
-            >
-              <RefreshCwIcon className={cn(account.status.running && 'animate-spin')} />
+          {account.needs_sign_in && oauth ? (
+            <Button variant="secondary" onClick={() => setDialog('sign-in')}>
+              <LogInIcon />
+              {strings.oauth.signInAgain}
             </Button>
+          ) : (
+            !imported && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t.syncNow}
+                title={t.syncNow}
+                disabled={account.status.running || sync.isPending}
+                onClick={() => sync.mutate()}
+              >
+                <RefreshCwIcon className={cn(account.status.running && 'animate-spin')} />
+              </Button>
+            )
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -191,11 +230,24 @@ function AccountRow({
                     {account.enabled ? <PauseIcon /> : <PlayIcon />}
                     {account.enabled ? t.pause : t.resume}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setDialog('password')}>
-                    <KeyRoundIcon />
-                    {t.password}
-                  </DropdownMenuItem>
-                  {account.connection && (
+                  {oauth ? (
+                    <DropdownMenuItem onSelect={() => setDialog('sign-in')}>
+                      <LogInIcon />
+                      {strings.oauth.signInAgain}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onSelect={() => setDialog('password')}>
+                      <KeyRoundIcon />
+                      {token ? t.token : t.password}
+                    </DropdownMenuItem>
+                  )}
+                  {switchTo && (
+                    <DropdownMenuItem onSelect={() => setDialog('sign-in')}>
+                      <LogInIcon />
+                      {strings.oauth.switchTo(oauthProviderNames[switchTo])}
+                    </DropdownMenuItem>
+                  )}
+                  {(account.connection || account.jmap) && (
                     <DropdownMenuItem onSelect={() => setDialog('edit')}>
                       <ServerCogIcon />
                       {t.edit}
@@ -229,6 +281,32 @@ function AccountRow({
                       </DropdownMenuRadioGroup>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <ArchiveIcon />
+                      {t.minAge}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-64">
+                      <DropdownMenuRadioGroup
+                        value={String(account.min_age_days ?? 0)}
+                        onValueChange={(value) => minAge.mutate(Number(value) || null)}
+                      >
+                        <DropdownMenuRadioItem value="0">
+                          {formatMinAge(null)}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuSeparator />
+                        {minAgeOptions(account.min_age_days).map((days) => (
+                          <DropdownMenuRadioItem key={days} value={String(days)}>
+                            {formatMinAge(days)}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="h-auto py-2 leading-4">
+                        {t.minAgeHint}
+                      </DropdownMenuLabel>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </>
               )}
               <DropdownMenuSeparator />
@@ -259,9 +337,9 @@ function AccountRow({
       <TextDialog
         open={dialog === 'password'}
         onOpenChange={(open) => setDialog(open ? 'password' : null)}
-        title={t.passwordTitle}
-        description={t.passwordLead}
-        label={strings.connect.password}
+        title={token ? t.tokenTitle : t.passwordTitle}
+        description={token ? t.tokenLead : t.passwordLead}
+        label={token ? strings.jmap.token : strings.connect.password}
         password
         onSave={async (password) => {
           await updateAccount(account.id, { password })
@@ -273,6 +351,15 @@ function AccountRow({
         open={dialog === 'edit'}
         onOpenChange={(open) => setDialog(open ? 'edit' : null)}
       />
+      {signInWith && (
+        <OAuthSignInDialog
+          account={account}
+          provider={signInWith}
+          reason={oauth ? 'again' : 'switch'}
+          open={dialog === 'sign-in'}
+          onOpenChange={(open) => setDialog(open ? 'sign-in' : null)}
+        />
+      )}
       <ConfirmDialog
         open={dialog === 'remove'}
         onOpenChange={(open) => setDialog(open ? 'remove' : null)}

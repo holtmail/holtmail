@@ -15,6 +15,7 @@ function account(
     name: 'Ada',
     kind: 'imap',
     enabled: true,
+    needs_sign_in: false,
     ...overrides,
     status: { running: false, new_messages: 0, ...status },
   }
@@ -50,6 +51,12 @@ describe('accountState', () => {
       label: 'Refused',
     })
     expect(accountState(account({ enabled: false }), now).tone).toBe('paused')
+  })
+
+  test('an expired sign-in wins over the last error', () => {
+    expect(
+      accountState(account({ needs_sign_in: true, oauth_provider: 'google' }, { error: 'x' }), now),
+    ).toEqual({ tone: 'error', label: 'Sign-in expired' })
   })
 
   test('finished runs say when and how much', () => {

@@ -68,9 +68,9 @@ describe('groupFolders', () => {
     ]
     const idle = { running: false, new_messages: 0 }
     const groups = groupFolders(folders, [
-      { id: 'a', name: 'Alpha', kind: 'imap', enabled: true, status: idle },
-      { id: 'b', name: 'Beta', kind: 'imap', enabled: true, status: idle },
-      { id: 'c', name: 'Empty', kind: 'imap', enabled: true, status: idle },
+      { id: 'a', name: 'Alpha', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
+      { id: 'b', name: 'Beta', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
+      { id: 'c', name: 'Empty', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
     ])
     expect(groups.map((group) => group.name)).toEqual(['Alpha', 'Beta', 'z'])
   })

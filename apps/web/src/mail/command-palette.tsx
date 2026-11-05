@@ -2,6 +2,7 @@ import {
   accountsQuery,
   archivesQuery,
   foldersQuery,
+  labelsQuery,
   sessionQuery,
   syncAccount,
 } from '@holtmail/api-client'
@@ -19,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
+  DownloadIcon,
   FileUpIcon,
   KeyboardIcon,
   MailIcon,
@@ -27,9 +29,11 @@ import {
   SearchIcon,
   SettingsIcon,
   SunMoonIcon,
+  TagIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { exportFormats, exportHref } from '../lib/export.ts'
 import { orderFolders } from '../lib/folders.ts'
 import { isMac } from '../lib/keymap.ts'
 import { manages } from '../lib/roles.ts'
@@ -54,6 +58,7 @@ export function CommandPalette({
   const archives = useQuery(archivesQuery)
   const folders = useQuery(foldersQuery(archiveId))
   const ordered = useMemo(() => orderFolders(folders.data ?? []), [folders.data])
+  const labels = useQuery(labelsQuery(archiveId))
   const accounts = useQuery(accountsQuery(archiveId))
   const canManage = manages(useQuery(sessionQuery).data?.role)
   const queryClient = useQueryClient()
@@ -145,6 +150,29 @@ export function CommandPalette({
             )
           })}
         </CommandGroup>
+        {(labels.data?.length ?? 0) > 0 && (
+          <CommandGroup heading={strings.command.labels}>
+            {labels.data?.map((label) => (
+              <CommandItem
+                key={label.name}
+                value={`label ${label.name}`}
+                onSelect={() =>
+                  run(
+                    () =>
+                      void navigate({
+                        to: '/a/$archiveId/label',
+                        params: { archiveId },
+                        search: { name: label.name },
+                      }),
+                  )
+                }
+              >
+                <TagIcon />
+                <span className="truncate">{label.name}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {(archives.data?.length ?? 0) > 1 && (
           <CommandGroup heading={strings.command.archives}>
             {archives.data?.map((archive) => (
@@ -216,6 +244,21 @@ export function CommandPalette({
               )}
             </>
           )}
+          {exportFormats.map((format) => (
+            <CommandItem
+              key={format}
+              value={`action export download ${format}`}
+              onSelect={() =>
+                run(() => {
+                  const href = exportHref(archiveId, { kind: 'all' }, format)
+                  if (href) window.location.assign(href)
+                })
+              }
+            >
+              <DownloadIcon />
+              {strings.command.exportAs[format]}
+            </CommandItem>
+          ))}
           <CommandItem value="action shortcuts" onSelect={() => run(onShowShortcuts)}>
             <KeyboardIcon />
             {strings.command.showShortcuts}

@@ -12,8 +12,9 @@ import {
   FileVideoIcon,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 
-import { type AttachmentKind, attachmentKind } from '../lib/attachments.ts'
+import { type AttachmentKind, attachmentKind, opensInBrowser } from '../lib/attachments.ts'
 import { formatSize } from '../lib/format.ts'
 import { strings } from '../strings.ts'
 
@@ -50,7 +51,9 @@ function AttachmentTile({ attachment }: { attachment: Attachment }) {
   const kind = attachmentKind(attachment.content_type, attachment.filename)
   const Icon = icons[kind]
   const name = attachment.filename || attachment.content_type
-  const viewable = kind === 'image' || kind === 'pdf'
+  const viewable = opensInBrowser(attachment.content_type)
+  const [thumbnailFailed, setThumbnailFailed] = useState(false)
+  const thumbnail = thumbnailFailed ? undefined : (attachment.thumbnail_url ?? undefined)
   return (
     <a
       href={attachment.url}
@@ -65,12 +68,13 @@ function AttachmentTile({ attachment }: { attachment: Attachment }) {
       )}
     >
       <span className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-bg-subtle text-fg-subtle">
-        {kind === 'image' ? (
+        {thumbnail ? (
           <img
-            src={attachment.url}
+            src={thumbnail}
             alt=""
             loading="lazy"
             decoding="async"
+            onError={() => setThumbnailFailed(true)}
             className="size-full object-cover"
           />
         ) : (

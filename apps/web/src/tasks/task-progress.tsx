@@ -12,9 +12,11 @@ export function TaskProgress({ task, className }: { task: Task; className?: stri
       ? 'bg-danger'
       : task.state === 'cancelled'
         ? 'bg-fg-subtle'
-        : task.state === 'done'
-          ? 'bg-success'
-          : 'bg-accent'
+        : task.state === 'interrupted'
+          ? 'bg-warning'
+          : task.state === 'done'
+            ? 'bg-success'
+            : 'bg-accent'
   return (
     <div
       role="progressbar"

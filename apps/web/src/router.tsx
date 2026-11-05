@@ -16,6 +16,7 @@ import { parseLoginSearch, parseSetupSearch, safeNext } from './lib/auth.ts'
 import { manages } from './lib/roles.ts'
 import {
   parseArchivesSettingsSearch,
+  parseLabelRouteSearch,
   parseMailSearch,
   parseSearchRouteSearch,
 } from './lib/search-params.ts'
@@ -174,6 +175,16 @@ const folderRoute = createRoute({
   },
 })
 
+const labelRoute = createRoute({
+  getParentRoute: () => archiveRoute,
+  path: 'label',
+  validateSearch: parseLabelRouteSearch,
+  component: function LabelList() {
+    const { name } = useSearch({ from: '/a/$archiveId/label' })
+    return <MessageListPane source={{ kind: 'label', label: name }} />
+  },
+})
+
 const searchRoute = createRoute({
   getParentRoute: () => archiveRoute,
   path: 'search',
@@ -198,7 +209,7 @@ const routeTree = rootRoute.addChildren([
     readingSettingsRoute,
     profileSettingsRoute,
   ]),
-  archiveRoute.addChildren([allMailRoute, folderRoute, searchRoute]),
+  archiveRoute.addChildren([allMailRoute, folderRoute, labelRoute, searchRoute]),
 ])
 
 export function createAppRouter(queryClient: QueryClient) {

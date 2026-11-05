@@ -3,9 +3,11 @@ export const operators = [
   'to:',
   'subject:',
   'has:attachment',
+  'attachment:',
   'before:',
   'after:',
   'in:',
+  'label:',
   'is:unread',
 ] as const
 

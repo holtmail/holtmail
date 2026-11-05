@@ -2,6 +2,7 @@ import {
   ApiError,
   archivesQuery,
   foldersQuery,
+  labelsQuery,
   messagesInfiniteQuery,
   type MessageSummary,
   searchInfiniteQuery,
@@ -27,19 +28,23 @@ import { senderLabel } from '../lib/address.ts'
 import { isFlagged, isUnread } from '../lib/flags.ts'
 import { formatCount, formatListDate } from '../lib/format.ts'
 import { groupByDay, type ListRow } from '../lib/group.ts'
+import { listChips } from '../lib/labels.ts'
 import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
 import { EmptyArchive, EmptyState } from './empty-state.tsx'
+import { ExportMenu } from './export-menu.tsx'
 import { SearchField } from './search-field.tsx'
 import { folderLabel } from './sidebar.tsx'
 
 export type ListSource =
   | { kind: 'all' }
   | { kind: 'folder'; folderId: string }
+  | { kind: 'label'; label: string }
   | { kind: 'search'; q: string }
 
 function sourceKey(source: ListSource): string {
   if (source.kind === 'folder') return `f:${source.folderId}`
+  if (source.kind === 'label') return `l:${source.label}`
   if (source.kind === 'search') return `s:${source.q}`
   return 'all'
 }
@@ -55,11 +60,12 @@ const headerRem = 2
 export function MessageListPane({ source }: { source: ListSource }) {
   const { archiveId } = useMail()
   const folderId = source.kind === 'folder' ? source.folderId : undefined
+  const label = source.kind === 'label' ? source.label : undefined
   const q = source.kind === 'search' ? source.q : ''
   const isSearch = source.kind === 'search'
 
   const listing = useInfiniteQuery({
-    ...messagesInfiniteQuery(archiveId, folderId),
+    ...messagesInfiniteQuery(archiveId, folderId, label),
     enabled: !isSearch,
   })
   const search = useInfiniteQuery({
@@ -68,6 +74,7 @@ export function MessageListPane({ source }: { source: ListSource }) {
   })
   const archives = useQuery(archivesQuery)
   const folders = useQuery(foldersQuery(archiveId))
+  const labels = useQuery({ ...labelsQuery(archiveId), enabled: label !== undefined })
 
   const items = useMemo(() => {
     const pages: { items: MessageSummary[] }[] =
@@ -90,6 +97,9 @@ export function MessageListPane({ source }: { source: ListSource }) {
     const folder = folders.data?.find((f) => f.id === source.folderId)
     title = folder ? folderLabel(folder) : ''
     total = folder?.messages
+  } else if (label !== undefined) {
+    title = label
+    total = labels.data?.find((item) => item.name === label)?.messages
   } else if (isSearch) {
     title = strings.list.searchResults
     total = search.data?.pages[0]?.total
@@ -101,11 +111,16 @@ export function MessageListPane({ source }: { source: ListSource }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="grid shrink-0 gap-3 border-b border-border px-4 pt-3 pb-3">
-        <div className="flex h-8 items-baseline gap-3">
+        <div className="flex h-8 items-center gap-3">
           <h1 className="truncate text-lg font-medium">{title}</h1>
           {total !== undefined && (
             <span className="ml-auto shrink-0 font-mono text-xs text-fg-subtle tabular-nums">
               {isSearch ? strings.list.results(formatCount(total)) : formatCount(total)}
+            </span>
+          )}
+          {items.length > 0 && (
+            <span className={cn('-mr-2 shrink-0', total === undefined && 'ml-auto')}>
+              <ExportMenu archiveId={archiveId} source={source} />
             </span>
           )}
         </div>
@@ -128,13 +143,18 @@ export function MessageListPane({ source }: { source: ListSource }) {
             icon={isSearch ? <SearchXIcon /> : <MailOpenIcon />}
             title={strings.list.emptyTitle}
           >
-            {isSearch ? strings.list.emptySearch : strings.list.emptyFolder}
+            {isSearch
+              ? strings.list.emptySearch
+              : label !== undefined
+                ? strings.list.emptyLabel
+                : strings.list.emptyFolder}
           </EmptyState>
         )
       ) : (
         <VirtualList
           key={sourceKey(source)}
           items={items}
+          label={label}
           hasNextPage={active.hasNextPage}
           isFetchingNextPage={active.isFetchingNextPage}
           fetchNextPage={() => void active.fetchNextPage()}
@@ -166,11 +186,13 @@ function SkeletonRows() {
 
 function VirtualList({
   items,
+  label,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
 }: {
   items: MessageSummary[]
+  label?: string
   hasNextPage: boolean
   isFetchingNextPage: boolean
   fetchNextPage: () => void
@@ -350,7 +372,12 @@ function VirtualList({
               }}
             >
               {row ? (
-                <Row row={row} now={now} selected={row.kind === 'item' && row.item.id === cursor} />
+                <Row
+                  row={row}
+                  now={now}
+                  label={label}
+                  selected={row.kind === 'item' && row.item.id === cursor}
+                />
               ) : (
                 <LoaderRow />
               )}
@@ -365,10 +392,12 @@ function VirtualList({
 function Row({
   row,
   now,
+  label,
   selected,
 }: {
   row: ListRow<MessageSummary>
   now: number
+  label?: string
   selected: boolean
 }) {
   if (row.kind === 'header') {
@@ -385,6 +414,7 @@ function Row({
   const sender = senderLabel(message.from, strings.list.noSender)
   const unread = isUnread(message.flags)
   const flagged = isFlagged(message.flags)
+  const chips = listChips(message.labels, label)
   return (
     <div
       id={`msg-${message.id}`}
@@ -418,11 +448,22 @@ function Row({
             <span className="sr-only">{strings.list.inThread(message.thread_count)}</span>
           </span>
         )}
-        {message.attachment_count > 0 && (
-          <PaperclipIcon
-            aria-label={strings.list.attachments(message.attachment_count)}
-            className="size-3 shrink-0 self-center text-fg-subtle"
-          />
+        {message.attachment_match ? (
+          <span
+            title={strings.list.attachmentMatch}
+            className="flex shrink-0 items-center gap-1 self-center border border-border px-1 text-xs leading-4 text-fg-muted"
+          >
+            <PaperclipIcon aria-hidden className="size-3" />
+            <span aria-hidden>{strings.list.inAttachment}</span>
+            <span className="sr-only">{strings.list.attachmentMatch}</span>
+          </span>
+        ) : (
+          message.attachment_count > 0 && (
+            <PaperclipIcon
+              aria-label={strings.list.attachments(message.attachment_count)}
+              className="size-3 shrink-0 self-center text-fg-subtle"
+            />
+          )
         )}
         {flagged && (
           <StarIcon
@@ -437,8 +478,29 @@ function Row({
           {formatListDate(message.date, now)}
         </time>
       </div>
-      <div className={cn('truncate text-sm text-fg', unread ? 'font-medium' : 'font-normal')}>
-        {message.subject || strings.list.noSubject}
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={cn('truncate text-sm text-fg', unread ? 'font-medium' : 'font-normal')}>
+          {message.subject || strings.list.noSubject}
+        </span>
+        {chips.shown.length > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <span className="sr-only">{strings.labels.shown}</span>
+            {chips.shown.map((name) => (
+              <span
+                key={name}
+                className="max-w-24 truncate border border-border px-1 text-xs leading-4 text-fg-subtle"
+              >
+                {name}
+              </span>
+            ))}
+            {chips.more > 0 && (
+              <span className="font-mono text-xs text-fg-subtle tabular-nums">
+                <span aria-hidden>+{chips.more}</span>
+                <span className="sr-only">{strings.labels.more(chips.more)}</span>
+              </span>
+            )}
+          </span>
+        )}
       </div>
       <div className="truncate text-sm text-fg-subtle">{message.preview}</div>
     </div>

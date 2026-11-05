@@ -19,6 +19,7 @@ export function useLiveArchive(archiveId: string): boolean {
       ? window.setInterval(() => {
           void queryClient.invalidateQueries({ queryKey: ['archives'], exact: true })
           void queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'folders'] })
+          void queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'labels'] })
           void queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'messages'] })
         }, 4_000)
       : undefined

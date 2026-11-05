@@ -5,6 +5,7 @@ import {
   archivesQuery,
   type Folder,
   foldersQuery,
+  labelsQuery,
   sessionQuery,
   tasksQuery,
 } from '@holtmail/api-client'
@@ -28,6 +29,7 @@ import {
   FolderIcon,
   InboxIcon,
   ListChecksIcon,
+  TagIcon,
   PlusIcon,
   type LucideIcon,
   MailIcon,
@@ -42,6 +44,7 @@ import { useNow } from '../hooks/use-now.ts'
 import { accountState } from '../lib/accounts.ts'
 import { groupFolders } from '../lib/folders.ts'
 import { formatCount } from '../lib/format.ts'
+import { orderLabels } from '../lib/labels.ts'
 import { manages } from '../lib/roles.ts'
 import { runningTasks } from '../lib/tasks.ts'
 import { StatusDot } from '../manage/account-list.tsx'
@@ -106,10 +109,12 @@ function Count({ value, unread = 0 }: { value: number; unread?: number }) {
 
 export function Sidebar({
   folderId,
+  label,
   isAllMail,
   onNavigate,
 }: {
   folderId?: string
+  label?: string
   isAllMail: boolean
   onNavigate?: () => void
 }) {
@@ -182,9 +187,54 @@ export function Sidebar({
             </ul>
           </section>
         ))}
+        <Labels archiveId={archiveId} current={label} onNavigate={onNavigate} />
       </div>
       <Sources accounts={accounts.data ?? []} archiveId={archiveId} onNavigate={onNavigate} />
     </div>
+  )
+}
+
+function Labels({
+  archiveId,
+  current,
+  onNavigate,
+}: {
+  archiveId: string
+  current?: string
+  onNavigate?: () => void
+}) {
+  const labels = useQuery(labelsQuery(archiveId))
+  const ordered = useMemo(() => orderLabels(labels.data ?? []), [labels.data])
+  if (labels.isError) {
+    return <p className="mt-4 px-4 text-sm text-danger">{strings.labels.loadFailed}</p>
+  }
+  if (ordered.length === 0) return null
+  return (
+    <section aria-label={strings.labels.heading} className="mt-4">
+      <h2 className="flex h-8 items-center px-4 text-xs text-fg-subtle">
+        {strings.labels.heading}
+      </h2>
+      <ul>
+        {ordered.map(({ label, name, depth }) => (
+          <li key={label.name}>
+            <Link
+              to="/a/$archiveId/label"
+              params={{ archiveId }}
+              search={{ name: label.name }}
+              aria-current={label.name === current ? 'page' : undefined}
+              className={itemClass}
+              style={{ paddingLeft: `calc(var(--spacing) * ${4 + depth * 4})` }}
+              title={label.name}
+              onClick={onNavigate}
+            >
+              <TagIcon />
+              <span className="truncate">{name}</span>
+              <Count value={label.messages} unread={label.unread} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

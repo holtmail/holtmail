@@ -10,6 +10,22 @@ export function formatInterval(minutes: number): string {
   return `Every ${minutes} minutes`
 }
 
+const minAgeChoices = [7, 30, 90, 365] as const
+
+export function minAgeOptions(current: number | null | undefined): number[] {
+  const choices: number[] = [...minAgeChoices]
+  if (current && !choices.includes(current)) choices.push(current)
+  return choices.toSorted((a, b) => a - b)
+}
+
+export function formatMinAge(days: number | null | undefined): string {
+  if (!days) return 'All mail, as it arrives'
+  if (days === 1) return 'Mail older than a day'
+  if (days === 7) return 'Mail older than a week'
+  if (days === 365) return 'Mail older than a year'
+  return `Mail older than ${days} days`
+}
+
 export function formatNextSync(at: number, now: number, locale?: string): string {
   const left = at - now
   if (left < 60_000) return 'Next sync in under a minute'

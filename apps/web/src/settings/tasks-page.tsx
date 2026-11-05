@@ -33,6 +33,7 @@ const stateBadge: Record<string, BadgeProps['variant'] | undefined> = {
   done: 'success',
   failed: 'danger',
   cancelled: 'outline',
+  interrupted: 'warning',
 }
 
 const kindLabels: Record<string, string | undefined> = t.taskKinds
@@ -105,6 +106,9 @@ function TaskRow({ task, archive }: { task: Task; archive: string | undefined })
             <Badge variant={stateBadge[task.state] ?? 'outline'}>{stateLabel(task.state)}</Badge>
           </div>
           <span className="truncate text-xs text-fg-muted">{task.summary}</span>
+          {task.state === 'interrupted' && (
+            <span className="text-xs text-warning">{t.taskInterrupted}</span>
+          )}
           <span className="font-mono text-xs text-fg-subtle tabular-nums">
             {[archive, t.taskStarted(formatAgo(task.started_at, now)), timing]
               .filter(Boolean)

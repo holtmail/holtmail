@@ -54,3 +54,17 @@ export function attachmentKind(contentType: string, filename?: string | null): A
   if (type.startsWith('text/') || /word|document/.test(type)) return 'text'
   return 'other'
 }
+
+const shownInBrowser = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'application/pdf',
+])
+
+/** Whether the server serves this type for viewing rather than as a download. */
+export function opensInBrowser(contentType: string): boolean {
+  return shownInBrowser.has(contentType.toLowerCase().split(';')[0]?.trim() ?? '')
+}

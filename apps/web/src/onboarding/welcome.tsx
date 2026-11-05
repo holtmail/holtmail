@@ -1,20 +1,22 @@
-import { createArchive } from '@holtmail/api-client'
+import { accountsQuery, archivesQuery, createArchive } from '@holtmail/api-client'
 import { distance, duration, transition } from '@holtmail/tokens'
 import { Button, cn } from '@holtmail/ui'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeftIcon, ArrowRightIcon, FileUpIcon, MailPlusIcon } from 'lucide-react'
 import { AnimatePresence, m, type Variants } from 'motion/react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import { Wordmark } from '../auth/auth-screen.tsx'
 import { Field, FormError } from '../auth/field.tsx'
 import { useLiveArchive } from '../hooks/use-live-archive.ts'
+import { useOAuthReturn } from '../hooks/use-oauth-return.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { UserMenu } from '../mail/user-menu.tsx'
 import { AccountList } from '../manage/account-list.tsx'
-import { ConnectImapForm } from '../manage/connect-imap.tsx'
+import { ConnectMailbox } from '../manage/connect-mailbox.tsx'
 import { ImportFiles } from '../manage/import-files.tsx'
+import { OAuthReturnNote } from '../manage/oauth-sign-in.tsx'
 import { strings } from '../strings.ts'
 
 const t = strings.welcome
@@ -37,6 +39,33 @@ export function WelcomeScreen() {
   const [name, setName] = useState<string>(t.defaultName)
   const [archiveId, setArchiveId] = useState<string>()
   const [uploaded, setUploaded] = useState(false)
+  const [signedIn, dismissSignedIn] = useOAuthReturn()
+
+  useEffect(() => {
+    let current = true
+    const resume = async () => {
+      if (!signedIn) return
+      const archives = await queryClient.fetchQuery(archivesQuery)
+      const lists = await Promise.all(
+        archives.map((archive) => queryClient.fetchQuery(accountsQuery(archive.id))),
+      )
+      const owner =
+        signedIn.kind === 'done'
+          ? archives.find((_, index) =>
+              lists[index]?.some((account) => account.id === signedIn.account),
+            )
+          : undefined
+      const empty = archives.find((_, index) => lists[index]?.length === 0)
+      const id = (owner ?? empty ?? archives[0])?.id
+      if (!current || !id) return
+      setArchiveId(id)
+      setStep(signedIn.kind === 'done' ? 'progress' : 'connect')
+    }
+    resume().catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [signedIn, queryClient])
 
   const create = useMutation({
     mutationFn: async (next: Step) => {
@@ -140,8 +169,13 @@ export function WelcomeScreen() {
                   )}
                 </div>
               )}
+              {step === 'connect' && signedIn?.kind === 'error' && (
+                <div className="mb-8">
+                  <OAuthReturnNote result={signedIn} onDismiss={dismissSignedIn} />
+                </div>
+              )}
               {step === 'connect' && archiveId && (
-                <ConnectImapForm
+                <ConnectMailbox
                   archiveId={archiveId}
                   onConnected={() => setStep('progress')}
                   onCancel={back}

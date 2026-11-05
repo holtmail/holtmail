@@ -7,6 +7,7 @@ import {
 } from '@holtmail/api-client'
 import { distance, transition } from '@holtmail/tokens'
 import {
+  Badge,
   Button,
   type ButtonProps,
   Dialog,
@@ -21,6 +22,7 @@ import {
   TooltipTrigger,
 } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   ArrowLeftIcon,
   CheckIcon,
@@ -30,12 +32,14 @@ import {
   LinkIcon,
   MailIcon,
   ReplyIcon,
+  TagIcon,
 } from 'lucide-react'
 import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { replyMailto, senderLabel } from '../lib/address.ts'
+import { readerLabels } from '../lib/labels.ts'
 import { strings } from '../strings.ts'
 import { ids } from './context.ts'
 import { EmptyState } from './empty-state.tsx'
@@ -79,6 +83,7 @@ export function Reader({ messageId, onBack }: { messageId: string; onBack?: () =
                   {strings.reader.messagesInThread(messages.length)}
                 </p>
               )}
+              <LabelChips archiveId={message.data.archive_id} labels={message.data.labels} />
             </header>
             <Thread key={messageId} messages={messages} selectedId={messageId} />
           </m.div>
@@ -87,6 +92,28 @@ export function Reader({ messageId, onBack }: { messageId: string; onBack?: () =
         )}
       </div>
     </div>
+  )
+}
+
+function LabelChips({ archiveId, labels }: { archiveId: string; labels: string[] }) {
+  if (labels.length === 0) return null
+  return (
+    <ul aria-label={strings.labels.shown} className="mt-3 flex flex-wrap gap-1">
+      {readerLabels(labels).map((name) => (
+        <li key={name}>
+          <Badge
+            variant="outline"
+            asChild
+            className="max-w-48 border-border text-fg-muted transition-colors duration-fast-02 ease-productive hover:border-border-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+          >
+            <Link to="/a/$archiveId/label" params={{ archiveId }} search={{ name }} title={name}>
+              <TagIcon aria-hidden />
+              <span className="truncate">{name}</span>
+            </Link>
+          </Badge>
+        </li>
+      ))}
+    </ul>
   )
 }
 

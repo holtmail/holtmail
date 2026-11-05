@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { attachmentKind } from './attachments.ts'
+import { attachmentKind, opensInBrowser } from './attachments.ts'
 
 describe('attachmentKind', () => {
   test('by content type', () => {
@@ -13,5 +13,15 @@ describe('attachmentKind', () => {
   test('by extension when the type is generic', () => {
     expect(attachmentKind('application/octet-stream', 'Budget.XLSX')).toBe('spreadsheet')
     expect(attachmentKind('application/octet-stream', 'notes')).toBe('other')
+  })
+})
+
+describe('opensInBrowser', () => {
+  test('only types the server shows inline', () => {
+    expect(opensInBrowser('image/JPEG')).toBe(true)
+    expect(opensInBrowser('application/pdf; name=a.pdf')).toBe(true)
+    expect(opensInBrowser('image/svg+xml')).toBe(false)
+    expect(opensInBrowser('image/bmp')).toBe(false)
+    expect(opensInBrowser('text/html')).toBe(false)
   })
 })

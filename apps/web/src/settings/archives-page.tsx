@@ -51,15 +51,18 @@ import { AnimatePresence, m } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useLiveArchive } from '../hooks/use-live-archive.ts'
+import { useOAuthReturn } from '../hooks/use-oauth-return.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { formatCount, formatSize } from '../lib/format.ts'
 import { formatInterval, intervalChoices } from '../lib/schedule.ts'
 import type { AddMail } from '../lib/search-params.ts'
 import { remoteImagesTask } from '../lib/tasks.ts'
+import { ExportSubmenu } from '../mail/export-menu.tsx'
 import { AccountList } from '../manage/account-list.tsx'
 import { ConfirmDialog, TextDialog } from '../manage/confirm-dialog.tsx'
-import { ConnectImapForm } from '../manage/connect-imap.tsx'
+import { ConnectMailbox } from '../manage/connect-mailbox.tsx'
 import { ImportFiles } from '../manage/import-files.tsx'
+import { OAuthReturnNote } from '../manage/oauth-sign-in.tsx'
 import { strings } from '../strings.ts'
 import { TaskProgress } from '../tasks/task-progress.tsx'
 import { SettingsPage } from './settings-layout.tsx'
@@ -71,6 +74,7 @@ export function ArchivesPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
+  const [signedIn, dismissSignedIn] = useOAuthReturn()
 
   return (
     <SettingsPage
@@ -83,6 +87,7 @@ export function ArchivesPage() {
         </Button>
       }
     >
+      {signedIn && <OAuthReturnNote result={signedIn} onDismiss={dismissSignedIn} />}
       <SyncScheduleCard />
       {archives.isPending && <Skeleton className="h-48" />}
       <div className="grid gap-12">
@@ -169,6 +174,7 @@ function ArchiveSection({ archive }: { archive: Archive }) {
               <PencilIcon />
               {t.renameArchive}
             </DropdownMenuItem>
+            {archive.stats.messages > 0 && <ExportSubmenu archiveId={archive.id} />}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-danger" onSelect={() => setDialog('delete')}>
               <Trash2Icon />
@@ -208,7 +214,7 @@ function ArchiveSection({ archive }: { archive: Archive }) {
           {adding === 'import' ? (
             <ImportFiles archiveId={archive.id} />
           ) : (
-            <ConnectImapForm
+            <ConnectMailbox
               archiveId={archive.id}
               onConnected={() => setAdding(undefined)}
               onCancel={() => setAdding(undefined)}

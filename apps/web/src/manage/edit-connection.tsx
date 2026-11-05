@@ -1,4 +1,9 @@
-import { type Account, updateAccount } from '@holtmail/api-client'
+import {
+  type Account,
+  type JmapAuth,
+  type JmapConnection,
+  updateAccount,
+} from '@holtmail/api-client'
 import {
   Dialog,
   DialogContent,
@@ -14,6 +19,9 @@ import { type FormEvent, useState } from 'react'
 
 import { Field, FormError, PasswordField, SubmitButton } from '../auth/field.tsx'
 import { authErrorMessage } from '../lib/auth.ts'
+import { effectivePort, imapMoves, jmapMoves } from '../lib/connection.ts'
+import { isJmapAuth } from '../lib/jmap.ts'
+import { isOAuthProvider, oauthProviderNames } from '../lib/oauth.ts'
 import { defaultPort, type Security } from '../lib/providers.ts'
 import { parseExcluded } from '../lib/schedule.ts'
 import { strings } from '../strings.ts'
@@ -41,7 +49,16 @@ export function EditConnectionDialog({
           <DialogTitle>{a.editTitle}</DialogTitle>
           <DialogDescription>{a.editLead}</DialogDescription>
         </DialogHeader>
-        {open && <EditConnectionForm account={account} onDone={() => onOpenChange(false)} />}
+        {open &&
+          (account.jmap ? (
+            <EditJmapForm
+              account={account}
+              current={account.jmap}
+              onDone={() => onOpenChange(false)}
+            />
+          ) : (
+            <EditConnectionForm account={account} onDone={() => onOpenChange(false)} />
+          ))}
       </DialogContent>
     </Dialog>
   )
@@ -59,6 +76,11 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
   const [username, setUsername] = useState(current?.username ?? '')
   const [excluded, setExcluded] = useState(current?.exclude.join(', ') ?? '')
   const [password, setPassword] = useState('')
+  const oauth = account.oauth_provider
+  const fixedBy = oauth && (isOAuthProvider(oauth) ? oauthProviderNames[oauth] : oauth)
+  const moved =
+    !oauth &&
+    (!current || imapMoves(current, { host, port: effectivePort(port, security), security }))
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -70,7 +92,7 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
           username: username.trim(),
           exclude: parseExcluded(excluded),
         },
-        password: password || null,
+        password: oauth ? null : password || null,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['archives'] })
@@ -90,6 +112,7 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
           label={t.host}
           value={host}
           required
+          readOnly={Boolean(oauth)}
           autoCapitalize="none"
           spellCheck={false}
           placeholder="imap.example.com"
@@ -99,6 +122,7 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
           label={t.port}
           value={port}
           inputMode="numeric"
+          readOnly={Boolean(oauth)}
           placeholder={String(defaultPort(security))}
           onChange={(event) => setPort(event.target.value.replace(/\D/g, '').slice(0, 5))}
         />
@@ -110,6 +134,7 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
           value={security}
           onValueChange={(value) => isSecurity(value) && setSecurity(value)}
           className="w-fit"
+          disabled={Boolean(oauth)}
           aria-label={t.security}
         >
           {securities.map((value) => (
@@ -124,6 +149,7 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
             {t.plainWarning}
           </p>
         )}
+        {fixedBy && <p className="text-xs text-fg-subtle">{a.fixedServer(fixedBy)}</p>}
       </div>
       <Field
         label={t.username}
@@ -134,12 +160,115 @@ function EditConnectionForm({ account, onDone }: { account: Account; onDone: () 
         spellCheck={false}
         onChange={(event) => setUsername(event.target.value)}
       />
+      {!oauth && (
+        <PasswordField
+          label={t.password}
+          autoComplete="off"
+          required={moved}
+          hint={moved ? a.passwordForServer : a.keepPassword}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+      )}
+      <Field
+        label={a.excluded}
+        hint={a.excludedHint}
+        value={excluded}
+        autoCapitalize="none"
+        spellCheck={false}
+        onChange={(event) => setExcluded(event.target.value)}
+      />
+      <FormError message={mutation.isError ? authErrorMessage(mutation.error) : undefined} />
+      <SubmitButton busy={mutation.isPending} label={a.save} busyLabel={t.busy} />
+    </form>
+  )
+}
+
+function EditJmapForm({
+  account,
+  current,
+  onDone,
+}: {
+  account: Account
+  current: JmapConnection
+  onDone: () => void
+}) {
+  const j = strings.jmap
+  const queryClient = useQueryClient()
+  const [url, setUrl] = useState(current.url)
+  const [auth, setAuth] = useState<JmapAuth>(isJmapAuth(current.auth) ? current.auth : 'password')
+  const [username, setUsername] = useState(current.username)
+  const [secret, setSecret] = useState('')
+  const [excluded, setExcluded] = useState(current.exclude.join(', '))
+  const authChanged = auth !== current.auth
+  const moved = jmapMoves(current.url, url)
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateAccount(account.id, {
+        jmap: {
+          url: url.trim(),
+          auth,
+          username: auth === 'password' ? username.trim() : '',
+          exclude: parseExcluded(excluded),
+        },
+        password: secret.trim() || null,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['archives'] })
+      onDone()
+    },
+  })
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    mutation.mutate()
+  }
+
+  return (
+    <form className="grid gap-6" onSubmit={submit}>
+      <Field
+        label={j.url}
+        hint={j.urlHint}
+        value={url}
+        required
+        type="url"
+        inputMode="url"
+        autoCapitalize="none"
+        spellCheck={false}
+        onChange={(event) => setUrl(event.target.value)}
+      />
+      <div className="grid gap-2">
+        <span className="text-xs text-fg-muted">{j.auth}</span>
+        <ToggleGroup
+          type="single"
+          value={auth}
+          onValueChange={(value) => isJmapAuth(value) && setAuth(value)}
+          className="w-fit"
+          aria-label={j.auth}
+        >
+          <ToggleGroupItem value="password">{j.auths.password}</ToggleGroupItem>
+          <ToggleGroupItem value="token">{j.auths.token}</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+      {auth === 'password' && (
+        <Field
+          label={t.username}
+          hint={t.usernameHint}
+          value={username}
+          required
+          autoCapitalize="none"
+          spellCheck={false}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+      )}
       <PasswordField
-        label={t.password}
+        label={auth === 'token' ? j.token : t.password}
         autoComplete="off"
-        hint={a.keepPassword}
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
+        required={authChanged || moved}
+        hint={authChanged ? j.newSecret : moved ? j.secretForServer : j.keepSecret}
+        value={secret}
+        onChange={(event) => setSecret(event.target.value)}
       />
       <Field
         label={a.excluded}

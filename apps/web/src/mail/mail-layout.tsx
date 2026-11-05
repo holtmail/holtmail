@@ -33,7 +33,9 @@ export function MailLayout() {
   const { archiveId = '', folderId } = useParams({ strict: false })
   const { m: selectedId } = useSearch({ strict: false })
   const isSearch = Boolean(useMatch({ from: '/a/$archiveId/search', shouldThrow: false }))
-  const isAllMail = !folderId && !isSearch
+  const labelMatch = useMatch({ from: '/a/$archiveId/label', shouldThrow: false })
+  const label = labelMatch?.search.name
+  const isAllMail = !folderId && !isSearch && !labelMatch
   const layout = useLayout()
   const navigate = useNavigate()
   const folders = useQuery(foldersQuery(archiveId))
@@ -118,6 +120,7 @@ export function MailLayout() {
   const sidebar = (
     <Sidebar
       folderId={folderId}
+      label={label}
       isAllMail={isAllMail}
       onNavigate={layout === 'narrow' ? () => setSheetOpen(false) : undefined}
     />

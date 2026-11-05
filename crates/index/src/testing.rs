@@ -28,8 +28,10 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
     report.body = "The numbers for the quarter are attached. Zoë checked them.".into();
     report.attachment_names = vec!["q3-report.pdf".into()];
     report.has_attachments = true;
+    report.attachment_text = "Lighthouse maintenance schedule for the quarter".into();
     report.folders = vec!["Work/Reports".into()];
     report.flags = vec!["\\Seen".into(), "\\Flagged".into()];
+    report.labels = vec!["Projects/2025".into(), "Важное".into()];
     let mut cafe = doc(archive, "Café opening", "carol@example.org", "Carol Ng", 1);
     cafe.body = "New café near the office. Lunch there on Friday?".into();
     let elsewhere = doc(
@@ -99,6 +101,20 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
             vec![report.message_id],
         ),
         (vec![Clause::Filename("q3".into())], vec![report.message_id]),
+        (
+            vec![Clause::Text("lighthouse".into())],
+            vec![report.message_id],
+        ),
+        (
+            vec![Clause::Phrase("maintenance schedule".into())],
+            vec![report.message_id],
+        ),
+        (vec![Clause::Body("lighthouse".into())], vec![]),
+        (
+            vec![Clause::Attachment("lighthouses".into())],
+            vec![report.message_id],
+        ),
+        (vec![Clause::Attachment("numbers".into())], vec![]),
         (vec![Clause::HasAttachment], vec![report.message_id]),
         (
             vec![Clause::In("work/reports".into())],
@@ -111,6 +127,19 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         (
             vec![Clause::Flag("\\Flagged".into())],
             vec![report.message_id],
+        ),
+        (
+            vec![Clause::Label("projects/2025".into())],
+            vec![report.message_id],
+        ),
+        (
+            vec![Clause::Label("ВАЖНОЕ".into())],
+            vec![report.message_id],
+        ),
+        (vec![Clause::Label("projects".into())], vec![]),
+        (
+            vec![Clause::Not(Box::new(Clause::Label("Projects/2025".into())))],
+            vec![lunch.message_id, cafe.message_id],
         ),
         (
             vec![Clause::Not(Box::new(Clause::Flag("\\Seen".into())))],
@@ -135,6 +164,41 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
     for (clauses, expected) in cases {
         let found = search(&*index, archive, clauses.clone(), SortOrder::Newest).await;
         assert_eq!(found, expected, "wrong result for {clauses:?}");
+    }
+
+    for (clauses, expected) in [
+        (
+            vec![Clause::Text("lighthouse".into())],
+            vec![report.message_id],
+        ),
+        (
+            vec![Clause::Text("quarter lighthouse".into())],
+            vec![report.message_id],
+        ),
+        (
+            vec![Clause::Phrase("maintenance schedule".into())],
+            vec![report.message_id],
+        ),
+        (vec![Clause::Text("quarter".into())], vec![]),
+        (vec![Clause::Text("lunch".into())], vec![]),
+        (vec![Clause::HasAttachment], vec![]),
+    ] {
+        let results = index
+            .search(
+                archive,
+                &SearchQuery {
+                    clauses: clauses.clone(),
+                },
+                SortOrder::Newest,
+                0,
+                100,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            results.attachment_hits, expected,
+            "wrong attachment hits for {clauses:?}"
+        );
     }
 
     let relevant = search(
@@ -229,6 +293,7 @@ fn doc(
         attachment_text: String::new(),
         folders: vec!["INBOX".into(), "inbox".into()],
         flags: Vec::new(),
+        labels: Vec::new(),
         date: Timestamp::from_secs(kilo_secs * 1000),
         has_attachments: false,
     }

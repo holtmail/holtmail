@@ -7,10 +7,13 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use holtmail_core::{ArchiveId, MessageId};
 use holtmail_index::*;
-use tantivy::collector::{Count, TopDocs};
+use std::collections::HashSet;
+
+use tantivy::collector::{Count, DocSetCollector, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{
     AllQuery, BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, RangeQuery, TermQuery,
+    TermSetQuery,
 };
 use tantivy::schema::{
     Field, INDEXED, IndexRecordOption, STORED, STRING, Schema, TextFieldIndexing, TextOptions,
@@ -43,6 +46,7 @@ struct Fields {
     all: Field,
     folders: Field,
     flags: Field,
+    labels: Field,
     date: Field,
     has_attachments: Field,
 }
@@ -61,18 +65,40 @@ struct Inner {
 #[derive(Clone)]
 pub struct TantivyIndex {
     inner: Arc<Inner>,
+    emptied: bool,
 }
 
 impl TantivyIndex {
     /// Opens the index in `dir`, creating it when the directory is empty.
+    ///
+    /// An index written by an older version with other fields cannot be read; it is deleted and
+    /// an empty one takes its place, which [`TantivyIndex::was_emptied`] then reports so the
+    /// caller can rebuild it from the store.
     pub fn open(dir: impl AsRef<Path>) -> Result<Self, IndexError> {
-        std::fs::create_dir_all(dir.as_ref()).map_err(backend)?;
-        let directory = MmapDirectory::open(dir.as_ref()).map_err(backend)?;
+        let dir = dir.as_ref();
+        std::fs::create_dir_all(dir).map_err(backend)?;
         let (schema, fields) = schema();
-        Self::with_index(
-            Index::open_or_create(directory, schema).map_err(backend)?,
-            fields,
-        )
+        let directory = MmapDirectory::open(dir).map_err(backend)?;
+        match Index::open_or_create(directory, schema.clone()) {
+            Ok(index) => Self::with_index(index, fields),
+            Err(tantivy::TantivyError::SchemaError(_)) => {
+                std::fs::remove_dir_all(dir).map_err(backend)?;
+                std::fs::create_dir_all(dir).map_err(backend)?;
+                let directory = MmapDirectory::open(dir).map_err(backend)?;
+                let mut index = Self::with_index(
+                    Index::open_or_create(directory, schema).map_err(backend)?,
+                    fields,
+                )?;
+                index.emptied = true;
+                Ok(index)
+            }
+            Err(error) => Err(backend(error)),
+        }
+    }
+
+    /// Whether [`TantivyIndex::open`] replaced an index of an older version with an empty one.
+    pub fn was_emptied(&self) -> bool {
+        self.emptied
     }
 
     /// An empty index in memory.
@@ -109,6 +135,7 @@ impl TantivyIndex {
                 writer: Mutex::new(writer),
                 reader,
             }),
+            emptied: false,
         })
     }
 }
@@ -132,6 +159,7 @@ fn schema() -> (Schema, Fields) {
         all: builder.add_text_field("all", text),
         folders: builder.add_text_field("folders", STRING),
         flags: builder.add_text_field("flags", STRING),
+        labels: builder.add_text_field("labels", STRING),
         date: builder.add_i64_field("date", INDEXED | tantivy::schema::FAST),
         has_attachments: builder.add_bool_field("has_attachments", INDEXED),
     };
@@ -167,6 +195,9 @@ fn document(fields: &Fields, doc: &IndexDocument) -> TantivyDocument {
     }
     for flag in &doc.flags {
         out.add_text(fields.flags, flag);
+    }
+    for label in &doc.labels {
+        out.add_text(fields.labels, label.to_lowercase());
     }
     out.add_i64(fields.date, doc.date.as_millis());
     out.add_bool(fields.has_attachments, doc.has_attachments);
@@ -236,7 +267,41 @@ impl Inner {
         }
     }
 
-    fn clause(&self, clause: &Clause) -> (Occur, Box<dyn Query>) {
+    fn message_words_query(&self, text: &str, as_phrase: bool) -> Box<dyn Query> {
+        let f = &self.fields;
+        let fields = [f.subject, f.from, f.recipients, f.body, f.filenames];
+        let words = self.analyze(TOKENIZER, text);
+        let any_field = |make: &dyn Fn(Field) -> Box<dyn Query>| -> Box<dyn Query> {
+            Box::new(BooleanQuery::new(
+                fields.iter().map(|&f| (Occur::Should, make(f))).collect(),
+            ))
+        };
+        match words.len() {
+            0 => Box::new(AllQuery),
+            1 => any_field(&|field| self.word_query(field, &words[0], !as_phrase)),
+            _ if as_phrase => any_field(&|field| {
+                Box::new(PhraseQuery::new(
+                    words
+                        .iter()
+                        .map(|w| Term::from_field_text(field, w))
+                        .collect(),
+                ))
+            }),
+            _ => Box::new(BooleanQuery::new(
+                words
+                    .iter()
+                    .map(|w| {
+                        (
+                            Occur::Must,
+                            any_field(&|field| self.word_query(field, w, true)),
+                        )
+                    })
+                    .collect(),
+            )),
+        }
+    }
+
+    fn clause(&self, clause: &Clause, attachments: bool) -> (Occur, Box<dyn Query>) {
         let f = &self.fields;
         let exact = |field: Field, value: &str| -> Box<dyn Query> {
             Box::new(TermQuery::new(
@@ -245,6 +310,8 @@ impl Inner {
             ))
         };
         let query: Box<dyn Query> = match clause {
+            Clause::Text(text) if !attachments => self.message_words_query(text, false),
+            Clause::Phrase(text) if !attachments => self.message_words_query(text, true),
             Clause::Text(text) => self.words_query(f.all, text, false, true),
             Clause::Phrase(text) => self.words_query(f.all, text, true, false),
             Clause::From(text) => self.words_query(f.from, text, true, false),
@@ -252,12 +319,14 @@ impl Inner {
             Clause::Subject(text) => self.words_query(f.subject, text, false, true),
             Clause::Body(text) => self.words_query(f.body, text, false, true),
             Clause::Filename(text) => self.words_query(f.filenames, text, true, false),
+            Clause::Attachment(text) => self.words_query(f.attachment_text, text, false, true),
             Clause::HasAttachment => Box::new(TermQuery::new(
                 Term::from_field_bool(f.has_attachments, true),
                 IndexRecordOption::Basic,
             )),
             Clause::In(folder) => exact(f.folders, &folder.to_lowercase()),
             Clause::Flag(flag) => exact(f.flags, flag),
+            Clause::Label(label) => exact(f.labels, &label.to_lowercase()),
             Clause::Before(at) => Box::new(RangeQuery::new(
                 Bound::Unbounded,
                 Bound::Excluded(Term::from_field_i64(f.date, at.as_millis())),
@@ -267,7 +336,7 @@ impl Inner {
                 Bound::Unbounded,
             )),
             Clause::Not(inner) => {
-                let (occur, query) = self.clause(inner);
+                let (occur, query) = self.clause(inner, attachments);
                 let negated = match occur {
                     Occur::MustNot => Occur::Must,
                     _ => Occur::MustNot,
@@ -278,7 +347,12 @@ impl Inner {
         (Occur::Must, query)
     }
 
-    fn query(&self, archive: ArchiveId, query: &SearchQuery) -> Result<BooleanQuery, IndexError> {
+    fn query(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        attachments: bool,
+    ) -> Result<BooleanQuery, IndexError> {
         if query.clauses.len() > MAX_CLAUSES {
             return Err(IndexError::Invalid(format!(
                 "at most {MAX_CLAUSES} conditions in one search"
@@ -291,7 +365,7 @@ impl Inner {
                 IndexRecordOption::Basic,
             )),
         )];
-        parts.extend(query.clauses.iter().map(|c| self.clause(c)));
+        parts.extend(query.clauses.iter().map(|c| self.clause(c, attachments)));
         Ok(BooleanQuery::new(parts))
     }
 
@@ -303,7 +377,8 @@ impl Inner {
         offset: u32,
         limit: u32,
     ) -> Result<SearchResults, IndexError> {
-        let query = self.query(archive, query)?;
+        let clauses = query;
+        let query = self.query(archive, clauses, true)?;
         let searcher = self.reader.searcher();
         let limit = limit.clamp(1, 1000) as usize;
         let top = TopDocs::with_limit(limit).and_offset(offset as usize);
@@ -334,10 +409,55 @@ impl Inner {
                 .ok_or_else(|| IndexError::Invalid("document without a message id".into()))?;
             hits.push(id);
         }
+        let attachment_hits = if has_words(&clauses.clauses) && !hits.is_empty() {
+            self.attachment_hits(archive, clauses, &hits)?
+        } else {
+            Vec::new()
+        };
         Ok(SearchResults {
             hits,
             total: total as u64,
+            attachment_hits,
         })
+    }
+
+    fn attachment_hits(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        hits: &[MessageId],
+    ) -> Result<Vec<MessageId>, IndexError> {
+        let ids = TermSetQuery::new(
+            hits.iter()
+                .map(|id| Term::from_field_text(self.fields.message_id, &id.to_string())),
+        );
+        let without = BooleanQuery::new(vec![
+            (
+                Occur::Must,
+                Box::new(self.query(archive, query, false)?) as Box<dyn Query>,
+            ),
+            (Occur::Must, Box::new(ids)),
+        ]);
+        let searcher = self.reader.searcher();
+        let mut matched = HashSet::new();
+        for address in searcher
+            .search(&without, &DocSetCollector)
+            .map_err(backend)?
+        {
+            let doc: TantivyDocument = searcher.doc(address).map_err(backend)?;
+            if let Some(id) = doc
+                .get_first(self.fields.message_id)
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<MessageId>().ok())
+            {
+                matched.insert(id);
+            }
+        }
+        Ok(hits
+            .iter()
+            .filter(|id| !matched.contains(id))
+            .copied()
+            .collect())
     }
 }
 
@@ -405,6 +525,14 @@ impl SearchIndex for TantivyIndex {
     }
 }
 
+fn has_words(clauses: &[Clause]) -> bool {
+    clauses.iter().any(|clause| match clause {
+        Clause::Text(_) | Clause::Phrase(_) => true,
+        Clause::Not(inner) => has_words(std::slice::from_ref(inner)),
+        _ => false,
+    })
+}
+
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, IndexError> + Send + 'static,
 ) -> Result<T, IndexError> {
@@ -447,6 +575,18 @@ mod tests {
         assert_eq!(results.total, 0);
     }
 
+    #[test]
+    fn empties_an_index_of_an_older_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut old = Schema::builder();
+        old.add_text_field("message_id", STRING | STORED);
+        Index::open_or_create(MmapDirectory::open(dir.path()).unwrap(), old.build()).unwrap();
+        let index = TantivyIndex::open(dir.path()).unwrap();
+        assert!(index.was_emptied());
+        drop(index);
+        assert!(!TantivyIndex::open(dir.path()).unwrap().was_emptied());
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn finds_other_forms_of_russian_and_english_words() {
         let index = TantivyIndex::in_memory().unwrap();
@@ -463,6 +603,7 @@ mod tests {
             attachment_text: String::new(),
             folders: Vec::new(),
             flags: Vec::new(),
+            labels: Vec::new(),
             date: holtmail_core::Timestamp::from_secs(1),
             has_attachments: false,
         };

@@ -4,7 +4,7 @@ The contract for full-text search. The index is derived data: it can be dropped 
 
 ## Documents
 
-`IndexDocument` holds what search needs about one message: ids (`message_id`, `archive_id`, `thread_id`), `subject`, `from`, `recipients` (To, Cc and Bcc together), `body` (plain text), `attachment_names`, `attachment_text`, `folders` (paths and role names such as `inbox`), `flags`, `date` and `has_attachments`.
+`IndexDocument` holds what search needs about one message: ids (`message_id`, `archive_id`, `thread_id`), `subject`, `from`, `recipients` (To, Cc and Bcc together), `body` (plain text), `attachment_names`, `attachment_text`, `folders` (paths and role names such as `inbox`), `flags`, `labels`, `date` and `has_attachments`.
 
 ## Queries
 
@@ -17,9 +17,11 @@ A `SearchQuery` is a list of `Clause`s that must all match; an empty list matche
 | `From`, `To` | Words in a sender's or recipient's name or address, as a phrase (`example.org` matches `ada@example.org`) |
 | `Subject`, `Body` | Every word in that field |
 | `Filename` | Words in an attachment name, as a phrase |
+| `Attachment(words)` | Every word in `attachment_text`; words match as in `Text` |
 | `HasAttachment` | At least one attachment that is not inline |
 | `In(folder)` | A folder path or role, case-insensitive |
 | `Flag(flag)` | An exact flag, e.g. `\Seen` |
+| `Label(label)` | A whole label name, case-insensitive: `projects/2025` finds `Projects/2025`, `projects` does not |
 | `Before(t)`, `After(t)` | `date < t`, `date >= t` |
 | `Not(clause)` | The inner clause does not match |
 
@@ -32,7 +34,7 @@ Words match after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` f
 | `put(documents)` | Replaces documents with the same `message_id`; visible after `commit` |
 | `remove(ids)` | Missing ids are ignored; visible after `commit` |
 | `commit()` | Makes earlier changes visible and durable |
-| `search(archive, query, sort, offset, limit)` | Hits in `Newest` or `Relevance` order and the total number of matches; never returns messages of another archive |
+| `search(archive, query, sort, offset, limit)` | Hits in `Newest` or `Relevance` order and the total number of matches; never returns messages of another archive. `attachment_hits` lists the hits of the page that match only through `attachment_text` (without it they would not match), in hit order; empty when the query has no `Text` or `Phrase` |
 
 `IndexError::Invalid` for a query that cannot run (too many clauses), `IndexError::Backend` for failures that may succeed on retry.
 

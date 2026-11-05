@@ -35,6 +35,8 @@ pub struct IndexDocument {
     pub folders: Vec<String>,
     /// Flags from the source, e.g. `\Seen`, `\Flagged`.
     pub flags: Vec<String>,
+    /// Labels, e.g. `Inbox`, `Projects/2025`.
+    pub labels: Vec<String>,
     /// The date lists sort by.
     pub date: Timestamp,
     /// Whether the message has attachments that are not inline.
@@ -59,12 +61,17 @@ pub enum Clause {
     Body(String),
     /// Words in an attachment's file name.
     Filename(String),
+    /// Words in text extracted from attachments. Every word must match.
+    Attachment(String),
     /// Has an attachment that is not inline.
     HasAttachment,
     /// In a folder with this path or role, case-insensitive.
     In(String),
     /// Has this flag, e.g. `\Seen`.
     Flag(String),
+    /// Carries this label, compared whole and case-insensitive: `projects` does not find
+    /// `Projects/2025`.
+    Label(String),
     /// Dated before this time.
     Before(Timestamp),
     /// Dated at or after this time.
@@ -98,6 +105,10 @@ pub struct SearchResults {
     pub hits: Vec<MessageId>,
     /// How many messages match in total.
     pub total: u64,
+    /// The hits that match only through text extracted from their attachments: without
+    /// [`IndexDocument::attachment_text`] they would not match. A subset of `hits`, in the same
+    /// order; empty when the query has no [`Clause::Text`] or [`Clause::Phrase`].
+    pub attachment_hits: Vec<MessageId>,
 }
 
 /// Why an index operation failed.

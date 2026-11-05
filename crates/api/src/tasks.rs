@@ -79,3 +79,40 @@ pub(crate) async fn set_image_proxy(
         })?;
     Ok(Json(proxy.into()))
 }
+
+#[utoipa::path(
+    get,
+    path = "/api/sync-schedule",
+    responses((status = 200, body = SyncScheduleDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto)),
+)]
+pub(crate) async fn get_sync_schedule(State(state): AppState) -> Json<SyncScheduleDto> {
+    Json(schedule_dto(state.mailboxes.sync_schedule()))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/sync-schedule",
+    request_body = SyncScheduleRequest,
+    responses((status = 200, body = SyncScheduleDto), (status = 400, description = "Above a week, or set in the server's config", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto)),
+)]
+pub(crate) async fn set_sync_schedule(
+    State(state): AppState,
+    Json(request): Json<SyncScheduleRequest>,
+) -> ApiResult<Json<SyncScheduleDto>> {
+    let schedule = state
+        .mailboxes
+        .set_sync_schedule(request.minutes)
+        .await
+        .map_err(|error| match error {
+            MailboxError::Invalid(message) => ApiError::bad_request(message),
+            MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
+        })?;
+    Ok(Json(schedule_dto(schedule)))
+}
+
+fn schedule_dto(schedule: crate::SyncSchedule) -> SyncScheduleDto {
+    SyncScheduleDto {
+        minutes: schedule.minutes,
+        from_config: schedule.from_config,
+    }
+}

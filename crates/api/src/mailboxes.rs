@@ -18,9 +18,25 @@ pub trait Mailboxes: Send + Sync {
         account: NewImapAccount,
     ) -> Result<Account, MailboxError>;
 
-    /// Signs in with the account's settings and `password`, then stores the password sealed.
-    /// Nothing changes when signing in fails.
-    async fn set_password(&self, account: &Account, password: String) -> Result<(), MailboxError>;
+    /// Changes how `account` connects and how often it is synced, as `change` says. A new
+    /// connection or password is checked by signing in first, and nothing is stored when that
+    /// fails. Returns the stored account. `Invalid` for an import account, for a change while the
+    /// account syncs, or for an interval out of range.
+    async fn configure(
+        &self,
+        account: &Account,
+        change: AccountChange,
+    ) -> Result<Account, MailboxError>;
+
+    /// How `account` connects and its own sync interval, as stored.
+    fn details(&self, account: &Account) -> AccountDetails;
+
+    /// The sync interval of accounts without their own.
+    fn sync_schedule(&self) -> SyncSchedule;
+
+    /// Sets the sync interval of accounts without their own, in minutes; 0 syncs them only on
+    /// request. `Invalid` above a week, or when the server's config sets it.
+    async fn set_sync_schedule(&self, minutes: u64) -> Result<SyncSchedule, MailboxError>;
 
     /// Starts syncing `account` in the background. Does nothing when a sync of it is already
     /// running.
@@ -184,6 +200,68 @@ pub struct AccountStatus {
     pub finished_at: Option<Timestamp>,
     /// Why the last run failed, if it did. Safe to show: never holds mail or secrets.
     pub error: Option<String>,
+    /// When the scheduler will sync it next; `None` for accounts it does not sync.
+    pub next_sync_at: Option<Timestamp>,
+}
+
+/// How an IMAP account connects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImapConnection {
+    /// Server host name.
+    pub host: String,
+    /// The port to connect to; the default of `security` when not set.
+    pub port: u16,
+    /// `tls`, `starttls` or `plain`.
+    pub security: String,
+    /// User name, often the address.
+    pub username: String,
+    /// Folder paths that are not archived.
+    pub exclude: Vec<String>,
+}
+
+/// A new connection for an IMAP account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionChange {
+    /// Server host name.
+    pub host: String,
+    /// The default port of `security` when `None`.
+    pub port: Option<u16>,
+    /// `tls`, `starttls` or `plain`.
+    pub security: String,
+    /// User name, often the address.
+    pub username: String,
+    /// Folder paths not to archive.
+    pub exclude: Vec<String>,
+}
+
+/// Changes to an account; `None` keeps what is stored.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccountChange {
+    /// Where and as whom to sign in.
+    pub connection: Option<ConnectionChange>,
+    /// A new password; never logged or returned.
+    pub password: Option<String>,
+    /// The account's own sync interval in minutes, 0 for only on request; `Some(None)` follows
+    /// the server's interval again.
+    pub sync_interval_minutes: Option<Option<u64>>,
+}
+
+/// What [`Mailboxes::details`] knows about an account.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccountDetails {
+    /// For IMAP accounts.
+    pub connection: Option<ImapConnection>,
+    /// Its own sync interval in minutes; `None` follows the server's.
+    pub sync_interval_minutes: Option<u64>,
+}
+
+/// The sync interval of accounts without their own.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SyncSchedule {
+    /// Minutes between syncs; 0 means only on request.
+    pub minutes: u64,
+    /// Set by the server's config, so it cannot be changed from the API.
+    pub from_config: bool,
 }
 
 /// Why a mailbox action was refused.

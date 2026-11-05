@@ -33,8 +33,9 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 use dto::*;
 pub use mailboxes::{
-    AccountStatus, ImageProxy, MailboxError, Mailboxes, NewImapAccount, RemoteImageJob, Task,
-    TaskKind, TaskLevel, TaskLine, TaskState,
+    AccountChange, AccountDetails, AccountStatus, ConnectionChange, ImageProxy, ImapConnection,
+    MailboxError, Mailboxes, NewImapAccount, RemoteImageJob, SyncSchedule, Task, TaskKind,
+    TaskLevel, TaskLine, TaskState,
 };
 pub use session::{CurrentUser, SESSION_COOKIE};
 
@@ -117,6 +118,10 @@ pub fn router(state: ApiState) -> Router {
             post(manage::start_remote_images),
         )
         .route("/api/tasks", get(tasks::list_tasks))
+        .route(
+            "/api/sync-schedule",
+            get(tasks::get_sync_schedule).put(tasks::set_sync_schedule),
+        )
         .route("/api/tasks/{id}/cancel", post(tasks::cancel_task))
         .route(
             "/api/image-proxy",
@@ -189,6 +194,8 @@ pub fn openapi_json() -> String {
         tasks::cancel_task,
         tasks::get_image_proxy,
         tasks::set_image_proxy,
+        tasks::get_sync_schedule,
+        tasks::set_sync_schedule,
         routes::get_thread,
     ),
     components(schemas(
@@ -212,6 +219,10 @@ pub fn openapi_json() -> String {
         TaskLineDto,
         ImageProxyDto,
         ImageProxyRequest,
+        ImapConnectionDto,
+        ConnectionRequest,
+        SyncScheduleDto,
+        SyncScheduleRequest,
         FolderDto,
         AddressDto,
         MessageSummary,

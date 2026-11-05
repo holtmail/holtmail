@@ -5,7 +5,7 @@ use holtmail_store::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{AccountStatus, ImageProxy, Task, TaskKind, TaskLevel, TaskState};
+use crate::{AccountDetails, AccountStatus, ImageProxy, Task, TaskKind, TaskLevel, TaskState};
 use utoipa::{IntoParams, ToSchema};
 
 /// An archive with its totals.
@@ -113,6 +113,52 @@ pub struct AccountDto {
     pub address: Option<String>,
     pub enabled: bool,
     pub status: AccountStatusDto,
+    /// How an IMAP account connects; `null` for imports.
+    pub connection: Option<ImapConnectionDto>,
+    /// Its own minutes between syncs, 0 for only on request; `null` follows the server's.
+    pub sync_interval_minutes: Option<u64>,
+}
+
+/// How an IMAP account connects. The password is never returned.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ImapConnectionDto {
+    pub host: String,
+    pub port: u16,
+    /// `tls`, `starttls` or `plain`.
+    pub security: String,
+    pub username: String,
+    /// Folder paths that are not archived.
+    pub exclude: Vec<String>,
+}
+
+/// A new connection for an IMAP account, checked by signing in before it is stored.
+#[derive(Deserialize, ToSchema)]
+pub struct ConnectionRequest {
+    pub host: String,
+    /// The default of `security` when missing.
+    pub port: Option<u16>,
+    /// `tls` (default), `starttls` or `plain`.
+    pub security: Option<String>,
+    pub username: String,
+    /// Folder paths not to archive.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+/// The sync interval of accounts without their own.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SyncScheduleDto {
+    /// Minutes between syncs; 0 means only on request.
+    pub minutes: u64,
+    /// Set in the server's config; the API cannot change it.
+    pub from_config: bool,
+}
+
+/// A new sync interval for accounts without their own.
+#[derive(Deserialize, ToSchema)]
+pub struct SyncScheduleRequest {
+    /// Minutes between syncs, at most a week; 0 syncs only on request.
+    pub minutes: u64,
 }
 
 /// What is happening to an account now and how its last sync or import ended.
@@ -126,6 +172,8 @@ pub struct AccountStatusDto {
     pub finished_at: Option<i64>,
     /// Why the last run failed.
     pub error: Option<String>,
+    /// When the scheduler syncs it next, Unix milliseconds; `null` when it does not.
+    pub next_sync_at: Option<i64>,
 }
 
 /// A new archive.
@@ -218,6 +266,22 @@ pub struct AccountUpdateRequest {
     pub enabled: Option<bool>,
     /// A new password; checked by signing in before it is stored.
     pub password: Option<String>,
+    /// A new server, user name and excluded folders; checked by signing in, with `password`
+    /// when given and the stored one otherwise.
+    pub connection: Option<ConnectionRequest>,
+    /// Its own minutes between syncs, 0 for only on request; `null` follows the server's again.
+    /// Missing keeps it.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u64>)]
+    pub sync_interval_minutes: Option<Option<u64>>,
+}
+
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// Query of an upload.
@@ -545,7 +609,7 @@ impl ArchiveDto {
 }
 
 impl AccountDto {
-    pub fn new(account: Account, status: AccountStatus) -> Self {
+    pub fn new(account: Account, status: AccountStatus, details: AccountDetails) -> Self {
         Self {
             id: account.id.to_string(),
             name: account.name,
@@ -557,7 +621,16 @@ impl AccountDto {
                 new_messages: status.new_messages,
                 finished_at: status.finished_at.map(|t| t.as_millis()),
                 error: status.error,
+                next_sync_at: status.next_sync_at.map(|t| t.as_millis()),
             },
+            connection: details.connection.map(|c| ImapConnectionDto {
+                host: c.host,
+                port: c.port,
+                security: c.security,
+                username: c.username,
+                exclude: c.exclude,
+            }),
+            sync_interval_minutes: details.sync_interval_minutes,
         }
     }
 }

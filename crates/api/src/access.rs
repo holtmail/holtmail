@@ -56,7 +56,10 @@ pub(crate) async fn check(
     let read = matches!(*request.method(), Method::GET | Method::HEAD);
     let archive = match parts.as_slice() {
         ["me", ..] => return next.run(request).await,
-        ["users" | "accounts" | "tasks" | "image-proxy", ..] => return forbidden(),
+        [
+            "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule",
+            ..,
+        ] => return forbidden(),
         _ if !read => return forbidden(),
         ["archives"] => return next.run(request).await,
         ["archives", id, ..] => id.parse::<ArchiveId>().ok(),

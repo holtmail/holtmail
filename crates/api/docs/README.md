@@ -55,7 +55,7 @@ The setup token comes from the setup link the server prints at start while there
 | --- | --- |
 | `GET /api/archives` | Archives with totals |
 | `GET /api/archives/{id}` | One archive |
-| `GET /api/archives/{id}/accounts` | Its accounts |
+| `GET /api/archives/{id}/accounts` | Its accounts with `status` (including `next_sync_at`), `connection` (host, port, security, user name and excluded folders of IMAP accounts; `null` for members and imports; never the password) and their own `sync_interval_minutes` |
 | `GET /api/archives/{id}/folders` | Its folders with message and `unread` counts (`unread`: not removed, without `\Seen`) |
 | `GET /api/archives/{id}/messages?folder&after&limit` | A page of message summaries, newest first; `next` continues. Each summary has `flags` (in `folder` when given, else the union over the folders it is in), `thread_count` and `folder_ids` |
 | `GET /api/archives/{id}/search?q&sort&offset&limit` | Search with the [query language](../../query/docs/README.md); `400` with the parser's message for a bad query |
@@ -79,7 +79,8 @@ Owners and admins only.
 | `DELETE /api/archives/{id}` | | `204` after removing the archive, its index entries and the blobs no other archive uses; `409` while one of its accounts syncs or imports |
 | `POST /api/archives/{id}/accounts` | `{ "host", "port"?, "security"? (tls, starttls, plain), "username", "password", "name"? }` | `201` account, first sync started; `400` with a readable reason when signing in fails |
 | `POST /api/archives/{id}/imports?name=` | the file, `application/octet-stream`, any size | `202` with the import account named after the file (reused for the same name); the import runs in the background. `400` for an empty file |
-| `PATCH /api/accounts/{id}` | `{ "name"?, "enabled"?, "password"? }` | `200` account; a new password is checked by signing in first |
+| `PATCH /api/accounts/{id}` | `{ "name"?, "enabled"?, "password"?, "connection"?: { "host", "port"?, "security"?, "username", "exclude"? }, "sync_interval_minutes"? }` | `200` account. A new connection or password is checked by signing in first (with the stored password when none is given) and nothing is stored when that fails; `400` while the account syncs. `sync_interval_minutes`: minutes, `0` for only on request, `null` to follow the server's again; a missing key keeps it |
+| `GET` / `PUT /api/sync-schedule` | `{ "minutes" }` | The interval of accounts without their own, with `from_config`; `PUT` answers `400` above a week or when the server's config sets it |
 | `DELETE /api/accounts/{id}` | | `204`; its messages stay in the archive. `409` while it syncs or imports |
 | `POST /api/accounts/{id}/sync` | none or `{}` | `202` account; `400` for an import account |
 | `GET /api/users` | | Every user with `created_at` and the `archives` granted to them |
@@ -131,5 +132,5 @@ Images the archive saved (see `save_remote_images`) are pointed at `/remote/{key
 
 `GET` / `PUT /api/image-proxy` read and set the outbound proxy for remote images: `{ "proxy": "socks5h://127.0.0.1:9050" }` or `null`. The answer shows `address` without credentials and `from_config` when the server's config sets it (then `PUT` answers `400`). Setting checks that the proxy accepts connections.
 
-Members get `403` on `/api/tasks` and `/api/image-proxy`. The server provides all of this through `Mailboxes`: `tasks`, `cancel_task`, `start_remote_images`, `image_proxy`, `set_image_proxy`.
+Members get `403` on `/api/tasks`, `/api/image-proxy` and `/api/sync-schedule`. The server provides all of this through `Mailboxes`: `tasks`, `cancel_task`, `start_remote_images`, `image_proxy`, `set_image_proxy`, and for accounts `configure` (connection, password, interval), `details`, `sync_schedule` and `set_sync_schedule`.
 

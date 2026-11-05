@@ -28,6 +28,7 @@ struct FakeMailboxes {
     imported: std::sync::Mutex<Vec<(holtmail_core::AccountId, String, Vec<u8>)>>,
     jobs: std::sync::Mutex<Vec<(holtmail_core::ArchiveId, RemoteImageJob)>>,
     proxy: std::sync::Mutex<ImageProxy>,
+    schedule: std::sync::Mutex<SyncSchedule>,
     cancelled: std::sync::Mutex<Vec<String>>,
 }
 
@@ -99,21 +100,68 @@ impl Mailboxes for FakeMailboxes {
         Ok(created)
     }
 
-    async fn set_password(
+    async fn configure(
         &self,
         account: &holtmail_store::Account,
-        password: String,
-    ) -> Result<(), MailboxError> {
-        if password != "right" {
+        change: AccountChange,
+    ) -> Result<holtmail_store::Account, MailboxError> {
+        if change.password.as_deref().is_some_and(|p| p != "right")
+            || change
+                .connection
+                .as_ref()
+                .is_some_and(|c| c.host != "imap.example.com" && c.host != "mail.example.org")
+        {
             return Err(MailboxError::Invalid("The server refused".into()));
         }
-        let store = self.store.get().unwrap();
         let mut account = account.clone();
-        account.sealed_secret = Some(password.into_bytes());
-        store
+        if let Some(password) = change.password {
+            account.sealed_secret = Some(password.into_bytes());
+        }
+        if let Some(connection) = change.connection {
+            account.settings["host"] = json!(connection.host);
+            account.settings["username"] = json!(connection.username);
+            account.settings["exclude"] = json!(connection.exclude);
+        }
+        if let Some(minutes) = change.sync_interval_minutes {
+            account.settings["every"] = json!(minutes);
+        }
+        self.store
+            .get()
+            .unwrap()
             .update_account(&account)
             .await
-            .map_err(|e| MailboxError::Backend(e.to_string()))
+            .map_err(|e| MailboxError::Backend(e.to_string()))?;
+        Ok(account)
+    }
+
+    fn details(&self, account: &holtmail_store::Account) -> AccountDetails {
+        AccountDetails {
+            connection: account.settings.get("host").map(|host| ImapConnection {
+                host: host.as_str().unwrap_or_default().into(),
+                port: 993,
+                security: "tls".into(),
+                username: account.settings["username"]
+                    .as_str()
+                    .unwrap_or("ada")
+                    .into(),
+                exclude: serde_json::from_value(account.settings["exclude"].clone())
+                    .unwrap_or_default(),
+            }),
+            sync_interval_minutes: account.settings.get("every").and_then(Value::as_u64),
+        }
+    }
+
+    fn sync_schedule(&self) -> SyncSchedule {
+        *self.schedule.lock().unwrap()
+    }
+
+    async fn set_sync_schedule(&self, minutes: u64) -> Result<SyncSchedule, MailboxError> {
+        if minutes > 10_080 {
+            return Err(MailboxError::Invalid("too long".into()));
+        }
+        let mut schedule = self.schedule.lock().unwrap();
+        schedule.minutes = minutes;
+        Ok(*schedule)
     }
 
     async fn sync(&self, account: &holtmail_store::Account) -> Result<(), MailboxError> {
@@ -1005,7 +1053,7 @@ async fn members_read_only_granted_archives() {
             .await;
         assert_eq!(status, StatusCode::OK, "{uri}");
     }
-    for uri in ["/api/tasks", "/api/image-proxy"] {
+    for uri in ["/api/tasks", "/api/image-proxy", "/api/sync-schedule"] {
         let (status, _, _) = f
             .send_as(&member, Request::get(uri).body(Body::empty()).unwrap())
             .await;
@@ -1464,4 +1512,95 @@ async fn sets_the_image_proxy() {
         serde_json::from_slice::<Value>(&body).unwrap()["address"],
         Value::Null
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edits_the_connection_and_the_schedule() {
+    let f = fixture().await;
+    let accounts = format!("/api/archives/{}/accounts", f.archive);
+    let (_, _, body) = f
+        .send(post_json(
+            &accounts,
+            json!({ "host": "imap.example.com", "username": "ada", "password": "right" }),
+        ))
+        .await;
+    let id = serde_json::from_slice::<Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let uri = format!("/api/accounts/{id}");
+
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "connection": { "host": "imap.example.net", "username": "ada" } }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a refused connection was stored"
+    );
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({
+                "connection": {
+                    "host": "mail.example.org",
+                    "username": "ada@example.org",
+                    "exclude": ["Junk"]
+                },
+                "sync_interval_minutes": 60
+            }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["connection"]["host"], "mail.example.org");
+    assert_eq!(account["connection"]["exclude"], json!(["Junk"]));
+    assert_eq!(account["sync_interval_minutes"], 60);
+    assert!(account["connection"].get("password").is_none());
+
+    let (_, _, body) = f
+        .send(request("PATCH", &uri, json!({ "name": "Work" })))
+        .await;
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        account["sync_interval_minutes"], 60,
+        "a missing interval was treated as a change"
+    );
+    let (_, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "sync_interval_minutes": null }),
+        ))
+        .await;
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["sync_interval_minutes"], Value::Null);
+
+    let schedule = f.json("/api/sync-schedule").await;
+    assert_eq!(schedule["minutes"], 0);
+    let (status, _, body) = f
+        .send(request(
+            "PUT",
+            "/api/sync-schedule",
+            json!({ "minutes": 30 }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["minutes"],
+        30
+    );
+    let (status, _, _) = f
+        .send(request(
+            "PUT",
+            "/api/sync-schedule",
+            json!({ "minutes": 20_000 }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

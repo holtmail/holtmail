@@ -1,18 +1,20 @@
 use std::path::Path as FsPath;
 use std::sync::Arc;
 
-use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::{Extension, Json};
 use futures::StreamExt;
 use holtmail_core::{AccountId, ArchiveId};
 use holtmail_store::{Account, AccountKind, MessageQuery, NewAccount};
 use tokio::io::AsyncWriteExt;
 
 use crate::dto::*;
-use crate::mailboxes::{MailboxError, NewImapAccount, RemoteImageJob};
-use crate::{ApiError, ApiResult, ApiState};
+use crate::mailboxes::{
+    AccountChange, ConnectionChange, MailboxError, NewImapAccount, RemoteImageJob,
+};
+use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
 type AppState = State<Arc<ApiState>>;
 
@@ -44,7 +46,8 @@ fn refused(error: MailboxError) -> ApiError {
 
 fn account_dto(state: &ApiState, account: Account) -> AccountDto {
     let status = state.mailboxes.status(account.id);
-    AccountDto::new(account, status)
+    let details = state.mailboxes.details(&account);
+    AccountDto::new(account, status, details)
 }
 
 async fn archive(state: &ApiState, raw: &str) -> ApiResult<ArchiveId> {
@@ -66,13 +69,21 @@ async fn archive(state: &ApiState, raw: &str) -> ApiResult<ArchiveId> {
 pub(crate) async fn list_accounts(
     State(state): AppState,
     Path(raw): Path<String>,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
 ) -> ApiResult<Json<Vec<AccountDto>>> {
     let archive: ArchiveId = id(&raw, "archive")?;
     let accounts = state.store.list_accounts(archive).await?;
+    let manages = crate::access::manages(&user);
     Ok(Json(
         accounts
             .into_iter()
-            .map(|a| account_dto(&state, a))
+            .map(|a| {
+                let mut dto = account_dto(&state, a);
+                if !manages {
+                    dto.connection = None;
+                }
+                dto
+            })
             .collect(),
     ))
 }
@@ -329,7 +340,7 @@ async fn account(state: &ApiState, raw: &str) -> ApiResult<Account> {
     path = "/api/accounts/{id}",
     params(("id" = String, Path, description = "Account id")),
     request_body = AccountUpdateRequest,
-    responses((status = 200, body = AccountDto), (status = 400, description = "An empty name, a password on an import account, or the server refused the new password", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 200, body = AccountDto), (status = 400, description = "An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn update_account(
     State(state): AppState,
@@ -337,23 +348,26 @@ pub(crate) async fn update_account(
     Json(request): Json<AccountUpdateRequest>,
 ) -> ApiResult<Json<AccountDto>> {
     let mut account = account(&state, &raw).await?;
-    if let Some(password) = request.password {
-        if account.kind == AccountKind::Import {
-            return Err(ApiError::bad_request("an import account has no password"));
-        }
-        if password.is_empty() {
-            return Err(ApiError::bad_request("the password is empty"));
-        }
-        state
+    if request.password.as_deref() == Some("") {
+        return Err(ApiError::bad_request("the password is empty"));
+    }
+    let change = AccountChange {
+        connection: request.connection.map(|c| ConnectionChange {
+            host: c.host,
+            port: c.port,
+            security: c.security.unwrap_or_else(|| "tls".into()),
+            username: c.username,
+            exclude: c.exclude,
+        }),
+        password: request.password,
+        sync_interval_minutes: request.sync_interval_minutes,
+    };
+    if change != AccountChange::default() {
+        account = state
             .mailboxes
-            .set_password(&account, password)
+            .configure(&account, change)
             .await
             .map_err(refused)?;
-        account = state
-            .store
-            .get_account(account.id)
-            .await?
-            .ok_or_else(|| ApiError::not_found("account"))?;
     }
     if let Some(new_name) = request.name {
         account.name = name(&new_name, "the name")?;

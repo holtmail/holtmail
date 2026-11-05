@@ -1,0 +1,24 @@
+[package]
+name = "holtmail-extract-basic"
+description = "Text from plain text, HTML, PDF and office attachments, in pure Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-extract.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+lopdf.workspace = true
+mail-parser.workspace = true
+quick-xml.workspace = true
+tokio = { workspace = true, features = ["time"] }
+zip.workspace = true
+
+[dev-dependencies]
+holtmail-extract = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

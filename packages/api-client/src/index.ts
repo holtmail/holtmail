@@ -34,6 +34,9 @@ export type Task = Schemas['TaskDto']
 export type TaskLine = Schemas['TaskLineDto']
 export type ImageProxy = Schemas['ImageProxyDto']
 export type RemoteImageJob = 'older' | 'failed'
+export type ImapConnection = Schemas['ImapConnectionDto']
+export type ConnectionRequest = Schemas['ConnectionRequest']
+export type SyncSchedule = Schemas['SyncScheduleDto']
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -170,6 +173,9 @@ export const startRemoteImages = async (archiveId: string, job: RemoteImageJob) 
 
 export const cancelTask = async (id: string) =>
   done(await client.POST('/api/tasks/{id}/cancel', { ...archivePath(id), headers: json }))
+
+export const setSyncSchedule = async (minutes: number) =>
+  unwrap(await client.PUT('/api/sync-schedule', { body: { minutes } }))
 
 export const setImageProxy = async (proxy: string | null) =>
   unwrap(await client.PUT('/api/image-proxy', { body: { proxy } }))
@@ -319,6 +325,11 @@ export const tasksQuery = queryOptions({
   queryFn: async ({ signal }) => unwrap(await client.GET('/api/tasks', { signal })),
   refetchInterval: (query) =>
     query.state.data?.some((task) => task.state === 'running') ? 1_000 : 10_000,
+})
+
+export const syncScheduleQuery = queryOptions({
+  queryKey: ['sync-schedule'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/sync-schedule', { signal })),
 })
 
 export const imageProxyQuery = queryOptions({

@@ -372,6 +372,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/sync-schedule': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_sync_schedule']
+    put: operations['set_sync_schedule']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/tasks': {
     parameters: {
       query?: never
@@ -459,12 +475,18 @@ export interface components {
     /** @description A mail account of an archive. */
     AccountDto: {
       address?: string | null
+      connection?: components['schemas']['ImapConnectionDto'] | null
       enabled: boolean
       id: string
       /** @description `imap`, `graph`, `jmap` or `import`. */
       kind: string
       name: string
       status: components['schemas']['AccountStatusDto']
+      /**
+       * Format: int64
+       * @description Its own minutes between syncs, 0 for only on request; `null` follows the server's.
+       */
+      sync_interval_minutes?: number | null
     }
     /** @description What is happening to an account now and how its last sync or import ended. */
     AccountStatusDto: {
@@ -480,16 +502,28 @@ export interface components {
        * @description Messages added by the running or last run.
        */
       new_messages: number
+      /**
+       * Format: int64
+       * @description When the scheduler syncs it next, Unix milliseconds; `null` when it does not.
+       */
+      next_sync_at?: number | null
       /** @description A sync or import is running. */
       running: boolean
     }
     /** @description Changes to an account; missing fields stay as they are. */
     AccountUpdateRequest: {
+      connection?: components['schemas']['ConnectionRequest'] | null
       /** @description Paused accounts are not synced. */
       enabled?: boolean | null
       name?: string | null
       /** @description A new password; checked by signing in before it is stored. */
       password?: string | null
+      /**
+       * Format: int64
+       * @description Its own minutes between syncs, 0 for only on request; `null` follows the server's again.
+       *     Missing keeps it.
+       */
+      sync_interval_minutes?: number | null
     }
     /** @description One mailbox of an address header. */
     AddressDto: {
@@ -531,6 +565,20 @@ export interface components {
       size: number
       /** @description Where to download it. */
       url: string
+    }
+    /** @description A new connection for an IMAP account, checked by signing in before it is stored. */
+    ConnectionRequest: {
+      /** @description Folder paths not to archive. */
+      exclude?: string[]
+      host: string
+      /**
+       * Format: int32
+       * @description The default of `security` when missing.
+       */
+      port?: number | null
+      /** @description `tls` (default), `starttls` or `plain`. */
+      security?: string | null
+      username: string
     }
     /** @description An error. */
     ErrorDto: {
@@ -582,6 +630,17 @@ export interface components {
       port?: number | null
       /** @description `tls` (default), `starttls` or `plain`. */
       security?: string | null
+      username: string
+    }
+    /** @description How an IMAP account connects. The password is never returned. */
+    ImapConnectionDto: {
+      /** @description Folder paths that are not archived. */
+      exclude: string[]
+      host: string
+      /** Format: int32 */
+      port: number
+      /** @description `tls`, `starttls` or `plain`. */
+      security: string
       username: string
     }
     /** @description A folder a message is in. */
@@ -791,6 +850,24 @@ export interface components {
       /** Format: int64 */
       oldest?: number | null
     }
+    /** @description The sync interval of accounts without their own. */
+    SyncScheduleDto: {
+      /** @description Set in the server's config; the API cannot change it. */
+      from_config: boolean
+      /**
+       * Format: int64
+       * @description Minutes between syncs; 0 means only on request.
+       */
+      minutes: number
+    }
+    /** @description A new sync interval for accounts without their own. */
+    SyncScheduleRequest: {
+      /**
+       * Format: int64
+       * @description Minutes between syncs, at most a week; 0 syncs only on request.
+       */
+      minutes: number
+    }
     /** @description A background task. */
     TaskDto: {
       account_id?: string | null
@@ -952,7 +1029,7 @@ export interface operations {
           'application/json': components['schemas']['AccountDto']
         }
       }
-      /** @description An empty name, a password on an import account, or the server refused the new password */
+      /** @description An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password */
       400: {
         headers: {
           [name: string]: unknown
@@ -2472,6 +2549,93 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_sync_schedule: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SyncScheduleDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  set_sync_schedule: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SyncScheduleRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SyncScheduleDto']
+        }
+      }
+      /** @description Above a week, or set in the server's config */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }

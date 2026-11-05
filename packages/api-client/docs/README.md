@@ -21,7 +21,7 @@ All requests are same-origin: paths start with `/api`, which the Vite dev server
 
 ### Types
 
-`Archive`, `Account`, `AccountStatus`, `Person`, `Role`, `RemoteMode` (`block`, `proxy`, `direct`), `Task`, `TaskLine`, `ImageProxy`, `RemoteImageJob` (`older`, `failed`), the request bodies (`ArchiveUpdateRequest`, `ImapAccountRequest`, `AccountUpdateRequest`, `NewUserRequest`, `UserUpdateRequest`, `ProfileRequest`, `PasswordRequest`), `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
+`Archive`, `Account`, `AccountStatus`, `Person`, `Role`, `RemoteMode` (`block`, `proxy`, `direct`), `Task`, `TaskLine`, `ImageProxy`, `RemoteImageJob` (`older`, `failed`), `ImapConnection`, `ConnectionRequest`, `SyncSchedule`, the request bodies (`ArchiveUpdateRequest`, `ImapAccountRequest`, `AccountUpdateRequest`, `NewUserRequest`, `UserUpdateRequest`, `ProfileRequest`, `PasswordRequest`), `Folder`, `MessageSummary`, `MessagePage`, `SearchResponse`, `MessageDetail`, `Thread`, `Address`, `Attachment`, `MessageLocation`, `User`, `LoginRequest`, `SetupRequest`: aliases of the generated schemas. Times are Unix milliseconds.
 
 ### Errors
 
@@ -42,6 +42,7 @@ Every failed request throws `ApiError` with `status` (HTTP status), `message`, w
 | `threadQuery(id)`                      | `['threads', id]`                         | `Thread`, oldest message first                                                     |
 | `bodyQuery(id, remote, saved = true)`  | `['messages', id, 'body', remote, saved]` | `{ html, remoteBlocked, savedShown }`; `saved: false` shows originals; never stale |
 | `tasksQuery`                           | `['tasks']`                               | `Task[]`; refetched every second while any runs, every 10 seconds otherwise        |
+| `syncScheduleQuery`                    | `['sync-schedule']`                       | `SyncSchedule`: minutes for accounts without their own, and `from_config`          |
 | `imageProxyQuery`                      | `['image-proxy']`                         | `ImageProxy`                                                                       |
 | `rawQuery(id)`                         | `['messages', id, 'raw']`                 | The original message as text, never stale                                          |
 
@@ -69,6 +70,7 @@ Each resolves with the changed record (or nothing for a delete) and throws `ApiE
 | `createArchive(name)`, `updateArchive(id, { name?, save_remote_images? })`, `deleteArchive(id)` | `POST /api/archives`, `PATCH` / `DELETE /api/archives/{id}`                                                                                                                                    |
 | `addImapAccount(archiveId, request)`                                                            | `POST /api/archives/{id}/accounts`; the server signs in first                                                                                                                                  |
 | `updateAccount(id, request)`, `deleteAccount(id)`, `syncAccount(id)`                            | `PATCH` / `DELETE /api/accounts/{id}`, `POST /api/accounts/{id}/sync`                                                                                                                          |
+| `setSyncSchedule(minutes)`                                                                      | `PUT /api/sync-schedule`; resolves with the new `SyncSchedule`                                                                                                                                 |
 | `uploadImport(archiveId, file, { onProgress, signal })`                                         | `POST /api/archives/{id}/imports?name=` with the file as `application/octet-stream` over `XMLHttpRequest`, so `onProgress(loaded, total)` reports the upload; resolves with the import account |
 | `startRemoteImages(archiveId, job)`, `cancelTask(id)`                                           | `POST /api/archives/{id}/remote-images` (resolves with the task), `POST /api/tasks/{id}/cancel`                                                                                                |
 | `setImageProxy(proxy)`                                                                          | `PUT /api/image-proxy` with a URL or `null`; resolves with the new `ImageProxy`                                                                                                                |

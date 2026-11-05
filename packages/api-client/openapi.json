@@ -116,7 +116,7 @@
             }
           },
           "400": {
-            "description": "An empty name, a password on an import account, or the server refused the new password",
+            "description": "An empty name, a connection or password on an import account, an interval above a week, a change while syncing, or the server refused the new connection or password",
             "content": {
               "application/json": {
                 "schema": {
@@ -1969,6 +1969,98 @@
         "security": [{}]
       }
     },
+    "/api/sync-schedule": {
+      "get": {
+        "tags": ["tasks"],
+        "operationId": "get_sync_schedule",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncScheduleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["tasks"],
+        "operationId": "set_sync_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncScheduleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Above a week, or set in the server's config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "tags": ["tasks"],
@@ -2424,6 +2516,17 @@
           "address": {
             "type": ["string", "null"]
           },
+          "connection": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ImapConnectionDto",
+                "description": "How an IMAP account connects; `null` for imports."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -2439,6 +2542,12 @@
           },
           "status": {
             "$ref": "#/components/schemas/AccountStatusDto"
+          },
+          "sync_interval_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's.",
+            "minimum": 0
           }
         }
       },
@@ -2462,6 +2571,11 @@
             "description": "Messages added by the running or last run.",
             "minimum": 0
           },
+          "next_sync_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When the scheduler syncs it next, Unix milliseconds; `null` when it does not."
+          },
           "running": {
             "type": "boolean",
             "description": "A sync or import is running."
@@ -2472,6 +2586,17 @@
         "type": "object",
         "description": "Changes to an account; missing fields stay as they are.",
         "properties": {
+          "connection": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionRequest",
+                "description": "A new server, user name and excluded folders; checked by signing in, with `password`\nwhen given and the stored one otherwise."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enabled": {
             "type": ["boolean", "null"],
             "description": "Paused accounts are not synced."
@@ -2482,6 +2607,12 @@
           "password": {
             "type": ["string", "null"],
             "description": "A new password; checked by signing in before it is stored."
+          },
+          "sync_interval_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's again.\nMissing keeps it.",
+            "minimum": 0
           }
         }
       },
@@ -2567,6 +2698,36 @@
           "url": {
             "type": "string",
             "description": "Where to download it."
+          }
+        }
+      },
+      "ConnectionRequest": {
+        "type": "object",
+        "description": "A new connection for an IMAP account, checked by signing in before it is stored.",
+        "required": ["host", "username"],
+        "properties": {
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder paths not to archive."
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "The default of `security` when missing.",
+            "minimum": 0
+          },
+          "security": {
+            "type": ["string", "null"],
+            "description": "`tls` (default), `starttls` or `plain`."
+          },
+          "username": {
+            "type": "string"
           }
         }
       },
@@ -2665,6 +2826,35 @@
           "security": {
             "type": ["string", "null"],
             "description": "`tls` (default), `starttls` or `plain`."
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "ImapConnectionDto": {
+        "type": "object",
+        "description": "How an IMAP account connects. The password is never returned.",
+        "required": ["host", "port", "security", "username", "exclude"],
+        "properties": {
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder paths that are not archived."
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "security": {
+            "type": "string",
+            "description": "`tls`, `starttls` or `plain`."
           },
           "username": {
             "type": "string"
@@ -3161,6 +3351,36 @@
           "oldest": {
             "type": ["integer", "null"],
             "format": "int64"
+          }
+        }
+      },
+      "SyncScheduleDto": {
+        "type": "object",
+        "description": "The sync interval of accounts without their own.",
+        "required": ["minutes", "from_config"],
+        "properties": {
+          "from_config": {
+            "type": "boolean",
+            "description": "Set in the server's config; the API cannot change it."
+          },
+          "minutes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minutes between syncs; 0 means only on request.",
+            "minimum": 0
+          }
+        }
+      },
+      "SyncScheduleRequest": {
+        "type": "object",
+        "description": "A new sync interval for accounts without their own.",
+        "required": ["minutes"],
+        "properties": {
+          "minutes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minutes between syncs, at most a week; 0 syncs only on request.",
+            "minimum": 0
           }
         }
       },

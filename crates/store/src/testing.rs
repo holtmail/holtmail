@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use holtmail_blob::BlobId;
-use holtmail_core::{Address, ArchiveId, MessageId, Timestamp, UserId};
+use holtmail_core::{AccountId, Address, ArchiveId, MessageId, Timestamp, UserId};
 use serde_json::json;
 
 use crate::*;
@@ -19,6 +19,8 @@ pub async fn conformance(store: Arc<dyn Store>) {
     lists_page_newest_first(&*store).await;
     locations_follow_the_server(&*store).await;
     extras_and_unread(&*store).await;
+    flag_changes(&*store).await;
+    labels(&*store).await;
     sync_state(&*store).await;
     users(&*store).await;
     sessions(&*store).await;
@@ -26,6 +28,282 @@ pub async fn conformance(store: Arc<dyn Store>) {
     user_changes_and_grants(&*store).await;
     remote_copies(&*store).await;
     settings(&*store).await;
+    derived(&*store).await;
+    inventory(&*store).await;
+    tasks(&*store).await;
+    last_runs(&*store).await;
+}
+
+fn task(id: &str, started: i64, state: TaskState) -> TaskRecord {
+    TaskRecord {
+        id: id.into(),
+        kind: TaskKind::RemoteImages,
+        archive_id: Some(ArchiveId::new()),
+        account_id: None,
+        title: "News".into(),
+        state,
+        started_at: Timestamp::from_secs(started),
+        finished_at: (state != TaskState::Running).then(|| Timestamp::from_secs(started + 1)),
+        done: 3,
+        total: Some(10),
+        summary: "3 of 10".into(),
+        cancellable: true,
+        job: Some("older".into()),
+    }
+}
+
+fn line(n: usize) -> TaskLine {
+    TaskLine {
+        at: Timestamp::from_millis(n as i64),
+        level: if n.is_multiple_of(2) {
+            TaskLevel::Info
+        } else {
+            TaskLevel::Warning
+        },
+        text: format!("line {n}"),
+    }
+}
+
+async fn tasks(store: &dyn Store) {
+    assert!(store.recent_tasks(10).await.unwrap().is_empty());
+    assert!(matches!(
+        store.append_task_log("missing", &[line(0)]).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let mut running = task("a", 100, TaskState::Running);
+    store.save_task(&running).await.unwrap();
+    store.save_task(&running).await.unwrap();
+    store
+        .append_task_log("a", &[line(0), line(1)])
+        .await
+        .unwrap();
+    running.done = 7;
+    running.summary = "7 of 10".into();
+    store.save_task(&running).await.unwrap();
+    let [stored] = store.recent_tasks(10).await.unwrap().try_into().unwrap();
+    assert_eq!(stored.record, running);
+    assert_eq!(
+        stored.log,
+        vec![line(0), line(1)],
+        "saving the task lost its log"
+    );
+
+    let total = TASK_LOG_LINES + 120;
+    let all: Vec<TaskLine> = (2..total).map(line).collect();
+    for chunk in all.chunks(77) {
+        store.append_task_log("a", chunk).await.unwrap();
+    }
+    let log = store.recent_tasks(1).await.unwrap().remove(0).log;
+    assert_eq!(log.len(), TASK_LOG_LINES);
+    let expected: Vec<TaskLine> = (0..TASK_LOG_HEAD)
+        .chain(total - (TASK_LOG_LINES - TASK_LOG_HEAD)..total)
+        .map(line)
+        .collect();
+    assert_eq!(log, expected, "the log does not keep its start and its end");
+
+    for (n, state) in [
+        TaskState::Done,
+        TaskState::Failed,
+        TaskState::Cancelled,
+        TaskState::Done,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("f{n}");
+        store
+            .save_task(&task(&id, 200 + n as i64, state))
+            .await
+            .unwrap();
+        store.append_task_log(&id, &[line(n)]).await.unwrap();
+    }
+    let mut other = task("b", 50, TaskState::Running);
+    other.kind = TaskKind::Sync;
+    other.account_id = Some(AccountId::new());
+    other.total = None;
+    other.job = None;
+    other.cancellable = false;
+    store.save_task(&other).await.unwrap();
+
+    let ids = |list: Vec<StoredTask>| list.into_iter().map(|t| t.record.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store.recent_tasks(10).await.unwrap()),
+        ["f3", "f2", "f1", "f0", "a", "b"]
+    );
+    assert_eq!(ids(store.recent_tasks(2).await.unwrap()), ["f3", "f2"]);
+
+    assert_eq!(store.prune_tasks(2).await.unwrap(), 2);
+    assert_eq!(
+        ids(store.recent_tasks(10).await.unwrap()),
+        ["f3", "f2", "a", "b"],
+        "pruning removed a running task or kept an old finished one"
+    );
+    assert_eq!(store.prune_tasks(2).await.unwrap(), 0);
+
+    let at = Timestamp::from_secs(900);
+    let mut interrupted = store.interrupt_tasks(at).await.unwrap();
+    interrupted.sort_by(|x, y| x.id.cmp(&y.id));
+    assert_eq!(interrupted.len(), 2);
+    for record in &interrupted {
+        assert_eq!(record.state, TaskState::Interrupted);
+        assert_eq!(record.finished_at, Some(at));
+    }
+    assert_eq!(
+        interrupted[1],
+        TaskRecord {
+            state: TaskState::Interrupted,
+            finished_at: Some(at),
+            ..other
+        }
+    );
+    assert!(store.interrupt_tasks(at).await.unwrap().is_empty());
+    let after = store.recent_tasks(10).await.unwrap();
+    assert!(after.iter().all(|t| t.record.state != TaskState::Running));
+    assert_eq!(
+        after[2].log.len(),
+        TASK_LOG_LINES,
+        "interrupting lost the log"
+    );
+
+    assert_eq!(store.prune_tasks(0).await.unwrap(), 4);
+    assert!(store.recent_tasks(10).await.unwrap().is_empty());
+    assert!(
+        matches!(
+            store.append_task_log("a", &[line(0)]).await,
+            Err(StoreError::NotFound(_))
+        ),
+        "a removed task kept its log"
+    );
+}
+
+async fn last_runs(store: &dyn Store) {
+    let archive = archive(store).await;
+    let first = import_account(store, archive).await;
+    let second = import_account(store, archive).await;
+    assert!(
+        !store.last_runs().await.unwrap().contains_key(&first.id),
+        "a new account has a last run"
+    );
+    let ok = AccountRun {
+        finished_at: Timestamp::from_secs(10),
+        new_messages: 4,
+        error: None,
+    };
+    let failed = AccountRun {
+        finished_at: Timestamp::from_secs(20),
+        new_messages: 0,
+        error: Some("Could not connect".into()),
+    };
+    store.set_last_run(first.id, &failed).await.unwrap();
+    store.set_last_run(first.id, &ok).await.unwrap();
+    store.set_last_run(second.id, &failed).await.unwrap();
+    let runs = store.last_runs().await.unwrap();
+    assert_eq!(runs.get(&first.id), Some(&ok));
+    assert_eq!(runs.get(&second.id), Some(&failed));
+    assert!(matches!(
+        store.set_last_run(AccountId::new(), &ok).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    store.delete_account(first.id).await.unwrap();
+    let runs = store.last_runs().await.unwrap();
+    assert!(
+        !runs.contains_key(&first.id),
+        "a removed account kept its run"
+    );
+    store.delete_archive(archive).await.unwrap();
+    assert!(
+        !store.last_runs().await.unwrap().contains_key(&second.id),
+        "a removed archive kept its accounts' runs"
+    );
+}
+
+async fn inventory(store: &dyn Store) {
+    let archive = store.create_archive("Inventory").await.unwrap().id;
+    let picture = BlobId::of(b"inventory: a picture");
+    let thumb = BlobId::of(b"inventory: its thumbnail");
+    let image = BlobId::of(b"inventory: a remote image");
+    let mut new = message(archive, 9401, 1_700_000_000);
+    new.attachments.push(Attachment {
+        ordinal: 0,
+        blob_id: picture,
+        filename: Some("picture.png".into()),
+        content_type: "image/png".into(),
+        size: 20,
+        content_id: None,
+        inline: false,
+    });
+    let message_blob = new.blob_id;
+    let inserted = store.insert_message(new).await.unwrap();
+    let mut twin = message(archive, 9402, 1_700_000_100);
+    twin.attachments.push(Attachment {
+        ordinal: 0,
+        blob_id: picture,
+        filename: Some("same.png".into()),
+        content_type: "image/png".into(),
+        size: 20,
+        content_id: None,
+        inline: false,
+    });
+    store.insert_message(twin).await.unwrap();
+    store
+        .set_derived(&picture, DerivedKind::Thumbnail, &Derived::Blob(thumb))
+        .await
+        .unwrap();
+    store
+        .save_remote_copy(&RemoteCopy {
+            key: "inventory-key".into(),
+            url: "https://images.example.com/inventory.png".into(),
+            blob_id: Some(image),
+            content_type: Some("image/png".into()),
+            size: 10,
+            fetched_at: Timestamp::from_secs(1_700_000_000),
+            error: None,
+        })
+        .await
+        .unwrap();
+    store
+        .record_remote_scan(inserted.message_id, &["inventory-key".into()])
+        .await
+        .unwrap();
+
+    let all = store.referenced_blobs(None, 100_000).await.unwrap();
+    assert!(
+        all.windows(2).all(|w| w[0] < w[1]),
+        "referenced blobs are ascending and listed once"
+    );
+    for blob in [message_blob, picture, thumb, image] {
+        assert!(all.contains(&blob), "{blob} is referenced");
+    }
+
+    let mut paged = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store.referenced_blobs(after.as_ref(), 2).await.unwrap();
+        assert!(page.len() <= 2);
+        let last = page.last().copied();
+        let done = page.len() < 2;
+        paged.extend(page);
+        match last {
+            Some(last) if !done => after = Some(last),
+            _ => break,
+        }
+    }
+    assert_eq!(paged, all, "paging visits every blob exactly once");
+    assert!(
+        store
+            .referenced_blobs(all.last(), 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    let left = store.referenced_blobs(None, 100_000).await.unwrap();
+    for blob in [message_blob, picture, thumb, image] {
+        assert!(!left.contains(&blob), "{blob} is no longer referenced");
+    }
 }
 
 async fn settings(store: &dyn Store) {
@@ -365,6 +643,7 @@ async fn lists_page_newest_first(store: &dyn Store) {
             .list_messages(&MessageQuery {
                 archive_id: archive,
                 folder_id: None,
+                label: None,
                 after: after.clone(),
                 limit: 3,
             })
@@ -386,6 +665,7 @@ async fn lists_page_newest_first(store: &dyn Store) {
         .list_messages(&MessageQuery {
             archive_id: archive,
             folder_id: Some(folder.id),
+            label: None,
             after: None,
             limit: 100,
         })
@@ -574,6 +854,7 @@ async fn extras_and_unread(store: &dyn Store) {
             flags: flags(&["\\Flagged", "\\Seen", "\\seen"]),
             thread_count: 2,
             folder_ids: both,
+            labels: Vec::new(),
         }
     );
     assert_eq!(all[&reply].thread_count, 2);
@@ -584,6 +865,7 @@ async fn extras_and_unread(store: &dyn Store) {
             flags: flags(&["$label1"]),
             thread_count: 1,
             folder_ids: vec![inbox.id],
+            labels: Vec::new(),
         },
         "a removed location counted"
     );
@@ -602,6 +884,200 @@ async fn extras_and_unread(store: &dyn Store) {
     assert!(store.message_extras(&[], None).await.unwrap().is_empty());
 }
 
+async fn flag_changes(store: &dyn Store) {
+    let archive = archive(store).await;
+    let account = import_account(store, archive).await;
+    let inbox = store
+        .upsert_folder(account.id, "INBOX", Some(FolderRole::Inbox))
+        .await
+        .unwrap();
+    let message = store
+        .insert_message(message(archive, 400, 1))
+        .await
+        .unwrap()
+        .message_id;
+    let strings = |list: &[&str]| list.iter().map(|f| f.to_string()).collect::<Vec<_>>();
+    store
+        .record_location(
+            message,
+            inbox.id,
+            Some(4),
+            &strings(&["\\Flagged"]),
+            Timestamp::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        store
+            .set_flags(inbox.id, 4, &strings(&["\\Seen", "\\Flagged"]))
+            .await
+            .unwrap()
+    );
+    let extras = store.message_extras(&[message], None).await.unwrap();
+    assert_eq!(extras[&message].flags, strings(&["\\Flagged", "\\Seen"]));
+    assert_eq!(store.list_folders(archive).await.unwrap()[0].unread, 0);
+    assert!(
+        !store
+            .set_flags(inbox.id, 4, &strings(&["\\Flagged", "\\Seen", "\\Seen"]))
+            .await
+            .unwrap(),
+        "the same flags in another order counted as a change"
+    );
+    assert!(
+        !store.set_flags(inbox.id, 99, &[]).await.unwrap(),
+        "an unknown UID counted as a change"
+    );
+    store
+        .mark_removed(inbox.id, &[4], Timestamp::from_secs(2))
+        .await
+        .unwrap();
+    assert!(store.set_flags(inbox.id, 4, &[]).await.unwrap());
+    assert!(store.locations(message).await.unwrap()[0].flags.is_empty());
+}
+
+async fn labels(store: &dyn Store) {
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let account = import_account(store, archive).await;
+    let all = store
+        .upsert_folder(account.id, "[Gmail]/All Mail", Some(FolderRole::All))
+        .await
+        .unwrap();
+    let mut ids = Vec::new();
+    for n in 0..3 {
+        let id = store
+            .insert_message(message(archive, 500 + n, i64::from(n)))
+            .await
+            .unwrap()
+            .message_id;
+        ids.push(id);
+    }
+    let elsewhere = store
+        .insert_message(message(other, 500, 0))
+        .await
+        .unwrap()
+        .message_id;
+    let strings = |list: &[&str]| list.iter().map(|f| f.to_string()).collect::<Vec<_>>();
+    store
+        .record_location(
+            ids[0],
+            all.id,
+            Some(1),
+            &strings(&["\\Seen"]),
+            Timestamp::from_secs(1),
+        )
+        .await
+        .unwrap();
+    store
+        .record_location(ids[1], all.id, Some(2), &[], Timestamp::from_secs(1))
+        .await
+        .unwrap();
+
+    assert!(
+        store
+            .set_labels(ids[0], &strings(&["Inbox", "Projects/2025", "Inbox", ""]))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .set_labels(ids[0], &strings(&["Projects/2025", "Inbox"]))
+            .await
+            .unwrap(),
+        "the same labels counted as a change"
+    );
+    store
+        .set_labels(ids[1], &strings(&["Inbox"]))
+        .await
+        .unwrap();
+    store.set_labels(ids[2], &strings(&["Old"])).await.unwrap();
+    store
+        .set_labels(elsewhere, &strings(&["Inbox"]))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.labels(ids[0]).await.unwrap(),
+        strings(&["Inbox", "Projects/2025"])
+    );
+    assert!(store.labels(MessageId::new()).await.unwrap().is_empty());
+    assert!(matches!(
+        store.set_labels(MessageId::new(), &[]).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    assert!(store.set_labels(ids[2], &[]).await.unwrap());
+    assert_eq!(
+        store.list_labels(archive).await.unwrap(),
+        [
+            LabelSummary {
+                name: "Inbox".into(),
+                messages: 2,
+                unread: 1,
+            },
+            LabelSummary {
+                name: "Projects/2025".into(),
+                messages: 1,
+                unread: 0,
+            },
+        ],
+        "label counts are wrong, or a label without messages is listed"
+    );
+
+    let extras = store.message_extras(&[ids[0], ids[2]], None).await.unwrap();
+    assert_eq!(extras[&ids[0]].labels, strings(&["Inbox", "Projects/2025"]));
+    assert!(extras[&ids[2]].labels.is_empty());
+
+    let labeled = store
+        .list_messages(&MessageQuery {
+            archive_id: archive,
+            folder_id: None,
+            label: Some("Inbox".into()),
+            after: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(labeled.items[0].id, ids[1], "not newest first");
+    let rest = store
+        .list_messages(&MessageQuery {
+            archive_id: archive,
+            folder_id: None,
+            label: Some("Inbox".into()),
+            after: labeled.next,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        rest.items.iter().map(|m| m.id).collect::<Vec<_>>(),
+        [ids[0]],
+        "the label filter leaked another archive or lost a page"
+    );
+    let both = store
+        .list_messages(&MessageQuery {
+            archive_id: archive,
+            folder_id: Some(all.id),
+            label: Some("Projects/2025".into()),
+            after: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(both.items.len(), 1);
+    let none = store
+        .list_messages(&MessageQuery {
+            archive_id: archive,
+            folder_id: None,
+            label: Some("inbox".into()),
+            after: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert!(none.items.is_empty(), "labels compared ignoring case");
+}
+
 async fn sync_state(store: &dyn Store) {
     let archive = archive(store).await;
     let account = import_account(store, archive).await;
@@ -617,6 +1093,7 @@ async fn sync_state(store: &dyn Store) {
         uid_validity: Some(42),
         last_uid: Some(100),
         highest_modseq: Some(7),
+        flags_checked_at: Some(Timestamp::from_secs(2)),
         state: Some("opaque".into()),
         synced_at: Some(Timestamp::from_secs(1)),
     };
@@ -852,6 +1329,9 @@ async fn removal(store: &dyn Store) {
         .await
         .unwrap();
 
+    store.set_labels(in_gone, &["Work".into()]).await.unwrap();
+    store.set_labels(in_kept, &["Work".into()]).await.unwrap();
+
     let mut orphans = vec![attachment, own_blob];
     orphans.sort();
     assert_eq!(
@@ -863,6 +1343,8 @@ async fn removal(store: &dyn Store) {
     assert!(store.get_account(account.id).await.unwrap().is_none());
     assert!(store.get_message(in_gone).await.unwrap().is_none());
     assert!(store.get_message(in_kept).await.unwrap().is_some());
+    assert!(store.list_labels(gone).await.unwrap().is_empty());
+    assert_eq!(store.labels(in_kept).await.unwrap(), ["Work"]);
     assert!(matches!(
         store.delete_archive(gone).await,
         Err(StoreError::NotFound(_))
@@ -1149,4 +1631,101 @@ async fn remote_copies(store: &dyn Store) {
         "the last link did not free the copy"
     );
     assert_eq!(store.remote_copy("logo").await.unwrap(), None);
+}
+
+async fn derived(store: &dyn Store) {
+    let source = BlobId::of(b"derived: a picture");
+    let thumb = BlobId::of(b"derived: its thumbnail");
+    let text = BlobId::of(b"derived: its text");
+    assert_eq!(
+        store
+            .derived(&source, DerivedKind::Thumbnail)
+            .await
+            .unwrap(),
+        None
+    );
+    store
+        .set_derived(&source, DerivedKind::Thumbnail, &Derived::Nothing)
+        .await
+        .unwrap();
+    store
+        .set_derived(&source, DerivedKind::Thumbnail, &Derived::Blob(thumb))
+        .await
+        .unwrap();
+    store
+        .set_derived(&source, DerivedKind::Thumbnail, &Derived::Blob(thumb))
+        .await
+        .unwrap();
+    store
+        .set_derived(&source, DerivedKind::Text, &Derived::Blob(text))
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .derived(&source, DerivedKind::Thumbnail)
+            .await
+            .unwrap(),
+        Some(Derived::Blob(thumb))
+    );
+    assert_eq!(
+        store.derived(&source, DerivedKind::Text).await.unwrap(),
+        Some(Derived::Blob(text))
+    );
+
+    let other = BlobId::of(b"derived: the same text elsewhere");
+    store
+        .set_derived(&other, DerivedKind::Text, &Derived::Blob(text))
+        .await
+        .unwrap();
+    let none = BlobId::of(b"derived: no text");
+    store
+        .set_derived(&none, DerivedKind::Text, &Derived::Nothing)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.clear_derived(DerivedKind::Text).await.unwrap(),
+        vec![text],
+        "a cleared text blob is listed once, however many sources shared it"
+    );
+    assert_eq!(
+        store.derived(&source, DerivedKind::Text).await.unwrap(),
+        None
+    );
+    assert_eq!(store.derived(&none, DerivedKind::Text).await.unwrap(), None);
+    assert_eq!(
+        store
+            .derived(&source, DerivedKind::Thumbnail)
+            .await
+            .unwrap(),
+        Some(Derived::Blob(thumb)),
+        "clearing text touched thumbnails"
+    );
+
+    let archive = store.create_archive("Derived").await.unwrap().id;
+    let mut with_picture = message(archive, 9301, 1_700_000_000);
+    with_picture.attachments.push(Attachment {
+        ordinal: 0,
+        blob_id: source,
+        filename: Some("picture.png".into()),
+        content_type: "image/png".into(),
+        size: 18,
+        content_id: None,
+        inline: false,
+    });
+    let message_blob = with_picture.blob_id;
+    store.insert_message(with_picture).await.unwrap();
+    let mut orphans = vec![source, thumb, message_blob];
+    orphans.sort();
+    assert_eq!(
+        store.delete_archive(archive).await.unwrap(),
+        orphans,
+        "deleting an archive must also release what was derived from its blobs"
+    );
+    assert_eq!(
+        store
+            .derived(&source, DerivedKind::Thumbnail)
+            .await
+            .unwrap(),
+        None
+    );
 }

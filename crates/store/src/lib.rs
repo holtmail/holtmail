@@ -1,9 +1,9 @@
 //! Contract for Holtmail's metadata: archives, accounts, folders, messages, threads, sync state,
-//! users and their sessions.
+//! users and their sessions, and the recent background tasks.
 //!
 //! The store never holds message bytes; those live in a `BlobStore` and are referenced by
-//! [`holtmail_blob::BlobId`]. Everything in the store except accounts, archives and sync state can
-//! be rebuilt from the blobs.
+//! [`holtmail_blob::BlobId`]. Everything in the store except accounts, archives, sync state and
+//! task history can be rebuilt from the blobs.
 
 mod types;
 
@@ -52,9 +52,10 @@ pub trait ArchiveStore: Send + Sync {
     /// `NotFound` for an unknown archive.
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
 
-    /// Removes the archive with its accounts, folders, messages, attachments, sync state and
-    /// grants, and the remote copies no remaining message links to. Returns the blobs that no
-    /// message, attachment or remote copy references any more, so the caller can delete them.
+    /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state
+    /// and grants, the remote copies no remaining message links to, and what was derived from
+    /// blobs that are no longer used. Returns the blobs that no message, attachment, remote copy
+    /// or derived record references any more, so the caller can delete them.
     /// `NotFound` when the archive does not exist.
     async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError>;
 
@@ -122,10 +123,11 @@ pub trait MessageStore: Send + Sync {
     /// Attachments of the message by `ordinal`.
     async fn attachments(&self, message: MessageId) -> Result<Vec<Attachment>, StoreError>;
 
-    /// Messages newest first by `date`, ties broken by id.
+    /// Messages newest first by `date`, ties broken by id, narrowed by the query's folder and
+    /// label when given.
     async fn list_messages(&self, query: &MessageQuery) -> Result<Page<Message>, StoreError>;
 
-    /// Flags, thread size and folders of each message among `ids` that exists, for showing a list
+    /// Flags, thread size, folders and labels of each message among `ids` that exists, for showing a list
     /// in one call. With `folder`, `flags` are the message's flags in that folder (empty when it
     /// is not located there); otherwise their union over every location not removed.
     async fn message_extras(
@@ -175,6 +177,32 @@ pub trait MessageStore: Send + Sync {
     /// Forgets every UID in the folder, for when the server changed its `UIDVALIDITY`. Locations
     /// stay; the next sync re-attaches UIDs.
     async fn forget_uids(&self, folder: FolderId) -> Result<(), StoreError>;
+
+    /// Replaces the flags of the folder's location with this UID, e.g. after the message was read
+    /// or flagged in another client. Flags compare as a set: order and duplicates do not count as a
+    /// change. Returns whether the flags changed; `false` when no location has the UID. A removed
+    /// location is updated too.
+    async fn set_flags(
+        &self,
+        folder: FolderId,
+        uid: u64,
+        flags: &[String],
+    ) -> Result<bool, StoreError>;
+}
+
+/// Labels of messages, as Gmail has them. A label belongs to an archive and is known by its name.
+#[async_trait]
+pub trait LabelStore: Send + Sync {
+    /// Replaces the labels of the message with `labels`; empty names and duplicates are dropped,
+    /// and labels no message carries any more are forgotten. Returns whether the set changed.
+    /// `NotFound` when the message does not exist.
+    async fn set_labels(&self, message: MessageId, labels: &[String]) -> Result<bool, StoreError>;
+
+    /// The labels of the message, sorted; empty for an unknown message.
+    async fn labels(&self, message: MessageId) -> Result<Vec<String>, StoreError>;
+
+    /// Every label carried by at least one message of the archive, with counts, sorted by name.
+    async fn list_labels(&self, archive: ArchiveId) -> Result<Vec<LabelSummary>, StoreError>;
 }
 
 /// Sync progress per folder.
@@ -200,6 +228,38 @@ pub trait SyncStore: Send + Sync {
 
     /// The folder's failures by UID.
     async fn failures(&self, folder: FolderId) -> Result<Vec<SyncFailure>, StoreError>;
+
+    /// Records how the account's last sync or import ended, replacing the earlier record.
+    /// Removed with the account. `NotFound` for an unknown account.
+    async fn set_last_run(&self, account: AccountId, run: &AccountRun) -> Result<(), StoreError>;
+
+    /// The last recorded run of every account that has one.
+    async fn last_runs(&self) -> Result<HashMap<AccountId, AccountRun>, StoreError>;
+}
+
+/// Background tasks and their logs, kept across restarts.
+#[async_trait]
+pub trait TaskStore: Send + Sync {
+    /// Stores the task, replacing an earlier record with the same id; its log stays.
+    /// Idempotent.
+    async fn save_task(&self, task: &TaskRecord) -> Result<(), StoreError>;
+
+    /// Adds `lines` to the end of the task's log, in order. The log then keeps its first
+    /// [`TASK_LOG_HEAD`] lines and its most recent ones, [`TASK_LOG_LINES`] in all, as if the lines
+    /// had been added one by one. `NotFound` for an unknown task.
+    async fn append_task_log(&self, id: &str, lines: &[TaskLine]) -> Result<(), StoreError>;
+
+    /// Up to `limit` tasks with their logs, the most recently started first.
+    async fn recent_tasks(&self, limit: u32) -> Result<Vec<StoredTask>, StoreError>;
+
+    /// Marks every [`TaskState::Running`] task [`TaskState::Interrupted`], finished at `at`, and
+    /// returns them as now stored. Meant for the start of a process, when no task of this
+    /// process runs yet.
+    async fn interrupt_tasks(&self, at: Timestamp) -> Result<Vec<TaskRecord>, StoreError>;
+
+    /// Removes the tasks that are not running, with their logs, except the `keep` most recently
+    /// started of them. Returns how many were removed.
+    async fn prune_tasks(&self, keep: u32) -> Result<u64, StoreError>;
 }
 
 /// Users and their sign-in sessions.
@@ -332,13 +392,70 @@ pub trait SettingsStore: Send + Sync {
     async fn set_setting(&self, key: &str, value: Option<&str>) -> Result<(), StoreError>;
 }
 
+/// Files derived from attachment blobs, such as thumbnails and extracted text, kept as blobs of
+/// their own. Everything here can be dropped and made again from the source blobs.
+#[async_trait]
+pub trait DerivedStore: Send + Sync {
+    /// What was recorded for `source` and `kind`, or `None` when nothing was.
+    async fn derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+    ) -> Result<Option<Derived>, StoreError>;
+
+    /// Records what was made from `source`, replacing any earlier record of that kind.
+    /// Idempotent.
+    async fn set_derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+        derived: &Derived,
+    ) -> Result<(), StoreError>;
+
+    /// Forgets every record of `kind`, so it is made again on next use. Returns the derived blobs
+    /// that nothing references any more, so the caller can delete them.
+    async fn clear_derived(&self, kind: DerivedKind) -> Result<Vec<BlobId>, StoreError>;
+}
+
+/// What the store references in the blob store, for backups and consistency checks.
+#[async_trait]
+pub trait InventoryStore: Send + Sync {
+    /// Up to `limit` blobs that some record references: a message, an attachment, a saved remote
+    /// image or a derived file. Each blob is listed once, in ascending order of id, starting after
+    /// `after` (from the first when `None`), so paging with the last id of each page visits every
+    /// referenced blob exactly once. A page shorter than `limit` is the last one.
+    async fn referenced_blobs(
+        &self,
+        after: Option<&BlobId>,
+        limit: u32,
+    ) -> Result<Vec<BlobId>, StoreError>;
+}
+
 /// The whole metadata store.
 pub trait Store:
-    ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore + SettingsStore
+    ArchiveStore
+    + MessageStore
+    + LabelStore
+    + SyncStore
+    + UserStore
+    + RemoteImageStore
+    + SettingsStore
+    + DerivedStore
+    + InventoryStore
+    + TaskStore
 {
 }
 
 impl<T> Store for T where
-    T: ArchiveStore + MessageStore + SyncStore + UserStore + RemoteImageStore + SettingsStore
+    T: ArchiveStore
+        + MessageStore
+        + LabelStore
+        + SyncStore
+        + UserStore
+        + RemoteImageStore
+        + SettingsStore
+        + DerivedStore
+        + InventoryStore
+        + TaskStore
 {
 }

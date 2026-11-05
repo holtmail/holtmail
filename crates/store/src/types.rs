@@ -226,8 +226,11 @@ pub struct FolderCursor {
     pub uid_validity: Option<u64>,
     /// The highest UID archived.
     pub last_uid: Option<u64>,
-    /// IMAP `HIGHESTMODSEQ` after the last sync.
+    /// IMAP `HIGHESTMODSEQ` up to which flag changes were taken in.
     pub highest_modseq: Option<u64>,
+    /// When the flags of every archived message in the folder were last read again, for servers
+    /// without mod-sequences.
+    pub flags_checked_at: Option<Timestamp>,
     /// An opaque provider state: a JMAP state string or a Graph delta link.
     pub state: Option<String>,
     /// When the folder last finished syncing.
@@ -378,6 +381,19 @@ pub struct MessageExtras {
     pub thread_count: u32,
     /// Folders it is located in and not removed from, ordered by id.
     pub folder_ids: Vec<FolderId>,
+    /// Its labels, sorted.
+    pub labels: Vec<String>,
+}
+
+/// A label of an archive with how many messages carry it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LabelSummary {
+    /// The label, e.g. `Inbox` or `Projects/2025`.
+    pub name: String,
+    /// Messages carrying it.
+    pub messages: u64,
+    /// Of those, the ones without `\Seen` (compared ignoring case) in any location not removed.
+    pub unread: u64,
 }
 
 /// Which messages to list.
@@ -387,6 +403,8 @@ pub struct MessageQuery {
     pub archive_id: ArchiveId,
     /// Only messages located in this folder and not removed from it.
     pub folder_id: Option<FolderId>,
+    /// Only messages carrying this label, compared exactly.
+    pub label: Option<String>,
     /// Continue after this point of a previous page.
     pub after: Option<PageCursor>,
     /// At most this many messages; implementations cap it at 500.
@@ -526,4 +544,204 @@ pub struct RemoteCopyTotals {
     pub bytes: u64,
     /// Distinct images that could not be fetched.
     pub failed: u64,
+}
+
+/// What is derived from an attachment's bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DerivedKind {
+    /// A small preview image.
+    Thumbnail,
+    /// Plain text for the search index.
+    Text,
+}
+
+impl DerivedKind {
+    /// The stable name of the kind.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Thumbnail => "thumbnail",
+            Self::Text => "text",
+        }
+    }
+}
+
+/// The outcome of deriving something from a blob.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Derived {
+    /// Made and stored as this blob.
+    Blob(BlobId),
+    /// Nothing can be made from the source, e.g. an image that does not decode or a file
+    /// without text. Recorded so it is not tried again.
+    Nothing,
+}
+
+/// Lines a task log keeps from its start when it grows past [`TASK_LOG_LINES`].
+pub const TASK_LOG_HEAD: usize = 50;
+
+/// Lines a task log keeps in all: the first [`TASK_LOG_HEAD`] and the most recent ones.
+pub const TASK_LOG_LINES: usize = 500;
+
+/// What a background task does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    /// Syncing an account.
+    Sync,
+    /// Importing an uploaded file.
+    Import,
+    /// Saving remote images.
+    RemoteImages,
+}
+
+impl TaskKind {
+    /// The stable name of the kind.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sync => "sync",
+            Self::Import => "import",
+            Self::RemoteImages => "remote_images",
+        }
+    }
+
+    /// The kind named `name`, as [`TaskKind::as_str`] writes it.
+    pub fn parse(name: &str) -> Option<Self> {
+        [Self::Sync, Self::Import, Self::RemoteImages]
+            .into_iter()
+            .find(|kind| kind.as_str() == name)
+    }
+}
+
+/// Where a task is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskState {
+    /// Still working.
+    Running,
+    /// Finished without errors.
+    Done,
+    /// Stopped by an error, or finished with some.
+    Failed,
+    /// Stopped on request.
+    Cancelled,
+    /// Stopped because the server stopped while it ran.
+    Interrupted,
+}
+
+impl TaskState {
+    /// The stable name of the state.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    /// The state named `name`, as [`TaskState::as_str`] writes it.
+    pub fn parse(name: &str) -> Option<Self> {
+        [
+            Self::Running,
+            Self::Done,
+            Self::Failed,
+            Self::Cancelled,
+            Self::Interrupted,
+        ]
+        .into_iter()
+        .find(|state| state.as_str() == name)
+    }
+}
+
+/// How serious a task log line is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskLevel {
+    /// Progress.
+    Info,
+    /// Something was skipped.
+    Warning,
+    /// Something failed.
+    Error,
+}
+
+impl TaskLevel {
+    /// The stable name of the level.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
+
+    /// The level named `name`, as [`TaskLevel::as_str`] writes it.
+    pub fn parse(name: &str) -> Option<Self> {
+        [Self::Info, Self::Warning, Self::Error]
+            .into_iter()
+            .find(|level| level.as_str() == name)
+    }
+}
+
+/// One line of a task's log. Holds counts, names and reasons, never message content or secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskLine {
+    /// When it was written.
+    pub at: Timestamp,
+    /// How serious it is.
+    pub level: TaskLevel,
+    /// The text.
+    pub text: String,
+}
+
+/// A background task as kept across restarts, without its log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskRecord {
+    /// Unique among tasks.
+    pub id: String,
+    /// What it does.
+    pub kind: TaskKind,
+    /// Its archive.
+    pub archive_id: Option<ArchiveId>,
+    /// Its account, for syncs and imports.
+    pub account_id: Option<AccountId>,
+    /// What it works on, e.g. the account or archive name.
+    pub title: String,
+    /// Where it is.
+    pub state: TaskState,
+    /// When it started.
+    pub started_at: Timestamp,
+    /// When it ended.
+    pub finished_at: Option<Timestamp>,
+    /// Steps done.
+    pub done: u64,
+    /// Steps in all, when known.
+    pub total: Option<u64>,
+    /// One line on where it stands.
+    pub summary: String,
+    /// Whether it can be asked to stop.
+    pub cancellable: bool,
+    /// What the task was started with, opaque to the store, so interrupted work can be started
+    /// again.
+    pub job: Option<String>,
+}
+
+/// A stored task with its log, oldest line first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredTask {
+    /// The task.
+    pub record: TaskRecord,
+    /// Its log, bounded as [`TASK_LOG_HEAD`] and [`TASK_LOG_LINES`] say.
+    pub log: Vec<TaskLine>,
+}
+
+/// How an account's last sync or import ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountRun {
+    /// When it ended.
+    pub finished_at: Timestamp,
+    /// Messages it added.
+    pub new_messages: u64,
+    /// Why it failed, when it did. Safe to show: never holds mail or secrets.
+    pub error: Option<String>,
 }

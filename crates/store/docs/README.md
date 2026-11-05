@@ -1,10 +1,10 @@
 # holtmail-store
 
-The contract for Holtmail's metadata: archives, accounts, folders, messages with their attachments, locations and threads, sync progress, and users with their sign-in sessions. The store never holds message bytes; it references blobs by `BlobId`. Everything except archives, accounts, sync state and users can be rebuilt from the blobs.
+The contract for Holtmail's metadata: archives, accounts, folders, messages with their attachments, locations, labels and threads, sync progress, and users with their sign-in sessions. The store never holds message bytes; it references blobs by `BlobId`. Everything except archives, accounts, sync state and users can be rebuilt from the blobs.
 
 ## Traits
 
-`Store` is `ArchiveStore + MessageStore + SyncStore + UserStore`, implemented automatically for any type that implements the four. Use it as `Arc<dyn Store>`.
+`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
 
 ### ArchiveStore
 
@@ -13,7 +13,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
 | `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives). Turning it on records `save_remote_images_since` unless it was already on; turning it off clears it. `NotFound` for a missing archive |
-| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, sync state and grants, and the remote copies no remaining message links. Returns the blobs no message, attachment or remote copy references any more, so the caller can delete them. `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
@@ -21,7 +21,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `upsert_folder(account, path, role)` | Idempotent per `(account, path)`; a new role replaces the stored one |
 | `list_folders(archive)` | Every folder of the archive's accounts with the count of messages located there and not removed, and of those without `\Seen` (any letter case), by account then path |
 
-`Account.settings` is JSON owned by the source module (host, port, folder rules). `Account.sealed_secret` is opaque bytes sealed by `holtmail-secret`; the store never looks inside and the field is skipped when an account is serialized.
+`Account.settings` is JSON owned by the source module (host, port, folder rules) and the server (the sync interval, and `oauth: { provider, needs_sign_in }` for accounts that sign in with Google or Microsoft). `Account.sealed_secret` is opaque bytes sealed by `holtmail-secret`: the password, or for OAuth accounts the refresh token; the store never looks inside and the field is skipped when an account is serialized. How an account signs in therefore needs no column of its own.
 
 ### MessageStore
 
@@ -31,13 +31,24 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `get_message`, `get_messages(ids)` | `get_messages` keeps the order of `ids` and skips missing ones |
 | `find_by_blob(archive, blob)` | The message with these bytes in the archive |
 | `attachments(message)` | By ordinal; inline parts included |
-| `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed) |
-| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread and the folders it is in and not removed from (by id). Missing ids are left out |
+| `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed) and label filter (exact name); both may be given |
+| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id) and its labels (sorted). Missing ids are left out |
 | `thread_messages(thread)` | Oldest first |
 | `record_location(message, folder, uid, flags, seen_at)` | One location per `(folder, message)`; updates UID, flags and `last_seen_at`, clears `removed_at`; a UID held by another message moves to this one |
 | `locations`, `folder_uids`, `message_at_uid` | `folder_uids` lists only locations not removed, ascending |
 | `mark_removed(folder, uids, at)` | Marks locations removed; the message stays archived |
 | `forget_uids(folder)` | Clears every UID in the folder after a `UIDVALIDITY` change; locations stay |
+| `set_flags(folder, uid, flags)` | Replaces the flags of the location at the UID (removed or not), e.g. after the message was read elsewhere. Flags compare as a set; returns whether they changed, `false` for an unknown UID |
+
+### LabelStore
+
+Labels as Gmail has them. A label belongs to an archive and is known by its name; nested labels use `/` (`Projects/2025`). A message can carry many.
+
+| Method | Guarantees |
+| --- | --- |
+| `set_labels(message, labels)` | Replaces the message's labels; empty names and duplicates are dropped and labels no message carries any more are forgotten. Returns whether the set changed. `NotFound` for a missing message |
+| `labels(message)` | Sorted; empty for an unknown message |
+| `list_labels(archive)` | Labels carried by at least one message of the archive, by name, with `messages` and `unread` (messages without `\Seen` in any location not removed, so a message without locations counts as unread, as lists show it) |
 
 `Message.date` is what lists sort by: `sent_at`, else `received_at`, else `archived_at`. `attachment_count` counts attachments that are not inline.
 
@@ -52,8 +63,10 @@ A new message joins every thread that contains a message whose `Message-ID` is a
 | `cursor(folder)` / `set_cursor` | The default cursor for a folder that never synced; `set_cursor` replaces the whole cursor |
 | `record_failure(folder, uid, reason, at)` | Adds one to `attempts` and keeps the latest reason and time |
 | `clear_failure`, `failures` | Failures by UID |
+| `set_last_run(account, run)` | Replaces the account's `AccountRun { finished_at, new_messages, error }`; removed with the account or its archive; `NotFound` for an unknown account |
+| `last_runs()` | The last run of every account that has one |
 
-`FolderCursor` holds `uid_validity`, `last_uid`, `highest_modseq`, an opaque provider `state` (JMAP state string, Graph delta link) and `synced_at`. Failures let a sync move past a broken message instead of stalling on it, and retry it later.
+`FolderCursor` holds `uid_validity`, `last_uid`, `highest_modseq` (the mod-sequence up to which flag changes were taken in), `flags_checked_at` (when every archived message's flags were last read again, for servers without mod-sequences), an opaque provider `state` (JMAP state string, Graph delta link) and `synced_at`. Failures let a sync move past a broken message instead of stalling on it, and retry it later.
 
 ### UserStore
 
@@ -92,6 +105,38 @@ Copies of remote images linked from messages, shared by every message and archiv
 
 Instance-wide settings as text by key: `setting(key)` (`None` when unset) and `set_setting(key, value)` (`None` removes; idempotent). Values are opaque to the store; the server seals secrets before storing them.
 
+### DerivedStore
+
+Files made from attachment blobs and kept as blobs of their own: thumbnails and extracted text (`DerivedKind::{Thumbnail, Text}`). Everything here is derived data and can be dropped and made again from the source blobs.
+
+| Method | Guarantees |
+| --- | --- |
+| `derived(source, kind)` | `None` when nothing was recorded; `Some(Derived::Blob(id))` for a stored result; `Some(Derived::Nothing)` when nothing can be made, so callers do not try again |
+| `set_derived(source, kind, derived)` | Replaces any earlier record of that kind; idempotent. Several sources may point at the same derived blob |
+| `clear_derived(kind)` | Forgets every record of the kind and returns the derived blobs nothing references any more, each once |
+
+### TaskStore
+
+Background tasks (syncs, imports, remote image work) kept across restarts, so the server can list them again and tell which ones a restart stopped.
+
+| Method | Guarantees |
+| --- | --- |
+| `save_task(record)` | Inserts or replaces the `TaskRecord` with that id; its log stays. Idempotent |
+| `append_task_log(id, lines)` | Adds the lines in order; the log then keeps its first `TASK_LOG_HEAD` (50) lines and its most recent ones, `TASK_LOG_LINES` (500) in all, exactly as if they were added one by one; `NotFound` for an unknown task |
+| `recent_tasks(limit)` | Up to `limit` `StoredTask { record, log }`, most recently started first, logs oldest line first |
+| `interrupt_tasks(at)` | Every `Running` task becomes `Interrupted` with `finished_at = at`; returns them. Meant for a process start, before any task of its own runs |
+| `prune_tasks(keep)` | Removes the tasks that are not running, with their logs, except the `keep` most recently started; returns how many went |
+
+`TaskRecord` holds `id`, `kind` (`TaskKind::{Sync, Import, RemoteImages}`), `archive_id`, `account_id`, `title`, `state` (`TaskState::{Running, Done, Failed, Cancelled, Interrupted}`), `started_at`, `finished_at`, `done`, `total`, `summary`, `cancellable` and `job`, an opaque string the caller uses to start interrupted work again. `TaskLine` is `{ at, level: TaskLevel::{Info, Warning, Error}, text }`; lines carry counts, names and reasons, never message content or secrets. The kinds, states and levels have stable names (`as_str`, `parse`). Task records name archives and accounts without referencing them: a task outlives a removed archive.
+
+### InventoryStore
+
+What the store references in the blob store, for backups and checks after a restore.
+
+| Method | Guarantees |
+| --- | --- |
+| `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, a saved remote image or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
+
 ## Errors
 
 `StoreError::NotFound(what)`, `StoreError::Invalid(reason)` (a malformed cursor, a value out of range, corrupt stored data) and `StoreError::Backend(..)` for failures that may succeed on retry.
@@ -99,7 +144,7 @@ Instance-wide settings as text by key: `setting(key)` (`None` when unset) and `s
 ## Writing an implementation
 
 1. Create `crates/store-<kind>` depending on `holtmail-store`.
-2. Implement the four traits.
+2. Implement the traits.
 3. Run the conformance suite, which also exports `testing::message(archive, n, sent_secs)` to build invented messages:
 
 ```rust

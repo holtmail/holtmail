@@ -3,6 +3,9 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+
 use super::*;
 
 struct FakeFolder {
@@ -12,7 +15,68 @@ struct FakeFolder {
     messages: Vec<(u32, &'static str, &'static [u8])>,
 }
 
-fn mailbox() -> Vec<FakeFolder> {
+struct FakeLabels {
+    uid: u32,
+    labels: &'static str,
+    modseq: u64,
+}
+
+fn mailbox(gmail: bool) -> Vec<FakeFolder> {
+    if gmail {
+        return vec![
+            FakeFolder {
+                name: "INBOX",
+                attributes: "\\HasNoChildren",
+                uid_validity: 1,
+                messages: vec![(
+                    1,
+                    "",
+                    b"From: ada@example.com\r\nSubject: One\r\n\r\nFirst\r\n",
+                )],
+            },
+            FakeFolder {
+                name: "[Gmail]",
+                attributes: "\\HasChildren \\Noselect",
+                uid_validity: 1,
+                messages: vec![],
+            },
+            FakeFolder {
+                name: "[Gmail]/All Mail",
+                attributes: "\\All \\HasNoChildren",
+                uid_validity: 11,
+                messages: vec![
+                    (
+                        4,
+                        "\\Seen",
+                        b"From: ada@example.com\r\nSubject: One\r\n\r\nFirst\r\n",
+                    ),
+                    (
+                        9,
+                        "\\Flagged",
+                        b"From: bob@example.org\r\nSubject: Two\r\n\r\nSecond\r\n",
+                    ),
+                ],
+            },
+            FakeFolder {
+                name: "[Gmail]/Sent Mail",
+                attributes: "\\HasNoChildren \\Sent",
+                uid_validity: 12,
+                messages: vec![],
+            },
+            FakeFolder {
+                name: "[Gmail]/Spam",
+                attributes: "\\HasNoChildren \\Junk",
+                uid_validity: 13,
+                messages: vec![],
+            },
+            FakeFolder {
+                name: "Projects/&BBIEMAQ2BD0EPgQ1-",
+                attributes: "\\HasNoChildren",
+                uid_validity: 14,
+                messages: vec![],
+            },
+        ];
+    }
     vec![
         FakeFolder {
             name: "INBOX",
@@ -52,7 +116,26 @@ fn mailbox() -> Vec<FakeFolder> {
     ]
 }
 
+fn gmail_labels() -> Vec<FakeLabels> {
+    vec![
+        FakeLabels {
+            uid: 4,
+            labels: r#"("\\Inbox" "\\Important" Projects/&BBIEMAQ2BD0EPgQ1-)"#,
+            modseq: 100,
+        },
+        FakeLabels {
+            uid: 9,
+            labels: r#"(\Sent "Say \"hi\"")"#,
+            modseq: 205,
+        },
+    ]
+}
+
 async fn serve() -> u16 {
+    serve_as(false).await
+}
+
+async fn serve_as(gmail: bool) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
@@ -60,14 +143,15 @@ async fn serve() -> u16 {
             let Ok((socket, _)) = listener.accept().await else {
                 return;
             };
-            tokio::spawn(session(socket));
+            tokio::spawn(session(socket, gmail));
         }
     });
     port
 }
 
-async fn session(socket: tokio::net::TcpStream) {
-    let folders = Arc::new(mailbox());
+async fn session(socket: tokio::net::TcpStream, gmail: bool) {
+    let folders = Arc::new(mailbox(gmail));
+    let labels = gmail_labels();
     let (read, mut write) = socket.into_split();
     let mut lines = BufReader::new(read).lines();
     write
@@ -75,11 +159,52 @@ async fn session(socket: tokio::net::TcpStream) {
         .await
         .unwrap();
     let mut selected: Option<usize> = None;
+    let mut enabled = false;
     while let Ok(Some(line)) = lines.next_line().await {
         let (tag, rest) = line.split_once(' ').unwrap_or((&line, ""));
         let upper = rest.to_ascii_uppercase();
         let mut out = Vec::new();
-        if upper.starts_with("LOGIN") {
+        if upper.starts_with("CAPABILITY") {
+            let extra = if gmail {
+                " X-GM-EXT-1 CONDSTORE ENABLE"
+            } else {
+                ""
+            };
+            out.extend_from_slice(
+                format!("* CAPABILITY IMAP4rev1{extra}\r\n{tag} OK CAPABILITY completed\r\n")
+                    .as_bytes(),
+            );
+        } else if upper.starts_with("ENABLE CONDSTORE") {
+            assert!(gmail, "ENABLE sent to a server without it");
+            enabled = true;
+            out.extend_from_slice(
+                format!("* ENABLED CONDSTORE\r\n{tag} OK ENABLE completed\r\n").as_bytes(),
+            );
+        } else if upper.starts_with("AUTHENTICATE XOAUTH2") {
+            let _ = write.write_all(b"+ \r\n").await;
+            let Ok(Some(answer)) = lines.next_line().await else {
+                return;
+            };
+            let decoded = STANDARD.decode(answer.trim()).unwrap_or_default();
+            if decoded == b"user=ada@example.com\x01auth=Bearer good-token\x01\x01" {
+                out.extend_from_slice(format!("{tag} OK AUTHENTICATE completed\r\n").as_bytes());
+            } else {
+                let error = STANDARD.encode(
+                    r#"{"status":"400","schemes":"Bearer","scope":"https://mail.google.com/"}"#,
+                );
+                let _ = write.write_all(format!("+ {error}\r\n").as_bytes()).await;
+                let Ok(Some(empty)) = lines.next_line().await else {
+                    return;
+                };
+                assert!(
+                    empty.is_empty(),
+                    "the error challenge was not answered with an empty line"
+                );
+                out.extend_from_slice(
+                    format!("{tag} NO [AUTHENTICATIONFAILED] Invalid credentials\r\n").as_bytes(),
+                );
+            }
+        } else if upper.starts_with("LOGIN") {
             if rest.contains("\"ada@example.com\"") && rest.contains("\"secret\"") {
                 out.extend_from_slice(format!("{tag} OK LOGIN completed\r\n").as_bytes());
             } else {
@@ -105,9 +230,14 @@ async fn session(socket: tokio::net::TcpStream) {
                     selected = Some(index);
                     let folder = &folders[index];
                     let next = folder.messages.iter().map(|m| m.0).max().unwrap_or(0) + 1;
+                    let modseq = if enabled {
+                        "* OK [HIGHESTMODSEQ 205] Highest\r\n"
+                    } else {
+                        ""
+                    };
                     out.extend_from_slice(
                         format!(
-                            "* {} EXISTS\r\n* OK [UIDVALIDITY {}] UIDs valid\r\n* OK [UIDNEXT {next}] Predicted next UID\r\n{tag} OK [READ-ONLY] EXAMINE completed\r\n",
+                            "* {} EXISTS\r\n* OK [UIDVALIDITY {}] UIDs valid\r\n* OK [UIDNEXT {next}] Predicted next UID\r\n{modseq}{tag} OK [READ-ONLY] EXAMINE completed\r\n",
                             folder.messages.len(),
                             folder.uid_validity
                         )
@@ -128,26 +258,58 @@ async fn session(socket: tokio::net::TcpStream) {
             );
         } else if upper.starts_with("UID FETCH") {
             assert!(
-                upper.contains("BODY.PEEK[]"),
+                !upper.contains("BODY[") && !upper.contains("RFC822"),
                 "fetch must not mark mail as read: {line}"
+            );
+            assert_eq!(
+                upper.contains("X-GM-"),
+                gmail,
+                "Gmail items asked of the wrong server: {line}"
             );
             let set = rest.split_whitespace().nth(2).unwrap();
             let wanted = parse_set(set);
+            let since: Option<u64> = upper
+                .split_once("CHANGEDSINCE ")
+                .map(|(_, n)| n.trim_end_matches(')').parse().unwrap());
+            assert!(
+                since.is_none() || enabled,
+                "CHANGEDSINCE before CONDSTORE was enabled"
+            );
             let folder = &folders[selected.unwrap()];
             for (seq, (uid, flags, raw)) in folder.messages.iter().enumerate() {
                 if !wanted.contains(uid) {
                     continue;
                 }
-                out.extend_from_slice(
-                    format!(
-                        "* {} FETCH (UID {uid} FLAGS ({flags}) INTERNALDATE \"14-Mar-2025 09:30:00 +0100\" BODY[] {{{}}}\r\n",
-                        seq + 1,
-                        raw.len()
-                    )
-                    .as_bytes(),
-                );
-                out.extend_from_slice(raw);
-                out.extend_from_slice(b")\r\n");
+                let known = labels.iter().find(|l| l.uid == *uid);
+                let modseq = known.map_or(1, |l| l.modseq);
+                if since.is_some_and(|since| modseq <= since) {
+                    continue;
+                }
+                let mut items = format!("UID {uid} FLAGS ({flags})");
+                if gmail {
+                    items.push_str(&format!(
+                        " X-GM-MSGID {} X-GM-LABELS {}",
+                        1_000 + uid,
+                        known.map_or("()", |l| l.labels)
+                    ));
+                }
+                if since.is_some() {
+                    items.push_str(&format!(" MODSEQ ({modseq})"));
+                }
+                if upper.contains("BODY.PEEK[]") {
+                    out.extend_from_slice(
+                        format!(
+                            "* {} FETCH ({items} INTERNALDATE \"14-Mar-2025 09:30:00 +0100\" BODY[] {{{}}}\r\n",
+                            seq + 1,
+                            raw.len()
+                        )
+                        .as_bytes(),
+                    );
+                    out.extend_from_slice(raw);
+                    out.extend_from_slice(b")\r\n");
+                } else {
+                    out.extend_from_slice(format!("* {} FETCH ({items})\r\n", seq + 1).as_bytes());
+                }
             }
             out.extend_from_slice(format!("{tag} OK FETCH completed\r\n").as_bytes());
         } else if upper.starts_with("LOGOUT") {
@@ -167,6 +329,7 @@ fn parse_set(set: &str) -> Vec<u32> {
     let mut out = Vec::new();
     for part in set.split(',') {
         match part.split_once(':') {
+            Some((a, "*")) => out.extend(a.parse::<u32>().unwrap()..=u32::MAX / 2),
             Some((a, b)) => out.extend(a.parse::<u32>().unwrap()..=b.parse::<u32>().unwrap()),
             None => out.push(part.parse().unwrap()),
         }
@@ -174,7 +337,7 @@ fn parse_set(set: &str) -> Vec<u32> {
     out
 }
 
-fn source(port: u16, password: &str) -> ImapSource {
+fn source_with(port: u16, credentials: Credentials) -> ImapSource {
     ImapSource::new(
         ImapSettings {
             host: "127.0.0.1".into(),
@@ -182,8 +345,46 @@ fn source(port: u16, password: &str) -> ImapSource {
             security: Security::Plain,
             username: "ada@example.com".into(),
         },
-        password.into(),
+        credentials,
     )
+}
+
+fn source(port: u16, password: &str) -> ImapSource {
+    source_with(port, Credentials::Password(password.into()))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signs_in_with_an_access_token() {
+    let port = serve().await;
+    let mut session = source_with(port, Credentials::AccessToken("good-token".into()))
+        .connect()
+        .await
+        .unwrap();
+    assert_eq!(session.select("INBOX").await.unwrap().uid_validity, 42);
+    session.logout().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_a_refused_access_token_as_a_sign_in_error() {
+    let port = serve().await;
+    let error = source_with(port, Credentials::AccessToken("expired".into()))
+        .connect()
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(error, SourceError::Auth(_)), "{error:?}");
+}
+
+#[test]
+fn builds_the_xoauth2_response() {
+    assert_eq!(
+        xoauth2("ada@example.com", "t0k"),
+        "user=ada@example.com\u{1}auth=Bearer t0k\u{1}\u{1}"
+    );
+    assert_eq!(
+        format!("{:?}", Credentials::AccessToken("t0k".into())),
+        "AccessToken(..)"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -274,4 +475,81 @@ fn reads_settings_with_defaults() {
         ImapSettings::from_json(&serde_json::json!({ "host": "x" })),
         Err(SourceError::Config(_))
     ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_flags_without_fetching_content() {
+    let port = serve().await;
+    let mut session = source(port, "secret").connect().await.unwrap();
+    let status = session.select("INBOX").await.unwrap();
+    assert_eq!(status.highest_modseq, None);
+    let flags = session.flags(1..=7, None).await.unwrap();
+    assert_eq!(
+        flags,
+        [
+            RemoteFlags {
+                uid: 3,
+                flags: vec!["\\Seen".into()],
+                labels: None,
+            },
+            RemoteFlags {
+                uid: 7,
+                flags: vec!["\\Flagged".into(), "$Work".into()],
+                labels: None,
+            },
+        ]
+    );
+    assert_eq!(session.flags(4..=6, None).await.unwrap(), []);
+    assert!(matches!(
+        session.flags(1..=7, Some(3)).await,
+        Err(SourceError::Protocol(_))
+    ));
+    let folders = session.folders().await.unwrap();
+    assert!(folders.iter().all(|f| !f.label), "labels outside Gmail");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_gmail_labels_and_changes_since_a_modseq() {
+    let port = serve_as(true).await;
+    let mut session = source(port, "secret").connect().await.unwrap();
+    let folders = session.folders().await.unwrap();
+    let find = |path: &str| folders.iter().find(|f| f.path == path).unwrap().clone();
+    assert!(find("INBOX").label);
+    assert!(find("[Gmail]/Sent Mail").label);
+    assert!(find("Projects/Важное").label);
+    let all = find("[Gmail]/All Mail");
+    assert_eq!(all.role, Some(FolderRole::All));
+    assert!(!all.label);
+    assert!(!find("[Gmail]/Spam").label);
+    assert!(!find("[Gmail]").label, "a parent is not a label");
+
+    let status = session.select("[Gmail]/All Mail").await.unwrap();
+    assert_eq!(status.highest_modseq, Some(205));
+    let messages = session.fetch(&[4, 9]).await.unwrap();
+    assert_eq!(
+        messages[0].labels.as_deref(),
+        Some(
+            &[
+                "Important".to_owned(),
+                "Inbox".into(),
+                "Projects/Важное".into()
+            ][..]
+        )
+    );
+    assert_eq!(messages[0].server_id, Some(1_004));
+    assert_eq!(
+        messages[1].labels.as_deref(),
+        Some(&["Say \"hi\"".to_owned(), "Sent".into()][..])
+    );
+
+    let changed = session.flags(1..=9, Some(150)).await.unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].uid, 9);
+    assert_eq!(changed[0].flags, ["\\Flagged"]);
+    assert_eq!(
+        changed[0].labels.as_deref(),
+        Some(&["Say \"hi\"".to_owned(), "Sent".into()][..])
+    );
+    assert_eq!(session.flags(1..=9, Some(205)).await.unwrap(), []);
+    session.logout().await.unwrap();
 }

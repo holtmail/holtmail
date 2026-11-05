@@ -1,9 +1,11 @@
 //! A [`Source`] for IMAP servers.
 
+mod labels;
 mod stream;
 mod utf7;
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +15,8 @@ use bytes::Bytes;
 use futures::TryStreamExt;
 use holtmail_core::Timestamp;
 use holtmail_source::{
-    FolderStatus, RemoteFolder, RemoteMessage, Source, SourceError, SourceSession,
+    Credentials, FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError,
+    SourceSession,
 };
 use holtmail_store::FolderRole;
 use serde::{Deserialize, Serialize};
@@ -34,7 +37,7 @@ pub enum Security {
     Plain,
 }
 
-/// Account settings stored in `Account.settings`; the password is sealed separately.
+/// Account settings stored in `Account.settings`; credentials are sealed separately.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImapSettings {
     /// Server host name.
@@ -67,13 +70,14 @@ impl ImapSettings {
 /// An IMAP account.
 pub struct ImapSource {
     settings: ImapSettings,
-    password: String,
+    credentials: Credentials,
     tls: Arc<tokio_rustls::rustls::ClientConfig>,
 }
 
 impl ImapSource {
-    /// A source for the server in `settings`, signing in with `password`.
-    pub fn new(settings: ImapSettings, password: String) -> Self {
+    /// A source for the server in `settings`. A password signs in with `LOGIN`, an access token
+    /// with `AUTHENTICATE XOAUTH2` for the user name in `settings`.
+    pub fn new(settings: ImapSettings, credentials: Credentials) -> Self {
         let roots = tokio_rustls::rustls::RootCertStore::from_iter(
             webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
         );
@@ -86,7 +90,7 @@ impl ImapSource {
         .with_no_client_auth();
         Self {
             settings,
-            password,
+            credentials,
             tls: Arc::new(tls),
         }
     }
@@ -109,24 +113,76 @@ impl Source for ImapSource {
                 .map_err(|e| SourceError::Connection(e.to_string()))?
                 .ok_or_else(|| SourceError::Connection("closed before the greeting".into()))?;
         }
-        let session = timed(client.login(&self.settings.username, &self.password))
-            .await?
-            .map_err(|(error, _)| match error {
-                async_imap::error::Error::No(message) | async_imap::error::Error::Bad(message) => {
-                    SourceError::Auth(message)
-                }
-                other => convert(other),
-            })?;
+        let signed_in = match &self.credentials {
+            Credentials::Password(password) => {
+                timed(client.login(&self.settings.username, password)).await?
+            }
+            Credentials::AccessToken(token) => {
+                timed(client.authenticate(
+                    "XOAUTH2",
+                    Xoauth2 {
+                        response: xoauth2(&self.settings.username, token),
+                        sent: false,
+                    },
+                ))
+                .await?
+            }
+        };
+        let mut session = signed_in.map_err(|(error, _)| match error {
+            async_imap::error::Error::No(message) | async_imap::error::Error::Bad(message) => {
+                SourceError::Auth(message)
+            }
+            other => convert(other),
+        })?;
+        let capabilities = timed(session.capabilities()).await?.map_err(convert)?;
+        let gmail = capabilities.has_str("X-GM-EXT-1");
+        let condstore = capabilities.has_str("CONDSTORE") || capabilities.has_str("QRESYNC");
+        if condstore && capabilities.has_str("ENABLE") {
+            match timed(session.run_command_and_check_ok("ENABLE CONDSTORE")).await? {
+                Ok(())
+                | Err(async_imap::error::Error::No(_) | async_imap::error::Error::Bad(_)) => {}
+                Err(other) => return Err(convert(other)),
+            }
+        }
         Ok(Box::new(ImapSession {
             session,
             names: HashMap::new(),
+            gmail,
+            modseq: false,
         }))
+    }
+}
+
+/// The SASL XOAUTH2 initial response for `user` and an access token.
+fn xoauth2(user: &str, token: &str) -> String {
+    format!("user={user}\x01auth=Bearer {token}\x01\x01")
+}
+
+/// Sends the XOAUTH2 response once. A server that refuses the token sends a continuation with
+/// an error in JSON instead of a tagged `NO`; the empty answer to it makes the server finish with
+/// `NO`, which becomes `SourceError::Auth`.
+struct Xoauth2 {
+    response: String,
+    sent: bool,
+}
+
+impl async_imap::Authenticator for Xoauth2 {
+    type Response = String;
+
+    fn process(&mut self, _challenge: &[u8]) -> String {
+        if std::mem::replace(&mut self.sent, true) {
+            String::new()
+        } else {
+            self.response.clone()
+        }
     }
 }
 
 struct ImapSession {
     session: async_imap::Session<ImapStream>,
     names: HashMap<String, String>,
+    gmail: bool,
+    modseq: bool,
 }
 
 #[async_trait]
@@ -175,11 +231,18 @@ impl SourceSession for ImapSession {
                 role = Some(FolderRole::Inbox);
             }
             let role = role.or_else(|| FolderRole::guess(&path));
+            let label = self.gmail
+                && selectable
+                && !matches!(
+                    role,
+                    Some(FolderRole::All | FolderRole::Trash | FolderRole::Junk)
+                );
             self.names.insert(path.clone(), raw);
             out.push(RemoteFolder {
                 path,
                 role,
                 selectable,
+                label,
             });
         }
         Ok(out)
@@ -195,11 +258,13 @@ impl SourceSession for ImapSession {
         let uid_validity = mailbox
             .uid_validity
             .ok_or_else(|| SourceError::Protocol(format!("{path} has no UIDVALIDITY")))?;
+        self.modseq = mailbox.highest_modseq.is_some();
         Ok(FolderStatus {
             uid_validity: u64::from(uid_validity),
             uid_next: mailbox.uid_next.map(u64::from),
             highest_modseq: mailbox.highest_modseq,
             exists: u64::from(mailbox.exists),
+            uids_ascend: true,
         })
     }
 
@@ -217,9 +282,14 @@ impl SourceSession for ImapSession {
             return Ok(Vec::new());
         }
         let set = uid_set(uids);
+        let items = if self.gmail {
+            "(UID FLAGS INTERNALDATE X-GM-MSGID X-GM-LABELS BODY.PEEK[])"
+        } else {
+            "(UID FLAGS INTERNALDATE BODY.PEEK[])"
+        };
         let fetches: Vec<_> = timed(async {
             self.session
-                .uid_fetch(&set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+                .uid_fetch(&set, items)
                 .await?
                 .try_collect::<Vec<_>>()
                 .await
@@ -234,6 +304,8 @@ impl SourceSession for ImapSession {
             out.push(RemoteMessage {
                 uid: u64::from(uid),
                 flags: fetch.flags().filter_map(flag_name).collect(),
+                labels: self.labels(fetch),
+                server_id: fetch.gmail_msg_id().copied(),
                 received_at: fetch
                     .internal_date()
                     .map(|date| Timestamp::from_secs(date.timestamp())),
@@ -244,8 +316,66 @@ impl SourceSession for ImapSession {
         Ok(out)
     }
 
+    async fn flags(
+        &mut self,
+        uids: RangeInclusive<u64>,
+        changed_since: Option<u64>,
+    ) -> Result<Vec<RemoteFlags>, SourceError> {
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+        if changed_since.is_some() && !self.modseq {
+            return Err(SourceError::Protocol(
+                "the folder has no mod-sequences (CONDSTORE)".into(),
+            ));
+        }
+        let set = format!("{}:{}", uids.start(), uids.end());
+        let mut items = String::from(if self.gmail {
+            "(UID FLAGS X-GM-LABELS)"
+        } else {
+            "(UID FLAGS)"
+        });
+        if let Some(since) = changed_since {
+            items.push_str(&format!(" (CHANGEDSINCE {since})"));
+        }
+        let fetches: Vec<_> = timed(async {
+            self.session
+                .uid_fetch(&set, &items)
+                .await?
+                .try_collect::<Vec<_>>()
+                .await
+        })
+        .await?
+        .map_err(convert)?;
+        let mut out: Vec<RemoteFlags> = fetches
+            .iter()
+            .filter_map(|fetch| {
+                let uid = u64::from(fetch.uid?);
+                uids.contains(&uid).then(|| RemoteFlags {
+                    uid,
+                    flags: fetch.flags().filter_map(flag_name).collect(),
+                    labels: self.labels(fetch),
+                })
+            })
+            .collect();
+        out.sort_by_key(|f| f.uid);
+        out.dedup_by_key(|f| f.uid);
+        Ok(out)
+    }
+
     async fn logout(&mut self) -> Result<(), SourceError> {
         timed(self.session.logout()).await?.map_err(convert)
+    }
+}
+
+impl ImapSession {
+    fn labels(&self, fetch: &async_imap::types::Fetch) -> Option<Vec<String>> {
+        self.gmail.then(|| {
+            fetch
+                .gmail_labels()
+                .map(|raw| labels::label_names(raw.iter().map(|l| l.as_ref())))
+                .unwrap_or_default()
+        })
     }
 }
 

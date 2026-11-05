@@ -8,12 +8,16 @@ use std::sync::Arc;
 use bytes::Bytes;
 use holtmail_blob::{BlobError, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
+use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
 use holtmail_mime::{MimeError, ParsedMessage};
-use holtmail_store::{Attachment, NewMessage, Store, StoreError};
+use holtmail_store::{Attachment, Derived, DerivedKind, NewMessage, Store, StoreError};
 
 /// Plain text indexed per message; the stored bytes are never cut.
 const MAX_INDEXED_TEXT: usize = 1 << 20;
+
+/// Attachment text indexed per message, all attachments together.
+pub const MAX_ATTACHMENT_TEXT: usize = 4 << 20;
 
 /// Where a message was found.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,6 +28,9 @@ pub struct Placement {
     pub uid: Option<u64>,
     /// Flags as the source reported them.
     pub flags: Vec<String>,
+    /// Labels as the source reported them; they replace the message's labels. `None` leaves the
+    /// labels as they are.
+    pub labels: Option<Vec<String>>,
     /// When the server received it.
     pub received_at: Option<Timestamp>,
 }
@@ -62,6 +69,7 @@ pub struct Ingest {
     blobs: Arc<dyn BlobStore>,
     store: Arc<dyn Store>,
     index: Arc<dyn SearchIndex>,
+    extractor: Option<Arc<dyn Extractor>>,
 }
 
 impl Ingest {
@@ -75,7 +83,19 @@ impl Ingest {
             blobs,
             store,
             index,
+            extractor: None,
         }
+    }
+
+    /// The same pipeline, also indexing text from attachments that are not inline.
+    ///
+    /// Text is extracted once per attachment blob and kept as a derived blob, so the same file in
+    /// many messages, and later reindexing, reuse it. Files the extractor cannot read are
+    /// recorded and not tried again; timeouts are tried again next time. Extraction never fails
+    /// ingest.
+    pub fn with_extractor(mut self, extractor: Arc<dyn Extractor>) -> Self {
+        self.extractor = Some(extractor);
+        self
     }
 
     /// Archives `raw` into `archive` at `placement`.
@@ -139,12 +159,15 @@ impl Ingest {
                 )
                 .await?;
         }
+        if let Some(labels) = &placement.labels {
+            self.store.set_labels(inserted.message_id, labels).await?;
+        }
         self.index_parsed(inserted.message_id, &parsed).await?;
         Ok(inserted)
     }
 
-    /// Rebuilds the index document of a message from its stored bytes, e.g. after its folders or
-    /// flags changed. Searchable after [`Ingest::commit`].
+    /// Rebuilds the index document of a message from its stored bytes, e.g. after its folders,
+    /// flags or labels changed. Searchable after [`Ingest::commit`].
     pub async fn reindex(&self, message: MessageId) -> Result<(), IngestError> {
         let stored = self
             .store
@@ -231,14 +254,97 @@ impl Ingest {
                 .iter()
                 .filter_map(|a| a.filename.clone())
                 .collect(),
-            attachment_text: String::new(),
+            attachment_text: self.attachment_text(message, parsed).await?,
             folders,
             flags,
+            labels: self.store.labels(message).await?,
             date: stored.date,
             has_attachments: !attachments.is_empty(),
         };
         self.index.put(vec![document]).await?;
         Ok(())
+    }
+}
+
+impl Ingest {
+    async fn attachment_text(
+        &self,
+        message: MessageId,
+        parsed: &ParsedMessage,
+    ) -> Result<String, IngestError> {
+        let Some(extractor) = &self.extractor else {
+            return Ok(String::new());
+        };
+        let mut out = String::new();
+        for attachment in self.store.attachments(message).await? {
+            if attachment.inline || out.len() >= MAX_ATTACHMENT_TEXT {
+                continue;
+            }
+            let cached = match self
+                .store
+                .derived(&attachment.blob_id, DerivedKind::Text)
+                .await?
+            {
+                Some(Derived::Nothing) => continue,
+                Some(Derived::Blob(blob)) => self.blobs.get(&blob).await?,
+                None => None,
+            };
+            let text = match cached {
+                Some(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                None => match self.extract(&**extractor, &attachment, parsed).await? {
+                    Some(text) => text,
+                    None => continue,
+                },
+            };
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&text);
+        }
+        Ok(holtmail_extract::cut(out, MAX_ATTACHMENT_TEXT))
+    }
+
+    async fn extract(
+        &self,
+        extractor: &dyn Extractor,
+        attachment: &Attachment,
+        parsed: &ParsedMessage,
+    ) -> Result<Option<String>, IngestError> {
+        if attachment.size > holtmail_extract::MAX_INPUT as u64 {
+            self.store
+                .set_derived(&attachment.blob_id, DerivedKind::Text, &Derived::Nothing)
+                .await?;
+            return Ok(None);
+        }
+        let content = match parsed.attachments.get(attachment.ordinal as usize) {
+            Some(part) => part.content.clone(),
+            None => match self.blobs.get(&attachment.blob_id).await? {
+                Some(bytes) => bytes,
+                None => return Ok(None),
+            },
+        };
+        let file = File {
+            content_type: attachment.content_type.clone(),
+            filename: attachment.filename.clone(),
+            content,
+        };
+        let derived = match extractor.extract(&file).await {
+            Ok(None) | Err(ExtractError::TimedOut) => return Ok(None),
+            Ok(Some(text)) if !text.trim().is_empty() => {
+                let blob = self.blobs.put(Bytes::from(text.clone())).await?;
+                self.store
+                    .set_derived(&attachment.blob_id, DerivedKind::Text, &Derived::Blob(blob))
+                    .await?;
+                return Ok(Some(text));
+            }
+            Ok(Some(_)) | Err(ExtractError::TooLarge | ExtractError::Unreadable(_)) => {
+                Derived::Nothing
+            }
+        };
+        self.store
+            .set_derived(&attachment.blob_id, DerivedKind::Text, &derived)
+            .await?;
+        Ok(None)
     }
 }
 
@@ -345,6 +451,7 @@ mod tests {
             folder: Some(f.inbox),
             uid: Some(uid),
             flags: flags.iter().map(|s| s.to_string()).collect(),
+            labels: None,
             received_at: None,
         }
     }
@@ -422,6 +529,86 @@ mod tests {
         assert_eq!(
             find(&f, vec![Clause::Flag("\\Seen".into())]).await,
             [root.message_id]
+        );
+    }
+
+    struct Counting(
+        std::sync::atomic::AtomicUsize,
+        holtmail_extract_basic::BasicExtractor,
+    );
+
+    #[async_trait::async_trait]
+    impl Extractor for Counting {
+        async fn extract(&self, file: &File) -> Result<Option<String>, ExtractError> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.1.extract(file).await
+        }
+    }
+
+    const FORWARD: &[u8] = b"From: Carol <carol@example.org>\r\nTo: ada@example.com\r\nSubject: Fwd: menu\r\nMessage-ID: <f1@example.org>\r\nDate: Sat, 15 Mar 2025 10:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n--b\r\nContent-Type: application/octet-stream; name=menu.txt\r\nContent-Disposition: attachment; filename=menu.txt\r\n\r\nSoup\r\n--b\r\nContent-Type: application/pdf; name=broken.pdf\r\nContent-Disposition: attachment; filename=broken.pdf\r\n\r\nnot a pdf\r\n--b--\r\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn indexes_attachment_text_once_per_file() {
+        let f = fixture().await;
+        let counter = Arc::new(Counting(Default::default(), Default::default()));
+        let ingest = f.ingest.clone().with_extractor(counter.clone());
+        let reply = ingest
+            .ingest(f.archive, Bytes::from_static(REPLY), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        let forward = ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(FORWARD),
+                &in_inbox(&f, 2, &[]),
+            )
+            .await
+            .unwrap();
+        ingest.commit().await.unwrap();
+        let calls = || counter.0.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(calls(), 2, "the shared file was read twice");
+
+        let results = f
+            .index
+            .search(
+                f.archive,
+                &SearchQuery {
+                    clauses: vec![Clause::Text("soup".into())],
+                },
+                SortOrder::Newest,
+                0,
+                50,
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.hits, [forward.message_id, reply.message_id]);
+        assert_eq!(results.attachment_hits, results.hits);
+
+        let broken = &f.store.attachments(forward.message_id).await.unwrap()[1];
+        assert_eq!(
+            f.store
+                .derived(&broken.blob_id, DerivedKind::Text)
+                .await
+                .unwrap(),
+            Some(Derived::Nothing)
+        );
+
+        ingest.reindex(reply.message_id).await.unwrap();
+        ingest.reindex(forward.message_id).await.unwrap();
+        ingest.commit().await.unwrap();
+        assert_eq!(calls(), 2, "reindexing read the files again");
+        assert_eq!(
+            find(&f, vec![Clause::Text("soup".into())]).await.len(),
+            2,
+            "reindexing lost the attachment text"
+        );
+
+        f.ingest.reindex(reply.message_id).await.unwrap();
+        f.ingest.commit().await.unwrap();
+        assert_eq!(
+            find(&f, vec![Clause::Text("soup".into())]).await,
+            [forward.message_id],
+            "without an extractor no attachment text is indexed"
         );
     }
 
@@ -506,6 +693,51 @@ mod tests {
         f.ingest.commit().await.unwrap();
         assert_eq!(
             find(&f, vec![Clause::Flag("\\Flagged".into())]).await,
+            [ingested.message_id]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stores_and_indexes_labels() {
+        let f = fixture().await;
+        let mut placement = in_inbox(&f, 1, &[]);
+        placement.labels = Some(vec!["Inbox".into(), "Projects/2025".into()]);
+        let ingested = f
+            .ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &placement)
+            .await
+            .unwrap();
+        f.ingest.commit().await.unwrap();
+        assert_eq!(
+            find(&f, vec![Clause::Label("projects/2025".into())]).await,
+            [ingested.message_id]
+        );
+
+        let mut again = in_inbox(&f, 1, &[]);
+        again.labels = None;
+        f.ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &again)
+            .await
+            .unwrap();
+        assert_eq!(
+            f.store.labels(ingested.message_id).await.unwrap(),
+            ["Inbox", "Projects/2025"],
+            "a placement without labels dropped them"
+        );
+
+        f.store
+            .set_labels(ingested.message_id, &["Done".into()])
+            .await
+            .unwrap();
+        f.ingest.reindex(ingested.message_id).await.unwrap();
+        f.ingest.commit().await.unwrap();
+        assert!(
+            find(&f, vec![Clause::Label("inbox".into())])
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            find(&f, vec![Clause::Label("done".into())]).await,
             [ingested.message_id]
         );
     }

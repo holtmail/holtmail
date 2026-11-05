@@ -20,34 +20,47 @@ holtmail-blob-s3.workspace = true
 holtmail-core.workspace = true
 holtmail-fetch.workspace = true
 holtmail-fetch-http.workspace = true
+holtmail-extract.workspace = true
+holtmail-extract-basic.workspace = true
+holtmail-export.workspace = true
 holtmail-import.workspace = true
 holtmail-index.workspace = true
 holtmail-index-tantivy.workspace = true
+holtmail-oauth.workspace = true
+holtmail-oauth-http.workspace = true
+holtmail-query.workspace = true
 holtmail-ingest.workspace = true
 holtmail-remote.workspace = true
 holtmail-secret.workspace = true
 holtmail-secret-local.workspace = true
 holtmail-source.workspace = true
+holtmail-source-graph.workspace = true
 holtmail-source-imap.workspace = true
+holtmail-source-jmap.workspace = true
 holtmail-store.workspace = true
 holtmail-store-sqlite.workspace = true
 holtmail-sync.workspace = true
 anyhow.workspace = true
 base64.workspace = true
+bytes.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["signal", "net", "time"] }
+tar.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["signal", "net", "time", "sync", "io-std"] }
 toml.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 holtmail-fetch = { workspace = true, features = ["testing"] }
-tempfile.workspace = true
+holtmail-oauth = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

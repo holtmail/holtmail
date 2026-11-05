@@ -6,15 +6,21 @@ use anyhow::{Context, bail};
 use holtmail_blob::BlobStore;
 use holtmail_blob_fs::FsBlobStore;
 use holtmail_blob_s3::{S3BlobStore, S3Config};
+use holtmail_extract::Extractor;
+use holtmail_extract_basic::BasicExtractor;
 use holtmail_index::SearchIndex;
 use holtmail_index_tantivy::TantivyIndex;
+use holtmail_ingest::Ingest;
+use holtmail_oauth::{Client, Provider};
+use holtmail_oauth_http::HttpTokenEndpoint;
 use holtmail_secret::SecretBox;
 use holtmail_secret_local::LocalSecretBox;
-use holtmail_store::Store;
+use holtmail_store::{SettingsStore, Store};
 use holtmail_store_sqlite::SqliteStore;
 use serde::Deserialize;
 
 use crate::image_proxy::ProxiedFetcher;
+use crate::oauth::OAuth;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,6 +45,32 @@ pub struct Config {
     /// shows it and cannot change it.
     #[serde(default)]
     pub image_proxy: Option<String>,
+    /// OAuth clients for Gmail and Microsoft sign-in; Thunderbird's public clients by default.
+    #[serde(default)]
+    pub oauth: OAuthConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthConfig {
+    #[serde(default)]
+    pub google: OAuthClientConfig,
+    #[serde(default)]
+    pub microsoft: OAuthClientConfig,
+}
+
+/// One provider's client. Without `client_id` Thunderbird's client is used.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthClientConfig {
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    /// Where the provider sends the browser back: `<public_url>/api/oauth/callback` for an own
+    /// client, `http://127.0.0.1` for Thunderbird's.
+    #[serde(default)]
+    pub redirect_url: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -102,6 +134,25 @@ impl Config {
         if let Ok(proxy) = std::env::var("HOLTMAIL_IMAGE_PROXY") {
             config.image_proxy = Some(proxy).filter(|p| !p.trim().is_empty());
         }
+        for (name, client) in [
+            ("GOOGLE", &mut config.oauth.google),
+            ("MICROSOFT", &mut config.oauth.microsoft),
+        ] {
+            let read = |key: &str| {
+                std::env::var(format!("HOLTMAIL_OAUTH_{name}_{key}"))
+                    .ok()
+                    .filter(|v| !v.trim().is_empty())
+            };
+            if let Some(id) = read("CLIENT_ID") {
+                client.client_id = Some(id);
+            }
+            if let Some(secret) = read("CLIENT_SECRET") {
+                client.client_secret = Some(secret);
+            }
+            if let Some(url) = read("REDIRECT_URL") {
+                client.redirect_url = Some(url);
+            }
+        }
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
                 url.starts_with("http://") || url.starts_with("https://"),
@@ -122,6 +173,41 @@ impl Config {
         }
     }
 
+    /// The OAuth client for `provider`, from `[oauth.*]` or Thunderbird's.
+    pub fn oauth_client(&self, provider: Provider) -> anyhow::Result<Client> {
+        let own = match provider {
+            Provider::Google => &self.oauth.google,
+            Provider::Microsoft => &self.oauth.microsoft,
+        };
+        let mut client = match &own.client_id {
+            Some(id) => Client::own(
+                provider,
+                id.trim(),
+                own.client_secret.clone().filter(|s| !s.is_empty()),
+                format!("{}{}", self.base_url(), crate::oauth::CALLBACK_PATH),
+            ),
+            None => {
+                anyhow::ensure!(
+                    own.client_secret.is_none(),
+                    "oauth.{}.client_secret is set without client_id",
+                    provider.as_str()
+                );
+                Client::thunderbird(provider)
+            }
+        };
+        if let Some(url) = &own.redirect_url {
+            let parsed = url::Url::parse(url)
+                .with_context(|| format!("oauth.{}.redirect_url", provider.as_str()))?;
+            anyhow::ensure!(
+                matches!(parsed.scheme(), "http" | "https"),
+                "oauth.{}.redirect_url must start with http:// or https://",
+                provider.as_str()
+            );
+            client.redirect_url = url.clone();
+        }
+        Ok(client)
+    }
+
     /// Whether the instance is served over https.
     pub fn https(&self) -> bool {
         self.public_url
@@ -135,7 +221,9 @@ pub struct Services {
     pub blobs: Arc<dyn BlobStore>,
     pub store: Arc<dyn Store>,
     pub index: Arc<dyn SearchIndex>,
+    pub extractor: Arc<dyn Extractor>,
     pub fetcher: Arc<ProxiedFetcher>,
+    pub oauth: Arc<OAuth>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -147,46 +235,75 @@ pub async fn open_store(config: &Config) -> anyhow::Result<Arc<dyn Store>> {
     ))
 }
 
+/// Opens the blob store the config names, without the rest of the services.
+pub async fn open_blobs(config: &Config) -> anyhow::Result<Arc<dyn BlobStore>> {
+    let blobs: Arc<dyn BlobStore> = match &config.blobs {
+        BlobConfig::Fs => Arc::new(FsBlobStore::open(config.data_dir.join("blobs")).await?),
+        BlobConfig::FsAt { path } => Arc::new(FsBlobStore::open(path).await?),
+        BlobConfig::S3 {
+            bucket,
+            region,
+            endpoint,
+            prefix,
+            path_style,
+            allow_http,
+        } => {
+            let (Ok(access_key_id), Ok(secret_access_key)) = (
+                std::env::var("HOLTMAIL_S3_ACCESS_KEY_ID"),
+                std::env::var("HOLTMAIL_S3_SECRET_ACCESS_KEY"),
+            ) else {
+                bail!("S3 blobs need HOLTMAIL_S3_ACCESS_KEY_ID and HOLTMAIL_S3_SECRET_ACCESS_KEY");
+            };
+            Arc::new(S3BlobStore::new(S3Config {
+                bucket: bucket.clone(),
+                region: region.clone(),
+                endpoint: endpoint.clone(),
+                access_key_id,
+                secret_access_key,
+                prefix: prefix.clone(),
+                path_style: *path_style,
+                allow_http: *allow_http,
+            })?)
+        }
+    };
+    Ok(blobs)
+}
+
+/// Opens the secret box of the data directory, creating its key on first use.
+pub fn open_secrets(config: &Config) -> anyhow::Result<Arc<LocalSecretBox>> {
+    std::fs::create_dir_all(&config.data_dir)
+        .with_context(|| format!("creating {}", config.data_dir.display()))?;
+    Ok(Arc::new(LocalSecretBox::open_or_create(
+        config.data_dir.join("secret.key"),
+    )?))
+}
+
+/// The OAuth clients the config names, with the provider's token endpoint over HTTPS.
+pub fn open_oauth(config: &Config) -> anyhow::Result<Arc<OAuth>> {
+    let mut clients = Vec::new();
+    for provider in Provider::ALL {
+        clients.push(config.oauth_client(provider)?);
+    }
+    Ok(Arc::new(OAuth::new(
+        clients,
+        Arc::new(HttpTokenEndpoint::new(std::time::Duration::from_secs(30))?),
+    )))
+}
+
 impl Services {
     pub async fn open(config: &Config) -> anyhow::Result<Self> {
         std::fs::create_dir_all(&config.data_dir)
             .with_context(|| format!("creating {}", config.data_dir.display()))?;
-        let blobs: Arc<dyn BlobStore> = match &config.blobs {
-            BlobConfig::Fs => Arc::new(FsBlobStore::open(config.data_dir.join("blobs")).await?),
-            BlobConfig::FsAt { path } => Arc::new(FsBlobStore::open(path).await?),
-            BlobConfig::S3 {
-                bucket,
-                region,
-                endpoint,
-                prefix,
-                path_style,
-                allow_http,
-            } => {
-                let (Ok(access_key_id), Ok(secret_access_key)) = (
-                    std::env::var("HOLTMAIL_S3_ACCESS_KEY_ID"),
-                    std::env::var("HOLTMAIL_S3_SECRET_ACCESS_KEY"),
-                ) else {
-                    bail!(
-                        "S3 blobs need HOLTMAIL_S3_ACCESS_KEY_ID and HOLTMAIL_S3_SECRET_ACCESS_KEY"
-                    );
-                };
-                Arc::new(S3BlobStore::new(S3Config {
-                    bucket: bucket.clone(),
-                    region: region.clone(),
-                    endpoint: endpoint.clone(),
-                    access_key_id,
-                    secret_access_key,
-                    prefix: prefix.clone(),
-                    path_style: *path_style,
-                    allow_http: *allow_http,
-                })?)
-            }
-        };
-        let secrets = Arc::new(LocalSecretBox::open_or_create(
-            config.data_dir.join("secret.key"),
-        )?);
+        let blobs = open_blobs(config).await?;
+        let secrets = open_secrets(config)?;
         let store = Arc::new(SqliteStore::open(config.data_dir.join("holtmail.db")).await?);
         let index = Arc::new(TantivyIndex::open(config.data_dir.join("index"))?);
+        if index.was_emptied() {
+            tracing::warn!("the search index was from an older version and is rebuilt");
+            store
+                .set_setting(crate::REINDEX_SETTING, Some("needed"))
+                .await?;
+        }
         let fetcher = Arc::new(
             ProxiedFetcher::open(
                 config.image_proxy.as_deref(),
@@ -195,13 +312,22 @@ impl Services {
             )
             .await?,
         );
+        let oauth = open_oauth(config)?;
         Ok(Self {
             secrets,
             blobs,
             store,
             index,
+            extractor: Arc::new(BasicExtractor::new()),
             fetcher,
+            oauth,
         })
+    }
+
+    /// The ingest pipeline over these services, with attachment text.
+    pub fn ingest(&self) -> Ingest {
+        Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
+            .with_extractor(self.extractor.clone())
     }
 }
 
@@ -245,6 +371,41 @@ mod tests {
         assert!(config.https());
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.base_url(), "http://127.0.0.1:8080");
+    }
+
+    #[test]
+    fn picks_oauth_clients() {
+        let config: Config = toml::from_str("public_url = \"https://mail.example.com/\"").unwrap();
+        let google = config.oauth_client(Provider::Google).unwrap();
+        assert!(google.is_thunderbird());
+        assert_eq!(google.redirect_url, "http://127.0.0.1");
+        let config: Config = toml::from_str(
+            r#"
+            public_url = "https://mail.example.com"
+            [oauth.microsoft]
+            client_id = "own-id"
+            client_secret = "own-secret"
+            [oauth.google]
+            redirect_url = "http://127.0.0.1:8080/api/oauth/callback"
+            "#,
+        )
+        .unwrap();
+        let microsoft = config.oauth_client(Provider::Microsoft).unwrap();
+        assert!(!microsoft.is_thunderbird());
+        assert_eq!(microsoft.client_secret.as_deref(), Some("own-secret"));
+        assert_eq!(
+            microsoft.redirect_url,
+            "https://mail.example.com/api/oauth/callback"
+        );
+        let google = config.oauth_client(Provider::Google).unwrap();
+        assert!(google.is_thunderbird());
+        assert_eq!(
+            google.redirect_url,
+            "http://127.0.0.1:8080/api/oauth/callback"
+        );
+        let config: Config = toml::from_str("[oauth.google]\nclient_secret = \"x\"").unwrap();
+        assert!(config.oauth_client(Provider::Google).is_err());
+        assert!(toml::from_str::<Config>("[oauth.yahoo]\nclient_id = \"x\"").is_err());
     }
 
     #[test]

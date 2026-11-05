@@ -6,19 +6,22 @@ use std::time::Duration;
 use async_trait::async_trait;
 use holtmail_api::{
     AccountChange, AccountDetails, AccountStatus, ImageProxy, MailboxError, Mailboxes,
-    NewImapAccount, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
+    NewImapAccount, NewJmapAccount, OAuthFinished, OAuthStart, OAuthStarted, OAuthTarget,
+    RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
 };
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
+use holtmail_oauth::{Access, Provider};
 use holtmail_remote::{RemoteImages, Saved, Scope};
-use holtmail_source::{Source, SourceError};
-use holtmail_source_imap::{ImapSettings, ImapSource};
-use holtmail_store::{Account, AccountKind, ArchivedWhen};
+use holtmail_source::Credentials;
+use holtmail_source_imap::ImapSettings;
+use holtmail_store::{Account, AccountKind, AccountRun, ArchivedWhen, StoreError, TaskRecord};
 use holtmail_sync::Syncer;
 
 use crate::accounts;
 use crate::config::Services;
 use crate::import;
+use crate::oauth::{OAuthSettings, Purpose};
 use crate::schedule::{self, Schedule};
 use crate::tasks::{NewTask, TaskHandle, Tasks};
 
@@ -40,6 +43,8 @@ struct Inner {
     again: Mutex<HashSet<ArchiveId>>,
     schedule: Arc<Schedule>,
     next: Mutex<HashMap<AccountId, Timestamp>>,
+    due: Mutex<HashSet<AccountId>>,
+    interrupted: Mutex<Vec<TaskRecord>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,6 +55,20 @@ enum Job {
 }
 
 impl Job {
+    fn as_str(self) -> &'static str {
+        match self {
+            Job::New => "new",
+            Job::Older => "older",
+            Job::Failed => "failed",
+        }
+    }
+
+    fn parse(name: &str) -> Option<Self> {
+        [Job::New, Job::Older, Job::Failed]
+            .into_iter()
+            .find(|job| job.as_str() == name)
+    }
+
     fn describe(self) -> &'static str {
         match self {
             Job::New => "Saving images of new mail",
@@ -79,30 +98,123 @@ fn saved_summary(job: Job, saved: &Saved) -> String {
 }
 
 impl Runner {
-    pub fn new(services: Arc<Services>, uploads: PathBuf, schedule: Arc<Schedule>) -> Self {
+    /// A runner with the tasks and last runs of earlier processes: tasks they left running
+    /// are marked interrupted, accounts whose sync was interrupted are due at once, and
+    /// [`Runner::resume`] starts interrupted image work again.
+    pub async fn open(
+        services: Arc<Services>,
+        uploads: PathBuf,
+        schedule: Arc<Schedule>,
+    ) -> anyhow::Result<Self> {
+        let (tasks, interrupted) = Tasks::open(services.store.clone()).await?;
+        let status = services
+            .store
+            .last_runs()
+            .await?
+            .into_iter()
+            .map(|(account, run)| {
+                (
+                    account,
+                    AccountStatus {
+                        running: false,
+                        new_messages: run.new_messages,
+                        finished_at: Some(run.finished_at),
+                        error: run.error,
+                        next_sync_at: None,
+                    },
+                )
+            })
+            .collect();
+        let due = interrupted
+            .iter()
+            .filter(|t| t.kind == TaskKind::Sync)
+            .filter_map(|t| t.account_id)
+            .collect();
+        if !interrupted.is_empty() {
+            tracing::info!(
+                tasks = interrupted.len(),
+                "tasks stopped by the last shutdown marked interrupted"
+            );
+        }
         let syncer = accounts::syncer(&services);
-        let ingest = Ingest::new(
-            services.blobs.clone(),
-            services.store.clone(),
-            services.index.clone(),
-        );
+        let ingest = services.ingest();
         let remote = RemoteImages::new(
             services.fetcher.clone(),
             services.blobs.clone(),
             services.store.clone(),
         );
-        Self(Arc::new(Inner {
+        let runner = Self(Arc::new(Inner {
             services,
             syncer,
             ingest,
             uploads,
-            status: Mutex::new(HashMap::new()),
+            status: Mutex::new(status),
             remote,
-            tasks: Arc::new(Tasks::default()),
+            tasks,
             again: Mutex::new(HashSet::new()),
             schedule,
             next: Mutex::new(HashMap::new()),
-        }))
+            due: Mutex::new(due),
+            interrupted: Mutex::new(interrupted),
+        }));
+        runner.clear_uploads().await;
+        Ok(runner)
+    }
+
+    async fn clear_uploads(&self) {
+        let Ok(mut dir) = tokio::fs::read_dir(&self.0.uploads).await else {
+            return;
+        };
+        let mut removed = 0u64;
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            if entry.file_type().await.is_ok_and(|t| t.is_file())
+                && tokio::fs::remove_file(entry.path()).await.is_ok()
+            {
+                removed += 1;
+            }
+        }
+        if removed > 0 {
+            tracing::info!(files = removed, "uploads of interrupted imports removed");
+        }
+    }
+
+    /// Writes task changes to the store behind the work, until the process ends.
+    pub async fn write_tasks(self) {
+        self.0.tasks.clone().write_behind().await;
+    }
+
+    /// Writes every task change made so far to the store.
+    pub async fn flush_tasks(&self) {
+        self.0.tasks.flush().await;
+    }
+
+    /// Starts again the remote image work a restart interrupted, then saves images of new mail
+    /// for every archive that has saving on and mail waiting.
+    pub async fn resume(&self) {
+        let interrupted =
+            std::mem::take(&mut *self.0.interrupted.lock().expect("interrupted lock"));
+        let mut seen = HashSet::new();
+        for task in interrupted {
+            let (TaskKind::RemoteImages, Some(archive), Some(job)) = (
+                task.kind,
+                task.archive_id,
+                task.job.as_deref().and_then(Job::parse),
+            ) else {
+                continue;
+            };
+            if job == Job::New || !seen.insert(archive) {
+                continue;
+            }
+            match self.start_remote(archive, job).await {
+                Ok(_) => {
+                    tracing::info!(%archive, job = job.as_str(), "interrupted image work resumed")
+                }
+                Err(error) => {
+                    tracing::info!(%archive, %error, "interrupted image work not resumed")
+                }
+            }
+        }
+        self.save_new_remote_images().await;
     }
 
     /// Saves images of new mail for every archive that has saving on and mail waiting.
@@ -162,6 +274,7 @@ impl Runner {
             account: None,
             title: archive.name,
             cancellable: true,
+            job: Some(job.as_str().into()),
         });
         task.log(TaskLevel::Info, job.describe());
         Ok(task)
@@ -243,6 +356,8 @@ impl Runner {
             running: true,
             ..AccountStatus::default()
         };
+        drop(status);
+        self.0.due.lock().expect("due lock").remove(&account);
         true
     }
 
@@ -252,17 +367,28 @@ impl Runner {
         }
     }
 
-    fn finish(&self, account: AccountId, outcome: Result<u64, String>) {
-        let mut status = self.0.status.lock().expect("status lock");
-        let entry = status.entry(account).or_default();
-        entry.running = false;
-        entry.finished_at = Some(Timestamp::now());
-        match outcome {
-            Ok(new) => {
-                entry.new_messages = new;
-                entry.error = None;
+    async fn finish(&self, account: AccountId, outcome: Result<u64, String>) {
+        let run = {
+            let mut status = self.0.status.lock().expect("status lock");
+            let entry = status.entry(account).or_default();
+            entry.running = false;
+            entry.finished_at = Some(Timestamp::now());
+            match outcome {
+                Ok(new) => {
+                    entry.new_messages = new;
+                    entry.error = None;
+                }
+                Err(error) => entry.error = Some(error),
             }
-            Err(error) => entry.error = Some(error),
+            AccountRun {
+                finished_at: entry.finished_at.unwrap_or_else(Timestamp::now),
+                new_messages: entry.new_messages,
+                error: entry.error.clone(),
+            }
+        };
+        match self.0.services.store.set_last_run(account, &run).await {
+            Ok(()) | Err(StoreError::NotFound(_)) => {}
+            Err(error) => tracing::warn!(%account, %error, "last run not stored"),
         }
     }
 
@@ -277,6 +403,7 @@ impl Runner {
             account: Some(account.id),
             title: account.name.clone(),
             cancellable: false,
+            job: None,
         });
         task.log(TaskLevel::Info, "Connecting to the server");
         let outcome = accounts::sync_one(&self.0.services, &self.0.syncer, account).await;
@@ -286,12 +413,18 @@ impl Runner {
                 tracing::info!(account = %account.id, new = report.new_messages(), folders = report.folders.len(), "synced");
                 for folder in &report.folders {
                     let line = format!(
-                        "{}: {} new, {} known, {} removed, {} failed{}",
+                        "{}: {} new, {} known, {} removed, {} changed, {} failed{}{}",
                         folder.path,
                         folder.new,
                         folder.known,
                         folder.removed,
+                        folder.flags_changed,
                         folder.failed,
+                        if folder.deferred > 0 {
+                            format!(", {} left until they are old enough", folder.deferred)
+                        } else {
+                            String::new()
+                        },
                         if folder.renumbered {
                             ", renumbered by the server"
                         } else {
@@ -324,7 +457,8 @@ impl Runner {
                         Some(error) => Err(error),
                         None => Ok(report.new_messages()),
                     },
-                );
+                )
+                .await;
                 if report.new_messages() > 0 {
                     let _ = self.start_remote(account.archive_id, Job::New).await;
                 }
@@ -334,7 +468,7 @@ impl Runner {
                 let error = format!("{error:#}");
                 task.log(TaskLevel::Error, error.clone());
                 task.finish(TaskState::Failed, "The sync failed");
-                self.finish(account.id, Err(error));
+                self.finish(account.id, Err(error)).await;
             }
         }
     }
@@ -346,6 +480,7 @@ impl Runner {
             account: Some(account.id),
             title: account.name.clone(),
             cancellable: false,
+            job: None,
         });
         task.log(TaskLevel::Info, "Reading the uploaded file");
         let runner = self.clone();
@@ -378,7 +513,7 @@ impl Runner {
                 }
                 task.log(TaskLevel::Info, format!("Done: {summary}."));
                 task.finish(TaskState::Done, summary);
-                self.finish(account.id, Ok(totals.new));
+                self.finish(account.id, Ok(totals.new)).await;
                 if totals.new > 0 {
                     let _ = self.start_remote(account.archive_id, Job::New).await;
                 }
@@ -388,13 +523,14 @@ impl Runner {
                 let reason = import_error(&error);
                 task.log(TaskLevel::Error, reason.clone());
                 task.finish(TaskState::Failed, "The import failed");
-                self.finish(account.id, Err(reason));
+                self.finish(account.id, Err(reason)).await;
             }
         }
     }
 
     /// Checks every 30 seconds which enabled accounts are due, by their own interval or the
-    /// server's, and syncs those one after another. Accounts are due at start.
+    /// server's, and syncs those one after another. An account is due by its last stored run; one
+    /// that never ran, or whose sync a restart interrupted, is due at once.
     pub async fn run_schedule(self) {
         loop {
             match accounts::syncable_accounts(&*self.0.services.store).await {
@@ -405,7 +541,11 @@ impl Runner {
                     let every = self.0.schedule.get().minutes;
                     for account in list {
                         let minutes = accounts::sync_interval(&account).unwrap_or(every);
-                        let last = self.status(account.id).finished_at;
+                        let last = if self.0.due.lock().expect("due lock").contains(&account.id) {
+                            None
+                        } else {
+                            self.status(account.id).finished_at
+                        };
                         if let Some(at) = schedule::next_sync(last, minutes, now) {
                             next.insert(account.id, at);
                             if at <= now {
@@ -441,38 +581,6 @@ fn import_error(error: &anyhow::Error) -> String {
     }
 }
 
-fn sign_in_error(error: SourceError, settings: &ImapSettings) -> MailboxError {
-    let place = format!("{}:{}", settings.host, settings.port());
-    MailboxError::Invalid(match error {
-        SourceError::Auth(_) => {
-            "The server refused this user name and password. Some providers need an app password."
-                .to_owned()
-        }
-        SourceError::Connection(reason) => {
-            let reason = reason
-                .strip_prefix(&format!("{place}: "))
-                .unwrap_or(&reason);
-            format!("Could not connect to {place}: {reason}")
-        }
-        SourceError::Protocol(reason) => format!("{place} answered unexpectedly: {reason}"),
-        SourceError::Config(reason) => reason,
-    })
-}
-
-async fn check_sign_in(settings: &ImapSettings, password: &str) -> Result<(), MailboxError> {
-    let source = ImapSource::new(settings.clone(), password.to_owned());
-    let mut session = source
-        .connect()
-        .await
-        .map_err(|e| sign_in_error(e, settings))?;
-    session
-        .folders()
-        .await
-        .map_err(|e| sign_in_error(e, settings))?;
-    let _ = session.logout().await;
-    Ok(())
-}
-
 fn backend(error: impl std::fmt::Display) -> MailboxError {
     MailboxError::Backend(error.to_string())
 }
@@ -492,7 +600,7 @@ impl Mailboxes for Runner {
             security,
             username: account.username.clone(),
         };
-        check_sign_in(&settings, &account.password).await?;
+        accounts::check_sign_in(&settings, Credentials::Password(account.password.clone())).await?;
         let stored = accounts::add_imap(
             &*self.0.services.store,
             &*self.0.services.secrets,
@@ -513,86 +621,65 @@ impl Mailboxes for Runner {
         Ok(stored)
     }
 
+    async fn add_jmap(
+        &self,
+        archive: ArchiveId,
+        account: NewJmapAccount,
+    ) -> Result<Account, MailboxError> {
+        let auth = accounts::parse_jmap_auth(&account.auth)
+            .map_err(|e| MailboxError::Invalid(e.to_string()))?;
+        let settings = accounts::jmap_settings(&account.url, &account.username, auth)
+            .map_err(|e| MailboxError::Invalid(e.to_string()))?;
+        accounts::check_jmap_sign_in(&settings, &account.secret).await?;
+        let stored = accounts::add_jmap(
+            &*self.0.services.store,
+            &*self.0.services.secrets,
+            accounts::NewJmapAccount {
+                archive,
+                name: account.name,
+                settings,
+                secret: account.secret,
+                exclude: Vec::new(),
+            },
+        )
+        .await
+        .map_err(backend)?;
+        self.sync(&stored).await?;
+        Ok(stored)
+    }
+
     async fn configure(
         &self,
         account: &Account,
         change: AccountChange,
     ) -> Result<Account, MailboxError> {
-        let connects = change.connection.is_some() || change.password.is_some();
-        if account.kind == AccountKind::Import
-            && (connects || change.sync_interval_minutes.is_some())
+        if (change.connection.is_some() || change.jmap.is_some() || change.password.is_some())
+            && self.status(account.id).running
         {
-            return Err(MailboxError::Invalid(
-                "An import account has no server.".into(),
-            ));
-        }
-        if connects && self.status(account.id).running {
             return Err(MailboxError::Invalid(
                 "The account is syncing; change it when the sync is done.".into(),
             ));
         }
-        let mut updated = account.clone();
-        if let Some(Some(minutes)) = change.sync_interval_minutes {
-            schedule::check_minutes(minutes)?;
-        }
-        if connects {
-            let secrets = &self.0.services.secrets;
-            let (settings, imap) = match &change.connection {
-                Some(connection) => accounts::with_connection(&account.settings, connection)
-                    .map_err(|e| MailboxError::Invalid(format!("{e:#}")))?,
-                None => (
-                    account.settings.clone(),
-                    ImapSettings::from_json(&account.settings)
-                        .map_err(|e| MailboxError::Invalid(e.to_string()))?,
-                ),
-            };
-            let password = match &change.password {
-                Some(password) => password.clone(),
-                None => {
-                    let sealed = account.sealed_secret.as_deref().ok_or_else(|| {
-                        MailboxError::Invalid("Enter the password for this account.".into())
-                    })?;
-                    String::from_utf8(
-                        secrets
-                            .open(&account.id.to_string(), sealed)
-                            .map_err(backend)?,
-                    )
-                    .map_err(backend)?
-                }
-            };
-            check_sign_in(&imap, &password).await?;
-            if let Some(connection) = &change.connection
-                && let Some(old) = accounts::connection(account)
-                && connection.username.trim() != old.username
-                && (account.address.is_none() || account.address.as_deref() == Some(&old.username))
-            {
-                updated.address = imap.username.contains('@').then(|| imap.username.clone());
-            }
-            updated.settings = settings;
-            if change.password.is_some() {
-                updated.sealed_secret = Some(
-                    secrets
-                        .seal(&account.id.to_string(), password.as_bytes())
-                        .map_err(backend)?,
-                );
-            }
-        }
-        if let Some(minutes) = change.sync_interval_minutes {
-            updated.settings = accounts::with_sync_interval(&updated.settings, minutes);
-        }
-        self.0
-            .services
-            .store
-            .update_account(&updated)
-            .await
-            .map_err(backend)?;
-        Ok(updated)
+        let services = &self.0.services;
+        accounts::configure(
+            &*services.store,
+            &*services.secrets,
+            &services.oauth,
+            account,
+            change,
+        )
+        .await
     }
 
     fn details(&self, account: &Account) -> AccountDetails {
+        let oauth = OAuthSettings::of(account);
         AccountDetails {
             connection: accounts::connection(account),
+            jmap: accounts::jmap_connection(account),
             sync_interval_minutes: accounts::sync_interval(account),
+            min_age_days: accounts::min_age_days(account),
+            needs_sign_in: oauth.as_ref().is_some_and(|o| o.needs_sign_in),
+            oauth_provider: oauth.map(|o| o.provider),
         }
     }
 
@@ -610,10 +697,106 @@ impl Mailboxes for Runner {
                 "An import account has no server.".into(),
             ));
         }
+        if let Some(oauth) = OAuthSettings::of(account)
+            && oauth.needs_sign_in
+        {
+            return Err(MailboxError::Invalid(crate::oauth::sign_in_again(
+                oauth.provider().unwrap_or(Provider::Google),
+            )));
+        }
         let runner = self.clone();
         let account = account.clone();
         tokio::spawn(async move { runner.sync_now(&account).await });
         Ok(())
+    }
+
+    async fn start_oauth(&self, start: OAuthStart) -> Result<OAuthStarted, MailboxError> {
+        let provider = Provider::parse(&start.provider)
+            .ok_or_else(|| MailboxError::Invalid("Choose Google or Microsoft.".into()))?;
+        let store = &self.0.services.store;
+        let (email, purpose, kind) = match start.target {
+            OAuthTarget::NewAccount { archive, name } => {
+                store
+                    .get_archive(archive)
+                    .await
+                    .map_err(backend)?
+                    .ok_or_else(|| MailboxError::Invalid("There is no such archive.".into()))?;
+                (
+                    start.email,
+                    Purpose::NewAccount { archive, name },
+                    start.kind,
+                )
+            }
+            OAuthTarget::Account(id) => {
+                let account = store
+                    .get_account(id)
+                    .await
+                    .map_err(backend)?
+                    .ok_or_else(|| MailboxError::Invalid("There is no such account.".into()))?;
+                if !matches!(account.kind, AccountKind::Imap | AccountKind::Graph) {
+                    return Err(MailboxError::Invalid(
+                        "Only IMAP and Microsoft Graph accounts sign in with Google or Microsoft."
+                            .into(),
+                    ));
+                }
+                let email = match accounts::oauth_email(&account) {
+                    Some(email) => email,
+                    None if start.email.contains('@') => start.email,
+                    None => account
+                        .address
+                        .clone()
+                        .filter(|a| a.contains('@'))
+                        .ok_or_else(|| MailboxError::Invalid("Enter the email address.".into()))?,
+                };
+                (email, Purpose::SignInAgain(id), account.kind)
+            }
+        };
+        let access = match kind {
+            AccountKind::Imap => Access::Imap,
+            AccountKind::Graph if provider == Provider::Microsoft => Access::Graph,
+            AccountKind::Graph => {
+                return Err(MailboxError::Invalid(
+                    "Microsoft Graph accounts sign in with Microsoft.".into(),
+                ));
+            }
+            _ => {
+                return Err(MailboxError::Invalid(
+                    "Only IMAP and Microsoft Graph accounts sign in with Google or Microsoft."
+                        .into(),
+                ));
+            }
+        };
+        let started = self
+            .0
+            .services
+            .oauth
+            .start(provider, access, email.trim(), purpose, start.return_to)
+            .map_err(backend)?;
+        Ok(OAuthStarted {
+            authorize_url: started.url,
+            state: started.state,
+            needs_paste: started.needs_paste,
+            thunderbird_client: started.thunderbird,
+            expires_at: Timestamp::from_millis(
+                Timestamp::now().as_millis() + started.expires_in.as_millis() as i64,
+            ),
+        })
+    }
+
+    async fn finish_oauth(&self, answer: &str) -> Result<OAuthFinished, MailboxError> {
+        let return_to = self
+            .oauth_return_to(answer)
+            .unwrap_or_else(|| "/settings".to_owned());
+        let account = accounts::finish_oauth(&self.0.services, answer).await?;
+        self.sync(&account).await?;
+        Ok(OAuthFinished { account, return_to })
+    }
+
+    fn oauth_return_to(&self, answer: &str) -> Option<String> {
+        self.0
+            .services
+            .oauth
+            .return_to(&accounts::url_state(answer)?)
     }
 
     async fn import(&self, account: &Account, file: PathBuf) -> Result<(), MailboxError> {

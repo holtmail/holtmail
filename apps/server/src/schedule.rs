@@ -70,8 +70,7 @@ pub fn check_minutes(minutes: u64) -> Result<(), MailboxError> {
     Ok(())
 }
 
-/// When an account syncing every `minutes` is due next, given when its last run ended in this
-/// server's life; `None` when it only syncs on request. An account that has not run yet is due at
+/// When an account syncing every `minutes` is due next, given when its last stored run ended; `None` when it only syncs on request. An account that has not run yet is due at
 /// once.
 pub fn next_sync(last: Option<Timestamp>, minutes: u64, now: Timestamp) -> Option<Timestamp> {
     if minutes == 0 {

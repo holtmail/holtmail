@@ -91,6 +91,7 @@ pub async fn import_path(
             folder: Some(folder),
             uid: None,
             flags: message.flags,
+            labels: None,
             received_at: message.received_at,
         };
         match ingest.ingest(archive, message.raw, &placement).await {

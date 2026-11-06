@@ -249,6 +249,35 @@ async fn honours_folder_rules_and_reports_sign_in_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_run_for_named_folders_looks_only_at_them() {
+    let f = fixture().await;
+    f.server.deliver("INBOX", &mail(1), &[]);
+    f.server.deliver("Sent", &mail(2), &[]);
+    let report = f
+        .sync_with(&SyncOptions {
+            only: Some(vec!["INBOX".into()]),
+            ..SyncOptions::default()
+        })
+        .await;
+    assert_eq!(report.folders.len(), 1);
+    assert_eq!(report.folders[0].path, "INBOX");
+    assert_eq!(report.new_messages(), 1);
+    let report = f
+        .sync_with(&SyncOptions {
+            only: Some(vec!["Sent".into()]),
+            exclude: vec!["Sent".into()],
+            ..SyncOptions::default()
+        })
+        .await;
+    assert!(report.folders.is_empty(), "exclude still wins");
+    assert_eq!(
+        f.sync().await.new_messages(),
+        1,
+        "Sent was left for a full run"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn archives_gmail_once_from_all_mail_with_labels() {
     let f = fixture().await;
     f.server.enable_condstore();
@@ -607,6 +636,30 @@ async fn skips_unchanged_folders_until_something_is_left_behind() {
     assert_eq!(f.folder(&all, "Sent").new, 1);
     assert!(f.folder(&f.sync().await, "Sent").unchanged);
     assert_eq!(f.count().await, 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_due_flag_scan_is_not_skipped_by_an_unchanged_state() {
+    let f = fixture().await;
+    f.server.track_changes();
+    let uid = f.server.deliver("INBOX", &mail(1), &[]);
+    f.sync().await;
+    f.server.set_flags("INBOX", uid, &["\\Seen"]);
+    let between = f.sync().await;
+    assert!(!f.folder(&between, "INBOX").unchanged);
+    assert_eq!(
+        f.folder(&between, "INBOX").flags_changed,
+        0,
+        "the daily scan is not due yet"
+    );
+    assert!(f.folder(&f.sync().await, "INBOX").unchanged);
+    let daily = SyncOptions {
+        flag_scan_interval: Duration::ZERO,
+        ..SyncOptions::default()
+    };
+    let scanned = f.sync_with(&daily).await;
+    assert!(!f.folder(&scanned, "INBOX").unchanged);
+    assert_eq!(f.folder(&scanned, "INBOX").flags_changed, 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

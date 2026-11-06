@@ -9,7 +9,7 @@ let syncer = Syncer::new(store, ingest);
 let report = syncer.sync_account(&account, &*source, &SyncOptions::default()).await?;
 ```
 
-`SyncOptions { include, exclude, batch: 50, max_attempts: 5, flag_scan_interval: 24 h, flag_batch: 1000, min_age: None }`. `SyncReport` has one `FolderReport { path, new, known, removed, flags_changed, failed, deleted, deferred, renumbered, unchanged, error }` per folder; `unchanged` says the folder was skipped because its source state said nothing changed.
+`SyncOptions { include, exclude, batch: 50, max_attempts: 5, flag_scan_interval: 24 h, flag_batch: 1000, min_age: None, only: None }`. A folder whose source state says nothing changed is still looked at when its daily flag scan is due (no mod-sequences), since the state may have been taken by a sync that did not read flags. `only` limits one run to the named folder paths on top of `include` and `exclude` (a run a watch started); which folders count as Gmail labels is decided as in a full run. `SyncReport` has one `FolderReport { path, new, known, removed, flags_changed, failed, deleted, deferred, renumbered, unchanged, error }` per folder; `unchanged` says the folder was skipped because its source state said nothing changed.
 
 ## Only mail older than N days
 

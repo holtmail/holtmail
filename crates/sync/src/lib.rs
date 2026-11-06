@@ -9,8 +9,10 @@
 //!
 //! When a source keeps a state per folder (a Graph delta link), the state is stored with the
 //! cursor after a sync that left nothing behind (nothing deferred, no failure left to retry), and
-//! the next sync skips the folder when the source says nothing changed since it. Any other sync
-//! drops the stored state first, so an interrupted sync never skips unfinished work.
+//! the next sync skips the folder when the source says nothing changed since it, unless the
+//! folder's daily flag scan is due: a state may have been taken by a sync that did not read flags,
+//! so only the scan can find a flag change made before it. Any other sync drops the stored state
+//! first, so an interrupted sync never skips unfinished work.
 //!
 //! With a minimum age, a folder's sync stops before its first message that is too young, so the
 //! UID cursor never passes a message that was not archived yet.
@@ -51,6 +53,11 @@ pub struct SyncOptions {
     /// message: that message and every later one are left on the server for a sync once they
     /// are old enough, so none is skipped for good. Messages without either date are archived.
     pub min_age: Option<Duration>,
+    /// Look only at these folder paths in this run, when set, on top of `include` and
+    /// `exclude`: a run started because a watch saw these folders change. Which folders are
+    /// skipped as labels is decided as for a full run, so naming a label folder while the
+    /// all-mail folder is synced looks at nothing.
+    pub only: Option<Vec<String>>,
 }
 
 impl Default for SyncOptions {
@@ -63,6 +70,7 @@ impl Default for SyncOptions {
             flag_scan_interval: Duration::from_secs(24 * 60 * 60),
             flag_batch: 1000,
             min_age: None,
+            only: None,
         }
     }
 }
@@ -155,7 +163,9 @@ impl Syncer {
             .iter()
             .any(|f| f.role == Some(FolderRole::All) && wanted(f, options));
         for remote in folders.into_iter().filter(|f| {
-            wanted(f, options) && !(f.label && all_mail && !named(f, options.include.as_deref()))
+            wanted(f, options)
+                && !(f.label && all_mail && !named(f, options.include.as_deref()))
+                && named_or_all(f, options.only.as_deref())
         }) {
             let folder = self
                 .store
@@ -211,8 +221,17 @@ impl Syncer {
         cursor.uid_validity = Some(status.uid_validity);
         let archived_up_to = cursor.last_uid;
 
+        let interval = i64::try_from(options.flag_scan_interval.as_millis()).unwrap_or(i64::MAX);
+        let flag_scan_due = status.highest_modseq.is_none()
+            && cursor.last_uid.is_some()
+            && cursor.flags_checked_at.is_none_or(|checked| {
+                Timestamp::now()
+                    .as_millis()
+                    .saturating_sub(checked.as_millis())
+                    >= interval
+            });
         if let Some(state) = cursor.state.take() {
-            if let Some(kept) = session.unchanged_since(&state).await? {
+            if !flag_scan_due && let Some(kept) = session.unchanged_since(&state).await? {
                 cursor.state = Some(kept);
                 cursor.synced_at = Some(Timestamp::now());
                 self.store.set_cursor(folder, &cursor).await?;
@@ -473,6 +492,10 @@ fn newer_than(message: &RemoteMessage, cutoff: Timestamp) -> bool {
 
 fn named(folder: &RemoteFolder, include: Option<&[String]>) -> bool {
     include.is_some_and(|include| include.iter().any(|p| p == &folder.path))
+}
+
+fn named_or_all(folder: &RemoteFolder, only: Option<&[String]>) -> bool {
+    only.is_none_or(|only| only.iter().any(|p| p == &folder.path))
 }
 
 fn wanted(folder: &RemoteFolder, options: &SyncOptions) -> bool {

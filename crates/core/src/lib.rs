@@ -103,6 +103,10 @@ id!(
     /// A split or join of people made by hand in an archive.
     PersonOverrideId
 );
+id!(
+    /// An address the server tells about events.
+    WebhookId
+);
 
 /// A person derived from contacts and mail in an archive.
 ///

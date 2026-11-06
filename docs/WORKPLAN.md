@@ -389,6 +389,45 @@ The maintainer asked for the five remaining Mail-Archiver ideas and the five iss
 - [x] Web: "Download PDF" in the reader, PDF in the export menu (with the other pages)
 - [x] Integration: export from a synced archive, every PDF readable by a real PDF tool
 
+### Push and fast change tracking (planned and built 2026-11-06)
+
+The design is in [PUSH.md](PUSH.md). A watch only starts a sync. Polling stays on as the safety net. Each phase ends with `mise run check`, its module docs, a VERIFY entry and a Log line.
+
+#### Phase 27: watch contracts and a parallel scheduler
+
+- [x] `holtmail-source`: `Source::watch` (default `None`), `SourceWatch`, `Changed`; fake `notify`, conformance cases
+- [x] `holtmail-collection`: `CollectionSource::watch`, `CollectionWatch`, `CollectionChanged`; fake and conformance cases
+- [x] `holtmail-sync`: `SyncOptions::only` (named folders, the `All` folder for Gmail)
+- [x] Server: one sync queue with `max_parallel_syncs` (4), one run per account, "again after this run"; contacts and calendars on their own schedule with `pim_interval_minutes` per account
+- [x] Server: `watch.rs` manager (debounce, sync after every connect, backoff, stop on `Auth`, OAuth reconnect before expiry, restart on settings change, clean stop on `SIGTERM`); `[watch]` config and `HOLTMAIL_WATCH`
+
+#### Phase 28: IMAP IDLE
+
+- [x] `source-imap`: `IDLE` per watched folder (Inbox by default, at most 3 connections), woken by `EXISTS`/`EXPUNGE`/`FETCH`/`VANISHED`, renewed every 25 minutes, TCP keepalive; fake server answers `IDLE`
+- [x] `source-imap`: `NOTIFY` (RFC 5465) on one connection where offered
+- [x] Integration: Dovecot, GreenMail, Stalwart archive appended mail within seconds; reconnect after the server drops the connection
+
+#### Phase 29: JMAP push and a cheap unchanged check
+
+- [x] `source-jmap`: `state()` / `unchanged_since` by the account's `Email` state; EventSource watch for `Email`, `Mailbox`
+- [x] `collection-jmap`: EventSource watch for contacts and calendars; `offers_calendars`
+- [x] Integration: Stalwart mail and contacts through EventSource
+
+#### Phase 30: JMAP accounts with CardDAV and CalDAV
+
+- [x] `holtmail-collection-merge` (library): two sources as one, routed by kind and listed id, watches merged; conformance on a merged pair
+- [x] Server: `settings.dav` protocol per kind (old settings read as before), discovery of DAV for the kind JMAP lacks, a sealed DAV password of its own, a one-time check offering CalDAV to existing JMAP accounts without calendars
+- [x] Integration: a JMAP session without calendars plus Stalwart's CalDAV
+
+#### Phase 31: WebDAV-Push, API, web and CLI
+
+- [x] `collection-dav`: `push-transports`, `push-register` with a Web Push subscription to `<public_url>/api/push/dav/<id>`, renewal and unregistering; RFC 8291 decryption (dependencies evaluated first); draft version pinned in PUSH.md
+- [x] API: `/api/push/dav/{id}` receiver; `watch`, `watch_state`, `pim_interval_minutes` and per-kind protocol on accounts; OpenAPI and client
+- [x] Web: Live mark and its state, watch choice per account, contacts and calendars interval, per-kind protocol with DAV password, the CalDAV offer
+- [x] CLI: `account edit --watch`, `--pim-interval`
+- [x] Integration: a one-minute PIM interval on Radicale without a mail sync
+- [ ] Integration: Nextcloud profile with the DAV Push app (the app has to be baked into the image; the suites reach no network beyond the stack); listed in VERIFY.md
+
 ### Later
 
 - [x] `holtmail account edit` in the CLI (connection, interval, pause)
@@ -459,3 +498,4 @@ The maintainer asked for the five remaining Mail-Archiver ideas and the five iss
 - 2026-11-06: Phase 26 backend done: PDF export. New `holtmail-pdf` (`MessagePdf`, `render`, `MAX_TEXT`; 3 tests reading the PDFs back with `lopdf`); workspace deps `krilla` 0.8 (simple-text only), `skrifa` 0.42, `dejavu` 2.37. Export: `Format::Pdf`, `message_pdf` (test: 5 PDFs in a zip, each with its original inside matching the blobs). API: `GET /api/messages/{id}/pdf`, export `format=pdf`. CLI: `holtmail export --format pdf`.
 - 2026-11-06: Web for Phases 22–26: client regenerated with types, queries and mutations (`ledgerQuery`, `verifyLedger`, `reviewDeletion`, `confirmDeletion`, webhook calls, `smtpQuery`, `pdfUrl`, export `pdf`); settings pages Integrity, Webhooks and SMTP with nav and routes; `DeletionDialog` (review, sample, typed count) from search results and the reader; Download PDF in the reader; Zip of PDFs in the export menu and command palette; task kinds `ledger_verify` and `delete_messages` with icons. `mise run check` green. Not looked at in a browser (VERIFY).
 - 2026-11-06: Phases 21–26 finished with their integration suites. Found by the suites and fixed: members could read `GET /api/webhooks` (addresses) and `GET /api/smtp` (an edit to the access rule was lost to a line `cargo fmt` had wrapped; API unit test `members_read_only_granted_archives` now checks every admin read), `GET /api/oauth/providers` did not declare `403`, and a damaged blob stopped `ledger verify --blobs` instead of being named. `mise run check` green (547 Rust tests); `mise run it` green from a running stack, 90 tests in 659 s.
+- Phases 27–31 done (push and fast change tracking, design in PUSH.md). Contracts: `Source::watch`/`SourceWatch`/`Changed` and `CollectionSource::watch`/`CollectionWatch`/`subscribe`/`unsubscribe` with `PushSubscription`/`PushRegistration`, fakes and watch conformance suites. `holtmail-sync`: `SyncOptions::only`. `source-imap`: `IDLE` per folder (three connections at most), `NOTIFY` on one connection where offered, renewal every ten minutes. `source-jmap`: `Email` state for `unchanged_since`, event source watch. `collection-jmap`: event source watch, `offers_calendars`. `collection-dav`: WebDAV-Push registration (draft of 29 October 2026). New libraries `holtmail-sse`, `holtmail-webpush` (RFC 8291 on aws-lc-rs, checked against the RFC's example), `holtmail-collection-merge`. Server: one queue for scheduled, watch and on-request runs (`[watch] parallel_syncs`), contacts and calendars on their own interval, `watch.rs` (debounce, catch-up after reconnect, backoff, OAuth reopen), `push.rs` (registrations for an https `public_url`, `/api/push/dav/{id}`), JMAP contacts with CalDAV calendars and a separate DAV password, CalDAV offers for JMAP accounts. API, OpenAPI, client, web (Live marks, Watch for changes, contacts interval, DAV password, CalDAV offer) and CLI (`--watch`, `--pim-interval`, `--dav-password-stdin`). Integration: `watch.rs` (IDLE on Dovecot, GreenMail, Stalwart; chosen folders; a kicked connection; watch off; JMAP push) and `watch_pim.rs` (JMAP contacts push, a one-minute contacts interval on Radicale, JMAP contacts with Stalwart CalDAV calendars) pass. Running the older suites with watching on found two bugs, both fixed with tests: a watch and a sync refreshing one OAuth token at once spent a rotated refresh token twice and marked the account "sign in again" (refreshes are now one at a time per account, from the stored token), and a sync started by a watch stored a JMAP state without reading flags, so the daily flag scan skipped the folder (a due scan now ignores the state). Integration suites run without watching unless `IT_WATCH=1`. Not verified: WebDAV-Push against a real server, real Gmail/Outlook/Fastmail push, the web views in a browser.

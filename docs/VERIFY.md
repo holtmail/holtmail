@@ -181,6 +181,19 @@ An in-process fake (Rust), a local Python fake (`scratchpad/e2e18/fakejmap.py`) 
 - [ ] Gmail and Outlook with `public_client = false` and no own client: the buttons gone in the web app, existing accounts asking to sign in again
 - [ ] Calendar and vCard attachments from real senders (Outlook, Google Calendar, Apple) found by their words after the start-up pass
 
+## Push and fast change tracking (Phases 27–31)
+
+- [x] IMAP IDLE against real servers: new mail archived within seconds on Dovecot 2.4, GreenMail 2.1 and Stalwart 0.16 with syncs only on request; a connection Dovecot drops (`doveadm kick`) reconnects and catches up (tests/integration/tests/watch.rs)
+- [x] JMAP push against Stalwart: mail and contacts through the event source (watch.rs, watch_pim.rs)
+- [x] JMAP contacts with CalDAV calendars: a session without calendars plus Stalwart's CalDAV (watch_pim.rs)
+- [ ] `NOTIFY` against a real server (only the in-process fake speaks it; check whether Dovecot 2.4 offers it with this config)
+- [ ] IDLE on real Gmail (on `[Gmail]/All Mail`), Outlook and Yandex for an hour or more: NAT timeouts, the ten-minute renewal, OAuth watches reopened every 45 minutes
+- [ ] Fastmail: JMAP push for mail and contacts, and its CardDAV/CalDAV with an app password as the separate DAV password
+- [ ] WebDAV-Push from a real server (Nextcloud with its DAV Push app) to a Holtmail with a public https address: registration, a notice decrypted, renewal before expiry, `410` after a restart
+- [ ] The CalDAV offer for an existing JMAP account without calendars, and its button in the web app
+- [ ] The web app: Live, Reconnecting and Scheduled marks, the Watch for changes menu and its folder dialog, the contacts interval menu, the DAV password field
+- [ ] Many watched accounts on one server: connection counts, memory, the four-run queue under a burst of changes
+
 ## The web app, by eye
 
 None of these screens has been opened in a browser; they were checked with types, lint, tests and builds only.

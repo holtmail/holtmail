@@ -4,6 +4,7 @@
 - [Interface design](design.md) — how the web app should look and feel
 - [Work plan](WORKPLAN.md) — the current checklist, decisions and lessons from Mail-Archiver
 - [Contacts and calendars](PIM.md) — plan for archiving contacts and events with their history and links to mail
+- [Push and fast change tracking](PUSH.md) — IMAP IDLE, JMAP push, WebDAV-Push and contacts and calendars on their own schedule
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 
@@ -12,6 +13,9 @@
 | Module | Docs |
 | --- | --- |
 | `holtmail-core` | [Ids, timestamps, addresses, extra TLS roots](../crates/core/docs/README.md) |
+| `holtmail-sse` | [Parsing Server-Sent Events streams](../crates/sse/docs/README.md) |
+| `holtmail-webpush` | [Web Push message encryption (RFC 8291)](../crates/webpush/docs/README.md) |
+| `holtmail-collection-merge` | [Two collection sources as one: contacts from one, calendars from the other](../crates/collection-merge/docs/README.md) |
 | `holtmail-webhook` | [Contract for delivering webhook requests](../crates/webhook/docs/README.md) |
 | `holtmail-webhook-http` | [Webhook delivery over HTTP](../crates/webhook-http/docs/README.md) |
 | `holtmail-hooks` | [Webhook events, payloads, signatures and retries](../crates/hooks/docs/README.md) |

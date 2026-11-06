@@ -1,0 +1,26 @@
+BEGIN:VCARD
+VERSION:3.0
+UID:card-ada@example.com
+FN:Ada Quill
+N:Quill;Ada;;Dr.;
+ORG:Example Instruments;Research
+TITLE:Analyst
+EMAIL;TYPE=INTERNET,WORK:Ada.Quill@Example.COM
+EMAIL;TYPE=HOME:ada@example.org
+TEL;TYPE=CELL:+1 555 0100
+TEL;TYPE=WORK:(555) 0101
+ADR;TYPE=WORK:;;12 Harbour Lane;Springfield;IL;62701;United States
+BDAY:1985-04-12
+NOTE:Met at the harbour fair. This note is long enough to be folded over two
+  lines by the exporter.
+PHOTO;ENCODING=b;TYPE=PNG:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
+ 2mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+REV:2025-01-15T10:00:00Z
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+UID:card-bo@example.com
+FN:Bo Linden
+N:Linden;Bo;;;
+TEL;TYPE=HOME:+44 20 7946 0001
+END:VCARD

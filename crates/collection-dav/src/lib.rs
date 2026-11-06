@@ -157,6 +157,13 @@ fn etag(props: &[&Element]) -> Option<String> {
 }
 
 impl DavSource {
+    /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
+    /// not a usable certificate.
+    pub fn with_roots(mut self, roots: &holtmail_core::TlsRoots) -> Result<Self, CollectionError> {
+        self.http = self.http.with_roots(roots)?;
+        Ok(self)
+    }
+
     /// A client for `config`. `Config` for an address that is not https (or loopback http), or
     /// when neither kind is configured. Nothing is sent before the first call.
     pub fn new(config: DavConfig) -> Result<Self, CollectionError> {
@@ -585,21 +592,31 @@ impl CollectionSource for DavSource {
                 }
                 match answer.status.as_u16() {
                     400 | 403 | 405 | 415 | 422 | 501 => multiget = false,
+                    // sabre/dav answers a whole multiget with 500 when it cannot read one item.
+                    500..=599 => {}
                     _ => return Err(status_error(answer.status, &answer.url)),
                 }
             }
+            let lenient = multiget;
+            let mut left_out = 0usize;
             for id in batch {
                 let Ok(at) = url.join(&path::encode(id)) else {
                     continue;
                 };
-                if let Some(answer) = self.http.get(&at).await? {
-                    out.push(RemoteItem {
+                match self.http.get(&at).await {
+                    Ok(Some(answer)) => out.push(RemoteItem {
                         id: id.clone(),
                         etag: None,
                         content_type: content_type.into(),
                         raw: answer.body,
-                    });
+                    }),
+                    Ok(None) => {}
+                    Err(CollectionError::Connection(_)) if lenient => left_out += 1,
+                    Err(error) => return Err(error),
                 }
+            }
+            if left_out > 0 {
+                tracing::warn!(left_out, "DAV items the server failed to send");
             }
         }
         tracing::debug!(

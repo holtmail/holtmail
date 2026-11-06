@@ -14,6 +14,8 @@ let source = DavSource::new(DavConfig {
 // or DavConfig::at("https://cloud.example.com/remote.php/dav", credentials) for both
 ```
 
+`with_roots(&TlsRoots)` trusts the given CA certificates (from Holtmail's `tls_ca_file`, see [`holtmail-core`](../../core/docs/README.md)) besides the system's roots; verification and the host name check stay on. An unusable certificate is a `Config` error.
+
 Each address may be a server (its well-known address is asked), a DAV root, a principal, a home set or a single address book or calendar. `None` reads no contacts or no calendars. `https://` is assumed without a scheme; plain `http` is refused except to loopback addresses, and so are addresses with a user name or password in them.
 
 | Provider | Contacts | Calendars | Sign-in |
@@ -37,7 +39,7 @@ Collection and item ids are the percent-decoded paths, so servers that encode th
 
 - `changes` sends `sync-collection` (RFC 6578, `Depth: 0`, `sync-level 1`, `getetag`). A `404` in a response is a removal. A `507` for the collection itself means the server cut the list: the next page is asked with the new token, up to 100 pages and a million changes; a cut list whose new token equals the one asked with is `Protocol`, since it would never end. A refusal of a given token (`valid-sync-token`, or `400`/`403`/`409`/`412`) is `TokenExpired`; a refusal without a token (`403`, `405`, `501`, …) is `Unsupported`.
 - `list` is `PROPFIND` depth 1 with `getetag`, leaving out the collection and sub-collections.
-- `fetch` sends `addressbook-multiget` or `calendar-multiget` with up to 50 hrefs (`BATCH`). A server that refuses multiget (`400`, `403`, `405`, `415`, `422`, `501`) is read with one `GET` per item from then on. `404` answers are left out.
+- `fetch` sends `addressbook-multiget` or `calendar-multiget` with up to 50 hrefs (`BATCH`). A server that refuses multiget (`400`, `403`, `405`, `415`, `422`, `501`) is read with one `GET` per item from then on. `404` answers are left out. A multiget answered with a server error (`5xx`) is asked again one `GET` per item for that batch only; an item whose `GET` fails too (a `5xx` or no answer) is left out and logged as a count, and the others are returned. sabre/dav (Baïkal, Nextcloud) parses every card of a multiget and answers the whole request with `500` when one of them does not parse, so one broken card would otherwise stop the whole address book; [`holtmail-pim-sync`](../../pim-sync/docs/README.md) counts the left-out item as failed and asks again on the next run.
 - `address-data` and `calendar-data` are kept exactly: the XML text is decoded without line-end normalization, so CRLF (raw or as `&#13;`) survives byte for byte.
 
 ## Limits and safety
@@ -50,4 +52,6 @@ Collection and item ids are the percent-decoded paths, so servers that encode th
 
 ## Tests
 
-`src/tests.rs` runs an in-process fake CardDAV and CalDAV server on `127.0.0.1` (axum): well-known redirect, principal, home sets, collection listing with ETags, ctags, sync tokens, display names, colors and components, `sync-collection` with `404` removals, `507` paging and an invalid-token error, multigets, `GET`, Basic and Bearer sign-in, and `503` with `Retry-After`. The conformance suite runs through discovery, and again with neither `sync-collection` nor multiget; further tests cover a single-collection address, a refused password, a redirect to another server (nothing reaches it), paging and waiting, a cut list whose sync token does not move on (refused at the second page), and refused addresses.
+`src/tests.rs` runs an in-process fake CardDAV and CalDAV server on `127.0.0.1` (axum): well-known redirect, principal, home sets, collection listing with ETags, ctags, sync tokens, display names, colors and components, `sync-collection` with `404` removals, `507` paging and an invalid-token error, multigets, `GET`, Basic and Bearer sign-in, and `503` with `Retry-After`. The conformance suite runs through discovery, and again with neither `sync-collection` nor multiget; further tests cover a single-collection address, a refused password, a redirect to another server (nothing reaches it), paging and waiting, a cut list whose sync token does not move on (refused at the second page), refused addresses, and an item the server cannot send (its multiget and its `GET` answer `500`) left out while the rest of the batch is returned. A test against a TLS server in the process with a certificate from `holtmail_core::tls::testing::TestCa` checks that its CA is trusted only through `with_roots`.
+
+Against real servers through the binary ([`tests/integration`](../../../tests/integration/docs/README.md)): Radicale 3.8, Baïkal 0.10 (sabre/dav), Stalwart 0.16 and, with its profile, Nextcloud 35 in `dav.rs`, `dav_faults.rs`, `dav_calendar.rs`, `dav_people.rs`, `dav_export.rs` and `dav_scale.rs` (discovery through the well-known addresses, `sync-collection`, refused tokens, ETag listings without `sync-collection`, `500`s, wrong passwords, broken items, 2 000 cards).

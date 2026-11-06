@@ -28,6 +28,7 @@ struct DavState {
     generation: u64,
     no_sync: bool,
     no_multiget: bool,
+    unservable: Option<String>,
     page: Option<usize>,
     stuck: bool,
     busy: u32,
@@ -333,6 +334,14 @@ async fn handle(
                 Some(CollectionKind::Contacts) => "C:address-data",
                 _ => "K:calendar-data",
             };
+            let unservable = s.unservable.clone();
+            if request
+                .children(DAV, "href")
+                .filter_map(Element::trimmed)
+                .any(|h| unservable.as_deref().is_some_and(|u| h.ends_with(u)))
+            {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
             let mut inner = String::new();
             for href in request.children(DAV, "href").filter_map(Element::trimmed) {
                 let id = path::id(&Url::parse(&format!("http://x{href}")).unwrap());
@@ -353,6 +362,9 @@ async fn handle(
             multistatus(inner)
         }
         ("GET", p) => {
+            if s.unservable.as_deref().is_some_and(|u| p.ends_with(u)) {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
             let found = s.collections.iter().find_map(|(c, coll)| {
                 p.strip_prefix(c.as_str())
                     .and_then(|n| coll.items.get(n))
@@ -410,6 +422,42 @@ async fn keeps_the_contract_without_sync_or_multiget() {
     let source = DavSource::new(DavConfig::at(&format!("{base}/dav/"), password())).unwrap();
     conformance(&source, &fake).await;
     assert!(fake.requests().iter().any(|(m, _, _)| m == "GET"));
+}
+
+#[tokio::test]
+async fn an_item_the_server_cannot_send_leaves_the_others() {
+    let fake = FakeDav::standard();
+    fake.put_item(BOOK, "ada.vcf", b"BEGIN:VCARD\r\nFN:Ada\r\nEND:VCARD\r\n");
+    fake.put_item(BOOK, "bad.vcf", b"BEGIN:VCARD\r\nFN Bad\r\nEND:VCARD\r\n");
+    fake.put_item(BOOK, "bob.vcf", b"BEGIN:VCARD\r\nFN:Bob\r\nEND:VCARD\r\n");
+    fake.0.lock().unwrap().unservable = Some("bad.vcf".into());
+    let base = serve(fake.clone()).await;
+    let source = DavSource::new(DavConfig::at(&format!("{base}/dav/"), password())).unwrap();
+    source.collections().await.unwrap();
+    let ids: Vec<String> = ["ada.vcf", "bad.vcf", "bob.vcf"]
+        .iter()
+        .map(|n| format!("{BOOK}{n}"))
+        .collect();
+    let mut got: Vec<String> = source
+        .fetch(BOOK, &ids)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    got.sort();
+    assert_eq!(got, vec![ids[0].clone(), ids[2].clone()]);
+    let gets = fake
+        .requests()
+        .iter()
+        .filter(|(m, _, _)| m == "GET")
+        .count();
+    assert_eq!(gets, 3, "the failed batch is asked one by one");
+
+    assert!(
+        source.fetch(BOOK, &ids[1..2]).await.unwrap().is_empty(),
+        "left out, for the caller to ask again"
+    );
 }
 
 #[tokio::test]
@@ -569,4 +617,31 @@ fn only_https_or_loopback_addresses() {
         })
         .is_err()
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let server = ca.serve_https(401, "").await;
+    let source = || {
+        DavSource::new(DavConfig {
+            contacts: Some(format!("https://localhost:{}/dav/", server.port())),
+            calendars: None,
+            credentials: Credentials::Password {
+                username: "ada@example.com".into(),
+                password: "secret".into(),
+            },
+            timeout: Duration::from_secs(5),
+        })
+        .unwrap()
+    };
+    let trusted = source().with_roots(&ca.roots()).unwrap();
+    assert!(matches!(
+        trusted.collections().await,
+        Err(CollectionError::Auth(_))
+    ));
+    assert!(matches!(
+        source().collections().await,
+        Err(CollectionError::Connection(_))
+    ));
 }

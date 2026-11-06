@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use holtmail_collection::{CollectionError, Credentials};
+use holtmail_core::TlsRoots;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, LOCATION, RETRY_AFTER};
 use reqwest::{Method, StatusCode};
 use url::{Host, Url};
@@ -65,6 +66,7 @@ pub(crate) struct Http {
     client: reqwest::Client,
     credentials: Credentials,
     origins: Mutex<Vec<url::Origin>>,
+    timeout: Duration,
 }
 
 async fn read_limited(
@@ -91,24 +93,46 @@ async fn read_limited(
     Ok(Bytes::from(body))
 }
 
+fn certificates(roots: &TlsRoots) -> Result<Vec<reqwest::Certificate>, CollectionError> {
+    roots
+        .iter()
+        .map(|der| {
+            reqwest::Certificate::from_der(der)
+                .map_err(|e| CollectionError::Config(format!("an extra trusted certificate: {e}")))
+        })
+        .collect()
+}
+
+fn client(timeout: Duration, roots: &TlsRoots) -> Result<reqwest::Client, CollectionError> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
+        .tls_certs_merge(certificates(roots)?)
+        .build()
+        .map_err(|e| CollectionError::Config(e.to_string()))
+}
+
 impl Http {
     pub(crate) fn new(
         credentials: Credentials,
         origins: Vec<url::Origin>,
         timeout: Duration,
     ) -> Result<Self, CollectionError> {
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(30))
-            .timeout(timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| CollectionError::Config(e.to_string()))?;
+        let client = client(timeout, &TlsRoots::default())?;
         Ok(Self {
+            timeout,
             client,
             credentials,
             origins: Mutex::new(origins),
         })
+    }
+
+    /// The same client, also trusting `roots` besides the built-in roots.
+    pub(crate) fn with_roots(mut self, roots: &TlsRoots) -> Result<Self, CollectionError> {
+        self.client = client(self.timeout, roots)?;
+        Ok(self)
     }
 
     /// Whether credentials may go to `url`: https (or http on loopback), to a server the owner

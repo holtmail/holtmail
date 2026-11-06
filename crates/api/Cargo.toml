@@ -10,12 +10,16 @@ repository.workspace = true
 [dependencies]
 holtmail-auth.workspace = true
 holtmail-blob.workspace = true
+holtmail-calendar.workspace = true
 holtmail-core.workspace = true
 holtmail-export.workspace = true
 holtmail-fetch.workspace = true
 holtmail-index.workspace = true
 holtmail-mime.workspace = true
+holtmail-people.workspace = true
+holtmail-pim.workspace = true
 holtmail-query.workspace = true
+holtmail-recur.workspace = true
 holtmail-sanitize.workspace = true
 holtmail-store.workspace = true
 holtmail-thumbnail.workspace = true

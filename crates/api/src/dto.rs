@@ -127,6 +127,56 @@ pub struct AccountDto {
     pub oauth_provider: Option<String>,
     /// The provider no longer accepts the sign-in: it does not sync until someone signs in again.
     pub needs_sign_in: bool,
+    /// Whether its contacts and calendars are archived; `null` for accounts that cannot have
+    /// them yet (import accounts; Microsoft accounts until Microsoft Graph contacts arrive).
+    pub contacts_calendars: Option<ContactsCalendarsDto>,
+}
+
+/// Whether and where an account's contacts and calendars are archived.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ContactsCalendarsDto {
+    /// Archived after each mail sync.
+    pub enabled: bool,
+    /// Where address books are read; `null` when not set, and for members.
+    pub contacts_url: Option<String>,
+    /// Where calendars are read; `null` when not set, and for members.
+    pub calendars_url: Option<String>,
+    /// A Google or Microsoft Graph account that has to sign in again to grant access to
+    /// contacts and calendars.
+    pub needs_consent: bool,
+    /// How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`
+    /// (Microsoft Graph) or `jmap` (the JMAP account's own session).
+    pub protocol: String,
+}
+
+/// The latest sync of an account's contacts and calendars.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ContactsCalendarsRunDto {
+    pub running: bool,
+    /// Unix milliseconds.
+    pub finished_at: Option<i64>,
+    /// What it did, with counts only.
+    pub summary: String,
+    /// Why it failed.
+    pub error: Option<String>,
+}
+
+/// Turns archiving an account's contacts and calendars on or off.
+#[derive(Deserialize, ToSchema)]
+pub struct ContactsCalendarsRequest {
+    /// Turning on signs in to the contacts and calendars server before anything is stored
+    /// (Google and Microsoft Graph accounts instead wait for their next sign-in); turning off
+    /// keeps what is archived.
+    pub enabled: bool,
+    /// Where address books are read: a server such as `https://carddav.fastmail.com`, a DAV
+    /// root such as `https://cloud.example.com/remote.php/dav`, or one address book. With
+    /// neither address, they are detected from the account's address; with one, it serves both.
+    /// Ignored for Google accounts, which use Google's addresses, and Graph accounts, which use
+    /// Graph. A JMAP account without an address reads them through its JMAP session when that
+    /// offers contacts.
+    pub contacts_url: Option<String>,
+    /// Where calendars are read.
+    pub calendars_url: Option<String>,
 }
 
 /// How an IMAP account connects. The password is never returned.
@@ -214,6 +264,8 @@ pub struct AccountStatusDto {
     pub error: Option<String>,
     /// When the scheduler syncs it next, Unix milliseconds; `null` when it does not.
     pub next_sync_at: Option<i64>,
+    /// The latest contacts and calendars sync; `null` when there was none.
+    pub contacts_calendars: Option<ContactsCalendarsRunDto>,
 }
 
 /// A new archive.
@@ -386,6 +438,8 @@ pub struct AccountUpdateRequest {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<u32>)]
     pub min_age_days: Option<Option<u32>>,
+    /// Turn archiving contacts and calendars on or off.
+    pub contacts_calendars: Option<ContactsCalendarsRequest>,
 }
 
 fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -548,6 +602,12 @@ pub struct MessageDetail {
     pub locations: Vec<LocationDto>,
     /// Its labels, sorted.
     pub labels: Vec<String>,
+    /// The events its calendar parts (invitations, updates, replies, cancellations) belong to,
+    /// as the archive knows them now; empty when it has none.
+    pub invitations: Vec<crate::pim::InvitationDto>,
+    /// The people of its `From`, `To`, `Cc`, `Bcc` and `Reply-To` addresses, for those that
+    /// belong to one, each address once.
+    pub people: Vec<crate::persons::AddressPersonDto>,
 }
 
 /// A conversation, oldest message first.
@@ -654,6 +714,37 @@ pub struct ExportParams {
     pub label: Option<String>,
     /// Only the messages matching this search, e.g. `from:ada@example.com`.
     pub q: Option<String>,
+}
+
+/// What to export of an archive's contacts.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ContactsExportParams {
+    /// `vcf` for the latest version of each contact in one file, `zip` for every version.
+    pub format: String,
+    /// Only the contacts of this address book id.
+    pub collection: Option<String>,
+    /// Only the cards of this person id.
+    pub person: Option<String>,
+    /// `true` to put contacts removed from their source into a `vcf` too; a zip has them always.
+    pub removed: Option<bool>,
+}
+
+/// What to export of an archive's calendars.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct CalendarExportParams {
+    /// `ics` for the latest version of each item in one file, `zip` for every version.
+    pub format: String,
+    /// Only the items of this calendar id.
+    pub collection: Option<String>,
+    /// With `to`: only events with an instance from here on, Unix milliseconds. Tasks are left
+    /// out then.
+    pub from: Option<i64>,
+    /// With `from`: only events with an instance before this, Unix milliseconds.
+    pub to: Option<i64>,
+    /// `true` to put items removed from their source into an `ics` too; a zip has them always.
+    pub removed: Option<bool>,
 }
 
 /// How to render an HTML body.
@@ -765,6 +856,14 @@ impl AccountDto {
                 finished_at: status.finished_at.map(|t| t.as_millis()),
                 error: status.error,
                 next_sync_at: status.next_sync_at.map(|t| t.as_millis()),
+                contacts_calendars: status
+                    .contacts_calendars
+                    .map(|run| ContactsCalendarsRunDto {
+                        running: run.running,
+                        finished_at: run.finished_at.map(|t| t.as_millis()),
+                        summary: run.summary,
+                        error: run.error,
+                    }),
             },
             connection: details.connection.map(|c| ImapConnectionDto {
                 host: c.host,
@@ -783,6 +882,13 @@ impl AccountDto {
             min_age_days: details.min_age_days,
             oauth_provider: details.oauth_provider,
             needs_sign_in: details.needs_sign_in,
+            contacts_calendars: details.contacts_calendars.map(|c| ContactsCalendarsDto {
+                enabled: c.enabled,
+                contacts_url: c.contacts_url,
+                calendars_url: c.calendars_url,
+                needs_consent: c.needs_consent,
+                protocol: c.protocol.as_str().to_owned(),
+            }),
         }
     }
 }
@@ -843,22 +949,23 @@ impl MessageSummary {
 }
 
 pub fn attachment_dto(message: &Message, attachment: &Attachment) -> AttachmentDto {
+    attachment_of(message.id, attachment)
+}
+
+pub fn attachment_of(message: holtmail_core::MessageId, attachment: &Attachment) -> AttachmentDto {
     AttachmentDto {
         ordinal: attachment.ordinal,
         filename: attachment.filename.clone(),
         content_type: attachment.content_type.clone(),
         size: attachment.size,
         inline: attachment.inline,
-        url: format!(
-            "/api/messages/{}/attachments/{}",
-            message.id, attachment.ordinal
-        ),
+        url: format!("/api/messages/{message}/attachments/{}", attachment.ordinal),
         thumbnail_url: (holtmail_thumbnail::supports(&attachment.content_type)
             && attachment.size <= holtmail_thumbnail::MAX_SOURCE as u64)
             .then(|| {
                 format!(
-                    "/api/messages/{}/attachments/{}/thumbnail",
-                    message.id, attachment.ordinal
+                    "/api/messages/{message}/attachments/{}/thumbnail",
+                    attachment.ordinal
                 )
             }),
     }

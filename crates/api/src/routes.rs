@@ -222,6 +222,20 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
     let parsed = holtmail_mime::parse(raw).ok();
     let attachments = state.store.attachments(message.id).await?;
     let locations = state.store.locations(message.id).await?;
+    let reply_to = parsed
+        .as_ref()
+        .map(|p| addresses(&p.reply_to))
+        .unwrap_or_default();
+    let people = crate::persons::address_people(
+        state,
+        message.archive_id,
+        [&message.from, &message.to, &message.cc, &message.bcc]
+            .into_iter()
+            .flatten()
+            .map(|a| a.email.clone())
+            .chain(reply_to.iter().map(|a| a.email.clone())),
+    )
+    .await?;
     Ok(MessageDetail {
         id: message.id.to_string(),
         archive_id: message.archive_id.to_string(),
@@ -232,10 +246,7 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
         to: addresses(&message.to),
         cc: addresses(&message.cc),
         bcc: addresses(&message.bcc),
-        reply_to: parsed
-            .as_ref()
-            .map(|p| addresses(&p.reply_to))
-            .unwrap_or_default(),
+        reply_to,
         date: message.date.as_millis(),
         sent_at: message.sent_at.map(|t| t.as_millis()),
         received_at: message.received_at.map(|t| t.as_millis()),
@@ -258,6 +269,8 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
             .collect(),
         locations: locations.into_iter().map(LocationDto::from).collect(),
         labels: state.store.labels(message.id).await?,
+        invitations: crate::pim::invitations(state, &message).await?,
+        people,
     })
 }
 
@@ -576,7 +589,12 @@ pub(crate) fn disposition(filename: &str, inline: bool) -> String {
     )
 }
 
-fn download(bytes: Vec<u8>, content_type: &str, filename: &str, inline: bool) -> Response {
+pub(crate) fn download(
+    bytes: Vec<u8>,
+    content_type: &str,
+    filename: &str,
+    inline: bool,
+) -> Response {
     let disposition = disposition(filename, inline);
     let mut response = bytes.into_response();
     let headers = response.headers_mut();

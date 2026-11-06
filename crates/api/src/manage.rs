@@ -12,8 +12,8 @@ use tokio::io::AsyncWriteExt;
 
 use crate::dto::*;
 use crate::mailboxes::{
-    AccountChange, ConnectionChange, JmapConnectionChange, MailboxError, NewImapAccount,
-    NewJmapAccount, RemoteImageJob,
+    AccountChange, ConnectionChange, ContactsCalendarsChange, JmapConnectionChange, MailboxError,
+    NewImapAccount, NewJmapAccount, RemoteImageJob,
 };
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
@@ -83,6 +83,10 @@ pub(crate) async fn list_accounts(
                 if !manages {
                     dto.connection = None;
                     dto.jmap = None;
+                    if let Some(c) = dto.contacts_calendars.as_mut() {
+                        c.contacts_url = None;
+                        c.calendars_url = None;
+                    }
                 }
                 dto
             })
@@ -234,7 +238,7 @@ pub(crate) async fn sync_account(
     post,
     path = "/api/archives/{id}/imports",
     params(("id" = String, Path, description = "Archive id"), ImportParams),
-    request_body(content = Vec<u8>, content_type = "application/octet-stream", description = "An mbox, .eml or zip file"),
+    request_body(content = Vec<u8>, content_type = "application/octet-stream", description = "An mbox, .eml, .vcf, .ics or zip file (Google Takeout too)"),
     responses((status = 202, description = "Importing in the background into the import account named after the file", body = AccountDto), (status = 400, description = "An empty name", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn import_file(
@@ -351,7 +355,7 @@ pub(crate) async fn delete_archive(
 ) -> ApiResult<StatusCode> {
     let archive_id = archive(&state, &raw).await?;
     for account in state.store.list_accounts(archive_id).await? {
-        if state.mailboxes.status(account.id).running {
+        if busy(&state.mailboxes.status(account.id)) {
             return Err(conflict(
                 "an account of this archive is syncing or importing; try again when it is done",
             ));
@@ -376,9 +380,33 @@ pub(crate) async fn delete_archive(
             None => break,
         }
     }
+    let mut items = Vec::new();
+    let mut after = None;
+    loop {
+        let page = state
+            .store
+            .list_items(&holtmail_store::ItemQuery {
+                archive_id,
+                kind: None,
+                collection_id: None,
+                removed: holtmail_store::RemovedFilter::Include,
+                order: holtmail_store::ItemOrder::Title,
+                after,
+                limit: 500,
+            })
+            .await?;
+        items.extend(page.items.iter().map(|i| i.item.id));
+        match page.next {
+            Some(next) => after = Some(next),
+            None => break,
+        }
+    }
     let orphans = state.store.delete_archive(archive_id).await?;
     for chunk in messages.chunks(500) {
         state.index.remove(chunk).await?;
+    }
+    for chunk in items.chunks(500) {
+        state.index.remove_items(chunk).await?;
     }
     state.index.commit().await?;
     for blob in orphans {
@@ -436,6 +464,11 @@ pub(crate) async fn update_account(
         min_age_days: request
             .min_age_days
             .map(|days| days.filter(|days| *days > 0)),
+        contacts_calendars: request.contacts_calendars.map(|c| ContactsCalendarsChange {
+            enabled: c.enabled,
+            contacts_url: c.contacts_url,
+            calendars_url: c.calendars_url,
+        }),
     };
     if change != AccountChange::default() {
         account = state
@@ -468,7 +501,7 @@ pub(crate) async fn delete_account(
     Path(raw): Path<String>,
 ) -> ApiResult<StatusCode> {
     let account = account(&state, &raw).await?;
-    if state.mailboxes.status(account.id).running {
+    if busy(&state.mailboxes.status(account.id)) {
         return Err(conflict(
             "the account is syncing or importing; try again when it is done",
         ));
@@ -501,4 +534,12 @@ pub(crate) async fn start_remote_images(
         .await
         .map_err(refused)?;
     Ok((StatusCode::ACCEPTED, Json(task.into())))
+}
+
+fn busy(status: &crate::mailboxes::AccountStatus) -> bool {
+    status.running
+        || status
+            .contacts_calendars
+            .as_ref()
+            .is_some_and(|c| c.running)
 }

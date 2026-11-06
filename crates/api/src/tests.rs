@@ -20,6 +20,16 @@ use super::*;
 const NEWSLETTER: &[u8] = b"From: News <news@example.com>\r\nTo: ada@example.com\r\nSubject: Weekly news\r\nMessage-ID: <n1@example.com>\r\nDate: Mon, 10 Mar 2025 08:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=r\r\n\r\n--r\r\nContent-Type: text/html\r\n\r\n<p onclick=\"x()\">Hello <img src=\"cid:logo@example.com\"><img src=\"https://tracker.example.com/p.gif\"></p>\r\n--r\r\nContent-Type: image/png\r\nContent-ID: <logo@example.com>\r\nContent-Disposition: inline\r\n\r\nPNGDATA\r\n--r\r\nContent-Type: text/html; name=\"evil.html\"\r\nContent-Disposition: attachment; filename=\"evil.html\"\r\n\r\n<script>alert(1)</script>\r\n--r--\r\n";
 const PLAIN: &[u8] = b"From: Bob <bob@example.org>\r\nTo: ada@example.com\r\nSubject: Re: Weekly news\r\nIn-Reply-To: <n1@example.com>\r\nDate: Tue, 11 Mar 2025 08:00:00 +0000\r\n\r\nThanks <3\r\n";
 
+fn holtmail_api_contacts(dav: &Value) -> ContactsCalendars {
+    ContactsCalendars {
+        enabled: dav["enabled"] == json!(true),
+        contacts_url: dav["contacts_url"].as_str().map(str::to_owned),
+        calendars_url: dav["calendars_url"].as_str().map(str::to_owned),
+        needs_consent: false,
+        protocol: Default::default(),
+    }
+}
+
 #[derive(Default)]
 struct FakeMailboxes {
     store: std::sync::OnceLock<Arc<dyn Store>>,
@@ -187,6 +197,16 @@ impl Mailboxes for FakeMailboxes {
         if let Some(days) = change.min_age_days {
             account.settings["min_age"] = json!(days);
         }
+        if let Some(dav) = change.contacts_calendars {
+            if dav.enabled && dav.contacts_url.as_deref() == Some("https://nowhere.example.com") {
+                return Err(MailboxError::Invalid("No contacts there".into()));
+            }
+            account.settings["dav"] = json!({
+                "enabled": dav.enabled,
+                "contacts_url": dav.contacts_url,
+                "calendars_url": dav.calendars_url.or(dav.contacts_url.clone()),
+            });
+        }
         self.store
             .get()
             .unwrap()
@@ -229,6 +249,10 @@ impl Mailboxes for FakeMailboxes {
                 .as_str()
                 .map(str::to_owned),
             needs_sign_in: account.settings["oauth"]["needs_sign_in"] == json!(true),
+            contacts_calendars: (account.kind != holtmail_store::AccountKind::Import).then(|| {
+                let dav = &account.settings["dav"];
+                holtmail_api_contacts(dav)
+            }),
         }
     }
 
@@ -384,6 +408,14 @@ impl Mailboxes for FakeMailboxes {
         let mut current = self.proxy.lock().unwrap();
         current.address = proxy;
         Ok(current.clone())
+    }
+
+    async fn rebuild_people(&self, archive: holtmail_core::ArchiveId) -> Result<(), MailboxError> {
+        let store = self.store.get().unwrap();
+        holtmail_people::rebuild(&**store, archive)
+            .await
+            .map(|_| ())
+            .map_err(|e| MailboxError::Backend(e.to_string()))
     }
 }
 
@@ -1885,6 +1917,37 @@ async fn edits_the_connection_and_the_schedule() {
         "0 did not archive all mail"
     );
 
+    assert_eq!(account["contacts_calendars"]["enabled"], false);
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "contacts_calendars": { "enabled": true, "contacts_url": "https://nowhere.example.com" } }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a refused check is refused"
+    );
+    assert!(String::from_utf8_lossy(&body).contains("No contacts there"));
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "contacts_calendars": { "enabled": true, "contacts_url": "https://dav.example.com/remote.php/dav" } }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["contacts_calendars"]["enabled"], true);
+    assert_eq!(
+        account["contacts_calendars"]["calendars_url"],
+        "https://dav.example.com/remote.php/dav"
+    );
+    assert_eq!(account["contacts_calendars"]["needs_consent"], false);
+    assert_eq!(account["status"]["contacts_calendars"], Value::Null);
+
     let schedule = f.json("/api/sync-schedule").await;
     assert_eq!(schedule["minutes"], 0);
     let (status, _, body) = f
@@ -2287,4 +2350,909 @@ async fn adds_and_edits_jmap_accounts_for_managers_only() {
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+const CARD_V1: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:ada\r\nFN:Ada Quill\r\nEMAIL:Ada@Example.com\r\nTEL:+1 555 0100\r\nEND:VCARD\r\n";
+const CARD_V2: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:ada\r\nFN:Ada Quill\r\nEMAIL:Ada@Example.com\r\nTEL:+1 555 0199\r\nEND:VCARD\r\n";
+const MEETING: &str = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:review@example.com\r\nSUMMARY:Review\r\nDTSTART;TZID=Europe/Berlin:20250310T090000\r\nDTEND;TZID=Europe/Berlin:20250310T100000\r\nORGANIZER:mailto:ada@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+async fn pim_fixture(f: &Fixture) -> (String, String, String) {
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let collection = |kind, remote: &str| holtmail_store::NewCollection {
+        archive_id: archive,
+        account_id: None,
+        kind,
+        remote_id: remote.into(),
+        name: remote.into(),
+        color: None,
+    };
+    let book = f
+        .store
+        .upsert_collection(collection(
+            holtmail_store::CollectionKind::Contacts,
+            "people.vcf",
+        ))
+        .await
+        .unwrap();
+    let team = f
+        .store
+        .upsert_collection(collection(
+            holtmail_store::CollectionKind::Calendar,
+            "team.ics",
+        ))
+        .await
+        .unwrap();
+    let item = |collection, remote: &str, kind, raw: &'static str| holtmail_ingest::IncomingItem {
+        collection,
+        remote_id: remote.into(),
+        kind,
+        format: holtmail_pim::Format::of(kind),
+        raw: Bytes::from_static(raw.as_bytes()),
+        etag: None,
+        seen_at: holtmail_core::Timestamp::from_secs(1_700_000_000),
+    };
+    let ada = f
+        .ingest
+        .ingest_item(item(
+            book.id,
+            "ada",
+            holtmail_pim::ItemKind::Contact,
+            CARD_V1,
+        ))
+        .await
+        .unwrap();
+    f.ingest
+        .ingest_item(item(
+            book.id,
+            "ada",
+            holtmail_pim::ItemKind::Contact,
+            CARD_V2,
+        ))
+        .await
+        .unwrap();
+    let review = f
+        .ingest
+        .ingest_item(item(
+            team.id,
+            "review",
+            holtmail_pim::ItemKind::Event,
+            MEETING,
+        ))
+        .await
+        .unwrap();
+    (
+        book.id.to_string(),
+        ada.item_id.to_string(),
+        review.item_id.to_string(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lists_contacts_and_events_with_their_versions() {
+    let f = fixture().await;
+    let (book, ada, review) = pim_fixture(&f).await;
+
+    let collections = f
+        .json(&format!("/api/archives/{}/collections", f.archive))
+        .await;
+    assert_eq!(collections.as_array().unwrap().len(), 2);
+    assert_eq!(collections[0]["kind"], "calendar");
+    assert_eq!(collections[1]["kind"], "contacts");
+    assert_eq!(collections[1]["items"], 1);
+
+    let contacts = f
+        .json(&format!(
+            "/api/archives/{}/contacts?collection={book}",
+            f.archive
+        ))
+        .await;
+    assert_eq!(contacts["items"][0]["title"], "Ada Quill");
+    assert_eq!(contacts["items"][0]["versions"], 2);
+    assert_eq!(contacts["items"][0]["emails"], json!(["ada@example.com"]));
+    assert_eq!(contacts["items"][0]["phones"], json!(["+15550199"]));
+    assert!(contacts["next"].is_null());
+
+    let events = f.json(&format!("/api/archives/{}/events", f.archive)).await;
+    assert_eq!(events["items"][0]["id"], review);
+    assert_eq!(events["items"][0]["starts_at"], 1_741_593_600_000_i64);
+    assert_eq!(events["items"][0]["time_zone"], "Europe/Berlin");
+    assert_eq!(events["items"][0]["organizer"], "ada@example.com");
+
+    let detail = f.json(&format!("/api/items/{ada}")).await;
+    assert_eq!(detail["data"]["type"], "contact");
+    assert_eq!(detail["data"]["full_name"], "Ada Quill");
+    let versions = detail["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["changes"], json!([]));
+    assert_eq!(
+        versions[1]["changes"],
+        json!([{ "field": "phone", "before": "+1 555 0100", "after": "+1 555 0199" }])
+    );
+    assert_eq!(versions[1]["readable"], true);
+
+    let raw_url = versions[0]["raw_url"].as_str().unwrap();
+    let (status, headers, body) = f.get(raw_url).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        Bytes::from_static(CARD_V1.as_bytes()),
+        "raw bytes unchanged"
+    );
+    assert_eq!(headers[header::CONTENT_TYPE], "text/vcard");
+    assert_eq!(headers["x-content-type-options"], "nosniff");
+    for missing in [
+        format!("/api/items/{ada}/versions/3/raw"),
+        format!("/api/items/{}", holtmail_core::ItemId::new()),
+        "/api/items/not-an-id".to_owned(),
+    ] {
+        let (status, _, _) = f.get(&missing).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+    }
+    for bad in [
+        format!("/api/archives/{}/contacts?removed=sometimes", f.archive),
+        format!("/api/archives/{}/contacts?after=garbage", f.archive),
+    ] {
+        let (status, _, _) = f.get(&bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let gone = f
+        .json(&format!(
+            "/api/archives/{}/contacts?removed=only",
+            f.archive
+        ))
+        .await;
+    assert_eq!(gone["items"], json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn members_read_contacts_only_in_granted_archives() {
+    let f = fixture().await;
+    let (_, ada, _) = pim_fixture(&f).await;
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let grace = serde_json::from_slice::<Value>(&body).unwrap()["user"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let uris = [
+        format!("/api/archives/{}/collections", f.archive),
+        format!("/api/archives/{}/contacts", f.archive),
+        format!("/api/archives/{}/events", f.archive),
+        format!("/api/items/{ada}"),
+        format!("/api/items/{ada}/versions/1/raw"),
+        format!(
+            "/api/archives/{}/calendar?from=1741564800000&to=1741651200000",
+            f.archive
+        ),
+        format!("/api/archives/{}/search/items?q=review", f.archive),
+        format!(
+            "/api/events/{}",
+            holtmail_calendar::group_id(
+                f.archive.parse().unwrap(),
+                Some("review@example.com"),
+                holtmail_core::ItemId::new()
+            )
+        ),
+    ];
+    for uri in &uris {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/users/{grace}"),
+            json!({ "archives": [f.archive] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    for uri in &uris {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+    }
+}
+
+const MEETING_COPY: &str = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:review@example.com\r\nSEQUENCE:2\r\nSUMMARY:Review\r\nLOCATION:Room 4\r\nDTSTART;TZID=Europe/Berlin:20250310T090000\r\nDTEND;TZID=Europe/Berlin:20250310T100000\r\nORGANIZER:mailto:ada@example.com\r\nATTENDEE;CN=Bob Stone;PARTSTAT=TENTATIVE:mailto:bob@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shows_the_calendar_events_and_their_copies() {
+    let f = fixture().await;
+    let (_, _, review) = pim_fixture(&f).await;
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let home = f
+        .store
+        .upsert_collection(holtmail_store::NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: holtmail_store::CollectionKind::Calendar,
+            remote_id: "home.ics".into(),
+            name: "Home".into(),
+            color: Some("#2a9d8f".into()),
+        })
+        .await
+        .unwrap();
+    let copy = f
+        .ingest
+        .ingest_item(holtmail_ingest::IncomingItem {
+            collection: home.id,
+            remote_id: "review".into(),
+            kind: holtmail_pim::ItemKind::Event,
+            format: holtmail_pim::Format::of(holtmail_pim::ItemKind::Event),
+            raw: Bytes::from_static(MEETING_COPY.as_bytes()),
+            etag: None,
+            seen_at: holtmail_core::Timestamp::from_secs(1_700_000_100),
+        })
+        .await
+        .unwrap()
+        .item_id
+        .to_string();
+    f.ingest.commit().await.unwrap();
+
+    let day = format!(
+        "/api/archives/{}/calendar?from=1741564800000&to=1741651200000",
+        f.archive
+    );
+    let range = f.json(&day).await;
+    let found = range["occurrences"].as_array().unwrap();
+    assert_eq!(found.len(), 1, "two copies, one instance");
+    assert_eq!(found[0]["copies"], 2);
+    assert_eq!(found[0]["item_id"], copy, "the higher SEQUENCE leads");
+    assert_eq!(found[0]["location"], "Room 4");
+    assert_eq!(found[0]["starts_at"], 1_741_593_600_000_i64);
+    assert_eq!(found[0]["start_local"], "2025-03-10T09:00:00");
+    assert_eq!(found[0]["time_zone"], "Europe/Berlin");
+    assert_eq!(found[0]["recurrence_id"], Value::Null);
+    let calendars = range["calendars"].as_array().unwrap();
+    assert_eq!(calendars.len(), 2, "calendars only, not address books");
+    assert!(
+        calendars
+            .iter()
+            .any(|c| c["name"] == "Home" && c["color"] == "#2a9d8f")
+    );
+    let group = found[0]["group_id"].as_str().unwrap().to_owned();
+
+    let team_id = calendars.iter().find(|c| c["name"] == "team.ics").unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let only_team = f.json(&format!("{day}&collections={team_id}")).await;
+    assert_eq!(only_team["occurrences"][0]["copies"], 1);
+    assert_eq!(only_team["occurrences"][0]["item_id"], review);
+    let none = f.json(&format!("{day}&collections=")).await;
+    assert_eq!(none["occurrences"], json!([]));
+    for bad in [
+        format!("/api/archives/{}/calendar?from=5&to=5", f.archive),
+        format!("/api/archives/{}/calendar?from=0&to=99999999999", f.archive),
+    ] {
+        let (status, _, _) = f.get(&bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    let event = f
+        .json(&format!("/api/events/{group}?tz=America/New_York"))
+        .await;
+    assert_eq!(event["item_id"], copy);
+    assert_eq!(event["title"], "Review");
+    assert_eq!(event["start"]["value"], "2025-03-10T09:00:00");
+    assert_eq!(event["start"]["in_zone"], "2025-03-10T04:00:00");
+    assert_eq!(event["viewer_zone"], "America/New_York");
+    let copies = event["copies"].as_array().unwrap();
+    assert_eq!(copies.len(), 2);
+    assert_eq!(copies[0]["leading"], true);
+    assert_eq!(copies[0]["collection_name"], "Home");
+    assert_eq!(copies[1]["item_id"], review);
+    let fields: Vec<&str> = event["differences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["field"].as_str().unwrap())
+        .collect();
+    assert_eq!(fields, ["location", "attendee", "sequence"]);
+    assert_eq!(event["attendees"][0]["email"], "bob@example.org");
+    assert_eq!(event["attendees"][0]["status"], "tentative");
+    assert_eq!(
+        event["attendees"][0]["answers"],
+        json!([{ "item_id": copy, "status": "tentative" }, { "item_id": review, "status": null }])
+    );
+    assert_eq!(event["organizer"]["email"], "ada@example.com");
+    assert_eq!(event["timeline"].as_array().unwrap().len(), 2);
+    assert_eq!(event["recurrence"], Value::Null);
+    let (status, _, _) = f
+        .get(&format!(
+            "/api/events/{}",
+            holtmail_core::EventGroupId::from_hash([1; 16])
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let search = |q: &str| format!("/api/archives/{}/search/items?q={q}", f.archive);
+    let events = f.json(&search("is:event")).await;
+    assert_eq!(events["total"], 1, "two copies, one event");
+    assert_eq!(events["items"].as_array().unwrap().len(), 1);
+    assert_eq!(events["items"][0]["group_id"], group);
+    assert_eq!(
+        f.json(&search("is:contact")).await["items"][0]["kind"],
+        "contact"
+    );
+    assert_eq!(f.json(&search("with:bob")).await["total"], 1);
+    assert_eq!(f.json(&search("room")).await["items"][0]["group_id"], group);
+    let mail = f
+        .json(&format!("/api/archives/{}/search?q=is:event", f.archive))
+        .await;
+    assert_eq!(mail["total"], 0, "mail search finds no events");
+}
+
+const INVITE: &[u8] = include_bytes!("../tests/fixtures/invite.eml");
+const INVITE_REPLY: &[u8] = include_bytes!("../tests/fixtures/invite-reply.eml");
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shows_invitations_in_messages_and_messages_in_events() {
+    let f = fixture().await;
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let mut account = f.store.list_accounts(archive).await.unwrap().remove(0);
+    account.address = Some("Bob@Example.org".into());
+    f.store.update_account(&account).await.unwrap();
+    let mut ids = Vec::new();
+    for raw in [INVITE_REPLY, INVITE] {
+        ids.push(
+            f.ingest
+                .ingest(archive, Bytes::from_static(raw), &Placement::default())
+                .await
+                .unwrap()
+                .message_id,
+        );
+    }
+    let (reply, invite) = (ids[0], ids[1]);
+
+    let detail = f.json(&format!("/api/messages/{invite}")).await;
+    let invitations = detail["invitations"].as_array().unwrap();
+    assert_eq!(invitations.len(), 1);
+    let invitation = &invitations[0];
+    assert_eq!(invitation["uid"], "rota-2025@example.com");
+    assert_eq!(invitation["method"], "request");
+    assert_eq!(invitation["version"], 1);
+    assert_eq!(invitation["version_count"], 2);
+    assert_eq!(invitation["updates_after"], 0, "a reply is not an update");
+    assert_eq!(invitation["summary"], "Lighthouse rota");
+    assert_eq!(invitation["start"]["time_zone"], "America/New_York");
+    assert_eq!(invitation["start"]["value"], "2025-11-07T09:00:00");
+    assert_eq!(invitation["start"]["utc"], 1_762_524_000_000_i64);
+    assert_eq!(invitation["organizer"]["name"], "Ada Quill");
+    assert_eq!(invitation["my_status"], "accepted");
+    assert_eq!(invitation["cancelled"], false);
+    let item = invitation["item_id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        f.json(&format!("/api/messages/{reply}")).await["invitations"][0]["method"],
+        "reply"
+    );
+    let plain = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["subject"] == "Re: Weekly news")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        f.json(&format!("/api/messages/{plain}")).await["invitations"],
+        json!([])
+    );
+
+    let detail = f.json(&format!("/api/items/{item}")).await;
+    let versions = detail["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["method"], "request");
+    assert_eq!(versions[0]["messages"][0]["id"], invite.to_string());
+    assert_eq!(
+        versions[0]["messages"][0]["subject"],
+        "Invitation: Lighthouse rota"
+    );
+    assert_eq!(versions[1]["method"], "reply");
+    assert_eq!(versions[1]["messages"][0]["id"], reply.to_string());
+    assert_eq!(versions[1]["changes"][0]["field"], "answer");
+    assert_eq!(
+        versions[1]["changes"][0]["after"],
+        "Bob Stone <bob@example.org> (accepted)"
+    );
+    let main = &detail["data"]["components"][0];
+    assert_eq!(main["summary"], "Lighthouse rota");
+    assert_eq!(main["attendees"][0]["partstat"], "ACCEPTED");
+    assert_eq!(detail["item"]["title"], "Lighthouse rota");
+}
+
+const CARD_WORK: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:ada-work\r\nFN:Ada Quill\r\nEMAIL:ada@example.com\r\nTEL:+1 555 0142\r\nORG:Lighthouse Co\r\nEND:VCARD\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn groups_people_with_sources_mail_and_meetings() {
+    let f = fixture().await;
+    let (_, ada_card, review) = pim_fixture(&f).await;
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let work = f
+        .store
+        .upsert_collection(holtmail_store::NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: holtmail_store::CollectionKind::Contacts,
+            remote_id: "work.vcf".into(),
+            name: "Work".into(),
+            color: None,
+        })
+        .await
+        .unwrap();
+    let work_card = f
+        .ingest
+        .ingest_item(holtmail_ingest::IncomingItem {
+            collection: work.id,
+            remote_id: "ada-work".into(),
+            kind: holtmail_pim::ItemKind::Contact,
+            format: holtmail_pim::Format::of(holtmail_pim::ItemKind::Contact),
+            raw: Bytes::from_static(CARD_WORK.as_bytes()),
+            etag: None,
+            seen_at: holtmail_core::Timestamp::from_secs(1_700_000_000),
+        })
+        .await
+        .unwrap();
+    let rebuilt = holtmail_people::rebuild(&*f.store, archive).await.unwrap();
+    assert_eq!(
+        rebuilt.people, 1,
+        "one message each is not enough for mail alone"
+    );
+
+    let list = f.json(&format!("/api/archives/{}/people", f.archive)).await;
+    assert_eq!(list["total"], 1);
+    let ada = &list["items"][0];
+    assert_eq!(ada["name"], "Ada Quill");
+    assert_eq!(ada["cards"], 2);
+    assert_eq!(ada["messages"], 2);
+    assert_eq!(ada["differences"], true);
+    assert_eq!(ada["phones"], json!(["+15550142", "+15550199"]));
+    let person = ada["id"].as_str().unwrap().to_owned();
+    for (query, total) in [
+        ("has_differences=true", 1),
+        ("source=mail", 0),
+        ("source=contacts", 1),
+        ("q=QUILL", 1),
+        ("q=%2B1555", 1),
+        ("q=nobody", 0),
+    ] {
+        let page = f
+            .json(&format!("/api/archives/{}/people?{query}", f.archive))
+            .await;
+        assert_eq!(page["total"], total, "{query}");
+        assert_eq!(page["items"].as_array().unwrap().len(), total, "{query}");
+    }
+    let page = f
+        .json(&format!(
+            "/api/archives/{}/people?source={}",
+            f.archive, work.id
+        ))
+        .await;
+    assert_eq!(page["total"], 1);
+    for bad in ["source=somewhere", "cursor=garbage"] {
+        let (status, _, _) = f
+            .get(&format!("/api/archives/{}/people?{bad}", f.archive))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    let detail = f.json(&format!("/api/people/{person}")).await;
+    let field = |name: &str| {
+        detail["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == name)
+            .cloned()
+            .unwrap()
+    };
+    let phone = field("phone");
+    assert_eq!(phone["differs"], true);
+    assert_eq!(phone["values"].as_array().unwrap().len(), 2);
+    let email = field("email");
+    assert_eq!(email["differs"], false);
+    assert_eq!(email["values"].as_array().unwrap().len(), 1);
+    let sources: Vec<&str> = email["values"][0]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["collection_name"].as_str().unwrap())
+        .collect();
+    assert_eq!(sources.len(), 2);
+    assert!(sources.contains(&"Work") && sources.contains(&"people.vcf"));
+    assert_eq!(
+        field("organization")["differs"],
+        false,
+        "one card is silent"
+    );
+    assert_eq!(detail["cards"].as_array().unwrap().len(), 2);
+    let card_ids: Vec<&str> = detail["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["item_id"].as_str().unwrap())
+        .collect();
+    assert!(card_ids.contains(&ada_card.as_str()));
+    assert!(card_ids.contains(&work_card.item_id.to_string().as_str()));
+    assert_eq!(
+        detail["links"],
+        json!([{
+            "from_item_id": ada_card.min(work_card.item_id.to_string()),
+            "to_item_id": detail["links"][0]["to_item_id"],
+            "kind": "email",
+            "value": "ada@example.com"
+        }])
+    );
+    let mail = &detail["correspondence"];
+    assert_eq!(mail["messages"], 2);
+    assert_eq!(mail["to_them"], 2);
+    assert_eq!(mail["from_them"], 0);
+    assert_eq!(mail["years"], json!([{ "year": 2025, "messages": 2 }]));
+    assert_eq!(mail["threads"].as_array().unwrap().len(), 1);
+    assert_eq!(mail["threads"][0]["messages"], 2);
+    assert_eq!(mail["threads"][0]["subject"], "Re: Weekly news");
+    assert_eq!(
+        mail["attachments"][0]["attachment"]["filename"],
+        "evil.html"
+    );
+    assert_eq!(detail["meetings"][0]["item_id"], review);
+    assert_eq!(detail["meetings"][0]["role"], "organizer");
+
+    let plain = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["subject"] == "Re: Weekly news")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        f.json(&format!("/api/messages/{plain}")).await["people"],
+        json!([{ "email": "ada@example.com", "person_id": person }])
+    );
+
+    for missing in [
+        format!(
+            "/api/people/{}",
+            holtmail_core::PersonId::from_hash([1; 16])
+        ),
+        "/api/people/not-an-id".to_owned(),
+    ] {
+        let (status, _, _) = f.get(&missing).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+    }
+
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    for uri in [
+        format!("/api/archives/{}/people", f.archive),
+        format!("/api/people/{person}"),
+    ] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn splits_and_joins_people_by_hand() {
+    let f = fixture().await;
+    let (_, ada_card, _) = pim_fixture(&f).await;
+    let archive: holtmail_core::ArchiveId = f.archive.parse().unwrap();
+    let work = f
+        .store
+        .upsert_collection(holtmail_store::NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: holtmail_store::CollectionKind::Contacts,
+            remote_id: "work.vcf".into(),
+            name: "Work".into(),
+            color: None,
+        })
+        .await
+        .unwrap();
+    let card = |remote: &str, raw: &'static str| holtmail_ingest::IncomingItem {
+        collection: work.id,
+        remote_id: remote.into(),
+        kind: holtmail_pim::ItemKind::Contact,
+        format: holtmail_pim::Format::of(holtmail_pim::ItemKind::Contact),
+        raw: Bytes::from_static(raw.as_bytes()),
+        etag: None,
+        seen_at: holtmail_core::Timestamp::from_secs(1_700_000_000),
+    };
+    let work_card = f
+        .ingest
+        .ingest_item(card("ada-work", CARD_WORK))
+        .await
+        .unwrap()
+        .item_id
+        .to_string();
+    let quill = f
+        .ingest
+        .ingest_item(card(
+            "quill",
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:quill\r\nFN:A. Quill\r\nEMAIL:quill@example.org\r\nEND:VCARD\r\n",
+        ))
+        .await
+        .unwrap()
+        .item_id
+        .to_string();
+    holtmail_people::rebuild(&*f.store, archive).await.unwrap();
+    let list = f.json(&format!("/api/archives/{}/people", f.archive)).await;
+    assert_eq!(list["total"], 2);
+    let id_of = |list: &Value, cards: u64| {
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["cards"] == cards)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let ada = id_of(&list, 2);
+    let alone = id_of(&list, 1);
+
+    let (status, _, body) = f
+        .send(post_json(
+            &format!("/api/people/{ada}/split"),
+            json!({ "cards": [work_card] }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let split: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(split["kind"], "split");
+    assert_eq!(split["keys"], json!([format!("item:{work_card}")]));
+    assert_eq!(split["from"], json!([format!("item:{ada_card}")]));
+    assert_eq!(split["people"][0], ada.as_str(), "the rest keeps the id");
+    let moved = split["people"][1].as_str().unwrap().to_owned();
+    assert_ne!(moved, ada);
+    assert_eq!(
+        f.json(&format!("/api/archives/{}/people", f.archive)).await["total"],
+        3
+    );
+    let detail = f.json(&format!("/api/people/{moved}")).await;
+    assert_eq!(detail["overrides"][0]["id"], split["id"]);
+    assert_eq!(detail["cards"].as_array().unwrap().len(), 1);
+
+    for (body, expected) in [
+        (json!({ "cards": [] }), StatusCode::BAD_REQUEST),
+        (json!({ "cards": [ada_card] }), StatusCode::BAD_REQUEST),
+        (json!({ "cards": [quill] }), StatusCode::BAD_REQUEST),
+        (json!({ "cards": ["nope"] }), StatusCode::BAD_REQUEST),
+    ] {
+        let (status, _, _) = f
+            .send(post_json(&format!("/api/people/{ada}/split"), body.clone()))
+            .await;
+        assert_eq!(status, expected, "{body}");
+    }
+
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/people/join",
+            json!({ "people": [ada, alone] }),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let join: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(join["people"], json!([ada]));
+    let detail = f.json(&format!("/api/people/{ada}")).await;
+    assert_eq!(detail["cards"].as_array().unwrap().len(), 2);
+    assert!(
+        detail["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["kind"] == "hand" && l["value"] == join["id"])
+    );
+
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/people/join",
+            json!({ "people": [ada, moved] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "the split keeps them apart");
+    for body in [json!({ "people": [ada] }), json!({ "people": [ada, ada] })] {
+        let (status, _, _) = f.send(post_json("/api/people/join", body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    let overrides = f
+        .json(&format!("/api/archives/{}/people/overrides", f.archive))
+        .await;
+    assert_eq!(overrides.as_array().unwrap().len(), 2);
+    holtmail_people::rebuild(&*f.store, archive).await.unwrap();
+    assert_eq!(
+        f.json(&format!("/api/archives/{}/people", f.archive)).await["total"],
+        2,
+        "a rebuild keeps both"
+    );
+
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let (status, _, _) = f
+        .send_as(
+            &member,
+            post_json("/api/people/join", json!({ "people": [ada, moved] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = f
+        .send_as(
+            &member,
+            request(
+                "DELETE",
+                &format!("/api/people/overrides/{}", split["id"].as_str().unwrap()),
+                json!({}),
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, body) = f
+        .send(request(
+            "DELETE",
+            &format!("/api/people/overrides/{}", split["id"].as_str().unwrap()),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let undone: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(undone["people"], json!([ada]));
+    assert_eq!(
+        f.json(&format!("/api/archives/{}/people", f.archive)).await["total"],
+        1
+    );
+    let (status, _, _) = f
+        .send(request(
+            "DELETE",
+            &format!("/api/people/overrides/{}", split["id"].as_str().unwrap()),
+            json!({}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exports_contacts_and_calendars() {
+    let f = fixture().await;
+    pim_fixture(&f).await;
+    let (status, headers, body) = f
+        .get(&format!(
+            "/api/archives/{}/contacts/export?format=vcf",
+            f.archive
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert!(
+        headers[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/vcard")
+    );
+    assert!(
+        headers[header::CONTENT_DISPOSITION]
+            .to_str()
+            .unwrap()
+            .contains("contacts.vcf")
+    );
+    let cards = holtmail_pim::split(&body);
+    assert!(!cards.is_empty());
+    assert!(
+        cards
+            .iter()
+            .all(|c| c.kind == holtmail_pim::ItemKind::Contact)
+    );
+
+    let (status, headers, body) = f
+        .get(&format!(
+            "/api/archives/{}/calendar/export?format=zip",
+            f.archive
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/zip");
+    let zip = zip::ZipArchive::new(std::io::Cursor::new(body.to_vec())).unwrap();
+    assert!(zip.file_names().any(|n| n.unwrap() == "manifest.json"));
+
+    let (status, headers, body) = f
+        .get(&format!(
+            "/api/archives/{}/calendar/export?format=ics&from=0&to=4102444800000",
+            f.archive
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        headers[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/calendar")
+    );
+    assert!(body.starts_with(b"BEGIN:VCALENDAR"));
+
+    for (uri, expected) in [
+        ("contacts/export?format=pdf", StatusCode::BAD_REQUEST),
+        ("contacts/export?format=ics", StatusCode::BAD_REQUEST),
+        ("calendar/export?format=ics&from=1", StatusCode::BAD_REQUEST),
+        (
+            "calendar/export?format=ics&from=2&to=1",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "contacts/export?format=vcf&collection=nope",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "contacts/export?format=vcf&person=0190d6e4-0000-7000-8000-000000000000",
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let (status, _, _) = f.get(&format!("/api/archives/{}/{uri}", f.archive)).await;
+        assert_eq!(status, expected, "{uri}");
+    }
+
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let (status, _, _) = f
+        .send_as(
+            &member,
+            Request::get(format!(
+                "/api/archives/{}/contacts/export?format=vcf",
+                f.archive
+            ))
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "members read granted archives only"
+    );
 }

@@ -106,6 +106,11 @@ pub trait Mailboxes: Send + Sync {
     /// can be reached. It applies at once to the reader's proxy and to saving. `Invalid` for a bad
     /// or unreachable proxy, or when the server's config sets it.
     async fn set_image_proxy(&self, proxy: Option<String>) -> Result<ImageProxy, MailboxError>;
+
+    /// Rebuilds the people of `archive` and returns once a rebuild that started after this call
+    /// has finished, so it sees every change stored before the call. Rebuilds of one archive never
+    /// overlap, whoever asked for them. `Backend` when that rebuild failed.
+    async fn rebuild_people(&self, archive: ArchiveId) -> Result<(), MailboxError>;
 }
 
 /// Remote image work started on request.
@@ -258,6 +263,73 @@ pub struct AccountStatus {
     pub error: Option<String>,
     /// When the scheduler will sync it next; `None` for accounts it does not sync.
     pub next_sync_at: Option<Timestamp>,
+    /// The latest contacts and calendars sync; `None` when there was none.
+    pub contacts_calendars: Option<ContactsCalendarsRun>,
+}
+
+/// The latest sync of an account's contacts and calendars.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContactsCalendarsRun {
+    /// It is running now.
+    pub running: bool,
+    /// When it ended.
+    pub finished_at: Option<Timestamp>,
+    /// One line on what it did, with counts only.
+    pub summary: String,
+    /// Why it failed, if it did. Safe to show: never holds names, contents or secrets.
+    pub error: Option<String>,
+}
+
+/// Whether and where an account's contacts and calendars are archived.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContactsCalendars {
+    /// They are archived after each mail sync.
+    pub enabled: bool,
+    /// Where address books are read; `None` when not set (detected when turned on).
+    pub contacts_url: Option<String>,
+    /// Where calendars are read.
+    pub calendars_url: Option<String>,
+    /// The account signs in with Google or Microsoft Graph and has not granted contacts and
+    /// calendars yet: it has to sign in again before they are archived.
+    pub needs_consent: bool,
+    /// How they are read.
+    pub protocol: ContactsProtocol,
+}
+
+/// How an account's contacts and calendars are read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ContactsProtocol {
+    /// CardDAV and CalDAV.
+    #[default]
+    Dav,
+    /// Microsoft Graph.
+    Graph,
+    /// JMAP for Contacts and JMAP Calendars.
+    Jmap,
+}
+
+impl ContactsProtocol {
+    /// `dav`, `graph` or `jmap`, as the API names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dav => "dav",
+            Self::Graph => "graph",
+            Self::Jmap => "jmap",
+        }
+    }
+}
+
+/// Turns archiving an account's contacts and calendars on or off.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContactsCalendarsChange {
+    /// On or off. Turning off keeps everything archived.
+    pub enabled: bool,
+    /// Where address books are read: a server, a DAV root, a principal or one address book.
+    /// When neither address is given, they are detected from the account's address (known
+    /// providers, then the mail domain's well-known address); when one is given, it serves both.
+    pub contacts_url: Option<String>,
+    /// Where calendars are read.
+    pub calendars_url: Option<String>,
 }
 
 /// How an IMAP account connects.
@@ -333,6 +405,10 @@ pub struct AccountChange {
     /// Archive only messages at least this many days old; `Some(None)` archives every message
     /// again.
     pub min_age_days: Option<Option<u32>>,
+    /// Turn archiving contacts and calendars on or off. Turning it on signs in to the
+    /// contacts and calendars server first, except for Google accounts that still have to
+    /// grant access by signing in again; nothing is stored when signing in fails.
+    pub contacts_calendars: Option<ContactsCalendarsChange>,
 }
 
 /// What [`Mailboxes::details`] knows about an account.
@@ -351,6 +427,9 @@ pub struct AccountDetails {
     pub oauth_provider: Option<String>,
     /// The provider no longer accepts the sign-in; syncs stop until someone signs in again.
     pub needs_sign_in: bool,
+    /// Contacts and calendars; `None` for accounts that cannot have them yet (import accounts,
+    /// and Microsoft accounts until Graph contacts and calendars arrive).
+    pub contacts_calendars: Option<ContactsCalendars>,
 }
 
 /// The sync interval of accounts without their own.

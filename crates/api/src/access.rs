@@ -4,7 +4,7 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use holtmail_core::{ArchiveId, MessageId, ThreadId};
+use holtmail_core::{ArchiveId, EventGroupId, ItemId, MessageId, PersonId, ThreadId};
 use holtmail_store::{InstanceRole, User};
 
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
@@ -38,8 +38,8 @@ fn forbidden() -> Response {
 }
 
 /// Lets owners and admins do everything; members may read the archives granted to them and
-/// change their own profile. Archives, messages and threads a member may not read answer `404`,
-/// as if they did not exist.
+/// change their own profile. Archives, messages, threads, contact or calendar items, events and
+/// people a member may not read answer `404`, as if they did not exist.
 pub(crate) async fn check(
     State(state): State<Arc<ApiState>>,
     request: Request,
@@ -70,6 +70,27 @@ pub(crate) async fn check(
             },
             Err(_) => None,
         },
+        ["items", id, ..] => match id.parse::<ItemId>() {
+            Ok(id) => match state.store.get_item(id).await {
+                Ok(item) => item.map(|i| i.item.archive_id),
+                Err(error) => return ApiError::from(error).into_response(),
+            },
+            Err(_) => None,
+        },
+        ["people", id] => match id.parse::<PersonId>() {
+            Ok(id) => match state.store.get_person(id).await {
+                Ok(person) => person.map(|p| p.archive_id),
+                Err(error) => return ApiError::from(error).into_response(),
+            },
+            Err(_) => None,
+        },
+        ["events", id] => match id.parse::<EventGroupId>() {
+            Ok(id) => match state.store.group_members(id).await {
+                Ok(members) => members.first().map(|m| m.summary.item.archive_id),
+                Err(error) => return ApiError::from(error).into_response(),
+            },
+            Err(_) => None,
+        },
         ["threads", id] => match id.parse::<ThreadId>() {
             Ok(id) => match state.store.thread_messages(id).await {
                 Ok(messages) => messages.first().map(|m| m.archive_id),
@@ -84,7 +105,12 @@ pub(crate) async fn check(
     };
     match state.store.grants(user.id).await {
         Ok(grants) if grants.contains(&archive) => next.run(request).await,
-        Ok(_) => ApiError::not_found(parts[0].trim_end_matches('s')).into_response(),
+        Ok(_) => ApiError::not_found(match parts[0] {
+            "people" => "person",
+            "events" => "event",
+            other => other.trim_end_matches('s'),
+        })
+        .into_response(),
         Err(error) => ApiError::from(error).into_response(),
     }
 }

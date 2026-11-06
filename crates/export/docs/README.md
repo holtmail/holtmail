@@ -13,7 +13,8 @@ let totals = export.write(&mut out, &|t| eprintln!("{} messages", t.messages)).a
 
 | Item | Guarantees |
 | --- | --- |
-| `Format::{Mbox, Zip}` | `parse("mbox" \| "zip")` in any case, `extension()`, `content_type()` (`application/mbox`, `application/zip`) |
+| `Format::{Mbox, Zip, Pdf}` | `parse("mbox" \| "zip" \| "pdf")` in any case, `extension()` (`zip` for `Pdf`), `content_type()` (`application/mbox`, `application/zip`) |
+| `message_pdf(store, message, raw)` | The message as a PDF by [`holtmail-pdf`](../../pdf/docs/README.md): subject, From, To, Cc, the date in UTC, the plain text (or text derived from HTML), the attachment list, and `raw` attached inside as `message.eml`. Laid out on the blocking pool. `Pdf` exports write one per message, named like the `.eml` entries with `.pdf` |
 | `Selection::{All, Folder(id), Label(name), Search(query)}` | Which messages: every one, those located in the folder (removed from the server or not), those carrying the label, those matching the search |
 | `Exporter::prepare(archive, selection, format)` | Checks before anything is written: `NotFound("archive")`, `NotFound("folder")` for an unknown folder or one of another archive, `NoIndex` for a search without an index |
 | `Export::file_name()` | Archive name, then ` - folder path`, ` - label` or ` - search` when narrowed, and the extension; one safe path segment |

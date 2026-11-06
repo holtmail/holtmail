@@ -18,6 +18,7 @@ pub use pim::{PimExport, PimFormat, PimKind, PimSelection, PimTotals};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use bytes::Bytes;
 use holtmail_blob::{BlobError, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId};
 use holtmail_index::{IndexError, SearchIndex, SearchQuery, SortOrder};
@@ -36,14 +37,18 @@ pub enum Format {
     /// A zip of `.eml` files, one per message, in directories named after the folder each
     /// message was found in.
     Zip,
+    /// A zip of PDF files laid out like [`Format::Zip`], one per message, each made by
+    /// [`message_pdf`] with the original message inside it.
+    Pdf,
 }
 
 impl Format {
-    /// `mbox` or `zip`, in any letter case; `None` otherwise.
+    /// `mbox`, `zip` or `pdf`, in any letter case; `None` otherwise.
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "mbox" => Some(Self::Mbox),
             "zip" => Some(Self::Zip),
+            "pdf" => Some(Self::Pdf),
             _ => None,
         }
     }
@@ -52,7 +57,7 @@ impl Format {
     pub fn extension(self) -> &'static str {
         match self {
             Self::Mbox => "mbox",
-            Self::Zip => "zip",
+            Self::Zip | Self::Pdf => "zip",
         }
     }
 
@@ -60,7 +65,7 @@ impl Format {
     pub fn content_type(self) -> &'static str {
         match self {
             Self::Mbox => "application/mbox",
-            Self::Zip => "application/zip",
+            Self::Zip | Self::Pdf => "application/zip",
         }
     }
 }
@@ -253,7 +258,7 @@ impl Export {
         progress: &(dyn Fn(&Totals) + Send + Sync),
     ) -> Result<Totals, ExportError> {
         let mut totals = Totals::default();
-        let mut zip = (self.format == Format::Zip).then(zipped::StreamZip::new);
+        let mut zip = matches!(self.format, Format::Zip | Format::Pdf).then(zipped::StreamZip::new);
         let mut cursor = Cursor::default();
         while let Some(page) = self.next_page(&mut cursor).await? {
             let directories = match zip {
@@ -271,6 +276,13 @@ impl Export {
                 };
                 let size = bytes.len() as u64;
                 match &mut zip {
+                    Some(zip) if self.format == Format::Pdf => {
+                        let name =
+                            names::entry(directories.get(&message.id).map(String::as_str), message);
+                        let name = format!("{}.pdf", name.trim_end_matches(".eml"));
+                        let pdf = message_pdf(&*self.exporter.store, message, bytes).await?;
+                        zip.add(out, name, message.date, pdf.into()).await?;
+                    }
                     Some(zip) => {
                         let name =
                             names::entry(directories.get(&message.id).map(String::as_str), message);
@@ -373,6 +385,69 @@ impl Export {
             })
             .collect())
     }
+}
+
+/// `message` as a PDF: subject, sender, recipients, date (UTC), text and attachment list, with
+/// `raw` (its stored bytes) attached inside the PDF. Laid out on the blocking thread pool.
+pub async fn message_pdf(
+    store: &dyn Store,
+    message: &Message,
+    raw: Bytes,
+) -> Result<Vec<u8>, ExportError> {
+    let attachments: Vec<(String, u64)> = store
+        .attachments(message.id)
+        .await?
+        .into_iter()
+        .filter(|a| !a.inline)
+        .map(|a| (a.filename.unwrap_or_else(|| "Unnamed file".into()), a.size))
+        .collect();
+    let list = |addresses: &[holtmail_core::Address]| {
+        addresses
+            .iter()
+            .map(
+                |a| match a.name.as_deref().filter(|n| !n.trim().is_empty()) {
+                    Some(name) => format!("{name} <{}>", a.email),
+                    None => a.email.clone(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut headers = Vec::new();
+    for (label, addresses) in [
+        ("From", &message.from),
+        ("To", &message.to),
+        ("Cc", &message.cc),
+    ] {
+        if !addresses.is_empty() {
+            headers.push((label.to_owned(), list(addresses)));
+        }
+    }
+    let date = time::civil(message.date);
+    headers.push((
+        "Date".into(),
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02} UTC",
+            date.year, date.month, date.day, date.hour, date.minute
+        ),
+    ));
+    let subject = message.subject.clone();
+    tokio::task::spawn_blocking(move || {
+        let text = holtmail_mime::parse(&raw)
+            .ok()
+            .and_then(|parsed| parsed.text)
+            .unwrap_or_default();
+        holtmail_pdf::render(&holtmail_pdf::MessagePdf {
+            subject,
+            headers,
+            text,
+            attachments,
+            raw: raw.to_vec(),
+        })
+    })
+    .await
+    .map_err(|e| ExportError::Io(std::io::Error::other(e.to_string())))?
+    .map_err(|e| ExportError::Io(std::io::Error::other(e.to_string())))
 }
 
 #[cfg(test)]

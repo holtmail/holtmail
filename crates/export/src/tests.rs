@@ -328,3 +328,44 @@ async fn skips_missing_bytes() {
     .await;
     assert_eq!((totals.messages, totals.skipped), (4, 1));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pdf_zip_holds_one_readable_pdf_per_message_with_the_original_inside() {
+    let fixture = fixture().await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("all.pdf.zip");
+    let totals = export_to(&fixture, Selection::All, Format::Pdf, &path).await;
+    assert_eq!(totals.messages, 5);
+    assert_eq!(Format::parse("PDF"), Some(Format::Pdf));
+    assert_eq!(Format::Pdf.extension(), "zip");
+
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+    assert_eq!(archive.len(), 5);
+    let mut originals = BTreeSet::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        assert!(name.ends_with(".pdf"), "{name}");
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        let pdf = lopdf::Document::load_mem(&bytes).unwrap();
+        assert!(!pdf.get_pages().is_empty());
+        let raw = pdf
+            .objects
+            .values()
+            .filter_map(|o| o.as_stream().ok())
+            .filter(|s| {
+                s.dict.get(b"Type").ok().and_then(|t| t.as_name().ok())
+                    == Some(b"EmbeddedFile".as_slice())
+            })
+            .map(|s| {
+                s.decompressed_content()
+                    .unwrap_or_else(|_| s.content.clone())
+            })
+            .next()
+            .expect("the original inside");
+        originals.insert(BlobId::of(&raw));
+    }
+    assert_eq!(originals, fixture.blobs.iter().copied().collect());
+}

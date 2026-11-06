@@ -123,7 +123,7 @@ Owners and admins only.
 | `PATCH /api/me` | `{ "name"?, "email"? }` | `200 { "user" }` |
 | `POST /api/me/password` | `{ "current", "new" }` | `200 { "user" }` with a new session cookie; every other session ends. `401` for a wrong current password |
 
-The OpenAPI description declares every path parameter, the `x-holtmail-remote-blocked` header of `/body`, `Retry-After` on a `429` from `/api/login`, and the `400`, `401`, `404` and `500` answers each route can give.
+The OpenAPI description declares every path parameter, the `x-holtmail-remote-blocked` header of `/body`, `Retry-After` on a `429` from `/api/login`, and the `400`, `401`, `403`, `404` and `500` answers each route can give (`403` on every write a member is refused, checked by a unit test).
 
 Errors are `{ "error": "..." }` with `400`, `401`, `403`, `404`, `409`, `415`, `429` or `500`. Ids that do not parse answer `404`, like ids that do not exist.
 

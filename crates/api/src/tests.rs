@@ -911,6 +911,32 @@ fn declares_every_path_parameter() {
     }
 }
 
+#[test]
+fn declares_the_refusal_of_members_on_every_write() {
+    let spec: Value = serde_json::from_str(&openapi_json()).unwrap();
+    let open = [
+        "/api/setup",
+        "/api/login",
+        "/api/logout",
+        "/api/me",
+        "/api/me/password",
+    ];
+    let mut checked = 0;
+    for (path, item) in spec["paths"].as_object().unwrap() {
+        for (method, operation) in item.as_object().unwrap() {
+            if method == "get" || open.contains(&path.as_str()) {
+                continue;
+            }
+            assert!(
+                operation["responses"]["403"].is_object(),
+                "{method} {path} does not declare 403"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 20, "{checked}");
+}
+
 fn body_text(body: &Bytes) -> String {
     String::from_utf8_lossy(body).into_owned()
 }

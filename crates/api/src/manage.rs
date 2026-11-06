@@ -98,7 +98,7 @@ pub(crate) async fn list_accounts(
     post,
     path = "/api/archives",
     request_body = NewArchiveRequest,
-    responses((status = 201, body = ArchiveDto), (status = 400, description = "An empty or too long name", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 201, body = ArchiveDto), (status = 400, description = "An empty or too long name", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn create_archive(
     State(state): AppState,
@@ -117,7 +117,7 @@ pub(crate) async fn create_archive(
     path = "/api/archives/{id}/accounts",
     params(("id" = String, Path, description = "Archive id")),
     request_body = ImapAccountRequest,
-    responses((status = 201, description = "Stored; the first sync has started", body = AccountDto), (status = 400, description = "Bad settings, or the server refused to sign in", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 201, description = "Stored; the first sync has started", body = AccountDto), (status = 400, description = "Bad settings, or the server refused to sign in", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn add_imap_account(
     State(state): AppState,
@@ -220,7 +220,7 @@ pub(crate) async fn add_jmap_account(
     post,
     path = "/api/accounts/{id}/sync",
     params(("id" = String, Path, description = "Account id")),
-    responses((status = 202, description = "Syncing in the background", body = AccountDto), (status = 400, description = "An import account, which has no server", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 202, description = "Syncing in the background", body = AccountDto), (status = 400, description = "An import account, which has no server", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such account", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn sync_account(
     State(state): AppState,
@@ -239,7 +239,7 @@ pub(crate) async fn sync_account(
     path = "/api/archives/{id}/imports",
     params(("id" = String, Path, description = "Archive id"), ImportParams),
     request_body(content = Vec<u8>, content_type = "application/octet-stream", description = "An mbox, .eml, .vcf, .ics or zip file (Google Takeout too)"),
-    responses((status = 202, description = "Importing in the background into the import account named after the file", body = AccountDto), (status = 400, description = "An empty name", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 202, description = "Importing in the background into the import account named after the file", body = AccountDto), (status = 400, description = "An empty name", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn import_file(
     State(state): AppState,

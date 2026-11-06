@@ -13,3 +13,4 @@ jobs:
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
       - run: mise run check
+      - run: cargo test -p holtmail-insights --release panics_unwind

@@ -9,6 +9,7 @@ mod deletion;
 mod export;
 mod image_proxy;
 mod import;
+mod insights;
 mod ledger;
 mod mailboxes;
 mod oauth;
@@ -18,6 +19,7 @@ mod push;
 mod schedule;
 mod smtp;
 mod tasks;
+mod walk;
 mod watch;
 mod webhooks;
 
@@ -178,6 +180,20 @@ enum Command {
     /// Look at the archive ledger, the hash chain of every message archived and deleted.
     #[command(subcommand)]
     Ledger(LedgerCommand),
+    /// Look at what is read out of archived mail: codes, unsubscribe links and the like.
+    #[command(subcommand)]
+    Insights(InsightsCommand),
+}
+
+#[derive(Subcommand)]
+enum InsightsCommand {
+    /// Print the rules that matched in a stored message, with positions, scores and the shape of
+    /// each value (digits as D, letters as a), never the values, hosts or URLs. For this terminal
+    /// only. Works while `serve` runs.
+    Explain {
+        /// The message id, as in the web app's address.
+        message: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -474,6 +490,22 @@ async fn main() -> anyhow::Result<()> {
             println!(
                 "Deleted {} messages and {} files.",
                 done.messages, done.blobs
+            );
+            Ok(())
+        }
+        Command::Insights(InsightsCommand::Explain { message }) => {
+            let config = Config::load(cli.config.as_deref())?;
+            let id: holtmail_core::MessageId = message
+                .trim()
+                .parse()
+                .map_err(|_| anyhow::anyhow!("{message:?} is not a message id"))?;
+            let store = config::open_store(&config).await?;
+            let blobs = config::open_blobs(&config).await?;
+            holtmail_insights::install_panic_hook();
+            let runner = config.insights.runner();
+            print!(
+                "{}",
+                insights::explain(&*store, &*blobs, &runner, id).await?
             );
             Ok(())
         }
@@ -1302,6 +1334,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         aliases: Arc::new(runner.clone()),
         fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
+        insights: services.insights.as_ref().map(|i| i.api.clone()),
     });
     tokio::spawn(runner.clone().write_tasks());
     tokio::spawn(services.hooks.clone().run());
@@ -1310,6 +1343,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         let _ = services.smtp.set(listener);
     }
     runner.resume().await;
+    let walk = walk(&services, &runner);
     let services_for_passes = services.clone();
     let runner_for_passes = runner.clone();
     tokio::spawn(async {
@@ -1320,6 +1354,10 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         directory_text_if_needed(services.clone()).await;
         aliases::detect_if_needed(runner_for_passes).await;
         people::build_if_needed(&*services.store).await;
+        if let Some((walk, wake)) = walk {
+            tokio::spawn(walk::wake_hourly(wake.clone()));
+            walk::run(walk, wake).await;
+        }
     });
     tokio::spawn(runner.clone().run_schedule());
     tokio::spawn(aliases::run_schedule(
@@ -1352,6 +1390,28 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     .await?;
     runner.flush_tasks().await;
     Ok(())
+}
+
+/// The walk over stored mail with its steps, and what wakes it; `None` when no step is on.
+fn walk(
+    services: &Services,
+    runner: &mailboxes::Runner,
+) -> Option<(Arc<walk::Walk>, Arc<walk::WalkWake>)> {
+    let insights = services.insights.as_ref()?;
+    let ingest = services.ingest();
+    let steps: Vec<Arc<dyn walk::Step>> = vec![Arc::new(walk::InsightsStep {
+        ingest: ingest.clone(),
+        fingerprint: insights.api.fingerprint.clone(),
+    })];
+    let walk = walk::Walk::new(
+        services.store.clone(),
+        services.blobs.clone(),
+        ingest,
+        steps,
+        runner.task_list().clone(),
+    )
+    .with_progress(insights.api.progress.clone());
+    Some((Arc::new(walk), Arc::new(walk::WalkWake::default())))
 }
 
 /// The setting that says the search index must be rebuilt from the store, set when an index of an

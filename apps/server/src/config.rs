@@ -63,6 +63,9 @@ pub struct Config {
     /// Recognising mail forwarded by alias services and listing connected services' aliases.
     #[serde(default)]
     pub aliases: crate::aliases::AliasConfig,
+    /// Codes, unsubscribe links and the like read out of archived mail.
+    #[serde(default)]
+    pub insights: crate::insights::InsightsConfig,
     #[serde(skip)]
     pub tls_roots: TlsRoots,
 }
@@ -218,6 +221,13 @@ impl Config {
                 .parse()
                 .context("HOLTMAIL_WATCH is true or false")?;
         }
+        if let Ok(on) = std::env::var("HOLTMAIL_INSIGHTS") {
+            config.insights.enabled = on
+                .trim()
+                .parse()
+                .context("HOLTMAIL_INSIGHTS is true or false")?;
+        }
+        config.insights.check()?;
         anyhow::ensure!(
             (1..=64).contains(&config.watch.parallel_syncs),
             "watch.parallel_syncs is between 1 and 64"
@@ -404,6 +414,8 @@ pub struct Services {
     pub aliases: holtmail_aliases::AliasManager,
     /// Minutes between listings of the services' aliases; 0 for only on request.
     pub alias_sync_minutes: u64,
+    /// The insights runner and what the API serves of it; `None` when insights are off.
+    pub insights: Option<crate::insights::Insights>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -536,6 +548,7 @@ impl Services {
         ));
         oauth.set_hooks(hooks.clone());
         let detectors = crate::aliases::detectors(&config.aliases)?;
+        let insights = crate::insights::Insights::open(&config.insights)?;
         let aliases = holtmail_aliases::AliasManager::new(
             store.clone(),
             secrets.clone(),
@@ -557,14 +570,20 @@ impl Services {
             detectors,
             aliases,
             alias_sync_minutes: config.aliases.sync_interval_minutes,
+            insights,
         })
     }
 
-    /// The ingest pipeline over these services, with attachment text.
+    /// The ingest pipeline over these services, with attachment text, aliases and, when on,
+    /// insights.
     pub fn ingest(&self) -> Ingest {
-        Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
+        let ingest = Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
             .with_extractor(self.extractor.clone())
-            .with_alias_detectors(self.detectors.clone())
+            .with_alias_detectors(self.detectors.clone());
+        match &self.insights {
+            Some(insights) => ingest.with_insights(insights.runner.clone()),
+            None => ingest,
+        }
     }
 }
 

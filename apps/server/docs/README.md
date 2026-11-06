@@ -22,7 +22,7 @@ holtmail sync [--account <id>]                   # archive new mail now, then co
 holtmail user add --email ada@example.com --name "Ada Lovelace" [--role owner|admin|member]
 holtmail user password --email ada@example.com   # set a password, end the user's sessions
 holtmail user list                               # users with their roles
-holtmail reindex [--refresh-attachments]         # rebuild the search index, the listed fields, calendar instances and search documents of contacts and events, events from invitations in mail, and people
+holtmail reindex [--refresh-attachments]         # rebuild the search index, missing or outdated message insights, the listed fields, calendar instances and search documents of contacts and events, events from invitations in mail, and people
 holtmail export --archive Personal [--folder INBOX | --label Travel | --query "from:ada"] \
   [--format mbox|zip|pdf] --output personal.mbox # write messages as mbox, a zip of .eml files or a zip of PDFs
 holtmail export --archive Personal --contacts [--collection Work | --person <id>] \
@@ -34,6 +34,7 @@ holtmail restore --input holtmail.tar --data-dir /srv/holtmail-new [--skip-reind
 holtmail delete --archive Personal --query "from:news@example.com before:2020-01-01" [--yes]   # delete for good after a review
 holtmail ledger head                             # the ledger's newest position and hash, to write down elsewhere
 holtmail ledger verify [--blobs] [--anchor <seq>:<hash>]   # check the ledger; exit code 1 when anything is wrong
+holtmail insights explain <message-id>          # which insight rules matched in a message: names, positions, scores, value shapes; never values
 holtmail openapi                                 # the API description as JSON
 ```
 
@@ -139,6 +140,22 @@ See [ALIASES.md](../../../docs/ALIASES.md). `src/aliases.rs` is the only place t
 - Keys are sealed with the instance's secret box for `alias-service:<id>` and never logged; logs carry service ids and providers.
 
 A rule with a bad provider id stops the server at start with the rule named.
+
+## Message insights
+
+See [INSIGHTS.md](../../../docs/INSIGHTS.md). `src/insights.rs` is the only place that names the extractors: `[insights] extractors` picks among `unsubscribe` ([holtmail-insight-unsubscribe](../../../crates/insight-unsubscribe/docs/README.md)) and `code` ([holtmail-insight-code](../../../crates/insight-code/docs/README.md)), and they always run in that order, whatever the order in the file, because the order is part of the fingerprint. It builds one [`holtmail_insights::Runner`](../../../crates/insights/docs/README.md), installs its panic hook (panic reports name the extractor and message id, never the panic's text), gives the runner to every ingest pipeline (`Services::ingest`), and gives the API its fingerprint, `show_possible` and the walk's progress (`holtmail_api::InsightsConfig`). With `enabled = false` (or `HOLTMAIL_INSIGHTS=false`) nothing is computed, stored or served: messages carry `insights: null` and `/api/archives/{id}/insights/status` is `404`. An unknown extractor or kind name stops every command at start.
+
+New mail gets its insights as it is archived. Older mail, and every message after an upgrade changes the fingerprint, gets them from **the walk** (`src/walk.rs`):
+
+- It runs once in the start-up chain, after people are built, then whenever `WalkWake` is signalled and at least hourly, so rows a crash lost while the server runs are caught too. Signals while it runs coalesce into one more run.
+- Each step (a server-private `#[async_trait] Step`: `name`, `pending`, `apply`, `unusable`) lists what it still has to do as an anti-join, so the walk keeps no cursor: a walk stopped at any point, even by SIGKILL, picks up where the rows end. The only step today is `insights` (messages without a row under the current fingerprint); `index` and Chats' `chat-facts` follow.
+- Per archive it takes the union of the steps' pending ids in pages of 200, ordered by id, reads each blob once and parses it once, two messages at a time, and runs every step that listed the message. It commits the search index after each page and pauses 50 ms between pages.
+- A message deleted meanwhile is skipped. A blob that cannot be read is recorded as `unreadable`, bytes that do not parse as `unparsable`; neither is listed again until the fingerprint changes.
+- A run with work shows as one task of kind `analyse` ("Reading archived mail again", counts only, cancellable; the next wake carries on), and its `task.finished` webhook carries ids and counts only. The same counts feed `GET /api/archives/{id}/insights/status`. Logs carry message ids, counts and timings, never content.
+
+`holtmail reindex` also fills missing and outdated insights rows, since it reads and parses every message anyway.
+
+`holtmail insights explain <message-id>` prints, for the operator's terminal only, what each extractor saw in one stored message: rule names, positions and scores, each candidate as its shape (digits as `D`, letters as `a`), keywords only when they are in the extractor's own table, and markup tag names. It never prints a value, host, URL or address. It reads only the database and the blobs, so it works while `serve` runs, and it uses the configured extractors even when `enabled = false`.
 
 ## Back up and move an instance
 
@@ -250,6 +267,11 @@ sync_interval_minutes = 360 # list every connected alias service's aliases; 0 on
 # addy_signing_domains = ["addy.example.org"] # self-hosted addy.io or custom domains
 # relay_domains = ["relay.example.org"] # self-hosted Firefox Relay
 # [[aliases.rules]] provider, domains, header, alias_header, sender_header, signing_domains; see "Email aliases"
+
+[insights]
+enabled = true # HOLTMAIL_INSIGHTS: read codes, unsubscribe links and the like out of archived mail; false computes and serves none
+extractors = ["unsubscribe", "code"] # which to run; they always run in this order
+# show_possible.code = 500 # also show Possible items of a kind scoring at least this; Likely and Certain only by default
 
 # [oauth.google] and [oauth.microsoft]: public_client, client_id, client_secret, redirect_url, authorize_url, token_url,
 # imap_host, imap_port, and for Microsoft graph_url; see "Gmail and Microsoft sign-in"

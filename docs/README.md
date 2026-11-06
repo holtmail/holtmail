@@ -6,6 +6,7 @@
 - [Contacts and calendars](PIM.md) — plan for archiving contacts and events with their history and links to mail
 - [Push and fast change tracking](PUSH.md) — IMAP IDLE, JMAP push, WebDAV-Push and contacts and calendars on their own schedule
 - [Email aliases](ALIASES.md) — recognising forwarded mail, the alias list and managing aliases at their services
+- [Conversations](CONVERSATIONS.md) — design of Chats, a messenger view of the archive: chats, topics, bubbles, marks and identity
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 

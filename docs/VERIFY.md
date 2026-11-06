@@ -208,6 +208,16 @@ Detectors were written from the services' source code and documentation and test
 - [ ] People after a SimpleLogin archive: senders behind reverse aliases joined with their contacts, aliases not listed as people
 - [ ] Settings → Aliases: connect a service, list, create (random and custom), edit, switch, delete at the service, add by hand, filters; the reader's alias line with signed, known and not verified mail
 
+## Message insights (Phase 35)
+
+Extractors were tested on 185 invented messages and their fixtures; the walk against SQLite and a counting blob store and, in `tests/integration/tests/insights.rs`, killed and resumed in the real binary.
+
+- [ ] One-time codes from real senders (banks, Google, Apple, Microsoft, Telegram, local services) in several languages: the code found, nothing found in their newsletters
+- [ ] `List-Unsubscribe` shapes of real bulk senders (ESP-sent, Mailman, Google Groups)
+- [ ] The walk over the maintainer's archive: time, memory, the `analyse` task, `holtmail insights explain` on a wrong guess
+- [ ] Copy over plain HTTP in Safari and Firefox (the `execCommand` path and the manual field)
+- [ ] The fuzz targets in `crates/{auth-results,html-scan,insights}/fuzz` built and run once with network access
+
 ## The web app, by eye
 
 None of these screens has been opened in a browser; they were checked with types, lint, tests and builds only.
@@ -218,6 +228,7 @@ None of these screens has been opened in a browser; they were checked with types
 - [ ] Settings: archives (save images, older mail, export), sources (edit connection, sign in again, check for new mail, what to archive), people and access, reading, tasks (including the interrupted state), network
 - [ ] Light and dark themes, narrow windows, keyboard navigation
 - [ ] Settings → Integrity, Webhooks (the secret shown once, deliveries refreshing) and SMTP; the deletion dialog from search results and the reader (review, sample, typed count, back to the list); Download PDF in the reader and Zip of PDFs in the export menu
+- [ ] Insights card: a fresh code grouped and copied without spaces, an old code collapsed with Show and still copyable, arrow keys and `Enter` on its rows, `c` and `Shift+U` in a thread, the unsubscribe link opening without a referrer and its reason tooltip, the key glyph in list rows
 
 ## Log
 
@@ -236,3 +247,4 @@ None of these screens has been opened in a browser; they were checked with types
 - 2026-11-06: CardDAV and CalDAV proved against Radicale 3.8.3, Baïkal 0.10.1, Stalwart 0.16.27 and (profile `nextcloud`) Nextcloud 35.0.1 by tests/integration/tests/dav*.rs (step 4 of TESTPLAN.md): discovery, syncs, removals, refused tokens, ETag listings, faults, recurring events across offset changes in IANA, Windows and made-up zones, copies across servers, export round trips, 2 000 cards. Fixed: one card sabre/dav cannot parse stopped its whole address book. Changed (lead's request): JMAP contacts and calendars use an `apiUrl` on another host as mail does.
 - 2026-11-06: OAuth (own client, XOAUTH2, refresh, rotation, revocation), remote images through real proxies and S3 backup and restore proved against mock-oauth2-server 6.1.2 with Dovecot 2.4.5, nginx with squid and two SOCKS5 proxies, and MinIO (step 5 of TESTPLAN.md: tests/integration/tests/oauth.rs, images.rs, s3.rs). Added `[oauth.<provider>] imap_host`/`imap_port` so OAuth IMAP accounts can use another server (national clouds, the tests). Real Google and Microsoft sign-in and images on the real internet stay open.
 - 2026-11-06: step 6 of TESTPLAN.md: access matrix over every API route and role, sign-in limits, sessions, CSRF and the setup link, a 20 000-message archive exported, backed up and restored with flat memory, the `fed635b` image upgraded in place, the CLI through `docker exec`, `tls_ca_file` in the Linux image, and Caddy in front with `public_url` (tests/integration/tests/access.rs, signin.rs, archive_scale.rs, upgrade.rs, docker.rs, caddy.rs). Fixed: `403` missing from four operations of the OpenAPI description; a clear error for CLI commands that need the search index while `serve` runs. Changed: remote images of up to four messages are saved together.
+- 2026-11-06: message insights added (Phase 35).

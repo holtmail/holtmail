@@ -89,6 +89,20 @@ Rules: no commits and no pushes without the maintainer's word; each step stays i
 | Webhooks | Contract `holtmail-webhook` (one `POST`, any answer is a status, no redirects) with `webhook-http`; pure library `holtmail-hooks` (events, payload, HMAC-SHA256 `t=,v1=` signature as Stripe does, retries 30 s → 6 h, six attempts, address checks); `WebhookStore` keeps webhooks (secret sealed with `secret.key`, shown once) and deliveries; events are written to the store and `serve` delivers them every 5 s or when woken; private addresses allowed (admins configure them) | Receivers verify signatures with any HMAC library; the database queue survives restarts and lets CLI commands emit events; payloads hold ids, counts and ledger heads only, so a receiver outside the instance keeps anchors without seeing mail |
 | SMTP ingestion | Own small receiver `holtmail-smtp` (no relay, no `PIPELINING`/`CHUNKING`, strict `CRLF.CRLF`, dot-unstuffing only after `CRLF`, `STARTTLS` injection refused, `AUTH` only over TLS or loopback); `[smtp]` in the config with client networks, routes `address` or `*@domain` → archive/folder, an import account "Received by SMTP" per archive; bytes stored as received with no `Received:` line; `journal = "exchange"` stores the attached original; index committed every 2 s | Config-only keeps the listener's exposure in the owner's hands; raw bytes unchanged keep dedup working across journal copies; the envelope (Bcc) of plain BCC journaling is not stored, which the docs say |
 | PDF export | `holtmail-pdf` on krilla 0.8 (simple text, subsetting) with DejaVu Sans regular and bold from the `dejavu` crate, widths from `skrifa` 0.42 (krilla's own); A4, headers, text, attachment list, page numbers; the stored bytes attached inside as `message.eml`; `Format::Pdf` writes a zip of PDFs named like the `.eml` entries, `GET /api/messages/{id}/pdf` one | Pure Rust, no browser or system fonts; the PDF is a readable copy and the original inside is the record, so no HTML rendering is attempted; DejaVu covers the scripts most users here need, CJK shows boxes (documented) |
+| Message insights | `holtmail-insight` contract (`InsightExtractor`, pure, sync, versioned) with one crate per extractor family; `holtmail-insights` runner (plain library) does merge, validate, auth facts, trust and fingerprints | Swap points behind a contract, logic outside contract crates, as with `holtmail-alias`/`holtmail-aliases` |
+| Insights storage | `message_insights` per message with `outcome`, `truncated`, `signals`, `kinds`, `auth` facts and versioned JSON items; no row = pending, empty items = nothing found, stale fingerprint = outdated and still served | The reader needs no blob read, and "not computed" is distinct from "nothing found" |
+| Two stages | Stage A (`extract_fp`, needs a parse) stores raw facts; stage B (`derive_fp`, SQL only) computes trust, sender, coverage and categories from them, the alias row, trust lists and data files | Alias, PSL, trust-list and data-file changes never re-parse the archive |
+| Message walk | `apps/server/src/walk.rs` parses each blob once for every step (`insights`, `index`, later `chat-facts`); runs after `people::build_if_needed`, then on `WalkWake` and hourly; resumes from anti-joins | One parse per message per upgrade, shared with Chats §8.7, and runtime changes drain without a restart |
+| Reindex | The global `REINDEX_SETTING` pass stays; `Ingest::reindex` fills missing insights rows; category changes queue ids in `insight_reindex` with a `seq` | One schema bump completes the backfill; no lost re-queues |
+| Categories | One kind (`personal`, `list`, `bulk`, `notification`) plus topics (`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`); precedence per axis: override > content > domain file > headers | A travel newsletter is both, and `is:newsletter` stays truthful |
+| Category overrides | `category_overrides` by address or registrable domain, resolved per axis; the store writes effective columns for matching rows only; sensitive topics need `aligned` even from overrides | Lists and counts are exact at once; an override cannot vouch for a spoofed sender |
+| Trust for insights | Only `Authentication-Results` from operator-trusted authserv-ids count (a suggested id is shown, never used); alias hits are never `aligned`; `aligned`, `relayed` (signed alias service), `unverified`, `unknown` (nothing to read, no warning); `l=` is unverified; finance, health and government need `aligned`; one-click needs `aligned` | Forged headers and spoofed senders never get sensitive topics or one-click; raw bytes stay unchanged |
+| One-click unsubscribe | Owner or admin, consent dialog, stored URL only, fresh row, exact `header.d`/`s=`/`b=` DKIM coverage of both fields with exactly one field each, direct pinned connection to public addresses on 443, no redirects, multipart, kill switch | RFC 8058, and the only outbound action on mail content |
+| Category data | Builder in `apps/category-builder` on `holtmail-category-data`; CC0 Wikidata file bundled; sensitive rows only when reviewed; UT1 (CC BY-SA 4.0, non-sensitive only) as an opt-in download; ed25519 manifest signed in a separate job with key id, expiry and a next key; updates off by default | Offline works, no BY-SA in the repository, the public feed cannot mint trusted banks, a leaked key expires |
+| Insights privacy | Values only in `message_insights` and `MessageDetail`; never in the index, list payloads, logs (including panics), settings or webhooks; members get no codes or sign-in links; health kept out of chips, counts and exports | Codes and tokenized links are secrets; health is special-category data |
+| Insights robustness | Input caps and candidate counts instead of time budgets; no recursion over input; hidden HTML skipped; `catch_unwind` with a content-free panic hook; golden snapshot against dependency drift; nightly fuzz workflow; precision gate on ≥ 300 invented messages | Deterministic output, and panics never take ingest down or leak mail |
+| Insights search | `insights` and `categories` index fields in one schema bump; `has:`, `is:`, `category:`; unknown `category:` is `QueryError::UnknownValue`; deletion reviews with them wait for the index | No values indexed; the meaning change is surfaced, not silent |
+| Reader shortcuts | `c` copies code, then booking reference, then tracking number; `Shift+L` opens the primary action; `Shift+U` unsubscribes; `x` changes category; card rows are focusable with `Enter` | Every card action has a key (design.md) |
 
 ## Lessons from Mail-Archiver
 
@@ -454,6 +468,117 @@ The design is in [ALIASES.md](ALIASES.md). Forwarding services (SimpleLogin, add
 - [x] Integration: SimpleLogin in the local stack (profile `aliases`) with Postfix, OpenDKIM and CoreDNS, so forwards arrive with real headers and a checked signature; addy.io and the services that cannot run locally are in TESTPLAN and VERIFY.md
 - [x] Library `holtmail-aliases`: services connected to archives (sealed keys, listing, changes at the service), shared by the server and the API tests
 
+### Message insights (planned 2026-11-06)
+
+The design is in [INSIGHTS.md](INSIGHTS.md).
+
+- **What it does.** The reader card shows, at the top of each expanded message, the one-time code to copy, the action link with its real destination, reservations, orders, parcels and passes, and the unsubscribe options.
+- **Categories.** Every message gets a kind (personal, list, bulk, notification) and topics (purchases, travel, finance, health, social, jobs, events, government), with user overrides that win per axis.
+- **How it works.** Extraction is pure and deterministic and stored per message. Trust and categories are recomputed from stored rows without re-parsing. One shared walk parses each message once. Values never go into the index, logs, webhooks or list payloads.
+- **Shared with the Chats plan.** These prerequisites are done by whichever plan lands first: the html5ever evaluation, `holtmail-auth-results`/`Mail::dkim_pass_domains`, and `is_automated_local(&str)`.
+- **Per phase.** Migrations take the next free number at merge. Each phase ends with `mise run check`, a VERIFY entry and a Log line, plus its docs:
+  - the module's `docs/README.md`;
+  - links from `docs/README.md` to INSIGHTS.md and to every new crate and app;
+  - the store-sqlite per-migration paragraph;
+  - the apps/web docs for new routes and pages;
+  - the `docs/TESTPLAN.md` area `insights` when an integration case is added.
+
+#### Phase 35: card with codes and unsubscribe links (built 2026-11-06)
+
+- [x] `evaluate_dependency` for html5ever (ammonia's version), `publicsuffix` (already locked through cookie_store; preferred over `psl`), `proptest` and `unicode-normalization`; workspace entries; shared with Chats Phase 0
+- [x] `holtmail-auth-results` (A-R and DKIM-Signature grammar with `h` counts and `l`, `VERSION`, proptest, fuzz target); `holtmail-alias` `Mail::dkim_pass` parses through it with unchanged semantics; CONVERSATIONS §8.1/Phase 0 updated
+- [x] `holtmail-people`: export `is_automated_local(&str)`; CONVERSATIONS edits (§4.5, §5.4, §8.1, Phase 0, migration references)
+- [x] `holtmail-insight` contract with every signature type, `HtmlView` `#[non_exhaustive]`, persisted bit tables, `Items` JSON `v1` with lenient `from_json`; `testing::conformance::extractor` and the shared hostile corpus
+- [x] `holtmail-html-scan`: tokenizer with rawtext/script-data states, element stack (depth 256), hidden-subtree skipping, visible anchors and segments, forward and footer markers, `VERSION`; fixtures per rawtext element; fuzz target with the `holtmail-sanitize` differential
+- [x] `holtmail-insights` runner, stage A: input caps, NFKC, signals, auth facts, extraction scope, `catch_unwind`, `install_panic_hook`, merge, validate, drop order under caps, `extract_fp`; `panics_unwind` (also `--release` in CI); panic-hook leak test; golden snapshot; check that fails on `panic = "abort"`
+- [x] `insight-code` with `data/code-keywords.toml` (keywords, promo negatives, reference prefixes, weights), value grouping and the named hard-negative rules; `insight-unsubscribe` (links and field counts only, no POST); clippy `string_slice`/`indexing_slicing` denied in extractor crates
+- [x] Corpus gate `crates/insights/tests/corpus/` with `labels.toml` (codes and unsubscribe first, ≥ 150 cases, growing to 300 by Phase 37)
+- [x] Store: `InsightStore` (`set_message_insights`, `insight_view`, `insight_views_among`, `insights_among`, `messages_needing_insights`), migration `00NN_insights.sql`, `deletion.rs` list, `delete_archive`, `delete_messages` doc, conformance area `insights`
+- [x] Ingest: `Ingest::with_insights`, extraction when created or no row, `refresh_insights`, `reindex_parsed`; `Ingest::reindex` fills missing or stale rows; walk-written `unparsable`/`unreadable`
+- [x] Server: `apps/server/src/insights.rs` (`[insights]` config with `show_possible` and the extractor list, panic hook), `walk.rs` (`#[async_trait] Step`, `insights` step after `people::build_if_needed`, `WalkWake`, hourly anti-joins), `TaskKind::Analyse` with the hooks `Event` doc and api-client README, `InsightProgress`; CONVERSATIONS §8.7/§8.8 rewritten as the `chat-facts` step
+- [x] API: `MessageDetail.insights` (`status`, items with `confidence` and `score`, `unsubscribe` with `reason`; trust shows `unknown` until Phase 38), member filtering of codes and unsubscribe links, `own` computed at read time from account and alias addresses (codes and links hidden on own mail) until Phase 38, `insight_kinds` on `MessageSummary`, `GET /api/archives/{id}/insights/status`; OpenAPI and client regenerated
+- [x] `@holtmail/ui`: `CopyButton`, `useCopy`, pure `copyText(env)`; both old copies replaced
+- [x] Web: `mail/row.tsx` extracted from `invitation-card.tsx`; `insights-card.tsx` with the code row (grouping table, freshness from the earlier of `received_at`/`sent_at`, collapsed old codes), focusable rows, unsubscribe links and reason tooltip; shortcuts `c` and `Shift+U` (opens the link); code glyph in list rows; `lib/insights.test.ts`, `copy.test.ts`
+- [x] Integration area `insights` in TESTPLAN: walk SIGKILL resume
+- [x] `holtmail insights explain <id>` (rule names, positions, scores, skeleton; no values) with its leak test
+
+#### Phase 36: action links and parcels
+
+- [ ] `holtmail-html-scan` speed: 1.6 MB of nested `<div><b>` takes about 345 ms in release, over the 40 ms stage-A target (§13); the bounds test times the scan without asserting it
+- [ ] `evaluate_dependency` for `idna` and `unicode-security` (UTS 39)
+- [ ] `holtmail-links`: exact-host `unwrap` with `via` and fail-closed decoding, `strip_tracking`, `tracker`, `registrable_domain` (`publicsuffix`), `display_host`, `VERSION`; proptests including identity off the allow-list; look-alike fixtures; fuzz target
+- [ ] `insight-links` with `data/link-actions.toml` (labels, weights): scoring, footer and unsubscribe penalties, `text_host`, wallet save links, forward cut
+- [ ] `insight-parcel` with `data/carriers.toml`: S10, UPS, USPS, FedEx, DHL Express and Russian Post check digits, the score table, URL templates
+- [ ] Runner merge rules: a code equal to a reference is dropped; a heuristic action yields to a schema action
+- [ ] API: read-time `text_domain_mismatch`, `destination_differs_from_sender` (From domain only until Phase 38), `confusable`, `display_host`; no trust badges until Phase 38; member filtering of sign-in, reset, verify, confirm and activate actions
+- [ ] Corpus gate for links and parcels
+- [ ] Web: primary action row with destination, "via", "Tracked", mismatch, differs, look-alike and unverified badges; parcel row with copy; `c` falls back to the tracking number; `Shift+L`
+
+#### Phase 37: reservations, orders and passes
+
+- [ ] `evaluate_dependency` for `zip`
+- [ ] `holtmail-html-scan`: `ld_json` and microdata with expansion-time budgets and visited sets (`VERSION` bump)
+- [ ] `insight-schemaorg`: JSON-LD (`@graph`, arrays, URI types, one-level `@id`) and microdata; the required-field and merge-key table; `Order`, `Invoice`, `ParcelDelivery`, schema.org actions; `data/currencies.toml` and checked decimal parsing
+- [ ] `insight-pass`: capped pkpass reading, `semantics`, `BoardingPass` from semantics
+- [ ] Fuzz targets for schemaorg, pass and the runner; `.github/workflows/fuzz.yml` nightly with `fuzz/rust-toolchain.toml` pins
+- [ ] Web: reservation, pass, order and invoice rows; times in their own offset; booking-reference copy; invitation dedupe (same instant ±1 min); "Forwarded" label
+
+#### Phase 38: trust and categories
+
+- [ ] `holtmail-category` contract: `Categorizer`, `CategorySnapshot`, `CategoryInput`, `CategoryVote`, `MessageKind`, `Topic`, `TopicSet`, `TrustState`, `CategorySource`, `CategoryError`, conformance
+- [ ] `category-signals` (header kind rules with `own` and `auto_replied`, content kind gate, schema-implied topics)
+- [ ] Runner stage B: trust from trusted authserv-ids, `l=`, alias row; alias hits decided first (`relayed`/`unverified`, never `aligned`); exactly one From; `header.i` fallback; at least one matching signature; `sig_cap_hit`; coverage (`one_click_ok`): both fields in `h=`, exactly one field each, no `l=`; topics as union of content and domain file; sender from the alias row; precedence, sensitive gate including overrides, health flag; `derive_fp` with snapshots
+- [ ] Account `trusted_authserv_ids` (presets after VERIFY) and the suggested authserv-id (95% of the 200 most recently archived with at least 50; never used until the operator trusts it; none for import and SMTP), `[insights] import_authserv_ids`, `[smtp] trusted_authserv_ids`
+- [ ] Store: migration `00NN_categories.sql` (`message_categories` with trust columns and `list_topic`, `message_topics`, `category_overrides`), `derive_inputs`, `invalidate_derived`, `set_message_categories` (changed ids), per-axis `put_category_override`/`delete_category_override`, `category_counts(include_health)`, `MessageQuery.category`, `MessageExtras.kind` and `topic`; deletion lists and `delete_archive`
+- [ ] Ingest: `refresh_alias` invalidates stage B; server signals `WalkWake`
+- [ ] Server: `derive_if_needed` stage-B pass with snapshot restart; overrides under a `CHANGES` mutex
+- [ ] API: trust in the DTO, `GET /api/archives/{id}/categories`, overrides `GET`/`PUT`/`DELETE`, `?category=` list filter, `topic` on `MessageSummary`; member 403 on writes; access matrix
+- [ ] Web: trust footer, chips in the card and list (no health), sidebar Categories with counts, palette entries, chip menu with address or domain scope and the held-back note, `x` shortcut, new Settings → Categories page and route, trusted authentication servers in the account editor
+
+#### Phase 39: domain data
+
+- [ ] `evaluate_dependency` for `flate2` and the builder's HTTP client
+- [ ] `holtmail-category-data` (TSV format, bounded loading, `DomainTable`)
+- [ ] `category-domains` (bundled `wikidata-categories.tsv.gz`, lookup, internal table with `reload`, snapshots)
+- [ ] `apps/category-builder` (Wikidata batches with the truncation check, `industries.toml`, P31 pass, `golden.toml`, `sensitive-reviewed.toml` and the unreviewed-sensitive gate); first CC0 snapshot built by hand; `mise run categories-snapshot`
+
+#### Phase 40: search
+
+- [ ] `IndexDocument.insights` and `categories`, `Clause::Insight` and `Clause::Category`, tantivy fields in one schema bump, conformance cases
+- [ ] `holtmail-query`: `category:`, `has:` kinds, `is:newsletter|notification|personal|list`, `QueryError::UnknownValue`; `apps/web/src/lib/query.ts` `operators` updated; release note
+- [ ] Migration `00NN_insights_index.sql` (`insight_reindex` with `seq`) with deletion lists; `queue_reindex` from stage B and overrides; the walk's `index` step through `reindex_parsed`; queue conformance case
+- [ ] Deletion reviews using the new operators refused while the archive has pending insights or reindex
+- [ ] Web: "Some messages are still being read (N left)" in search and the sidebar
+- [ ] Integration: `category:` search after an override
+
+#### Phase 41: one-click unsubscribe
+
+- [ ] `holtmail-fetch`: `OneClick` trait and `testing` cases; `fetch-http` implementation with no proxy, all addresses public, `resolve_to_addrs` pinning, port 443, no userinfo, no redirects, multipart body, 10 s timeout, 64 KiB cap; `is_public` gains `2002::/16` and `2001::/32`
+- [ ] Migration `00NN_unsubscribe.sql` (`unsubscribe_requests`; `message_id` nulled on delete), `record_unsubscribe`, `last_unsubscribe`
+- [ ] `POST /api/messages/{id}/unsubscribe` (owner or admin, stored URL only, recompute the insights row when `extract_fp` is stale and the stage-B row when `derive_fp` is stale or missing, `one_click_ok`, https and 443, 24 h only after `accepted`/`redirected`, 1 min after failures, `[insights] one_click` kill switch)
+- [ ] Web: consent dialog naming the domain, outcome and "Unsubscribe requested on …", `Shift+U` opens the dialog
+- [ ] Integration: test-signed newsletter through `sl-mx` OpenDKIM gives covered, unsigned and prepended copies do not; TLS on 443 for the `images` nginx (cert from `ca`) with POST, 302 and echo endpoints; Dockerfile `FEATURES` build argument and a `holtmail:it-insights` image under the `docker` profile on the `images` network; allowed test networks only under the feature; multipart body, no cookies, 302 recorded as `redirected`, other private addresses refused; release-build feature check
+
+#### Phase 42: data file updates
+
+- [ ] `evaluate_dependency` for `ed25519-dalek`
+- [ ] Builder: UT1 from the pinned `olbat/ut1-blacklists` commit (non-sensitive only), the second file with `LICENSE-DATA` and attribution, sanity gate (20% drift, golden list, unreviewed sensitive rows, monotonic version)
+- [ ] `.github/workflows/categories.yml` weekly in two jobs (`build` without secrets, `sign` with only the key); manifest with `key_id` and `not_after`; tags `categories-YYYYMMDD` and `categories-latest`
+- [ ] `holtmail-fetch`: `DataDownload` trait (https, direct connection, pinned redirect hosts, ETag); `fetch-http` implementation; base URL and hosts configurable only under `insights-test-data`
+- [ ] Server: `[insights.categories] update`, `sources`; schedule loop, ed25519 check with the compiled-in current and next keys, expiry and rollback refusal, fixed file names, bounded load, atomic write, `reload`, `WalkWake`
+- [ ] API `GET /api/insights/data`; new Settings → About page and route with versions and UT1 attribution
+- [ ] Integration: signed manifest from nginx to the containerised server under `insights-test-data`, second fetch `304`
+
+#### Later
+
+- [ ] `holtmail-barcode` contract with `barcode-rxing` (Aztec, PDF417, QR, Data Matrix), off by default, as a walk step on the blocking pool
+- [ ] `holtmail-bcbp` (fuzzed, proptest) producing `BoardingPass` from barcodes, pkpass barcode messages and text; year resolution within `[sent_at − 30 d, sent_at + 330 d]`
+- [ ] `category-local` classifier trained on overrides and labels; `category-llm` (loopback or private endpoint only, never health)
+- [ ] Copying a code from the list row through the detail query
+- [ ] `body_parts` adoption when Chats Phase 0 lands
+- [ ] A per-service "verified original sender" signal for relayed mail
+- [ ] Extraction of attached `message/rfc822` parts with forced `unverified` trust
+
 ### Later
 
 - [x] `holtmail account edit` in the CLI (connection, interval, pause)
@@ -527,3 +652,4 @@ The design is in [ALIASES.md](ALIASES.md). Forwarding services (SimpleLogin, add
 - Phases 27–31 done (push and fast change tracking, design in PUSH.md). Contracts: `Source::watch`/`SourceWatch`/`Changed` and `CollectionSource::watch`/`CollectionWatch`/`subscribe`/`unsubscribe` with `PushSubscription`/`PushRegistration`, fakes and watch conformance suites. `holtmail-sync`: `SyncOptions::only`. `source-imap`: `IDLE` per folder (three connections at most), `NOTIFY` on one connection where offered, renewal every ten minutes. `source-jmap`: `Email` state for `unchanged_since`, event source watch. `collection-jmap`: event source watch, `offers_calendars`. `collection-dav`: WebDAV-Push registration (draft of 29 October 2026). New libraries `holtmail-sse`, `holtmail-webpush` (RFC 8291 on aws-lc-rs, checked against the RFC's example), `holtmail-collection-merge`. Server: one queue for scheduled, watch and on-request runs (`[watch] parallel_syncs`), contacts and calendars on their own interval, `watch.rs` (debounce, catch-up after reconnect, backoff, OAuth reopen), `push.rs` (registrations for an https `public_url`, `/api/push/dav/{id}`), JMAP contacts with CalDAV calendars and a separate DAV password, CalDAV offers for JMAP accounts. API, OpenAPI, client, web (Live marks, Watch for changes, contacts interval, DAV password, CalDAV offer) and CLI (`--watch`, `--pim-interval`, `--dav-password-stdin`). Integration: `watch.rs` (IDLE on Dovecot, GreenMail, Stalwart; chosen folders; a kicked connection; watch off; JMAP push) and `watch_pim.rs` (JMAP contacts push, a one-minute contacts interval on Radicale, JMAP contacts with Stalwart CalDAV calendars) pass. Running the older suites with watching on found two bugs, both fixed with tests: a watch and a sync refreshing one OAuth token at once spent a rotated refresh token twice and marked the account "sign in again" (refreshes are now one at a time per account, from the stored token), and a sync started by a watch stored a JMAP state without reading flags, so the daily flag scan skipped the folder (a due scan now ignores the state). Integration suites run without watching unless `IT_WATCH=1`. Not verified: WebDAV-Push against a real server, real Gmail/Outlook/Fastmail push, the web views in a browser.
 - 2026-11-06: Phases 32–34 (email aliases, design in ALIASES.md) built except the integration suite. `holtmail-mime`: `ParsedMessage::headers`. New contract `holtmail-alias` (`AliasDetector`, `AliasDirectory`, `Mail`, `Capabilities`, conformance suites, `FakeDirectory`); implementations `alias-simplelogin`, `alias-addy`, `alias-relay` (detectors and directories), `alias-fastmail` (JMAP Masked Email directory), `alias-duck`, `alias-apple`, `alias-rules` (detectors), with invented fixtures including forged fields and in-process fakes of each API; libraries `holtmail-json-http` and `holtmail-aliases`. Store: `AliasStore`, migration 0019, the `resolved_addresses` view for people, conformance cases. Ingest: `with_alias_detectors`, `detect_alias`, `refresh_alias`, the hidden sender indexed under `from:`. Server: `[aliases]` config with rules, the start-up detection pass by fingerprint, the listing schedule, `Aliases` for `Runner`. API: providers, alias list, services, options, create, edit, delete, manual aliases, `MessageDetail.alias`; OpenAPI and client. Web: Settings → Aliases, the reader's alias line and real sender. API facts were checked against the services' source and docs by a research pass; Apple's header and DuckDuckGo's forwarded `From` are only known from users (VERIFY). Not verified: real services, real forwards, the web views in a browser.
 - 2026-11-06: Phase 34 integration: `aliases.rs` against SimpleLogin v4.82.4 (profile `aliases`, TESTPLAN step 9). It found that OpenDKIM's `Authentication-Results` comment (`(2048-bit key; unprotected)`) split the result, so real SimpleLogin mail read as unsigned; fixed in `Mail::dkim_pass` with a unit test.
+- 2026-11-06: Phase 35 (message insights: card with codes and unsubscribe links, design in INSIGHTS.md). New crates `holtmail-auth-results` (A-R and DKIM-Signature grammar; `Mail::dkim_pass` now parses through it and also accepts RFC-valid spaced and quoted forms), `holtmail-insight` (contract, `Items` JSON v1, `explain`, conformance with the hostile corpus), `holtmail-html-scan`, `holtmail-insights` (stage A runner, panic hook without payloads, `extract_fp`), `holtmail-insight-code`, `holtmail-insight-unsubscribe`. Store: `InsightStore`, migration `message_insights`, conformance area `insights`. Ingest: rows on create or when missing, `refresh_insights`, reindex fills gaps. Server: `[insights]`, `walk.rs` (one parse per message, resumes from anti-joins), `TaskKind::Analyse`, `holtmail insights explain`. API: `MessageDetail.insights`, `MessageSummary.insight_kinds`, `GET /api/archives/{id}/insights/status`, member and own-mail filtering. Web: `CopyButton`/`useCopy`/`copyText` in `@holtmail/ui` (both old copies replaced), the insights card, `c` and `Shift+U`, a key glyph in list rows. Corpus gate: 185 invented messages (65 codes, 83 hard negatives, 36 unsubscribe), codes and unsubscribe at precision and recall 1.0; the code threshold became 600 and `year_like` was added to reach it. `is_automated_local` now ignores letter case, so People treats `NoReply@` as automated. Fixed on the way: a flaky `holtmail-smtp` test (reset connection after the tenth error); `it.sh` ran a stale binary when `CARGO_TARGET_DIR` was set. Integration `insights.rs` (walk killed with SIGKILL and resumed) passes. Not done: fuzz targets were written but never compiled (their crates are not in the offline cache); html-scan speed (Phase 36). `mise run check` green (844 Rust tests, 236 web tests). Not looked at in a browser (VERIFY).

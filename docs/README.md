@@ -7,6 +7,7 @@
 - [Push and fast change tracking](PUSH.md) — IMAP IDLE, JMAP push, WebDAV-Push and contacts and calendars on their own schedule
 - [Email aliases](ALIASES.md) — recognising forwarded mail, the alias list and managing aliases at their services
 - [Conversations](CONVERSATIONS.md) — design of Chats, a messenger view of the archive: chats, topics, bubbles, marks and identity
+- [Message insights](INSIGHTS.md) — codes, action links, reservations, unsubscribe and categories read out of each message for the reader card, with trust and the domain data file
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 
@@ -53,6 +54,12 @@
 | `holtmail-alias-apple` | [Apple Hide My Email and Sign in with Apple](../crates/alias-apple/docs/README.md) |
 | `holtmail-alias-rules` | [Alias detection from config rules](../crates/alias-rules/docs/README.md) |
 | `holtmail-aliases` | [Alias services connected to archives](../crates/aliases/docs/README.md) |
+| `holtmail-auth-results` | [Authentication-Results and DKIM-Signature grammar](../crates/auth-results/docs/README.md) |
+| `holtmail-html-scan` | [Bounded scan of message HTML for visible anchors, text and structured data](../crates/html-scan/docs/README.md) |
+| `holtmail-insight` | [Contract for insight extractors](../crates/insight/docs/README.md) |
+| `holtmail-insight-code` | [One-time codes](../crates/insight-code/docs/README.md) |
+| `holtmail-insight-unsubscribe` | [Unsubscribe from List-Unsubscribe headers](../crates/insight-unsubscribe/docs/README.md) |
+| `holtmail-insights` | [The insights runner: inputs, signals, auth facts, merge](../crates/insights/docs/README.md) |
 | `holtmail-json-http` | [JSON over HTTPS for provider APIs](../crates/json-http/docs/README.md) |
 | `holtmail-ingest` | [From raw bytes to an archived message](../crates/ingest/docs/README.md) |
 | `holtmail-import` | [Reading mbox, Maildir, .eml and zip](../crates/import/docs/README.md) |

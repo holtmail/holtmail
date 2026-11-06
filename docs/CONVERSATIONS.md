@@ -212,7 +212,7 @@ Old and imported mail often has no usable `Authentication-Results`, so rule 2 ke
 
 - `holtmail-alias` gains an optional `AliasDirectory::reverse_aliases(&self, alias_id: &str) -> Result<Vec<ReverseAlias>, AliasError>`, a default method that returns `Unsupported`, plus `Capabilities::reverse_aliases`. `ReverseAlias { address, contact: Address }`: the reverse alias, lowercase, and the contact it reaches. `alias_id` is a `RemoteAlias::id`. Every contact of the alias is listed once, in no particular order.
 - `alias-simplelogin` implements it with the contacts endpoint, `GET /api/aliases/{alias_id}/contacts?page_id=N`, 20 contacts per page, each with the reverse alias address and the contact email. The field names and paging are checked against the official SimpleLogin `api.md` before the code is written, and against the SimpleLogin container of the `aliases` integration profile.
-- A new table `alias_contacts` (`archive_id`, `reverse_alias`, `contact_email`, `contact_name`, `alias`, `provider`, `service_id`, `seen_at`), in migration `0020_alias_contacts.sql`, with `AliasStore` methods to replace a service's rows and to read them. It is refreshed in the same `holtmail-aliases` sync that calls `replace_service_aliases`, and its rows go with the service's aliases when the service is removed.
+- A new table `alias_contacts` (`archive_id`, `reverse_alias`, `contact_email`, `contact_name`, `alias`, `provider`, `service_id`, `seen_at`), in a new migration `NNNN_alias_contacts.sql` (the next free number at merge), with `AliasStore` methods to replace a service's rows and to read them. It is refreshed in the same `holtmail-aliases` sync that calls `replace_service_aliases`, and its rows go with the service's aliases when the service is removed.
 - addy.io and DuckDuckGo need no listing: they encode the sender in the reverse address (`alias+bob=example.org@…` in `crates/alias-addy`, `bob_at_example.org_user@duck.com` in `crates/alias-duck`), so the decoded sender plus a signed hit (rules 1 and 2) already suffices. Apple Hide My Email and Firefox Relay have no such listing, and Fastmail hides no sender. For those, rules 1 and 2 are the only ones.
 
 **Reader wording (Phase 0).** `docs/ALIASES.md` and the web reader currently call a hit verified when it is signed **or** its alias is a known alias. A known alias proves the mail was addressed to the owner, not who sent it: anyone can mail a known alias with a forged `X-SimpleLogin-*` header. So the reader changes to match Chats: "verified" is used only for a signed hit; a hit to a known but unsigned alias says "delivered through your alias", with a tooltip: a signed hit means the alias service's DKIM signature proves who forwarded it; a known alias means it was addressed to you, but the sender is not proven. A known alias still makes the alias own (§4.1), but it never makes its reverse-alias mapping trusted for grouping.
@@ -252,8 +252,10 @@ A sender is automated when any of these holds:
 
 - `Auto-Submitted` is present and not `no`, except `auto-replied`, which is an auto-reply (§3.2);
 - `Precedence: bulk`, `junk` or `list`;
-- the local part starts with one of the `AUTOMATED` prefixes in `holtmail-people` (`noreply`, `no-reply`, `no_reply`, `donotreply`, `do-not-reply`, `do_not_reply`, `mailer-daemon`, `postmaster`, `bounce`). Today `AUTOMATED` is a private `const` in `crates/people/src/group.rs`; Phase 0 exports it (or an `is_automated_local(&str)` function) so People and Chats share one list;
+- `holtmail_people::is_automated_local(local)` is true: the local part starts with one of the prefixes `noreply`, `no-reply`, `no_reply`, `donotreply`, `do-not-reply`, `do_not_reply`, `mailer-daemon`, `postmaster`, `bounce`, without regard to letter case. The list stays private in `crates/people/src/group.rs`; the function is the exported API, so People and Chats share one list;
 - `List-Unsubscribe` is present without `List-Id`.
+
+This "automated" is not the message kind of [INSIGHTS.md](INSIGHTS.md) §4.2, and differs from it on purpose: Chats asks whether a human is on the other side of a thread, while the insights kind sorts mail into inbox views. `Precedence: bulk` alone or `List-Unsubscribe` alone makes a sender automated here but leaves the insights kind `personal`. Neither reads the other.
 
 "I never wrote in the thread" is checked per thread, so one reply promotes that thread, not every mail from the sender.
 
@@ -312,11 +314,11 @@ Day separators and times are rendered in the viewer's local time zone; the serve
 - **`list_id`**, **`list_post`** (the list's address, from `List-Post`), **`original_from`** (`X-Original-From`, for the DMARC rule in §3.7);
 - **`automated`** (§4.5);
 - **`sender`** (the `Sender` header, for §4.2);
-- **`dkim_pass`** (the `header.d` values the topmost `Authentication-Results` records as `dkim=pass`, for the evidence rule of §4.2);
+- **`dkim_pass`** (`holtmail_alias::Mail::dkim_pass_domains`: the `header.d` values, and `header.i=@` domains, the topmost `Authentication-Results` records as `dkim=pass`, for the evidence rule of §4.2);
 - **`text_hash`** (BLAKE3 of the full clean text before the cap, for the duplicate rule of §7.4);
 - **`top_received_at`** (§5.3);
 - **`reply_to`** (the first `Reply-To` address, for the automated-author rule in §3.2);
-- **`links`**: up to 20 distinct `http(s)` URLs from the clean text, for the Links tab. Links are never fetched: no link previews, no favicons, because a fetch would tell the sender the mail was read (§6.4);
+- **`links`**: up to 20 distinct `http(s)` URLs from the clean text after `holtmail_links::unwrap` and `holtmail_links::strip_tracking` (the Insights link library, [INSIGHTS.md](INSIGHTS.md) §3; there is no second unwrapper), for the Links tab. Links are never fetched: no link previews, no favicons, because a fetch would tell the sender the mail was read (§6.4);
 - media flags (`has_photo`, `has_voice`, `has_video`, `has_file`, `has_contact`, `has_invite`, `has_link`, `forwarded`) for chat-row previews and shared-media tabs.
 
 ## 6. Bubble content
@@ -519,12 +521,12 @@ These are derived at refresh, not at read time, so page boundaries never hide th
 | `crates/media` (`holtmail-media`) | pure library, Phase 3 | Audio duration and a 64-bucket waveform from container headers and a decode probe (`symphonia`, after `evaluate_dependency`). mp4/mov duration from boxes only. No ffmpeg. |
 | `holtmail-core` | change | New ids `ChatId` and `TopicId` (UUIDv8 helpers like `person_id`); the shared address-normalization helper (§4.4). |
 | `holtmail-mime` | change | `body_parts(raw: &[u8])`: ordered text, html and inline parts, with nested parts reported. |
-| `holtmail-alias` | contract change, Phase 0 | Optional `AliasDetector::decode_reverse` and `AliasDirectory::reverse_aliases` (default methods), `Capabilities::reverse_aliases`, `ReverseAlias`; a `Mail::dkim_pass_domains()` accessor next to `Mail::dkim_pass` for the `dkim_pass` fact (§5.4). Conformance in `holtmail_alias::testing` covers the defaults. |
+| `holtmail-alias` | contract change, Phase 0 | Optional `AliasDetector::decode_reverse` and `AliasDirectory::reverse_aliases` (default methods), `Capabilities::reverse_aliases`, `ReverseAlias`; a `Mail::dkim_pass_domains()` accessor next to `Mail::dkim_pass` for the `dkim_pass` fact (§5.4); both parse through `holtmail-auth-results`, so `holtmail-alias` takes no `holtmail-mime` dependency (`dkim_pass_domains` landed with Insights Phase 35). Conformance in `holtmail_alias::testing` covers the defaults. |
 | `alias-simplelogin`, `alias-addy`, `alias-duck` | impl, Phase 0 | SimpleLogin lists contacts through `reverse_aliases`; addy.io and DuckDuckGo implement `decode_reverse` with their existing `split_reverse` and `sender_of`. |
 | `holtmail-aliases` | change, Phase 0 | The directory sync also stores each alias's reverse aliases in `alias_contacts` when the directory has the capability. |
-| `holtmail-people` | change | Export the automated-prefix list (§4.5). |
+| `holtmail-people` | change | Export `is_automated_local(&str) -> bool` (§4.5; landed with Insights Phase 35). |
 | `holtmail-store` | contract change | New `chats.rs` with `ConversationStore`, added to `Store` and its blanket impl, plus a `testing` conformance area `chats`. `AliasStore` methods for `alias_contacts` (Phase 0). `PeopleStore` own-address overrides (Phase 1, §4.1). `Archive::chats_group_limit` (Phase 1). `DerivedKind::Waveform` (Phase 3). |
-| `holtmail-store-sqlite` | impl | Migrations `0020_alias_contacts.sql` (Phase 0) and `0021_chats.sql` (Phase 1: chat tables, `chat_prefs`, own-address overrides, `archives.chats_group_limit`) and `src/chats.rs`. |
+| `holtmail-store-sqlite` | impl | Migrations `NNNN_alias_contacts.sql` (Phase 0) and `NNNN_chats.sql` (Phase 1: chat tables, `chat_prefs`, own-address overrides, `archives.chats_group_limit`) and `src/chats.rs`. `NNNN` is the next free migration number at merge. |
 | `holtmail-source`, `source-graph` | contract change and impl, Phase 4 | Server-side reaction metadata next to flags; `source-graph` reads the `ReactionsSummary` extended property (§7.2). |
 | `holtmail-blob` | contract change, Phase 3 | `get_range(id, start, end)` as a default method that slices `get`. `blob-fs` and `blob-s3` override it. The conformance suite gains a range area. |
 | `holtmail-ingest` | change | In `Ingest::ingest`, inside the existing `if inserted.created` block next to `set_message_alias`: calls `bubble::facts(&raw, &parsed)` and `set_message_facts`. Re-ingesting known bytes writes nothing. |
@@ -534,7 +536,7 @@ These are derived at refresh, not at read time, so page boundaries never hide th
 
 `holtmail-bubble` never depends on `holtmail-media`, so audio decoding never sits on the ingest path.
 
-### 8.2 Tables (`0021_chats.sql`)
+### 8.2 Tables (`NNNN_chats.sql`)
 
 All tables are derived and rebuildable, except `chat_prefs` and the own-address overrides, which are user state (below). None of them references blobs, so `InventoryStore` is unchanged.
 
@@ -550,7 +552,7 @@ All tables are derived and rebuildable, except `chat_prefs` and the own-address 
 | `chat_messages` | PK `message_id`, `chat_id`, `topic_id`, `archive_id`, `thread_id`, `at` (sort time, §5.3), `tie` (`blob_id`, the tie-break: a content hash, so independent of import order; named `tie` so it is not confused with `chat_dirty.seq`), `kind` (`bubble`, `system`, `mark`), `canonical_id`, `mine`, `evidence` (`sent`, `dkim` or null), `claim` (§4.2), `bcc` (§3.3), `differs` (§7.4), `author_key`, `system_json`. Indexes `(chat_id, at, tie)` and `(topic_id, at, tie)`, both partial on `kind <> 'mark' AND canonical_id IS NULL`, plus `(archive_id, thread_id)`. | refresh |
 | `chat_marks` | `source_message_id`, `archive_id`, `target_rfc_id`, `kind`, `value`, `actor_key`, `recipient`, `at`. Indexes `(archive_id, target_rfc_id)` and `source_message_id`. Owned by the source (§7.5). | refresh |
 | `unresolved_marks` | PK `(archive_id, target_rfc_id, source_message_id)` | refresh |
-| `chat_state` | PK `archive_id`, `generation`, `building_generation` (unfinished rebuild, or null), `versions` (`"{bubble}.{chats}"`), `group_limit` (the `chats_group_limit` the generation was built with), `inferred_owner` (§4.1, kept by rebuilds), `identity_hash`, `facts_done`, `dirty_seq` (monotonic, bumped by the dirty triggers, which create the row if missing), `refreshed_at` (for `chats/status`) | triggers, refresh, rebuild, backfill |
+| `chat_state` | PK `archive_id`, `generation`, `building_generation` (unfinished rebuild, or null), `versions` (`"{bubble}.{chats}"`), `group_limit` (the `chats_group_limit` the generation was built with), `inferred_owner` (§4.1, kept by rebuilds), `identity_hash`, `dirty_seq` (monotonic, bumped by the dirty triggers, which create the row if missing), `refreshed_at` (for `chats/status`) | triggers, refresh, rebuild |
 | `chat_prefs` | PK `(user_id, archive_id, chat_key)`, `forum` (null: the computed default). User state, not derived: no generation, never touched by refresh or rebuild; deleted with the user or the archive. | `PUT …/chats/{chat}/prefs` |
 | `own_overrides` | PK `(archive_id, email)`, `own`, `created_at`. User state owned by `PeopleStore` (§4.1); deleted with the archive. | `POST …/identities` |
 
@@ -617,7 +619,7 @@ Guarantees:
 
 ### 8.4 Dirty marking without changing `insert_message`
 
-`insert_message` keeps its contract. Dirty marking comes from SQLite triggers in `0021_chats.sql`, so it happens inside every writer's transaction:
+`insert_message` keeps its contract. Dirty marking comes from SQLite triggers in `NNNN_chats.sql`, so it happens inside every writer's transaction:
 
 | Trigger | Marks dirty |
 |---|---|
@@ -660,13 +662,13 @@ A refresh after a normal sync touches the new threads plus the few whose identit
 
 ### 8.7 Facts backfill
 
-When `holtmail_bubble::VERSION` changes, or for an archive created before Chats:
+When `holtmail_bubble::VERSION` changes, or for an archive created before Chats, facts are filled by the `chat-facts` step of the message walk (`apps/server/src/walk.rs`, INSIGHTS §6.4):
 
-- A background pass pages `messages_needing_facts` by `(archive, id)`, parses blobs two at a time, and yields between pages. It is resumable; `chat_state.facts_done` records progress.
-- It runs after `people::build_if_needed` in the existing start-up task (`apps/server/src/main.rs`, after `aliases::detect_if_needed`). It never blocks start-up or requests.
-- The start-up check always runs `messages_needing_facts` once, even when the version is unchanged. It is one anti-join on an index, and it finds messages whose facts were lost to a crash between ingest steps; without it they would stay factless until the next version bump.
-- Only an archive whose chats were **never** built shows "Preparing chats · N%" instead of a half-built list. On a version bump the existing chats stay readable, and a thin progress line in the chat list says that bubbles are being refreshed; a full re-parse of a large archive takes hours, and hiding Chats for that long would be worse than showing old facts.
-- Every phase that adds a detector bumps `holtmail_bubble::VERSION`, so every phase upgrade re-parses the whole archive once. This is accepted; the pass is resumable and throttled.
+- Its `pending` is `messages_needing_facts` by `(archive, id)`, an anti-join on an index. The walk unions it with the other steps' pending ids, reads and parses each blob once for all of them, two at a time, and pauses between pages. It needs no cursor: the anti-join is the progress, so `chat_state.facts_done` is not kept.
+- The walk runs after `people::build_if_needed` in the existing start-up task (`apps/server/src/main.rs`), then on `WalkWake` and hourly. It never blocks start-up or requests.
+- Because every run evaluates the anti-join, even when the version is unchanged, messages whose facts were lost to a crash between ingest steps are found without a version bump.
+- Only an archive whose chats were **never** built shows "Preparing chats · N%" instead of a half-built list. On a version bump the existing chats stay readable, and a thin progress line in the chat list says that bubbles are being refreshed; a full re-parse of a large archive takes hours, and hiding Chats for that long would be worse than showing old facts. Progress comes from the walk's `analyse` task.
+- Every phase that adds a detector bumps `holtmail_bubble::VERSION`, so every phase upgrade re-parses the whole archive once. This is accepted; the walk is resumable and throttled, and a bump that coincides with an insights fingerprint change costs one parse, not two.
 
 ### 8.8 Server wiring
 
@@ -678,8 +680,8 @@ When `holtmail_bubble::VERSION` changes, or for an archive created before Chats:
   - account edits and account deletion request one (the own set changes), and so does an own-address override;
   - a change of `chats_group_limit` requests a chats rebuild;
   - when only Chats has work (`chat_dirty` not empty, people unchanged), the queue may skip the people step. A `chats_only` request kind carries this, so a move out of Junk does not rebuild people.
-- **Start-up.** `chats_if_needed` after people, gated by settings key `chats` = `"{bubble::VERSION}.{chats::VERSION}"`.
-- **`holtmail reindex`** gains the steps "chat facts" and "chats rebuild" after people.
+- **Start-up.** `chats_if_needed` after people, gated by settings key `chats` = `"{bubble::VERSION}.{chats::VERSION}"`. Facts come from the walk's `chat-facts` step (§8.7), which runs after it in the same start-up task.
+- **`holtmail reindex`** fills missing or stale facts as it reads each message (as it does insights), and gains the step "chats rebuild" after people.
 - **Logs** carry archive id, counts, timings and versions only, plus a message id on a classifier failure. Never text, subjects, addresses, emoji or file names.
 
 ## 9. Reads
@@ -1084,7 +1086,7 @@ Each phase ships on its own and leaves `mise run check` green. Docs are updated 
 ### Phase 0: prerequisites
 
 - [x] The alias work (phases 32–34) is committed (095b032).
-- [ ] Migration numbers: `0020_alias_contacts.sql` here, `0021_chats.sql` in Phase 1.
+- [ ] Migration numbers: `NNNN_alias_contacts.sql` here and `NNNN_chats.sql` in Phase 1 each take the next free number at merge (Insights migrations may land first); this document is renumbered in the same change.
 - [ ] Rename `PeopleRefresh` to `DerivedRefresh` as its own small change with no behavior change; then add the `chats_only` request kind (§8.8).
 - [ ] Changes to the committed alias code (§4.1, §4.3):
   - [ ] trusted-only own aliases;
@@ -1093,9 +1095,10 @@ Each phase ships on its own and leaves `mise run check` green. Docs are updated 
   - [ ] the `MailAddresses::own` doc comment mentions aliases.
 - [ ] Reverse-alias directory (§4.3): `AliasDirectory::reverse_aliases` and `Capabilities::reverse_aliases`; the SimpleLogin implementation, written only after checking the contacts endpoint against the official `api.md`; `alias_contacts` with its `AliasStore` methods and conformance; refreshed by the `holtmail-aliases` directory sync; `docs/ALIASES.md` and the crates' `docs/README.md` updated.
 - [ ] `AliasDetector::decode_reverse` (default `None`), implemented in `alias-addy` and `alias-duck`.
-- [ ] `Mail::dkim_pass_domains()` in `holtmail-alias` for the `dkim_pass` fact (§4.2).
+- [x] `Mail::dkim_pass_domains()` in `holtmail-alias` for the `dkim_pass` fact (§4.2), parsing through `holtmail-auth-results` (Insights Phase 35).
 - [ ] Reader wording (§4.3): in the web reader, "verified" only for a signed hit, "delivered through your alias" for a known but unsigned alias, with the tooltip that explains the difference; `docs/ALIASES.md` updated to the same words.
-- [ ] `holtmail-people` exports its automated-prefix list; the address-normalization helper moves to `holtmail-core`.
+- [x] `holtmail-people` exports `is_automated_local(&str) -> bool` (Insights Phase 35).
+- [ ] The address-normalization helper moves to `holtmail-core`.
 - [ ] `holtmail_mime::body_parts(raw)` with the §14.1 fixtures proving where reaction, MDN, DSN and Apple multi-text parts land.
 - [ ] `evaluate_dependency` for `html5ever` (pinned to ammonia's version).
 - [ ] `MailLayout` mode-table refactor, with no behavior change.
@@ -1107,7 +1110,7 @@ The first version that reads like a messenger.
 - [ ] `holtmail-quote`: text and HTML cleaning, layouts, signatures, the never-empty invariant.
 - [ ] `holtmail-bubble`: roles `message`, `auto`, `encrypted` and `digest`, plus detection (not yet rendering) of the mark roles; root, parent, `at`, `reply_to`, `links`, list and automation facts; media kinds and dimensions for photo, file and layout image; `VERSION`.
 - [ ] `ChatId` and `TopicId` in `holtmail-core`.
-- [ ] `ConversationStore`, `0021_chats.sql` with triggers, deletion and archive cleanup, `chat_prefs`, conformance area `chats`.
+- [ ] `ConversationStore`, `NNNN_chats.sql` with triggers, deletion and archive cleanup, `chat_prefs`, conformance area `chats`.
 - [ ] `holtmail-chats`: resolver with email keys, the robust inferred owner with hysteresis, identity diff, kinds (direct, group, broadcast, list, notifications, claims, saved, marks-only threads), `chats_group_limit`, the automated-author `Reply-To` rule, topics by root, General, CC rule, the "Bcc'd to you" marker, DMARC author, off-list split, evidence and claims (§4.2), content-checked duplicates with the preferred copy (§7.4), drafts and junk exclusion, refresh, rebuild, property test.
 - [ ] Own-address overrides in `PeopleStore` in minimal form (§4.1), `POST …/identities`, and the "Is this you? Confirm / choose another" banner.
 - [ ] `Archive::chats_group_limit` with `PATCH /api/archives/{id}` and a field in Settings → Archives; a change requests a rebuild.

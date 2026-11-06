@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use holtmail_core::TlsRoots;
 use holtmail_oauth::{OAuthError, TokenAnswer, TokenEndpoint};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use url::{Host, Url};
@@ -15,19 +16,39 @@ const MAX_BODY: usize = 64 * 1024;
 #[derive(Clone)]
 pub struct HttpTokenEndpoint {
     client: reqwest::Client,
+    timeout: Duration,
 }
 
 impl HttpTokenEndpoint {
     /// An endpoint client that gives up after `timeout` per request.
     pub fn new(timeout: Duration) -> Result<Self, OAuthError> {
-        let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| OAuthError::Connection(e.to_string()))?;
-        Ok(Self { client })
+        Ok(Self {
+            client: client(timeout, &TlsRoots::default())?,
+            timeout,
+        })
     }
+
+    /// Also trusts `roots` for https, besides the built-in roots. `Connection` when one of them
+    /// is not a usable certificate.
+    pub fn with_roots(mut self, roots: &TlsRoots) -> Result<Self, OAuthError> {
+        self.client = client(self.timeout, roots)?;
+        Ok(self)
+    }
+}
+
+fn client(timeout: Duration, roots: &TlsRoots) -> Result<reqwest::Client, OAuthError> {
+    let certificates = roots
+        .iter()
+        .map(reqwest::Certificate::from_der)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| OAuthError::Connection(format!("an extra trusted certificate: {e}")))?;
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
+        .tls_certs_merge(certificates)
+        .build()
+        .map_err(|e| OAuthError::Connection(e.to_string()))
 }
 
 fn allowed(url: &Url) -> bool {
@@ -103,6 +124,30 @@ mod tests {
 
     fn endpoint() -> HttpTokenEndpoint {
         HttpTokenEndpoint::new(Duration::from_secs(5)).unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn trusts_extra_roots_only_when_given() {
+        let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+        let server = ca.serve_https(400, r#"{"error":"invalid_grant"}"#).await;
+        let url = format!("https://localhost:{}/token", server.port());
+        let form = [("grant_type".to_owned(), "refresh_token".to_owned())];
+        let answer = endpoint()
+            .with_roots(&ca.roots())
+            .unwrap()
+            .post_form(&url, &form)
+            .await
+            .unwrap();
+        assert_eq!(answer.status, 400);
+        assert!(matches!(
+            endpoint().post_form(&url, &form).await,
+            Err(OAuthError::Connection(_))
+        ));
+        assert!(
+            endpoint()
+                .with_roots(&TlsRoots::from_der(vec![vec![1, 2, 3]]))
+                .is_err()
+        );
     }
 
     #[tokio::test]

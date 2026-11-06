@@ -1,9 +1,12 @@
 //! Holtmail's metadata [`Store`](holtmail_store::Store) on SQLite.
 
 mod calendar;
+mod deletion;
+mod ledger;
 mod people;
 mod pim;
 mod rows;
+mod webhooks;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -189,6 +192,9 @@ impl ArchiveStore for SqliteStore {
         .await
         .map_err(backend)?;
         for statement in [
+            "DELETE FROM deleted_locations WHERE folder_id IN
+             (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
+            "DELETE FROM deleted_blobs WHERE archive_id = ?1",
             "DELETE FROM sync_failures WHERE folder_id IN
              (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
             "DELETE FROM folder_cursors WHERE folder_id IN
@@ -233,41 +239,21 @@ impl ArchiveStore for SqliteStore {
         if done.rows_affected() == 0 {
             return Err(StoreError::NotFound("archive"));
         }
-        for key in linked {
-            let gone: Option<Option<String>> = sqlx::query_scalar(
-                "DELETE FROM remote_images WHERE key = ?1
-                 AND NOT EXISTS (SELECT 1 FROM message_remote_images WHERE key = ?1)
-                 RETURNING blob_id",
-            )
-            .bind(&key)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(backend)?;
-            blobs.extend(gone.flatten());
-        }
-        blobs.sort();
-        blobs.dedup();
-        let mut orphans = Vec::new();
-        for blob in blobs {
-            if blob_used(&mut tx, &blob).await? {
-                continue;
-            }
-            let made: Vec<Option<String>> =
-                sqlx::query_scalar("DELETE FROM derived WHERE source_blob = ? RETURNING blob_id")
-                    .bind(&blob)
-                    .fetch_all(&mut *tx)
-                    .await
-                    .map_err(backend)?;
-            orphans.push(parse(&blob)?);
-            for derived in made.into_iter().flatten() {
-                if !blob_used(&mut tx, &derived).await? {
-                    orphans.push(parse(&derived)?);
-                }
-            }
-        }
+        ledger::append(
+            &mut tx,
+            NewEntry {
+                at: Timestamp::now(),
+                event: LedgerEvent::ArchiveDeleted,
+                archive_id: parse(&id)?,
+                message_id: None,
+                blob_id: None,
+                actor: None,
+            },
+        )
+        .await?;
+        blobs.extend(drop_unlinked_remote_images(&mut tx, linked).await?);
+        let orphans = release(&mut tx, blobs).await?;
         tx.commit().await.map_err(backend)?;
-        orphans.sort();
-        orphans.dedup();
         Ok(orphans)
     }
 
@@ -378,6 +364,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM sync_failures WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folder_cursors WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
+            "DELETE FROM deleted_locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folders WHERE account_id = ?1",
             "DELETE FROM account_runs WHERE account_id = ?1",
             "UPDATE collections SET account_id = NULL WHERE account_id = ?1",
@@ -632,6 +619,19 @@ impl MessageStore for SqliteStore {
             .map_err(backend)?;
         }
 
+        ledger::append(
+            &mut tx,
+            NewEntry {
+                at: archived_at,
+                event: LedgerEvent::Archived,
+                archive_id: new.archive_id,
+                message_id: Some(id),
+                blob_id: Some(new.blob_id),
+                actor: None,
+            },
+        )
+        .await?;
+
         tx.commit().await.map_err(backend)?;
         Ok(Inserted {
             message_id: id,
@@ -875,7 +875,8 @@ impl MessageStore for SqliteStore {
 
     async fn folder_uids(&self, folder: FolderId) -> Result<Vec<u64>, StoreError> {
         sqlx::query(
-            "SELECT uid FROM locations WHERE folder_id = ? AND uid IS NOT NULL AND removed_at IS NULL
+            "SELECT uid FROM locations WHERE folder_id = ?1 AND uid IS NOT NULL AND removed_at IS NULL
+             UNION SELECT uid FROM deleted_locations WHERE folder_id = ?1
              ORDER BY uid",
         )
         .bind(folder.to_string())
@@ -921,17 +922,30 @@ impl MessageStore for SqliteStore {
             .execute(&mut *tx)
             .await
             .map_err(backend)?;
+            sqlx::query("DELETE FROM deleted_locations WHERE folder_id = ? AND uid = ?")
+                .bind(folder.to_string())
+                .bind(signed(*uid)?)
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?;
         }
         tx.commit().await.map_err(backend)
     }
 
     async fn forget_uids(&self, folder: FolderId) -> Result<(), StoreError> {
         let _write = self.writer.lock().await;
-        sqlx::query("UPDATE locations SET uid = NULL WHERE folder_id = ?")
-            .bind(folder.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(backend)?;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        for statement in [
+            "UPDATE locations SET uid = NULL WHERE folder_id = ?",
+            "DELETE FROM deleted_locations WHERE folder_id = ?",
+        ] {
+            sqlx::query(statement)
+                .bind(folder.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?;
+        }
+        tx.commit().await.map_err(backend)?;
         Ok(())
     }
 
@@ -1840,6 +1854,59 @@ impl SettingsStore for SqliteStore {
     }
 }
 
+/// Removes the saved remote images of `keys` that no message links to any more and returns
+/// their blobs.
+pub(crate) async fn drop_unlinked_remote_images(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    keys: Vec<String>,
+) -> Result<Vec<String>, StoreError> {
+    let mut blobs = Vec::new();
+    for key in keys {
+        let gone: Option<Option<String>> = sqlx::query_scalar(
+            "DELETE FROM remote_images WHERE key = ?1
+             AND NOT EXISTS (SELECT 1 FROM message_remote_images WHERE key = ?1)
+             RETURNING blob_id",
+        )
+        .bind(&key)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(backend)?;
+        blobs.extend(gone.flatten());
+    }
+    Ok(blobs)
+}
+
+/// Of `blobs`, those nothing references any more, with what was derived from them when nothing
+/// else uses that; their derived records are dropped. Sorted, each once.
+pub(crate) async fn release(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    mut blobs: Vec<String>,
+) -> Result<Vec<BlobId>, StoreError> {
+    blobs.sort();
+    blobs.dedup();
+    let mut orphans = Vec::new();
+    for blob in blobs {
+        if blob_used(tx, &blob).await? {
+            continue;
+        }
+        let made: Vec<Option<String>> =
+            sqlx::query_scalar("DELETE FROM derived WHERE source_blob = ? RETURNING blob_id")
+                .bind(&blob)
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(backend)?;
+        orphans.push(parse(&blob)?);
+        for derived in made.into_iter().flatten() {
+            if !blob_used(tx, &derived).await? {
+                orphans.push(parse(&derived)?);
+            }
+        }
+    }
+    orphans.sort();
+    orphans.dedup();
+    Ok(orphans)
+}
+
 async fn blob_used(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     blob: &str,
@@ -1928,6 +1995,29 @@ impl DerivedStore for SqliteStore {
         orphans.sort();
         Ok(orphans)
     }
+
+    async fn forget_derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+    ) -> Result<Option<BlobId>, StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let made: Option<Option<String>> = sqlx::query_scalar(
+            "DELETE FROM derived WHERE source_blob = ? AND kind = ? RETURNING blob_id",
+        )
+        .bind(source.to_string())
+        .bind(kind.as_str())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(backend)?;
+        let orphan = match made.flatten() {
+            Some(blob) if !blob_used(&mut tx, &blob).await? => Some(parse(&blob)?),
+            _ => None,
+        };
+        tx.commit().await.map_err(backend)?;
+        Ok(orphan)
+    }
 }
 
 #[async_trait]
@@ -1985,6 +2075,70 @@ mod tests {
             .await
             .unwrap();
         holtmail_store::testing::conformance(Arc::new(store)).await;
+    }
+
+    #[tokio::test]
+    async fn names_messages_the_ledger_does_not_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(dir.path().join("holtmail.db"))
+            .await
+            .unwrap();
+        let archive = store.create_archive("Ledger").await.unwrap().id;
+        let mut ids = Vec::new();
+        for n in 1..=4 {
+            let new = holtmail_store::testing::message(archive, n, 1_741_600_000 + i64::from(n));
+            ids.push(store.insert_message(new).await.unwrap().message_id);
+        }
+        sqlx::query("DELETE FROM ledger")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let gaps = store.ledger_gaps(2).await.unwrap();
+        assert_eq!((gaps.unentered.len(), gaps.unentered_count), (2, 4));
+        assert_eq!(store.enter_unentered(3).await.unwrap(), 3);
+        assert_eq!(store.enter_unentered(3).await.unwrap(), 1);
+        assert_eq!(store.enter_unentered(3).await.unwrap(), 0);
+        assert!(store.ledger_gaps(10).await.unwrap().is_empty());
+        let entered: Vec<_> = store
+            .ledger_entries(0, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.message_id.unwrap())
+            .collect();
+        assert_eq!(entered, ids, "not entered oldest first");
+
+        sqlx::query("UPDATE messages SET blob_id = ? WHERE id = ?")
+            .bind(BlobId::of(b"swapped bytes").to_string())
+            .bind(ids[0].to_string())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        for table in ["attachments", "message_addresses", "message_parents"] {
+            sqlx::query(AssertSqlSafe(format!(
+                "DELETE FROM {table} WHERE message_id = ?"
+            )))
+            .bind(ids[1].to_string())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query("DELETE FROM messages WHERE id = ?")
+            .bind(ids[1].to_string())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let gaps = store.ledger_gaps(10).await.unwrap();
+        assert_eq!(gaps.changed, [ids[0]]);
+        assert_eq!(gaps.vanished, [ids[1]]);
+        assert_eq!(
+            (
+                gaps.unentered_count,
+                gaps.changed_count,
+                gaps.vanished_count
+            ),
+            (0, 1, 1)
+        );
     }
 
     #[tokio::test]

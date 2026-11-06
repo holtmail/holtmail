@@ -36,7 +36,7 @@ struct Fake {
     seq: u64,
     generation: u64,
     page: Option<usize>,
-    foreign_api: bool,
+    api_url: Option<String>,
     stuck: bool,
     busy: u32,
     requests: Vec<(String, bool)>,
@@ -68,10 +68,10 @@ fn item_id(name: &str) -> String {
 fn wrap(kind: CollectionKind, collection: &str, name: &str, raw: &[u8]) -> String {
     let jmap = collection.split_once('/').map_or(collection, |(_, id)| id);
     format!(
-        "{{\"id\":{},\"{}\":{{{}:true}},\"x-raw\":{}}}",
-        serde_json::to_string(&item_id(name)).unwrap(),
+        "{{\"{}\":{{{}:true}},\"id\":{},\"x-raw\":{}}}",
         member_key(kind),
         serde_json::to_string(jmap).unwrap(),
+        serde_json::to_string(&item_id(name)).unwrap(),
         serde_json::to_string(&String::from_utf8_lossy(raw)).unwrap()
     )
 }
@@ -266,11 +266,7 @@ async fn handle(
                 capabilities[CALENDARS] = json!({});
                 primary[CALENDARS] = json!(ACCOUNT);
             }
-            let api = if f.foreign_api {
-                format!("http://localhost:{}/jmap/api", f.port)
-            } else {
-                "/jmap/api".to_owned()
-            };
+            let api = f.api_url.clone().unwrap_or_else(|| "/jmap/api".to_owned());
             axum::Json(json!({
                 "capabilities": capabilities, "primaryAccounts": primary, "apiUrl": api,
                 "accounts": { ACCOUNT: { "name": "ada@example.com" } }, "state": "s1",
@@ -437,7 +433,21 @@ async fn names_colors_and_raw_json_kept() {
         .fetch("addressbook/b1", &["c1".into()])
         .await
         .unwrap();
-    assert_eq!(items[0].raw.as_ref(), card.as_bytes(), "the object as sent");
+    assert_eq!(
+        items[0].raw.as_ref(),
+        br#"{"@type":"Card","addressBookIds":{"b1":true},"id":"c1","name":{"full":"Bea Example"},"uid":"bea-1","version":"1.0"}"#,
+        "the object with its keys sorted"
+    );
+    let shuffled = r#"{"name":{"full":"Bea Example"},"uid":"bea-1","addressBookIds":{"b1":true},"id":"c1","version":"1.0","@type":"Card"}"#;
+    fake.put_json("addressbook/b1", "c1", shuffled);
+    let again = source
+        .fetch("addressbook/b1", &["c1".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        again[0].raw, items[0].raw,
+        "the same object in another key order reads the same"
+    );
     assert_eq!(items[0].content_type, media::JSCONTACT);
     assert!(
         source
@@ -530,9 +540,22 @@ async fn the_well_known_address_is_followed_without_credentials() {
 }
 
 #[tokio::test]
-async fn an_api_on_another_host_is_refused_and_nothing_is_sent_there() {
+async fn an_api_on_another_host_the_session_names_gets_the_credentials() {
     let fake = FakeJmap::start(false).await;
-    fake.0.lock().unwrap().foreign_api = true;
+    let port = fake.0.lock().unwrap().port;
+    fake.0.lock().unwrap().api_url = Some(format!("http://localhost:{port}/jmap/api"));
+    assert_eq!(fake.source().collections().await.unwrap().len(), 1);
+    let requests = fake.0.lock().unwrap().requests.clone();
+    assert!(
+        requests.iter().any(|(p, auth)| p == "/jmap/api" && *auth),
+        "{requests:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_api_without_https_is_refused_and_nothing_is_sent_there() {
+    let fake = FakeJmap::start(false).await;
+    fake.0.lock().unwrap().api_url = Some("http://jmap.example.org/jmap/api".into());
     let error = fake.source().collections().await.unwrap_err();
     assert!(matches!(error, CollectionError::Protocol(_)), "{error}");
     assert!(
@@ -576,5 +599,29 @@ async fn waits_when_busy_and_refuses_bad_credentials_and_addresses() {
     assert!(matches!(
         fake.source().list("elsewhere").await,
         Err(CollectionError::Gone)
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let server = ca.serve_https(401, "{}").await;
+    let url = format!("https://localhost:{}/jmap/session", server.port());
+    let source = || {
+        JmapCollections::new(
+            &url,
+            Credentials::Bearer("token".into()),
+            Duration::from_secs(5),
+        )
+        .unwrap()
+    };
+    let trusted = source().with_roots(&ca.roots()).unwrap();
+    assert!(matches!(
+        trusted.collections().await,
+        Err(CollectionError::Auth(_))
+    ));
+    assert!(matches!(
+        source().collections().await,
+        Err(CollectionError::Connection(_))
     ));
 }

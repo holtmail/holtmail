@@ -126,8 +126,9 @@ struct GetList<'a> {
 /// or token (bearer).
 ///
 /// A session address ending in `/.well-known/jmap` is followed through its redirects without
-/// credentials first; the credentials then go only to the origin it led to, and an API address
-/// on another origin is refused. Redirects are not followed with credentials. Answers are capped
+/// credentials first; the credentials then go to where it led and to the API address the
+/// session names, on any host, but only over https (plain http only to a loopback address).
+/// Redirects are not followed with credentials. Answers are capped
 /// at 1 MiB for the session and 64 MiB for one API answer; `429`, `503` and `504` are waited out
 /// as `Retry-After` says, two minutes at most, five tries at most.
 pub struct JmapCollections {
@@ -137,6 +138,13 @@ pub struct JmapCollections {
 }
 
 impl JmapCollections {
+    /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
+    /// not a usable certificate.
+    pub fn with_roots(mut self, roots: &holtmail_core::TlsRoots) -> Result<Self, CollectionError> {
+        self.http = self.http.with_roots(roots)?;
+        Ok(self)
+    }
+
     /// A source for the session resource at `session_url`. `Config` for an address that is not
     /// https (plain http only to a loopback address) or carries a user name.
     pub fn new(
@@ -198,9 +206,9 @@ impl JmapCollections {
             .and_then(Value::as_str)
             .and_then(|a| url.join(a).ok())
             .ok_or_else(|| protocol("the JMAP session has no API address"))?;
-        if api.origin() != url.origin() {
+        if !http::allowed(&api) {
             return Err(protocol(
-                "the JMAP session names an API address on another host",
+                "the JMAP session names an API address without https",
             ));
         }
         let max_objects = capabilities
@@ -402,14 +410,30 @@ impl JmapCollections {
                             .collect()
                     })
                     .unwrap_or_default();
-                out.push((
-                    id.to_owned(),
-                    member,
-                    Bytes::copy_from_slice(raw.get().as_bytes()),
-                ));
+                let id = id.to_owned();
+                let bytes = serde_json::to_vec(&canonical(value))
+                    .map_err(|_| protocol("the JMAP server sent an invalid object"))?;
+                out.push((id, member, Bytes::from(bytes)));
             }
         }
         Ok(out)
+    }
+}
+
+fn canonical(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, canonical(v)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(canonical).collect()),
+        other => other,
     }
 }
 

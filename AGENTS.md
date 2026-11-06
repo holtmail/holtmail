@@ -10,6 +10,7 @@ Holtmail is a self-hosted email archiver: it pulls mail from IMAP and JMAP accou
 - `cargo clippy --workspace --all-targets -- -D warnings` — lint
 - `cargo test --workspace` — tests; `cargo test -p holtmail-blob-fs` for one crate
 - `mise run check` — everything CI runs, Rust and web
+- `mise run it` — integration tests in `tests/integration` against real servers in local containers (`mise run it -- <area>` for one suite, `mise run it-down` to stop them)
 
 Run `mise run check` before considering a change done. Tools are pinned in `mise.toml` and `rust-toolchain.toml`; run them through `mise exec --` if they are not on your PATH.
 
@@ -18,6 +19,7 @@ Run `mise run check` before considering a change done. Tools are pinned in `mise
 - `crates/*` — Rust libraries: contracts and their implementations
 - `apps/server` — the `holtmail` binary, the only place that picks implementations
 - `apps/web` — the React app
+- `tests/integration` — the integration test tier (`holtmail-integration`): the real binary against servers in `compose.yaml`
 - `packages/*` — TypeScript packages for the web app (`ui`, `tokens`, `api-client`)
 - `docs/` — project-wide docs; every crate, app and package also has its own `docs/` folder
 
@@ -57,7 +59,7 @@ Longer topics go in more files in the same `docs/` folder. A change to a module'
 - **Never log mail or secrets.** Logs carry ids, counts and timings, never message content, subjects, addresses, passwords or tokens.
 - **Raw bytes are the truth.** The original RFC 5322 bytes of every message are stored unchanged and addressed by their BLAKE3 hash. Parsed fields, indexes and thumbnails are derived data that can be rebuilt from them.
 - **Comments are rare.** Doc comments on the public API are required; inside function bodies, comment only what a reader cannot infer (a server quirk, an RFC corner, a deliberate trade-off).
-- **Tests sit next to the code** in `#[cfg(test)]` modules; integration tests go in the crate's `tests/`. Tests never touch the network; IMAP and JMAP tests run against in-process fakes.
+- **Tests sit next to the code** in `#[cfg(test)]` modules; integration tests go in the crate's `tests/`. Tests never touch the network; IMAP and JMAP tests run against in-process fakes. The one exception is `tests/integration`, which reaches only containers on this machine and runs only with `HOLTMAIL_IT=1` (set by `mise run it`), so `mise run check` stays network-free.
 - **Dependencies** go in `[workspace.dependencies]` in the root `Cargo.toml`, and crates use `dep.workspace = true`.
 - **Interface:** square corners and hairline borders, see [docs/design.md](docs/design.md). No `border-radius` other than the `0` from tokens.
 - **Commits and PR titles:** one line in Conventional Commits form with the module as scope (`feat(source-imap): ...`, `fix(web): ...`), no body.

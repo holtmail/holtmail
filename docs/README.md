@@ -4,13 +4,14 @@
 - [Interface design](design.md) — how the web app should look and feel
 - [Work plan](WORKPLAN.md) — the current checklist, decisions and lessons from Mail-Archiver
 - [Contacts and calendars](PIM.md) — plan for archiving contacts and events with their history and links to mail
+- [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 
 ## Modules
 
 | Module | Docs |
 | --- | --- |
-| `holtmail-core` | [Ids, timestamps, addresses](../crates/core/docs/README.md) |
+| `holtmail-core` | [Ids, timestamps, addresses, extra TLS roots](../crates/core/docs/README.md) |
 | `holtmail-blob` | [Contract for raw message storage](../crates/blob/docs/README.md) |
 | `holtmail-blob-fs` | [Blob storage on a local disk](../crates/blob-fs/docs/README.md) |
 | `holtmail-blob-s3` | [Blob storage on S3-compatible services](../crates/blob-s3/docs/README.md) |
@@ -55,3 +56,4 @@
 | `@holtmail/ui` | [Components](../packages/ui/docs/README.md) |
 | `@holtmail/api-client` | [Typed API client](../packages/api-client/docs/README.md) |
 | `apps/web` | [The web app](../apps/web/docs/README.md) |
+| `holtmail-integration` (tests/integration) | [Integration tests against real servers in local containers](../tests/integration/docs/README.md) |

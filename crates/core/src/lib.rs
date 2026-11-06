@@ -87,6 +87,95 @@ id!(
     /// A person who signs in to Holtmail.
     UserId
 );
+id!(
+    /// An address book or a calendar in an archive.
+    CollectionId
+);
+id!(
+    /// A contact, event or task in a collection, with every version of it.
+    ItemId
+);
+id!(
+    /// A split or join of people made by hand in an archive.
+    PersonOverrideId
+);
+
+/// A person derived from contacts and mail in an archive.
+///
+/// Not created but computed: the same group of contacts and addresses always gives the same id,
+/// so it survives a rebuild of the people. Displays, parses and serializes as a hyphenated
+/// lowercase UUID.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PersonId(Uuid);
+
+impl PersonId {
+    /// The id made from 16 bytes of a hash, as a UUIDv8.
+    pub fn from_hash(bytes: [u8; 16]) -> Self {
+        Self(Uuid::new_v8(bytes))
+    }
+
+    /// The id as a UUID.
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl fmt::Display for PersonId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0.hyphenated(), f)
+    }
+}
+
+impl fmt::Debug for PersonId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PersonId({})", self.0.hyphenated())
+    }
+}
+
+impl FromStr for PersonId {
+    type Err = InvalidId;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uuid::try_parse(s).map(Self).map_err(|_| InvalidId)
+    }
+}
+
+/// A group of copies of one calendar event in an archive: every event item with the same
+/// iCalendar `UID`, across calendars and the events found in mail.
+///
+/// Not created but computed: the same archive and `UID` always give the same id. Displays,
+/// parses and serializes as a hyphenated lowercase UUID.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EventGroupId(Uuid);
+
+impl EventGroupId {
+    /// The id made from 16 bytes of a hash, as a UUIDv8.
+    pub fn from_hash(bytes: [u8; 16]) -> Self {
+        Self(Uuid::new_v8(bytes))
+    }
+}
+
+impl fmt::Display for EventGroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0.hyphenated(), f)
+    }
+}
+
+impl fmt::Debug for EventGroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EventGroupId({})", self.0.hyphenated())
+    }
+}
+
+impl FromStr for EventGroupId {
+    type Err = InvalidId;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uuid::try_parse(s).map(Self).map_err(|_| InvalidId)
+    }
+}
 
 /// One mailbox from an address header: `"Ada Lovelace" <ada@example.com>`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -159,6 +248,14 @@ mod tests {
         assert_eq!(json, format!("\"{id}\""));
         assert_eq!(serde_json::from_str::<ArchiveId>(&json).unwrap(), id);
         assert_eq!("nope".parse::<ArchiveId>(), Err(InvalidId));
+    }
+
+    #[test]
+    fn person_ids_are_the_same_for_the_same_hash() {
+        let id = PersonId::from_hash([7; 16]);
+        assert_eq!(id, PersonId::from_hash([7; 16]));
+        assert_ne!(id, PersonId::from_hash([8; 16]));
+        assert_eq!(id.to_string().parse::<PersonId>(), Ok(id));
     }
 
     #[test]

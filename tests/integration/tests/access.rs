@@ -788,6 +788,7 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
             "/api/archives/{id}/imports",
             [202, 202, 403, 403, 401],
         ),
+        ("GET", "/api/archives/{id}/insights/status", READ),
         ("GET", "/api/archives/{id}/labels", READ),
         ("GET", "/api/archives/{id}/messages", READ),
         ("GET", "/api/archives/{id}/people", READ),

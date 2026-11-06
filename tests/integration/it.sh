@@ -51,7 +51,7 @@ fi
 
 cd "$root"
 cargo build -p holtmail-server --bin holtmail
-export HOLTMAIL_BIN="$root/target/debug/holtmail"
+export HOLTMAIL_BIN="${CARGO_TARGET_DIR:-$root/target}/debug/holtmail"
 export HOLTMAIL_IT=1
 
 target=()

@@ -115,6 +115,85 @@ pub trait Mailboxes: Send + Sync {
     /// has finished, so it sees every change stored before the call. Rebuilds of one archive never
     /// overlap, whoever asked for them. `Backend` when that rebuild failed.
     async fn rebuild_people(&self, archive: ArchiveId) -> Result<(), MailboxError>;
+
+    /// A Web Push message posted to the push address `id` this server registered with a
+    /// contacts or calendars server. `true` when the address is one of this server's and the
+    /// message decrypts with its keys; the account's contacts and calendars are then synced soon.
+    /// `false` (the default) for anything else, which tells the sender the address is gone.
+    async fn receive_push(&self, id: &str, body: &[u8]) -> bool {
+        let _ = (id, body);
+        false
+    }
+}
+
+/// Whether and how an account is watched for changes on its server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WatchMode {
+    /// Only the sync interval.
+    Off,
+    /// The inbox (on Gmail the all-mail folder), the default.
+    #[default]
+    Inbox,
+    /// The folders in [`WatchSettings::folders`].
+    Folders,
+}
+
+impl WatchMode {
+    /// `off`, `inbox` or `folders`, as the API names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Inbox => "inbox",
+            Self::Folders => "folders",
+        }
+    }
+
+    /// The mode the API calls `name`.
+    pub fn parse(name: &str) -> Option<Self> {
+        [Self::Off, Self::Inbox, Self::Folders]
+            .into_iter()
+            .find(|m| m.as_str() == name)
+    }
+}
+
+/// Which of an account's folders are watched.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WatchSettings {
+    /// How.
+    pub mode: WatchMode,
+    /// Folder paths, for [`WatchMode::Folders`]; a server without `NOTIFY` watches the first
+    /// three.
+    pub folders: Vec<String>,
+}
+
+/// What an account's watch is doing now.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum WatchState {
+    /// Not watched: turned off, paused, or watching is off on this server.
+    #[default]
+    Off,
+    /// Connecting.
+    Starting,
+    /// Connected; changes start a sync within seconds.
+    Live,
+    /// The server cannot push, so only the sync interval applies.
+    Polling,
+    /// The connection broke or was refused; it is tried again. Safe to show: never holds mail
+    /// or secrets.
+    Reconnecting(String),
+}
+
+impl WatchState {
+    /// `off`, `starting`, `live`, `polling` or `reconnecting`, as the API names it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Starting => "starting",
+            Self::Live => "live",
+            Self::Polling => "polling",
+            Self::Reconnecting(_) => "reconnecting",
+        }
+    }
 }
 
 /// Remote image work started on request.
@@ -278,6 +357,11 @@ pub struct AccountStatus {
     pub next_sync_at: Option<Timestamp>,
     /// The latest contacts and calendars sync; `None` when there was none.
     pub contacts_calendars: Option<ContactsCalendarsRun>,
+    /// The watch on its mail.
+    pub watch: WatchState,
+    /// The watch on its contacts and calendars: a JMAP event source, or WebDAV-Push
+    /// registrations ([`WatchState::Live`] while at least one collection has one).
+    pub contacts_watch: WatchState,
 }
 
 /// The latest sync of an account's contacts and calendars.
@@ -305,8 +389,19 @@ pub struct ContactsCalendars {
     /// The account signs in with Google or Microsoft Graph and has not granted contacts and
     /// calendars yet: it has to sign in again before they are archived.
     pub needs_consent: bool,
-    /// How they are read.
+    /// How address books are read.
     pub protocol: ContactsProtocol,
+    /// How calendars are read; differs from `protocol` for a JMAP account whose session offers
+    /// no calendars and reads them over CalDAV.
+    pub calendars_protocol: ContactsProtocol,
+    /// Minutes between their syncs; `None` follows the account's mail interval, 0 only on
+    /// request.
+    pub interval_minutes: Option<u64>,
+    /// CardDAV and CalDAV sign in with a password of their own instead of the account's.
+    pub has_dav_password: bool,
+    /// For a JMAP account without calendars: a CalDAV address that answered with the account's
+    /// sign-in, to offer turning its calendars on.
+    pub caldav_offer: Option<String>,
 }
 
 /// How an account's contacts and calendars are read.
@@ -341,8 +436,13 @@ pub struct ContactsCalendarsChange {
     /// When neither address is given, they are detected from the account's address (known
     /// providers, then the mail domain's well-known address); when one is given, it serves both.
     pub contacts_url: Option<String>,
-    /// Where calendars are read.
+    /// Where calendars are read. For a JMAP account whose session offers contacts but no
+    /// calendars, an address here (or none, when one is found) reads its calendars over CalDAV
+    /// while its contacts stay on JMAP.
     pub calendars_url: Option<String>,
+    /// A password (or app password) for CardDAV and CalDAV when the account's own does not work
+    /// there; never logged or returned. Empty removes a stored one.
+    pub dav_password: Option<String>,
 }
 
 /// How an IMAP account connects.
@@ -422,6 +522,11 @@ pub struct AccountChange {
     /// contacts and calendars server first, except for Google accounts that still have to
     /// grant access by signing in again; nothing is stored when signing in fails.
     pub contacts_calendars: Option<ContactsCalendarsChange>,
+    /// Minutes between contacts and calendars syncs, 0 only on request; `Some(None)` follows the
+    /// mail interval again.
+    pub contacts_interval_minutes: Option<Option<u64>>,
+    /// Which folders are watched for changes.
+    pub watch: Option<WatchSettings>,
 }
 
 /// What [`Mailboxes::details`] knows about an account.
@@ -443,6 +548,8 @@ pub struct AccountDetails {
     /// Contacts and calendars; `None` for accounts that cannot have them yet (import accounts,
     /// and Microsoft accounts until Graph contacts and calendars arrive).
     pub contacts_calendars: Option<ContactsCalendars>,
+    /// Which folders are watched; `None` for import accounts.
+    pub watch: Option<WatchSettings>,
 }
 
 /// The sync interval of accounts without their own.

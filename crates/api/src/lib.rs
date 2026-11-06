@@ -20,6 +20,7 @@ mod overrides;
 mod people;
 mod persons;
 mod pim;
+mod push;
 mod remote;
 mod routes;
 mod session;
@@ -49,7 +50,8 @@ pub use mailboxes::{
     ContactsCalendarsChange, ContactsCalendarsRun, ContactsProtocol, ImageProxy, ImapConnection,
     JmapConnection, JmapConnectionChange, MailboxError, Mailboxes, NewImapAccount, NewJmapAccount,
     OAuthFinished, OAuthProvider, OAuthStart, OAuthStarted, OAuthTarget, RemoteImageJob,
-    SyncSchedule, Task, TaskKind, TaskLevel, TaskLine, TaskState,
+    SyncSchedule, Task, TaskKind, TaskLevel, TaskLine, TaskState, WatchMode, WatchSettings,
+    WatchState,
 };
 pub use operations::{
     DeletionReview, DeletionSelection, LedgerStatus, LedgerVerification, MAX_DELETION, Operations,
@@ -83,7 +85,8 @@ pub struct ApiState {
 ///
 /// State-changing requests must be `application/json` (uploads `application/octet-stream`) and, when they carry an `Origin`, come
 /// from the same host; others are refused with `415` and `403`. Routes other than
-/// `/api/session`, `/api/setup`, `/api/login`, `/api/logout` and `/api/openapi.json` answer `401`
+/// `/api/session`, `/api/setup`, `/api/login`, `/api/logout`, `/api/openapi.json` and the Web Push
+/// receiver `/api/push/dav/{id}` (which takes any body and needs no session) answer `401`
 /// without a live session; unknown paths under `/api/` answer `404` to signed-in users.
 pub fn router(state: ApiState) -> Router {
     let state = Arc::new(state);
@@ -224,6 +227,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/oauth/callback", get(oauth::callback))
         .merge(protected)
         .layer(from_fn(session::guard_writes))
+        .merge(Router::new().route(
+            "/api/push/dav/{id}",
+            post(push::receive).layer(DefaultBodyLimit::max(push::MAX_MESSAGE)),
+        ))
         .with_state(state)
 }
 
@@ -257,6 +264,7 @@ pub fn openapi_json() -> String {
         oauth::start,
         oauth::finish,
         oauth::callback,
+        push::receive,
         manage::update_archive,
         manage::delete_archive,
         manage::update_account,

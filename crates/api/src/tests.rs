@@ -27,6 +27,10 @@ fn holtmail_api_contacts(dav: &Value) -> ContactsCalendars {
         calendars_url: dav["calendars_url"].as_str().map(str::to_owned),
         needs_consent: false,
         protocol: Default::default(),
+        calendars_protocol: Default::default(),
+        interval_minutes: dav["interval"].as_u64(),
+        has_dav_password: dav["dav_password"] == json!(true),
+        caldav_offer: None,
     }
 }
 
@@ -303,7 +307,15 @@ impl Mailboxes for FakeMailboxes {
                 "enabled": dav.enabled,
                 "contacts_url": dav.contacts_url,
                 "calendars_url": dav.calendars_url.or(dav.contacts_url.clone()),
+                "dav_password": dav.dav_password.is_some_and(|p| !p.is_empty()),
             });
+        }
+        if let Some(minutes) = change.contacts_interval_minutes {
+            account.settings["dav"]["interval"] = json!(minutes);
+        }
+        if let Some(watch) = change.watch {
+            account.settings["watch"] =
+                json!({ "mode": watch.mode.as_str(), "folders": watch.folders });
         }
         self.store
             .get()
@@ -350,6 +362,14 @@ impl Mailboxes for FakeMailboxes {
             contacts_calendars: (account.kind != holtmail_store::AccountKind::Import).then(|| {
                 let dav = &account.settings["dav"];
                 holtmail_api_contacts(dav)
+            }),
+            watch: (account.kind != holtmail_store::AccountKind::Import).then(|| WatchSettings {
+                mode: account.settings["watch"]["mode"]
+                    .as_str()
+                    .and_then(WatchMode::parse)
+                    .unwrap_or_default(),
+                folders: serde_json::from_value(account.settings["watch"]["folders"].clone())
+                    .unwrap_or_default(),
             }),
         }
     }
@@ -521,6 +541,10 @@ impl Mailboxes for FakeMailboxes {
             .await
             .map(|_| ())
             .map_err(|e| MailboxError::Backend(e.to_string()))
+    }
+
+    async fn receive_push(&self, id: &str, body: &[u8]) -> bool {
+        id == "0123abcd" && body == b"sealed"
     }
 }
 
@@ -1026,6 +1050,7 @@ fn declares_the_refusal_of_members_on_every_write() {
         "/api/logout",
         "/api/me",
         "/api/me/password",
+        "/api/push/dav/{id}",
     ];
     let mut checked = 0;
     for (path, item) in spec["paths"].as_object().unwrap() {
@@ -2104,6 +2129,43 @@ async fn edits_the_connection_and_the_schedule() {
     );
     assert_eq!(account["contacts_calendars"]["needs_consent"], false);
     assert_eq!(account["status"]["contacts_calendars"], Value::Null);
+    assert_eq!(account["status"]["watch"]["state"], "off");
+    assert_eq!(account["status"]["contacts_watch"]["state"], "off");
+    assert_eq!(account["watch"]["mode"], "inbox", "watched by default");
+
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "watch": { "mode": "folders", "folders": [" INBOX ", "Work", ""] }, "contacts_interval_minutes": 5 }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["watch"]["mode"], "folders");
+    assert_eq!(account["watch"]["folders"], json!(["INBOX", "Work"]));
+    assert_eq!(account["contacts_calendars"]["interval_minutes"], 5);
+    for bad in [
+        json!({ "watch": { "mode": "sometimes" } }),
+        json!({ "watch": { "mode": "folders", "folders": [] } }),
+    ] {
+        let (status, _, _) = f.send(request("PATCH", &uri, bad)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &uri,
+            json!({ "watch": { "mode": "off" }, "contacts_interval_minutes": null }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(account["watch"]["mode"], "off");
+    assert_eq!(
+        account["contacts_calendars"]["interval_minutes"],
+        Value::Null
+    );
 
     let schedule = f.json("/api/sync-schedule").await;
     assert_eq!(schedule["minutes"], 0);
@@ -3620,4 +3682,56 @@ async fn downloads_a_message_as_pdf() {
         ))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receives_push_messages_without_a_session() {
+    let f = fixture().await;
+    let push = |uri: &str, body: &'static [u8], content_type: &str| {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::COOKIE, "holtmail_session=none")
+            .header(header::ORIGIN, "https://dav.example.org")
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let (status, _, _) = f
+        .send(push(
+            "/api/push/dav/0123abcd",
+            b"sealed",
+            "application/octet-stream",
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "any origin and content type");
+    let (status, _, _) = f
+        .send(push("/api/push/dav/0123abcd", b"other", "application/xml"))
+        .await;
+    assert_eq!(status, StatusCode::GONE, "a message it cannot read");
+    let (status, _, _) = f
+        .send(push(
+            "/api/push/dav/ffff",
+            b"sealed",
+            "application/octet-stream",
+        ))
+        .await;
+    assert_eq!(status, StatusCode::GONE, "an address it does not know");
+    let (status, _, _) = f
+        .send(push(
+            "/api/push/dav/..%2Fx",
+            b"sealed",
+            "application/octet-stream",
+        ))
+        .await;
+    assert_eq!(status, StatusCode::GONE);
+    let large: &'static [u8] = Box::leak(vec![0u8; 20 * 1024].into_boxed_slice());
+    let (status, _, _) = f
+        .send(push(
+            "/api/push/dav/0123abcd",
+            large,
+            "application/octet-stream",
+        ))
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }

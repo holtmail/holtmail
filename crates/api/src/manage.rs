@@ -13,7 +13,7 @@ use tokio::io::AsyncWriteExt;
 use crate::dto::*;
 use crate::mailboxes::{
     AccountChange, ConnectionChange, ContactsCalendarsChange, JmapConnectionChange, MailboxError,
-    NewImapAccount, NewJmapAccount, RemoteImageJob,
+    NewImapAccount, NewJmapAccount, RemoteImageJob, WatchMode, WatchSettings,
 };
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
@@ -83,9 +83,11 @@ pub(crate) async fn list_accounts(
                 if !manages {
                     dto.connection = None;
                     dto.jmap = None;
+                    dto.watch = None;
                     if let Some(c) = dto.contacts_calendars.as_mut() {
                         c.contacts_url = None;
                         c.calendars_url = None;
+                        c.caldav_offer = None;
                     }
                 }
                 dto
@@ -468,7 +470,32 @@ pub(crate) async fn update_account(
             enabled: c.enabled,
             contacts_url: c.contacts_url,
             calendars_url: c.calendars_url,
+            dav_password: c.dav_password,
         }),
+        contacts_interval_minutes: request.contacts_interval_minutes,
+        watch: request
+            .watch
+            .map(|w| {
+                let mode = WatchMode::parse(&w.mode).ok_or_else(|| {
+                    ApiError::bad_request("watch.mode is `off`, `inbox` or `folders`")
+                })?;
+                let folders: Vec<String> = w
+                    .folders
+                    .into_iter()
+                    .map(|f| f.trim().to_owned())
+                    .filter(|f| !f.is_empty())
+                    .collect();
+                if mode == WatchMode::Folders && folders.is_empty() {
+                    return Err(ApiError::bad_request("watch.folders names no folder"));
+                }
+                if folders.len() > 100 {
+                    return Err(ApiError::bad_request(
+                        "watch.folders names more than 100 folders",
+                    ));
+                }
+                Ok(WatchSettings { mode, folders })
+            })
+            .transpose()?,
     };
     if change != AccountChange::default() {
         account = state

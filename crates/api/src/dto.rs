@@ -130,6 +130,8 @@ pub struct AccountDto {
     /// Whether its contacts and calendars are archived; `null` for accounts that cannot have
     /// them yet (import accounts; Microsoft accounts until Microsoft Graph contacts arrive).
     pub contacts_calendars: Option<ContactsCalendarsDto>,
+    /// Which folders are watched for changes; `null` for import accounts and for members.
+    pub watch: Option<WatchDto>,
 }
 
 /// Whether and where an account's contacts and calendars are archived.
@@ -144,9 +146,52 @@ pub struct ContactsCalendarsDto {
     /// A Google or Microsoft Graph account that has to sign in again to grant access to
     /// contacts and calendars.
     pub needs_consent: bool,
-    /// How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`
-    /// (Microsoft Graph) or `jmap` (the JMAP account's own session).
+    /// How address books are read: `dav` (CardDAV at the address above), `graph` (Microsoft
+    /// Graph) or `jmap` (the JMAP account's own session).
     pub protocol: String,
+    /// How calendars are read, as `protocol`; `dav` with `protocol` `jmap` for a JMAP account
+    /// whose session offers no calendars.
+    pub calendars_protocol: String,
+    /// Minutes between their syncs, 0 for only on request; `null` follows the mail interval.
+    pub interval_minutes: Option<u64>,
+    /// CardDAV and CalDAV sign in with a password of their own.
+    pub has_dav_password: bool,
+    /// A CalDAV address that answered for a JMAP account without calendars; `null` otherwise,
+    /// and for members.
+    pub caldav_offer: Option<String>,
+}
+
+/// Which folders of an account are watched for changes.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct WatchDto {
+    /// `off`, `inbox` (the default; the all-mail folder on Gmail) or `folders`.
+    pub mode: String,
+    /// The watched folder paths for `folders`; a server without `NOTIFY` watches the first
+    /// three.
+    #[serde(default)]
+    pub folders: Vec<String>,
+}
+
+/// What a watch is doing now.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WatchStateDto {
+    /// `off`, `starting`, `live` (changes start a sync within seconds), `polling` (the server
+    /// cannot push) or `reconnecting`.
+    pub state: String,
+    /// Why it is reconnecting.
+    pub reason: Option<String>,
+}
+
+impl From<crate::mailboxes::WatchState> for WatchStateDto {
+    fn from(state: crate::mailboxes::WatchState) -> Self {
+        Self {
+            state: state.as_str().to_owned(),
+            reason: match state {
+                crate::mailboxes::WatchState::Reconnecting(reason) => Some(reason),
+                _ => None,
+            },
+        }
+    }
 }
 
 /// The latest sync of an account's contacts and calendars.
@@ -175,8 +220,13 @@ pub struct ContactsCalendarsRequest {
     /// Graph. A JMAP account without an address reads them through its JMAP session when that
     /// offers contacts.
     pub contacts_url: Option<String>,
-    /// Where calendars are read.
+    /// Where calendars are read. For a JMAP account whose session offers contacts but no
+    /// calendars, an address here alone (or none, when one is found) reads calendars over
+    /// CalDAV while contacts stay on JMAP.
     pub calendars_url: Option<String>,
+    /// A password for CardDAV and CalDAV when the account's own does not work there, such as
+    /// an app password; never returned. Empty removes a stored one.
+    pub dav_password: Option<String>,
 }
 
 /// How an IMAP account connects. The password is never returned.
@@ -266,6 +316,10 @@ pub struct AccountStatusDto {
     pub next_sync_at: Option<i64>,
     /// The latest contacts and calendars sync; `null` when there was none.
     pub contacts_calendars: Option<ContactsCalendarsRunDto>,
+    /// The watch on its mail.
+    pub watch: WatchStateDto,
+    /// The watch on its contacts and calendars.
+    pub contacts_watch: WatchStateDto,
 }
 
 /// A new archive.
@@ -449,6 +503,13 @@ pub struct AccountUpdateRequest {
     pub min_age_days: Option<Option<u32>>,
     /// Turn archiving contacts and calendars on or off.
     pub contacts_calendars: Option<ContactsCalendarsRequest>,
+    /// Minutes between contacts and calendars syncs, 0 for only on request; `null` follows the
+    /// mail interval again. Missing keeps it.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<u64>)]
+    pub contacts_interval_minutes: Option<Option<u64>>,
+    /// Which folders are watched for changes.
+    pub watch: Option<WatchDto>,
 }
 
 fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -873,6 +934,8 @@ impl AccountDto {
                         summary: run.summary,
                         error: run.error,
                     }),
+                watch: status.watch.into(),
+                contacts_watch: status.contacts_watch.into(),
             },
             connection: details.connection.map(|c| ImapConnectionDto {
                 host: c.host,
@@ -897,6 +960,14 @@ impl AccountDto {
                 calendars_url: c.calendars_url,
                 needs_consent: c.needs_consent,
                 protocol: c.protocol.as_str().to_owned(),
+                calendars_protocol: c.calendars_protocol.as_str().to_owned(),
+                interval_minutes: c.interval_minutes,
+                has_dav_password: c.has_dav_password,
+                caldav_offer: c.caldav_offer,
+            }),
+            watch: details.watch.map(|w| WatchDto {
+                mode: w.mode.as_str().to_owned(),
+                folders: w.folders,
             }),
         }
     }

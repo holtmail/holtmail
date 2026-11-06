@@ -1,5 +1,8 @@
 //! Holtmail's metadata [`Store`](holtmail_store::Store) on SQLite.
 
+mod calendar;
+mod people;
+mod pim;
 mod rows;
 
 use std::collections::HashMap;
@@ -166,6 +169,17 @@ impl ArchiveStore for SqliteStore {
         .fetch_all(&mut *tx)
         .await
         .map_err(backend)?;
+        let versions: Vec<String> = sqlx::query_scalar(
+            "SELECT v.blob_id FROM item_versions v JOIN items i ON i.id = v.item_id
+             WHERE i.archive_id = ?1
+             UNION SELECT v.photo_blob_id FROM item_versions v JOIN items i ON i.id = v.item_id
+             WHERE i.archive_id = ?1 AND v.photo_blob_id IS NOT NULL",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        blobs.extend(versions);
         let linked: Vec<String> = sqlx::query_scalar(
             "SELECT DISTINCT l.key FROM message_remote_images l JOIN messages m ON m.id = l.message_id
              WHERE m.archive_id = ?1",
@@ -184,6 +198,18 @@ impl ArchiveStore for SqliteStore {
              (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
             "DELETE FROM folders WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM account_runs WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM person_emails WHERE archive_id = ?1",
+            "DELETE FROM person_collections WHERE person_id IN (SELECT id FROM people WHERE archive_id = ?1)",
+            "DELETE FROM people WHERE archive_id = ?1",
+            "DELETE FROM person_overrides WHERE archive_id = ?1",
+            "DELETE FROM message_addresses WHERE archive_id = ?1",
+            "DELETE FROM item_version_messages WHERE item_id IN (SELECT id FROM items WHERE archive_id = ?1)",
+            "DELETE FROM occurrences WHERE archive_id = ?1",
+            "DELETE FROM event_series WHERE archive_id = ?1",
+            "DELETE FROM pim_index WHERE item_id IN (SELECT id FROM items WHERE archive_id = ?1)",
+            "DELETE FROM item_versions WHERE item_id IN (SELECT id FROM items WHERE archive_id = ?1)",
+            "DELETE FROM items WHERE archive_id = ?1",
+            "DELETE FROM collections WHERE archive_id = ?1",
             "DELETE FROM accounts WHERE archive_id = ?1",
             "DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM message_parents WHERE archive_id = ?1",
@@ -354,6 +380,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folders WHERE account_id = ?1",
             "DELETE FROM account_runs WHERE account_id = ?1",
+            "UPDATE collections SET account_id = NULL WHERE account_id = ?1",
         ] {
             sqlx::query(statement)
                 .bind(&id)
@@ -554,6 +581,37 @@ impl MessageStore for SqliteStore {
             .execute(&mut *tx)
             .await
             .map_err(backend)?;
+        }
+        for (field, list) in [
+            ("from", &new.from),
+            ("to", &new.to),
+            ("cc", &new.cc),
+            ("bcc", &new.bcc),
+        ] {
+            for address in list {
+                let Some(email) = people::address_key(&address.email) else {
+                    continue;
+                };
+                sqlx::query(
+                    "INSERT OR IGNORE INTO message_addresses
+                     (message_id, archive_id, field, email, name, date) VALUES (?, ?, ?, ?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(&archive)
+                .bind(field)
+                .bind(email)
+                .bind(
+                    address
+                        .name
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|n| !n.is_empty()),
+                )
+                .bind(date.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?;
+            }
         }
         for attachment in &new.attachments {
             sqlx::query(
@@ -1790,7 +1848,9 @@ async fn blob_used(
         "SELECT 1 FROM messages WHERE blob_id = ?1
          UNION ALL SELECT 1 FROM attachments WHERE blob_id = ?1
          UNION ALL SELECT 1 FROM remote_images WHERE blob_id = ?1
-         UNION ALL SELECT 1 FROM derived WHERE blob_id = ?1 LIMIT 1",
+         UNION ALL SELECT 1 FROM derived WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM item_versions WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM item_versions WHERE photo_blob_id = ?1 LIMIT 1",
     )
     .bind(blob)
     .fetch_optional(&mut **tx)
@@ -1889,6 +1949,10 @@ impl InventoryStore for SqliteStore {
                                       ORDER BY blob_id LIMIT ?2)
                  UNION SELECT * FROM (SELECT DISTINCT blob_id FROM derived WHERE blob_id > ?1
                                       ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM item_versions WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT photo_blob_id FROM item_versions
+                                      WHERE photo_blob_id > ?1 ORDER BY photo_blob_id LIMIT ?2)
              ) ORDER BY blob_id LIMIT ?2",
         )
         .bind(after)
@@ -1938,6 +2002,74 @@ mod tests {
         let archives = snapshot.list_archives().await.unwrap();
         assert_eq!(archives.len(), 1);
         assert_eq!(archives[0].id, id);
+    }
+
+    #[tokio::test]
+    async fn fills_message_addresses_of_older_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(dir.path().join("holtmail.db"))
+            .await
+            .unwrap();
+        let archive = store.create_archive("A").await.unwrap().id;
+        let mut message = holtmail_store::testing::message(archive, 1, 1_700_000_000);
+        message.cc = vec![holtmail_core::Address {
+            name: Some(" Cleo ".into()),
+            email: " Cleo@Example.ORG ".into(),
+        }];
+        message.bcc = vec![
+            holtmail_core::Address {
+                name: None,
+                email: "not an address".into(),
+            },
+            holtmail_core::Address {
+                name: Some("\tDee\r\n".into()),
+                email: "\t\r\nDee@Example.com\n\u{a0}".into(),
+            },
+            holtmail_core::Address {
+                name: Some("\u{3000}".into()),
+                email: "\n@example.com".into(),
+            },
+        ];
+        store.insert_message(message).await.unwrap();
+        let rows = |store: &SqliteStore| {
+            let pool = store.pool.clone();
+            async move {
+                sqlx::query_as::<_, (String, String, Option<String>)>(
+                    "SELECT field, email, name FROM message_addresses ORDER BY field, email",
+                )
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        let inserted = rows(&store).await;
+        assert_eq!(
+            inserted,
+            vec![
+                ("bcc".into(), "dee@example.com".into(), Some("Dee".into())),
+                ("cc".into(), "cleo@example.org".into(), Some("Cleo".into())),
+                ("from".into(), "ada@example.com".into(), Some("Ada".into())),
+                ("to".into(), "bob@example.org".into(), None),
+            ]
+        );
+        sqlx::query("DELETE FROM message_addresses")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        let migration = include_str!("../migrations/0013_people.sql");
+        let fill = migration
+            .split(';')
+            .find(|statement| statement.contains("INSERT OR IGNORE INTO message_addresses"))
+            .unwrap();
+        sqlx::query(AssertSqlSafe(fill.to_owned()))
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows(&store).await,
+            inserted,
+            "the migration fills the same rows"
+        );
     }
 
     #[tokio::test]

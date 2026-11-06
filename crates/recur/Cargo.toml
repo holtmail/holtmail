@@ -1,0 +1,17 @@
+[package]
+name = "holtmail-recur"
+description = "Recurrence expansion of calendar events: RRULE, RDATE, EXDATE, changed instances and time zones"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-pim.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -12,6 +12,12 @@
 | Module | Docs |
 | --- | --- |
 | `holtmail-core` | [Ids, timestamps, addresses, extra TLS roots](../crates/core/docs/README.md) |
+| `holtmail-webhook` | [Contract for delivering webhook requests](../crates/webhook/docs/README.md) |
+| `holtmail-webhook-http` | [Webhook delivery over HTTP](../crates/webhook-http/docs/README.md) |
+| `holtmail-hooks` | [Webhook events, payloads, signatures and retries](../crates/hooks/docs/README.md) |
+| `holtmail-smtp` | [SMTP receiver for forwarded and journaled mail](../crates/smtp/docs/README.md) |
+| `holtmail-pdf` | [A message as a PDF with the original inside](../crates/pdf/docs/README.md) |
+| `holtmail-ledger` | [Hash-chained ledger of archived and deleted messages](../crates/ledger/docs/README.md) |
 | `holtmail-blob` | [Contract for raw message storage](../crates/blob/docs/README.md) |
 | `holtmail-blob-fs` | [Blob storage on a local disk](../crates/blob-fs/docs/README.md) |
 | `holtmail-blob-s3` | [Blob storage on S3-compatible services](../crates/blob-s3/docs/README.md) |

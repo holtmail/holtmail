@@ -164,6 +164,23 @@ An in-process fake (Rust), a local Python fake (`scratchpad/e2e18/fakejmap.py`) 
 - [x] `tls_ca_file` in the Linux Docker image: IMAP over TLS to Dovecot and CardDAV to Radicale with certificates from the stack's CA, through `HOLTMAIL_TLS_CA_FILE` in `holtmail:dev`, and the same IMAP server refused without it: tests/integration/tests/docker.rs (`IT_PROFILES=docker`). The reqwest clients share one TLS setup, so JMAP, Graph, OAuth, S3 and images on Linux follow from the CardDAV case
 - [ ] `tls_ca_file` with a real private CA that has an intermediate (only the root in the file), and with a CA whose certificates lack `subjectAltName` or `extendedKeyUsage` (refused by rustls and by macOS)
 
+## Deletion, ledger, webhooks, SMTP and PDF (Phases 21–26)
+
+- [x] Deleted mail stays deleted against a real IMAP server: a sync, a copy of the same bytes in another server folder and a re-import leave it out, and the ledger enters the deletion: tests/integration/tests/deletion.rs on Dovecot. JMAP and Graph (UIDs fetched when they have no location) are proved by unit tests only (`never_brings_back_a_deleted_message` with unordered UIDs)
+- [x] The ledger names a changed entry and a changed blob of a running instance, through the CLI beside `serve` and the API: tests/integration/tests/deletion.rs
+- [ ] Deleting tens of thousands of messages at once: time, memory, and the search index after it
+- [ ] Ledger heads kept outside the instance in practice (a webhook receiver, a printout) and checked with `--anchor` months later; `--blobs` on S3 over a large archive (time and cost)
+- [x] Webhooks reach a receiver signed (HMAC-SHA256), retry after a refusal, use a renewed secret, stop when turned off, and carry no mail: tests/integration/tests/webhooks.rs with an in-test receiver
+- [ ] Webhooks to real receivers (an automation service, a chat bot) and their signature checks; a receiver behind TLS with a private CA
+- [x] SMTP through a real MTA: Postfix relays over STARTTLS it verifies; a journal report is unwrapped byte for byte, an unknown recipient and an oversized message are refused: tests/integration/tests/smtp.rs
+- [ ] Real journaling: an Exchange Online or Exchange Server journal rule, a Google Workspace routing rule, Postfix `always_bcc` in production; real journal reports from Microsoft (the fixture is invented) and how Bcc recipients show
+- [ ] The SMTP listener reachable from the internet: TLS with a public certificate, clients that require `SMTPUTF8` or `CHUNKING`, abuse (the listener never relays, but it accepts what routes allow)
+- [x] PDFs read by real tools: qpdf accepts every PDF, pdftotext finds Latin and Cyrillic text and the page number, and the original comes back out of each: tests/integration/tests/pdf.rs
+- [ ] PDFs by eye: layout of long headers, many attachments, long messages over many pages; Chinese, Japanese, Korean and emoji (shown as boxes), Hebrew and Arabic (not reordered)
+- [x] A port mixed up with its security named quickly, both ways, against Dovecot: tests/integration/tests/imap_faults.rs
+- [ ] Gmail and Outlook with `public_client = false` and no own client: the buttons gone in the web app, existing accounts asking to sign in again
+- [ ] Calendar and vCard attachments from real senders (Outlook, Google Calendar, Apple) found by their words after the start-up pass
+
 ## The web app, by eye
 
 None of these screens has been opened in a browser; they were checked with types, lint, tests and builds only.
@@ -173,6 +190,7 @@ None of these screens has been opened in a browser; they were checked with types
 - [ ] Search: operators (`label:`, `attachment:`), the "In attachment" chip, ⌘K
 - [ ] Settings: archives (save images, older mail, export), sources (edit connection, sign in again, check for new mail, what to archive), people and access, reading, tasks (including the interrupted state), network
 - [ ] Light and dark themes, narrow windows, keyboard navigation
+- [ ] Settings → Integrity, Webhooks (the secret shown once, deliveries refreshing) and SMTP; the deletion dialog from search results and the reader (review, sample, typed count, back to the list); Download PDF in the reader and Zip of PDFs in the export menu
 
 ## Log
 

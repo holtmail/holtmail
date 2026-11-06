@@ -6,11 +6,11 @@
 //! the whole instance, and identical bytes behind different URLs are stored once, because blobs
 //! are addressed by their hash.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use futures::stream::{self, StreamExt};
+use futures::stream::{self, FuturesUnordered, StreamExt};
 use holtmail_blob::{BlobError, BlobStore};
 use holtmail_core::{ArchiveId, MessageId, Timestamp};
 use holtmail_fetch::{FetchError, Fetcher};
@@ -23,7 +23,7 @@ pub const MAX_IMAGES_PER_MESSAGE: usize = 100;
 const FETCHES_AT_ONCE: usize = 6;
 /// Messages looked at together, so one slow sender does not hold up the others.
 pub const MESSAGES_AT_ONCE: usize = 4;
-const MESSAGES_PER_BATCH: u32 = 50;
+const MESSAGES_PER_PAGE: u32 = 50;
 
 /// Which messages [`RemoteImages::save_archive`] looks at, relative to when saving was turned on
 /// for the archive.
@@ -153,35 +153,41 @@ impl RemoteImages {
         saved.total = self.store.count_unscanned(archive, when).await?;
         progress(&saved);
         let run = Run::new();
+        let mut working = FuturesUnordered::new();
+        let mut queue: VecDeque<MessageId> = VecDeque::new();
+        let mut busy: HashSet<MessageId> = HashSet::new();
+        let mut exhausted = false;
         loop {
-            let batch = self
-                .store
-                .unscanned_messages(archive, when, MESSAGES_PER_BATCH)
-                .await?;
-            if batch.is_empty() {
-                return Ok(saved);
-            }
-            let mut messages = stream::iter(batch)
-                .map(|message| {
-                    let run = &run;
-                    async move {
-                        if cancel.load(Ordering::Relaxed) {
-                            return Ok(None);
-                        }
-                        self.save_message(message, run).await.map(Some)
+            while working.len() < MESSAGES_AT_ONCE && !cancel.load(Ordering::Relaxed) {
+                if queue.is_empty() {
+                    if exhausted && !working.is_empty() {
+                        break;
                     }
-                })
-                .buffer_unordered(MESSAGES_AT_ONCE);
-            while let Some(done) = messages.next().await {
-                let Some(one) = done? else { continue };
-                saved.add(one);
-                saved.total = saved.total.max(saved.messages);
-                progress(&saved);
+                    queue = self
+                        .store
+                        .unscanned_messages(archive, when, MESSAGES_PER_PAGE)
+                        .await?
+                        .into_iter()
+                        .filter(|id| !busy.contains(id))
+                        .collect();
+                    exhausted = queue.is_empty();
+                    if exhausted {
+                        break;
+                    }
+                }
+                let Some(id) = queue.pop_front() else { break };
+                busy.insert(id);
+                let run = &run;
+                working.push(async move { (id, self.save_message(id, run).await) });
             }
-            if cancel.load(Ordering::Relaxed) {
-                saved.cancelled = true;
+            let Some((id, done)) = working.next().await else {
+                saved.cancelled = cancel.load(Ordering::Relaxed);
                 return Ok(saved);
-            }
+            };
+            busy.remove(&id);
+            saved.add(done?);
+            saved.total = saved.total.max(saved.messages);
+            progress(&saved);
         }
     }
 
@@ -203,7 +209,7 @@ impl RemoteImages {
         loop {
             let batch = self
                 .store
-                .failed_remote_copies(archive, started, MESSAGES_PER_BATCH)
+                .failed_remote_copies(archive, started, MESSAGES_PER_PAGE)
                 .await?;
             if batch.is_empty() {
                 return Ok(saved);
@@ -577,6 +583,64 @@ mod tests {
             fetcher.most.load(Ordering::SeqCst) <= FETCHES_AT_ONCE,
             "{} downloads at once",
             fetcher.most.load(Ordering::SeqCst)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_slow_sender_does_not_hold_up_the_next_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let blobs: Arc<dyn BlobStore> =
+            Arc::new(FsBlobStore::open(dir.path().join("blobs")).await.unwrap());
+        let store: Arc<dyn Store> =
+            Arc::new(SqliteStore::open(dir.path().join("db")).await.unwrap());
+        let index: Arc<dyn SearchIndex> = Arc::new(TantivyIndex::in_memory().unwrap());
+        let ingest = Ingest::new(blobs.clone(), store.clone(), index);
+        let archive = store.create_archive("News").await.unwrap().id;
+        store.set_save_remote_images(archive, true).await.unwrap();
+        let fetcher = Arc::new(GatedFetcher::default());
+        let remote = RemoteImages::new(fetcher.clone(), blobs.clone(), store.clone());
+        let total = MESSAGES_PER_PAGE + 20;
+        for n in 0..total {
+            let body = if n == 0 {
+                r#"<img src="https://slow.example.com/a.png">"#.to_owned()
+            } else {
+                format!(r#"<img src="https://example.com/{n}.png">"#)
+            };
+            ingest
+                .ingest(archive, newsletter(n, &body), &Placement::default())
+                .await
+                .unwrap();
+        }
+
+        let done = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let running = {
+            let remote = remote.clone();
+            let done = done.clone();
+            tokio::spawn(async move {
+                remote
+                    .save_archive(archive, Scope::New, &AtomicBool::new(false), |p| {
+                        done.store(p.messages, Ordering::SeqCst);
+                    })
+                    .await
+                    .unwrap()
+            })
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while done.load(Ordering::SeqCst) < u64::from(total - 1) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "later pages waited for the slow message: {} done",
+                done.load(Ordering::SeqCst)
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(!running.is_finished());
+        fetcher.released.store(true, Ordering::SeqCst);
+        fetcher.open.notify_waiters();
+        let saved = running.await.unwrap();
+        assert_eq!(
+            (saved.messages, saved.fetched),
+            (u64::from(total), u64::from(total))
         );
     }
 }

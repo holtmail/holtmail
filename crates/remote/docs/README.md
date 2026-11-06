@@ -14,7 +14,7 @@ let retried = remote.retry_failed(archive_id, &cancel, |saved| report(saved)).aw
 
 `retry_failed(archive, cancel, progress)` fetches again every image of the archive that could not be saved, once each.
 
-Both return `Saved { total, messages, fetched, known, failed, cancelled }` (`messages` counts images for `retry_failed`), call `progress` after every step and check `cancel` between steps; work done before a cancel stays done. `save_archive` looks at up to `MESSAGES_AT_ONCE` (4) messages of a batch of 50 together, so one slow sender does not hold up the others; on a cancel it starts no further message and returns once the started ones are done.
+Both return `Saved { total, messages, fetched, known, failed, cancelled }` (`messages` counts images for `retry_failed`), call `progress` after every step and check `cancel` between steps; work done before a cancel stays done. `save_archive` looks at up to `MESSAGES_AT_ONCE` (4) messages together and starts the next one as soon as one is done, reading the waiting messages 50 at a time, so one slow sender holds up neither the others nor the next 50; on a cancel it starts no further message and returns once the started ones are done.
 
 Guarantees:
 
@@ -29,10 +29,10 @@ Errors are `RemoteError::Store` or `RemoteError::Blob`; a failed image fetch is 
 
 ## Limits
 
-- At most 100 images per message (`MAX_IMAGES_PER_MESSAGE`); six downloads at a time across the messages looked at together. A slow image still holds up the end of its batch of 50 messages.
+- At most 100 images per message (`MAX_IMAGES_PER_MESSAGE`); six downloads at a time across the messages looked at together.
 - Only the HTML body is looked at: `<img src>`, `background` and style `url(...)`. Styles pulled in with `@import` are not saved.
 - Downloading tells the sender the message was fetched, from the server's address. That is why saving is off by default and turned on per archive.
 
 ## Tests
 
-`a_slow_sender_does_not_hold_up_other_messages` holds one image until the other five messages (100 images and one URL they share) are done, and checks that the shared URL is fetched once and no more than six downloads ran at once. `saves_each_image_once_and_links_every_message` runs against SQLite, the filesystem blob store and an in-process fake fetcher: a turned-off archive is skipped, known URLs are not fetched again, identical bytes share a blob and failures are recorded.
+`a_slow_sender_does_not_hold_up_other_messages` holds one image until the other five messages (100 images and one URL they share) are done, and checks that the shared URL is fetched once and no more than six downloads ran at once. `a_slow_sender_does_not_hold_up_the_next_page` holds the first of 70 messages and waits for the other 69. `saves_each_image_once_and_links_every_message` runs against SQLite, the filesystem blob store and an in-process fake fetcher: a turned-off archive is skipped, known URLs are not fetched again, identical bytes share a blob and failures are recorded.

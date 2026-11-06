@@ -93,3 +93,25 @@ fn rejects_bytes_without_headers() {
     );
     assert_eq!(parse(b""), Err(MimeError::NotAMessage));
 }
+
+#[test]
+fn finds_calendar_parts_inline_and_attached() {
+    let message = parse(&fixture("invitation.eml")).unwrap();
+    assert_eq!(message.calendars.len(), 2, "{:?}", message.calendars);
+    let inline = std::str::from_utf8(&message.calendars[0]).unwrap();
+    assert!(inline.contains("METHOD:REQUEST"));
+    assert!(inline.contains("Harbour planning \u{2013} dock"));
+    assert_eq!(
+        &message.calendars[1][..],
+        b"BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nEND:VCALENDAR\r\n"
+    );
+    let types: Vec<_> = message
+        .attachments
+        .iter()
+        .map(|a| a.content_type.as_str())
+        .collect();
+    assert_eq!(
+        types,
+        ["text/calendar", "application/ics", "message/rfc822"]
+    );
+}

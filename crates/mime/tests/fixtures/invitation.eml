@@ -1,0 +1,45 @@
+From: Ada Quill <ada@example.com>
+To: Bob Stone <bob@example.org>
+Subject: Invitation: Harbour planning
+Date: Mon, 03 Mar 2025 10:00:00 +0000
+Message-ID: <invite-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/alternative; boundary="inner"
+
+--inner
+Content-Type: text/plain; charset=utf-8
+
+You are invited to Harbour planning.
+--inner
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+Content-Transfer-Encoding: quoted-printable
+
+BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:harbour-1@example.com
+SUMMARY:Harbour planning =E2=80=93 dock
+DTSTART:20250310T090000Z
+END:VEVENT
+END:VCALENDAR
+--inner--
+--outer
+Content-Type: application/ics; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+Content-Transfer-Encoding: base64
+
+QkVHSU46VkNBTEVOREFSDQpNRVRIT0Q6UkVRVUVTVA0KRU5EOlZDQUxFTkRBUg0K
+--outer
+Content-Type: message/rfc822
+
+From: Cleo <cleo@example.org>
+Subject: Forwarded
+Content-Type: text/calendar
+
+BEGIN:VCALENDAR
+END:VCALENDAR
+--outer--

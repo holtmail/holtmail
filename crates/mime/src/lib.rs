@@ -41,6 +41,10 @@ pub struct ParsedMessage {
     pub preview: String,
     /// Attachments and inline parts that are not the message body, in document order.
     pub attachments: Vec<Attachment>,
+    /// Calendar parts (`text/calendar`, `application/ics`) of this message, not of messages
+    /// attached to it, in document order, inline or not: text parts converted to UTF-8 from their
+    /// charset, others transfer-decoded only.
+    pub calendars: Vec<Bytes>,
 }
 
 /// A part of a message that is not its body.
@@ -110,6 +114,18 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError> {
         html,
         preview,
         attachments: message.attachments().map(attachment).collect(),
+        calendars: message
+            .root()
+            .parts()
+            .filter(|part| {
+                part.is_content_type("text", "calendar")
+                    || part.is_content_type("application", "ics")
+            })
+            .map(|part| match part.text() {
+                Some(text) => Bytes::from(text.into_owned()),
+                None => Bytes::from(part.decoded().into_owned()),
+            })
+            .collect(),
     })
 }
 

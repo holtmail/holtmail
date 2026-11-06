@@ -20,6 +20,7 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError>;
 | `html` | HTML body as sent, **unsanitized**: never show it without `holtmail-sanitize` |
 | `preview` | First `PREVIEW_CHARS` (200) characters of the body as one line |
 | `attachments` | `Attachment { filename, content_type, content_id, inline, content }` in document order |
+| `calendars` | The message's own `text/calendar` and `application/ics` parts (iMIP invitations, attached `.ics` files), inline or not, decoded: text parts as UTF-8 from their charset, others transfer-decoded. Parts of attached `message/rfc822` messages are not included. Each is also listed in `attachments` |
 
 `content_type` is lowercase and defaults to `application/octet-stream`. Inline parts referenced by `cid:` links are attachments with `inline: true` and a `content_id`.
 

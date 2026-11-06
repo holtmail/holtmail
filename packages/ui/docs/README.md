@@ -26,6 +26,10 @@ The Holtmail component library: shadcn/ui components copied into the repository 
 | `cn`                   | `(...ClassValue[]) => string`                           | `clsx` then `tailwind-merge`, aware of token utilities: later classes win per group, including `duration-*`, `ease-*`, `w-pane-*`, `h-topbar`; font size and text color never cancel each other |
 | `useControllableState` | `({ value?, defaultValue, onChange? }) => [value, set]` | Controlled when `value` is defined, uncontrolled otherwise; `set` always calls `onChange`                                                                                                       |
 | `MotionProvider`       | `{ children }`                                          | See above                                                                                                                                                                                       |
+| `copyText`             | `(text, env?: CopyEnv) => Promise<CopyResult>`          | Tries the Clipboard API, then `execCommand('copy')` on a hidden textarea (works on plain HTTP); resolves `'clipboard'`, `'exec'` or `'manual'` and never rejects; focus returns where it was    |
+| `browserCopyEnv`       | `() => CopyEnv`                                         | `navigator.clipboard` and `document` of the page, `null` outside a browser                                                                                                                      |
+| `manualCopyHint`       | `(platform: string) => string`                          | `Press ⌘C` on Apple platforms, `Press Ctrl+C` elsewhere                                                                                                                                         |
+| `useCopy`              | `(env?) => { copied, manual, copy, reset }`             | `copied` is true for `COPIED_MS` (1500 ms) after a copy reached the clipboard; `manual` holds the text when both paths failed; no state is set after unmount; a later `copy` supersedes earlier |
 
 ## Components
 
@@ -87,6 +91,10 @@ A side panel on the Radix dialog: `Sheet` (`open`, `defaultOpen`, `onOpenChange`
 
 A placeholder block with a pulse; the pulse stops under reduced motion.
 
+### CopyButton
+
+`text` (a string, or a function read at click time), `label` (default `Copy`), `copiedLabel` (default `Copied`), `icon` (replaces the copy icon), `iconOnly` (icon button with the label as accessible name and tooltip), `manualHint` (defaults to `manualCopyHint` for the platform), `onCopied(result)`, plus `Button` props (`variant` defaults to `ghost`, `size` to `sm`, or `icon` when `iconOnly`). After a copy the icon becomes a check and the label `copiedLabel` for 1.5 s, and a polite `aria-live` region announces `copiedLabel` (nothing else is announced). When `copyText` returns `manual`, a read-only `Input` with the value appears next to the button, focused and selected, with the hint; it goes away on blur or Escape.
+
 ### ToggleGroup
 
 `ToggleGroup` (Radix `type="single" | "multiple"`, `value`, `onValueChange`, `size`: `sm`, `md`, `icon`) and `ToggleGroupItem` (`value`, optional `size` overriding the group). Pressed items use the selected background. `toggleVariants` exported.
@@ -97,4 +105,4 @@ Copy it from shadcn/ui (or Animate UI, Motion Primitives), then: replace every c
 
 ## Tests
 
-`bun test packages/ui` covers `cn`.
+`bun test packages/ui` covers `cn` and the `copyText` fallback chain with stubbed clipboard and document.

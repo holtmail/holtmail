@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   type ButtonProps,
+  CopyButton,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,7 +28,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowLeftIcon,
-  CheckIcon,
   CircleAlertIcon,
   CodeIcon,
   DownloadIcon,
@@ -44,12 +44,14 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useNow } from '../hooks/use-now.ts'
 import { replyMailto, senderLabel } from '../lib/address.ts'
 import { shownFrom } from '../lib/aliases.ts'
+import { codeTarget, unsubscribeTarget } from '../lib/insights.ts'
 import { readerLabels } from '../lib/labels.ts'
 import { manages } from '../lib/roles.ts'
 import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
-import { ids } from './context.ts'
+import { ids, useMail } from './context.ts'
 import { EmptyState } from './empty-state.tsx'
+import { insightCopySelector, insightUnsubscribeSelector } from './insights-card.tsx'
 import { ThreadItem } from './thread-item.tsx'
 
 export function ReaderEmpty() {
@@ -144,6 +146,35 @@ function Thread({ messages, selectedId }: { messages: MessageDetail[]; selectedI
     selectedRef.current?.scrollIntoView({ block: 'start' })
   }, [messages.length, selectedId, latest])
 
+  const { insights } = useMail()
+  const container = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const isExpanded = (id: string) => expanded.has(id) || messages.length === 1
+    const focusedId = () => {
+      const active = document.activeElement
+      if (!(active instanceof HTMLElement) || !container.current?.contains(active)) return undefined
+      return active.closest<HTMLElement>('article[data-message-id]')?.dataset.messageId
+    }
+    const click = (id: string | undefined, selector: string) => {
+      if (!id) return false
+      const article = container.current?.querySelector(
+        `article[data-message-id="${CSS.escape(id)}"]`,
+      )
+      const target = article?.querySelector<HTMLElement>(selector)
+      target?.click()
+      return Boolean(target)
+    }
+    insights.current = {
+      copyCode: () =>
+        click(codeTarget(messages, isExpanded, focusedId(), Date.now())?.id, insightCopySelector),
+      unsubscribe: () =>
+        click(unsubscribeTarget(messages, isExpanded, focusedId())?.id, insightUnsubscribeSelector),
+    }
+    return () => {
+      insights.current = null
+    }
+  }, [insights, messages, expanded])
+
   const toggle = (id: string) =>
     setExpanded((previous) => {
       const next = new Set(previous)
@@ -153,7 +184,7 @@ function Thread({ messages, selectedId }: { messages: MessageDetail[]; selectedI
     })
 
   return (
-    <div className="border-t border-border">
+    <div ref={container} className="border-t border-border">
       {messages.map((message) => (
         <div key={message.id} ref={message.id === selectedId ? selectedRef : undefined}>
           <ThreadItem
@@ -204,7 +235,6 @@ function ToolButton({
 }
 
 function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => void }) {
-  const [copied, setCopied] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const user = useQuery(sessionQuery).data
@@ -214,21 +244,6 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
         strings.reader.quoteAttribution(senderLabel(shownFrom(message), strings.list.noSender)),
       )
     : undefined
-
-  useEffect(() => {
-    if (!copied) return undefined
-    const timer = window.setTimeout(() => setCopied(false), 1500)
-    return () => window.clearTimeout(timer)
-  }, [copied])
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      setCopied(true)
-    } catch {
-      setCopied(false)
-    }
-  }
 
   return (
     <div
@@ -280,15 +295,13 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
           <ToolButton label={strings.reader.source} onClick={() => setSourceOpen(true)}>
             <CodeIcon />
           </ToolButton>
-          <ToolButton
-            label={copied ? strings.reader.copied : strings.reader.copyLink}
-            onClick={() => void copyLink()}
-          >
-            {copied ? <CheckIcon /> : <LinkIcon />}
-          </ToolButton>
-          <span aria-live="polite" className="sr-only">
-            {copied ? strings.reader.copied : ''}
-          </span>
+          <CopyButton
+            text={() => window.location.href}
+            label={strings.reader.copyLink}
+            copiedLabel={strings.reader.copied}
+            icon={<LinkIcon />}
+            iconOnly
+          />
           <SourceDialog messageId={message.id} open={sourceOpen} onOpenChange={setSourceOpen} />
           {manages(user?.role) && (
             <>

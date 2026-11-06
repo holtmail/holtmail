@@ -14,6 +14,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/react-virtual'
 import {
   CircleAlertIcon,
+  KeyRoundIcon,
   MailOpenIcon,
   PaperclipIcon,
   SearchXIcon,
@@ -498,6 +499,12 @@ function Row({
               className="size-3 shrink-0 self-center text-fg-subtle"
             />
           )
+        )}
+        {message.insight_kinds.includes('code') && (
+          <KeyRoundIcon
+            aria-label={strings.list.hasCode}
+            className="size-3 shrink-0 self-center text-fg-subtle"
+          />
         )}
         {flagged && (
           <StarIcon

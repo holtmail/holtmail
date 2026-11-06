@@ -23,7 +23,13 @@ import { isMac, type KeyAction, keymap } from '../lib/keymap.ts'
 import { displayStroke } from '../lib/shortcuts.ts'
 import { strings } from '../strings.ts'
 import { CommandPalette } from './command-palette.tsx'
-import { ids, type ListController, MailContext, type MailContextValue } from './context.ts'
+import {
+  ids,
+  type InsightController,
+  type ListController,
+  MailContext,
+  type MailContextValue,
+} from './context.ts'
 import { Reader, ReaderEmpty } from './reader.tsx'
 import { ShortcutsDialog } from './shortcuts-dialog.tsx'
 import { Sidebar } from './sidebar.tsx'
@@ -51,6 +57,7 @@ export function MailLayout() {
   const folders = useQuery(foldersQuery(archiveId))
   useLiveArchive(archiveId)
   const list = useRef<ListController | null>(null)
+  const insights = useRef<InsightController | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -71,7 +78,7 @@ export function MailLayout() {
   }, [])
 
   const context = useMemo<MailContextValue>(
-    () => ({ archiveId, layout, selectedId, select, focusReader, list }),
+    () => ({ archiveId, layout, selectedId, select, focusReader, list, insights }),
     [archiveId, layout, selectedId, select, focusReader],
   )
 
@@ -129,6 +136,12 @@ export function MailLayout() {
         break
       case 'help':
         setShortcutsOpen(true)
+        break
+      case 'copyCode':
+        if (!isCalendar && !isPeople) insights.current?.copyCode()
+        break
+      case 'unsubscribe':
+        if (!isCalendar && !isPeople) insights.current?.unsubscribe()
         break
     }
   })

@@ -8,6 +8,11 @@ export interface ListController {
   focus: () => void
 }
 
+export interface InsightController {
+  copyCode: () => boolean
+  unsubscribe: () => boolean
+}
+
 export interface MailContextValue {
   archiveId: string
   layout: Layout
@@ -15,6 +20,7 @@ export interface MailContextValue {
   select: (id: string | undefined, options?: { replace?: boolean }) => void
   focusReader: () => void
   list: RefObject<ListController | null>
+  insights: RefObject<InsightController | null>
 }
 
 export const MailContext = createContext<MailContextValue | null>(null)

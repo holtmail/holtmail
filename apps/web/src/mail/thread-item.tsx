@@ -12,6 +12,7 @@ import { addressPeople, personFor } from '../lib/people.ts'
 import { previewOf } from '../lib/text.ts'
 import { strings } from '../strings.ts'
 import { Attachments } from './attachments.tsx'
+import { InsightsCard } from './insights-card.tsx'
 import { Invitations } from './invitation-card.tsx'
 import { MessageBody } from './message-body.tsx'
 
@@ -166,7 +167,11 @@ export function ThreadItem({
   )
 
   return (
-    <article className="border-b border-border last:border-b-0" aria-label={name}>
+    <article
+      data-message-id={message.id}
+      className="border-b border-border last:border-b-0"
+      aria-label={name}
+    >
       {collapsible ? (
         <button
           type="button"
@@ -219,6 +224,7 @@ export function ThreadItem({
                 {message.reply_to.some((r) => !message.from.some((f) => f.email === r.email)) &&
                   line(strings.reader.replyTo, message.reply_to)}
               </dl>
+              <InsightsCard message={message} />
               <Invitations invitations={message.invitations} />
               <MessageBody message={message} />
               <Attachments attachments={attachments} />

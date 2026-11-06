@@ -2,10 +2,10 @@ import type { Invitation } from '@holtmail/api-client'
 import { Badge, cn } from '@holtmail/ui'
 import { Link } from '@tanstack/react-router'
 import { ArrowRightIcon, CalendarIcon, RepeatIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
 
 import { formatWhen, participantLabel, viewerZone } from '../lib/events.ts'
 import { strings } from '../strings.ts'
+import { Row } from './row.tsx'
 
 export function Invitations({ invitations }: { invitations: Invitation[] }) {
   if (invitations.length === 0) return null
@@ -118,14 +118,5 @@ function InvitationCard({ invitation }: { invitation: Invitation }) {
         </span>
       </footer>
     </section>
-  )
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="w-24 shrink-0 text-fg-subtle">{label}</dt>
-      <dd className="min-w-0 text-fg-muted wrap-break-word">{children}</dd>
-    </div>
   )
 }

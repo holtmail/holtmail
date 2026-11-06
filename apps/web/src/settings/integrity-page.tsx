@@ -1,9 +1,8 @@
 import { ledgerQuery, verifyLedger } from '@holtmail/api-client'
-import { Badge, Button, Skeleton } from '@holtmail/ui'
+import { Badge, Button, CopyButton, Skeleton } from '@holtmail/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { CheckIcon, CopyIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { Field, FormError } from '../auth/field.tsx'
 import { authErrorMessage } from '../lib/auth.ts'
@@ -12,27 +11,6 @@ import { strings } from '../strings.ts'
 import { SettingsPage } from './settings-layout.tsx'
 
 const t = strings.settings
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return undefined
-    const timer = window.setTimeout(() => setCopied(false), 1500)
-    return () => window.clearTimeout(timer)
-  }, [copied])
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => setCopied(true))
-      }}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? t.copied : t.copy}
-    </Button>
-  )
-}
 
 export function IntegrityPage() {
   const queryClient = useQueryClient()
@@ -62,7 +40,7 @@ export function IntegrityPage() {
             <p className="font-mono text-xs break-all text-fg">{written}</p>
             <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
               <span>{formatFullDate(head.at)}</span>
-              <CopyButton text={written} />
+              <CopyButton text={written} label={t.copy} copiedLabel={t.copied} />
             </div>
           </div>
         ) : (

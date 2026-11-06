@@ -1,4 +1,8 @@
 export { cn } from './lib/cn.ts'
+export { browserCopyEnv, copyText, manualCopyHint } from './lib/copy.ts'
+export type { CopyEnv, CopyResult } from './lib/copy.ts'
+export { COPIED_MS, useCopy } from './lib/use-copy.ts'
+export type { UseCopy } from './lib/use-copy.ts'
 export { MotionProvider } from './lib/motion.tsx'
 export { useControllableState } from './lib/use-controllable-state.ts'
 export type { ControllableStateOptions } from './lib/use-controllable-state.ts'
@@ -6,6 +10,8 @@ export { Badge, badgeVariants } from './components/badge.tsx'
 export type { BadgeProps } from './components/badge.tsx'
 export { Button, buttonVariants } from './components/button.tsx'
 export type { ButtonProps } from './components/button.tsx'
+export { CopyButton } from './components/copy-button.tsx'
+export type { CopyButtonProps } from './components/copy-button.tsx'
 export {
   Command,
   CommandDialog,

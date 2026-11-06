@@ -12,6 +12,8 @@ export const keymap = {
   calendar: ['g e'],
   palette: ['mod+k'],
   help: ['?'],
+  copyCode: ['c'],
+  unsubscribe: ['shift+u'],
 } as const satisfies Record<string, readonly string[]>
 
 export type KeyAction = keyof typeof keymap
@@ -32,6 +34,8 @@ export const shortcutList: {
   { action: 'calendarToday', keys: ['t'] },
   { action: 'calendarViews', keys: ['a', 'w', 'm'] },
   { action: 'calendarPeriods', keys: ['left', 'right'] },
+  { action: 'copyCode', keys: ['c'] },
+  { action: 'unsubscribe', keys: ['shift+u'] },
   { action: 'palette', keys: ['mod+k'] },
   { action: 'help', keys: ['?'] },
 ]

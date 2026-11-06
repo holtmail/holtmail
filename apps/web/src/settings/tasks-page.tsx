@@ -9,6 +9,7 @@ import {
   ImageIcon,
   type LucideIcon,
   RefreshCwIcon,
+  ScanSearchIcon,
   ShieldCheckIcon,
   SquareIcon,
   Trash2Icon,
@@ -32,6 +33,7 @@ const icons: Record<string, LucideIcon | undefined> = {
   contacts_calendars: ContactRoundIcon,
   ledger_verify: ShieldCheckIcon,
   delete_messages: Trash2Icon,
+  analyse: ScanSearchIcon,
 }
 
 const stateBadge: Record<string, BadgeProps['variant'] | undefined> = {

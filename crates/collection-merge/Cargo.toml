@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-collection-merge"
+description = "Two collection sources as one: contacts from one, calendars from the other"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-collection.workspace = true
+async-trait.workspace = true
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-collection = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

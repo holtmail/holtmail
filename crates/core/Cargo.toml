@@ -1,15 +1,22 @@
 [package]
 name = "holtmail-core"
-description = "Ids, timestamps and addresses shared by Holtmail modules"
+description = "Ids, timestamps, addresses and TLS roots shared by Holtmail modules"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
+[features]
+testing = ["dep:rcgen", "dep:tokio", "dep:tokio-rustls"]
+
 [dependencies]
+rcgen = { workspace = true, optional = true }
+rustls-pki-types.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["net", "rt"] }
+tokio-rustls = { workspace = true, optional = true }
 uuid.workspace = true
 
 [dev-dependencies]

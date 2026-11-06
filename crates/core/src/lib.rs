@@ -1,4 +1,4 @@
-//! Ids and timestamps shared by Holtmail modules.
+//! Ids, timestamps and TLS roots shared by Holtmail modules.
 
 use std::fmt;
 use std::str::FromStr;
@@ -6,6 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub mod tls;
+
+pub use tls::{InvalidRoots, TlsRoots};
 
 /// A string that is not a valid id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

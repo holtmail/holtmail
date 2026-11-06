@@ -17,6 +17,7 @@ holtmail-blob-fs = { path = "crates/blob-fs" }
 holtmail-blob-s3 = { path = "crates/blob-s3" }
 holtmail-calendar = { path = "crates/calendar" }
 holtmail-collection = { path = "crates/collection" }
+holtmail-collection-merge = { path = "crates/collection-merge" }
 holtmail-collection-dav = { path = "crates/collection-dav" }
 holtmail-collection-graph = { path = "crates/collection-graph" }
 holtmail-collection-jmap = { path = "crates/collection-jmap" }
@@ -52,9 +53,11 @@ holtmail-source-imap = { path = "crates/source-imap" }
 holtmail-source-jmap = { path = "crates/source-jmap" }
 holtmail-store = { path = "crates/store" }
 holtmail-store-sqlite = { path = "crates/store-sqlite" }
+holtmail-sse = { path = "crates/sse" }
 holtmail-sync = { path = "crates/sync" }
 holtmail-thumbnail = { path = "crates/thumbnail" }
 holtmail-webhook = { path = "crates/webhook" }
+holtmail-webpush = { path = "crates/webpush" }
 holtmail-webhook-http = { path = "crates/webhook-http" }
 
 ammonia = "4"
@@ -62,6 +65,7 @@ anyhow = "1"
 argon2 = "0.6"
 async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 async-trait = "0.1"
+aws-lc-rs = "1"
 axum = "0.8"
 base64 = "0.22"
 blake3 = "1"

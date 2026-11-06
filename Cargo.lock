@@ -318,6 +318,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "048006790404103c488e6c5616b3e7e702a71292aadda08e8f7698a9e0d2eb53"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -1768,6 +1769,7 @@ dependencies = [
  "bytes",
  "holtmail-collection",
  "holtmail-core",
+ "holtmail-webpush",
  "quick-xml",
  "reqwest",
  "tokio",
@@ -1799,14 +1801,26 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "futures",
  "holtmail-collection",
  "holtmail-core",
+ "holtmail-sse",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "holtmail-collection-merge"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "holtmail-collection",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2191,6 +2205,7 @@ dependencies = [
  "holtmail-collection-dav",
  "holtmail-collection-graph",
  "holtmail-collection-jmap",
+ "holtmail-collection-merge",
  "holtmail-core",
  "holtmail-export",
  "holtmail-extract",
@@ -2223,6 +2238,7 @@ dependencies = [
  "holtmail-sync",
  "holtmail-webhook",
  "holtmail-webhook-http",
+ "holtmail-webpush",
  "serde",
  "serde_json",
  "tar",
@@ -2261,6 +2277,7 @@ dependencies = [
  "holtmail-core",
  "holtmail-store",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -2298,6 +2315,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
+ "tracing",
  "webpki-roots",
 ]
 
@@ -2312,6 +2330,7 @@ dependencies = [
  "futures",
  "holtmail-core",
  "holtmail-source",
+ "holtmail-sse",
  "holtmail-store",
  "reqwest",
  "serde",
@@ -2320,6 +2339,10 @@ dependencies = [
  "tracing",
  "url",
 ]
+
+[[package]]
+name = "holtmail-sse"
+version = "0.0.0"
 
 [[package]]
 name = "holtmail-store"
@@ -2399,6 +2422,15 @@ dependencies = [
  "reqwest",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "holtmail-webpush"
+version = "0.0.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3923,7 +3955,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.17",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -4038,7 +4070,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -5312,6 +5344,12 @@ dependencies = [
  "crypto-common 0.2.2",
  "ctutils",
 ]
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"

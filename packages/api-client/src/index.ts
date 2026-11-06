@@ -107,6 +107,19 @@ export type ChangedInstance = Schemas['ChangedInstanceDto']
 export type ItemHit = Schemas['ItemHitDto']
 export type ItemSearchResponse = Schemas['ItemSearchResponse']
 export type PersonOverride = Schemas['PersonOverrideDto']
+export type AliasProvider = Schemas['AliasProviderDto']
+export type AliasCapabilities = Schemas['CapabilitiesDto']
+export type AliasService = Schemas['AliasServiceDto']
+export type Alias = Schemas['AliasDto']
+export type AliasAccount = Schemas['AliasAccountDto']
+export type AliasList = Schemas['AliasListDto']
+export type MessageAlias = Schemas['MessageAliasDto']
+export type AliasOptions = Schemas['AliasOptionsDto']
+export type NewAliasServiceRequest = Schemas['NewAliasServiceRequest']
+export type AliasServiceUpdateRequest = Schemas['AliasServiceUpdateRequest']
+export type ManualAliasRequest = Schemas['ManualAliasRequest']
+export type CreateAliasRequest = Schemas['CreateAliasRequest']
+export type AliasUpdateRequest = Schemas['AliasUpdateRequest']
 
 /** What a calendar request shows: a span in Unix milliseconds, the calendars to show (all when
  * absent, none when empty) and whether removed events are shown. */
@@ -337,6 +350,61 @@ export const rotateWebhookSecret = async (id: string) =>
 
 export const testWebhook = async (id: string) =>
   done(await client.POST('/api/webhooks/{id}/test', { ...archivePath(id), headers: json }))
+
+const aliasPath = (id: string, address: string) => ({ params: { path: { id, address } } })
+
+export const addAliasService = async (archiveId: string, request: NewAliasServiceRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/alias-services', {
+      ...archivePath(archiveId),
+      body: request,
+    }),
+  )
+
+export const updateAliasService = async (id: string, request: AliasServiceUpdateRequest) =>
+  unwrap(await client.PATCH('/api/alias-services/{id}', { ...archivePath(id), body: request }))
+
+export const removeAliasService = async (id: string, keepAliases: boolean) =>
+  done(
+    await client.DELETE('/api/alias-services/{id}', {
+      params: { path: { id }, query: { keep_aliases: keepAliases } },
+    }),
+  )
+
+export const syncAliasService = async (id: string) =>
+  unwrap(await client.POST('/api/alias-services/{id}/sync', { ...archivePath(id), headers: json }))
+
+export const createAlias = async (serviceId: string, request: CreateAliasRequest) =>
+  unwrap(
+    await client.POST('/api/alias-services/{id}/aliases', {
+      ...archivePath(serviceId),
+      body: request,
+    }),
+  )
+
+export const addManualAlias = async (archiveId: string, request: ManualAliasRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/aliases', { ...archivePath(archiveId), body: request }),
+  )
+
+export const updateAlias = async (
+  archiveId: string,
+  address: string,
+  request: AliasUpdateRequest,
+) =>
+  unwrap(
+    await client.PATCH('/api/archives/{id}/aliases/{address}', {
+      ...aliasPath(archiveId, address),
+      body: request,
+    }),
+  )
+
+export const removeAlias = async (archiveId: string, address: string, atService: boolean) =>
+  done(
+    await client.DELETE('/api/archives/{id}/aliases/{address}', {
+      params: { path: { id: archiveId, address }, query: { at_service: atService } },
+    }),
+  )
 
 export const createUser = async (request: NewUserRequest) =>
   unwrap(await client.POST('/api/users', { body: request }))
@@ -587,6 +655,29 @@ export const webhookDeliveriesQuery = (id: string) =>
     queryKey: ['webhooks', id, 'deliveries'],
     queryFn: async ({ signal }) =>
       unwrap(await client.GET('/api/webhooks/{id}/deliveries', { ...archivePath(id), signal })),
+  })
+
+export const aliasProvidersQuery = queryOptions({
+  queryKey: ['alias-providers'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/alias-providers', { signal })),
+  staleTime: Infinity,
+})
+
+export const aliasesQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'aliases'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/archives/{id}/aliases', { ...archivePath(archiveId), signal })),
+  })
+
+export const aliasOptionsQuery = (serviceId: string) =>
+  queryOptions({
+    queryKey: ['alias-services', serviceId, 'options'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/alias-services/{id}/options', { ...archivePath(serviceId), signal }),
+      ),
+    staleTime: 60_000,
   })
 
 export const smtpQuery = queryOptions({

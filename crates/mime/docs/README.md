@@ -16,6 +16,7 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError>;
 | `subject` | Decoded, including RFC 2047 encoded words in any charset |
 | `sent_at` | `Date` as Unix seconds in UTC; `None` when missing or broken |
 | `from`, `to`, `cc`, `bcc`, `reply_to` | `Address { name, email }` from `holtmail-core`, groups flattened, entries without an address dropped |
+| `headers` | Every header field of the message itself as `HeaderField { name, value }`, in message order, repeated fields repeated: the name as written, the value unfolded to one line with encoded words decoded. Alias detection reads forwarding headers from it |
 | `text` | Plain body; derived from HTML when the message has no text part |
 | `html` | HTML body as sent, **unsanitized**: never show it without `holtmail-sanitize` |
 | `preview` | First `PREVIEW_CHARS` (200) characters of the body as one line |

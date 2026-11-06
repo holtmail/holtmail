@@ -1,0 +1,11 @@
+Received: from relay.example.net by mx.example.org; Mon, 3 Mar 2025 18:00:01 +0000
+X-Forwarded-For: Ada Lovelace
+ <ada@example.com>
+X-Note: =?utf-8?B?0J/RgNC40LLQtdGC?=
+X-Note: second
+From: Ada Lovelace <ada@example.com>
+To: maria@example.org
+Subject: Headers
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+
+Body.

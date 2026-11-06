@@ -12,6 +12,15 @@ name = "holtmail"
 path = "src/main.rs"
 
 [dependencies]
+holtmail-alias.workspace = true
+holtmail-alias-addy.workspace = true
+holtmail-alias-apple.workspace = true
+holtmail-alias-duck.workspace = true
+holtmail-alias-fastmail.workspace = true
+holtmail-alias-relay.workspace = true
+holtmail-alias-rules.workspace = true
+holtmail-alias-simplelogin.workspace = true
+holtmail-aliases.workspace = true
 holtmail-api.workspace = true
 holtmail-auth.workspace = true
 holtmail-blob.workspace = true
@@ -56,6 +65,7 @@ holtmail-sync.workspace = true
 holtmail-webhook.workspace = true
 holtmail-webhook-http.workspace = true
 anyhow.workspace = true
+blake3.workspace = true
 chrono.workspace = true
 base64.workspace = true
 bytes.workspace = true

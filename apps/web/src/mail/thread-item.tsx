@@ -1,11 +1,12 @@
-import type { Address, MessageDetail } from '@holtmail/api-client'
+import type { Address, MessageAlias, MessageDetail } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
-import { cn } from '@holtmail/ui'
+import { Badge, cn } from '@holtmail/ui'
 import { Link } from '@tanstack/react-router'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { Fragment, useId, useMemo } from 'react'
 
 import { formatAddress, senderLabel } from '../lib/address.ts'
+import { aliasSearch, aliasTrust, shownFrom } from '../lib/aliases.ts'
 import { formatFullDate, formatListDate } from '../lib/format.ts'
 import { addressPeople, personFor } from '../lib/people.ts'
 import { previewOf } from '../lib/text.ts'
@@ -57,6 +58,54 @@ function AddressLine({
   )
 }
 
+const providerNames: Record<string, string> = {
+  simplelogin: 'SimpleLogin',
+  addy: 'addy.io',
+  relay: 'Firefox Relay',
+  fastmail: 'Fastmail',
+  duck: 'DuckDuckGo',
+  apple: 'Apple',
+}
+
+function AliasLine({ alias, archiveId }: { alias: MessageAlias; archiveId: string }) {
+  const t = strings.reader
+  const trust = aliasTrust(alias)
+  return (
+    <div className="flex gap-2 text-sm">
+      <dt className="w-16 shrink-0 text-fg-subtle">{t.alias}</dt>
+      <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-fg-muted">
+        <Link
+          to="/a/$archiveId/search"
+          params={{ archiveId }}
+          search={{ q: aliasSearch(alias.alias) }}
+          title={t.aliasMail}
+          className="font-mono text-xs break-all underline decoration-border-strong underline-offset-2 hover:text-fg hover:decoration-fg-subtle focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+        >
+          {alias.alias}
+        </Link>
+        <span className="text-xs text-fg-subtle">
+          {t.via(providerNames[alias.provider] ?? alias.provider)}
+        </span>
+        {trust === 'claimed' ? (
+          <Badge variant="warning" title={t.aliasClaimedHint}>
+            {t.aliasClaimed}
+          </Badge>
+        ) : (
+          <span className="text-xs text-fg-subtle">
+            {trust === 'signed' ? t.aliasSigned : t.aliasKnown}
+          </span>
+        )}
+        {alias.note && <span className="text-xs text-fg-subtle">· {alias.note}</span>}
+        {alias.reverse_alias && (
+          <span className="w-full text-xs text-fg-subtle">
+            {t.reverseAlias} <span className="font-mono break-all">{alias.reverse_alias}</span>
+          </span>
+        )}
+      </dd>
+    </div>
+  )
+}
+
 export function ThreadItem({
   message,
   expanded,
@@ -73,8 +122,9 @@ export function ThreadItem({
   const bodyId = useId()
   const reduceMotion = useReducedMotion()
   const instant = { duration: 0 }
-  const sender = message.from[0]
-  const name = senderLabel(message.from, strings.list.noSender)
+  const from = shownFrom(message)
+  const sender = from[0]
+  const name = senderLabel(from, strings.list.noSender)
   const attachments = message.attachments.filter((item) => !item.inline || !message.has_html)
   const people = useMemo(() => addressPeople(message.people), [message.people])
   const senderPerson = sender ? personFor(people, sender.email) : undefined
@@ -159,7 +209,10 @@ export function ThreadItem({
           >
             <div className="grid gap-6 px-6 pb-8">
               <dl className="grid gap-0.5">
-                {senderPerson && line(strings.reader.from, message.from)}
+                {(senderPerson || message.alias?.sender) && line(strings.reader.from, [...from])}
+                {message.alias && (
+                  <AliasLine alias={message.alias} archiveId={message.archive_id} />
+                )}
                 {line(strings.reader.to, message.to)}
                 {line(strings.reader.cc, message.cc)}
                 {line(strings.reader.bcc, message.bcc)}

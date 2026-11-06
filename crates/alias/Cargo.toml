@@ -1,0 +1,23 @@
+[package]
+name = "holtmail-alias"
+description = "Contract for email alias services: recognising forwarded mail and managing aliases"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = ["dep:tokio"]
+
+[dependencies]
+holtmail-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+
+[lints]
+workspace = true

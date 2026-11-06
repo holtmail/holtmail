@@ -678,6 +678,8 @@ pub struct MessageDetail {
     /// The people of its `From`, `To`, `Cc`, `Bcc` and `Reply-To` addresses, for those that
     /// belong to one, each address once.
     pub people: Vec<crate::persons::AddressPersonDto>,
+    /// The alias it was forwarded or addressed to, with the sender the service hid.
+    pub alias: Option<crate::aliases::MessageAliasDto>,
 }
 
 /// A conversation, oldest message first.

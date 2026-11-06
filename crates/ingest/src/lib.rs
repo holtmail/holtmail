@@ -10,12 +10,15 @@ mod pim;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use holtmail_alias::{AliasDetector, Header, Mail};
 use holtmail_blob::{BlobError, BlobId, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
 use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
 use holtmail_mime::{MimeError, ParsedMessage};
-use holtmail_store::{Attachment, Derived, DerivedKind, NewMessage, Store, StoreError};
+use holtmail_store::{
+    Attachment, Derived, DerivedKind, MessageAlias, NewMessage, Store, StoreError,
+};
 
 pub use pim::{IncomingItem, MAIL_COLLECTION, item_document, pim_index};
 
@@ -79,6 +82,7 @@ pub struct Ingest {
     store: Arc<dyn Store>,
     index: Arc<dyn SearchIndex>,
     extractor: Option<Arc<dyn Extractor>>,
+    detectors: Vec<Arc<dyn AliasDetector>>,
 }
 
 impl Ingest {
@@ -93,7 +97,69 @@ impl Ingest {
             store,
             index,
             extractor: None,
+            detectors: Vec::new(),
         }
+    }
+
+    /// The same pipeline, also recording which alias each new message was forwarded to, by the
+    /// first of `detectors` that recognises it. The sender a service hid is indexed as `From` too,
+    /// so `from:` finds the message by either address.
+    pub fn with_alias_detectors(mut self, detectors: Vec<Arc<dyn AliasDetector>>) -> Self {
+        self.detectors = detectors;
+        self
+    }
+
+    /// What the detectors find in `parsed`: the first hit, in the detectors' order.
+    pub fn detect_alias(&self, parsed: &ParsedMessage) -> Option<MessageAlias> {
+        if self.detectors.is_empty() {
+            return None;
+        }
+        let mail = Mail {
+            headers: parsed
+                .headers
+                .iter()
+                .map(|h| Header::new(h.name.clone(), h.value.clone()))
+                .collect(),
+            from: parsed.from.clone(),
+            to: parsed.to.clone(),
+            cc: parsed.cc.clone(),
+            reply_to: parsed.reply_to.clone(),
+        };
+        self.detectors
+            .iter()
+            .find_map(|d| d.detect(&mail))
+            .map(|hit| MessageAlias {
+                provider: hit.provider,
+                alias: hit.alias,
+                sender: hit.sender,
+                reverse_alias: hit.reverse_alias,
+                signed: hit.signed,
+            })
+    }
+
+    /// Detects the alias of a stored message again and records it. When the answer changed, the
+    /// message is reindexed (searchable after [`Ingest::commit`]). Returns whether it changed.
+    pub async fn refresh_alias(&self, message: MessageId) -> Result<bool, IngestError> {
+        let stored = self
+            .store
+            .get_message(message)
+            .await?
+            .ok_or(StoreError::NotFound("message"))?;
+        let raw = self
+            .blobs
+            .get(&stored.blob_id)
+            .await?
+            .ok_or(StoreError::NotFound("message bytes"))?;
+        let parsed = holtmail_mime::parse(&raw)?;
+        let found = self.detect_alias(&parsed);
+        if self.store.message_alias(message).await? == found {
+            return Ok(false);
+        }
+        self.store
+            .set_message_alias(message, found.as_ref())
+            .await?;
+        self.index_parsed(message, &parsed, found.as_ref()).await?;
+        Ok(true)
     }
 
     /// The same pipeline, also indexing text from attachments that are not inline.
@@ -168,7 +234,11 @@ impl Ingest {
             }
         };
 
+        let alias = self.detect_alias(&parsed);
         if inserted.created {
+            self.store
+                .set_message_alias(inserted.message_id, alias.as_ref())
+                .await?;
             self.invitations(
                 archive,
                 inserted.message_id,
@@ -191,7 +261,13 @@ impl Ingest {
         if let Some(labels) = &placement.labels {
             self.store.set_labels(inserted.message_id, labels).await?;
         }
-        self.index_parsed(inserted.message_id, &parsed).await?;
+        let alias = if inserted.created {
+            alias
+        } else {
+            self.store.message_alias(inserted.message_id).await?
+        };
+        self.index_parsed(inserted.message_id, &parsed, alias.as_ref())
+            .await?;
         Ok(inserted)
     }
 
@@ -209,7 +285,8 @@ impl Ingest {
             .await?
             .ok_or(StoreError::NotFound("message bytes"))?;
         let parsed = holtmail_mime::parse(&raw)?;
-        self.index_parsed(message, &parsed).await
+        let alias = self.store.message_alias(message).await?;
+        self.index_parsed(message, &parsed, alias.as_ref()).await
     }
 
     /// Reads the text of the attachments of `message` that `which` picks again, ignoring what
@@ -270,6 +347,7 @@ impl Ingest {
         &self,
         message: MessageId,
         parsed: &ParsedMessage,
+        alias: Option<&MessageAlias>,
     ) -> Result<(), IngestError> {
         let stored = self
             .store
@@ -301,7 +379,12 @@ impl Ingest {
             archive_id: stored.archive_id,
             thread_id: stored.thread_id,
             subject: parsed.subject.clone().unwrap_or_default(),
-            from: parsed.from.clone(),
+            from: parsed
+                .from
+                .iter()
+                .chain(alias.and_then(|a| a.sender.as_ref()))
+                .cloned()
+                .collect(),
             recipients: [&parsed.to, &parsed.cc, &parsed.bcc]
                 .into_iter()
                 .flatten()
@@ -527,6 +610,64 @@ mod tests {
             .await
             .unwrap()
             .hits
+    }
+
+    const FORWARDED: &[u8] = b"X-SimpleLogin-Type: Forward\r\nX-SimpleLogin-Envelope-To: shop@alias.example.org\r\nFrom: \"Grace Hopper - grace at example.com\" <ra_q1@sl.example.org>\r\nTo: shop@alias.example.org\r\nSubject: Parcel\r\nMessage-ID: <p1@example.com>\r\nDate: Fri, 14 Mar 2025 11:00:00 +0000\r\n\r\nOn its way.\r\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn records_aliases_and_finds_the_hidden_sender() {
+        let mut f = fixture().await;
+        let plain = f
+            .ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        let forwarded = f
+            .ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(FORWARDED),
+                &in_inbox(&f, 2, &[]),
+            )
+            .await
+            .unwrap();
+        f.ingest.commit().await.unwrap();
+        assert_eq!(
+            f.store.message_alias(forwarded.message_id).await.unwrap(),
+            None
+        );
+
+        f.ingest = f.ingest.clone().with_alias_detectors(vec![Arc::new(
+            holtmail_alias_simplelogin::SimpleLoginDetector::default(),
+        )]);
+        assert!(!f.ingest.refresh_alias(plain.message_id).await.unwrap());
+        assert!(f.ingest.refresh_alias(forwarded.message_id).await.unwrap());
+        assert!(!f.ingest.refresh_alias(forwarded.message_id).await.unwrap());
+        f.ingest.commit().await.unwrap();
+        let alias = f
+            .store
+            .message_alias(forwarded.message_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(alias.alias, "shop@alias.example.org");
+        assert_eq!(alias.sender.unwrap().email, "grace@example.com");
+        assert_eq!(
+            find(&f, vec![Clause::From("grace@example.com".into())]).await,
+            vec![forwarded.message_id]
+        );
+        assert_eq!(
+            find(&f, vec![Clause::From("ra_q1@sl.example.org".into())]).await,
+            vec![forwarded.message_id]
+        );
+
+        f.ingest.reindex(forwarded.message_id).await.unwrap();
+        f.ingest.commit().await.unwrap();
+        assert_eq!(
+            find(&f, vec![Clause::From("grace".into())]).await,
+            vec![forwarded.message_id],
+            "reindexing keeps the hidden sender"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

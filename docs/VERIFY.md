@@ -194,6 +194,20 @@ An in-process fake (Rust), a local Python fake (`scratchpad/e2e18/fakejmap.py`) 
 - [ ] The web app: Live, Reconnecting and Scheduled marks, the Watch for changes menu and its folder dialog, the contacts interval menu, the DAV password field
 - [ ] Many watched accounts on one server: connection counts, memory, the four-run queue under a burst of changes
 
+## Email aliases
+
+Detectors were written from the services' source code and documentation and tested on invented messages; directories against fakes of their APIs. SimpleLogin is also proved end to end against a self-hosted v4.82.4 by `tests/integration/tests/aliases.rs` (profile `aliases`).
+
+- [x] SimpleLogin, self-hosted: a forwarded message with `X-SimpleLogin-Original-From` and the default sender format, DKIM checked by OpenDKIM, a custom alias with a fresh signed suffix, mailboxes, name, note, switch, delete through the API (aliases.rs)
+- [ ] SimpleLogin hosted: the DKIM domain of forwards (`simplelogin.co`), the other sender formats and the account setting that drops `X-SimpleLogin-Original-From`, listing over several pages with a real account, a Proton Pass alias
+- [ ] addy.io: a forwarded message with "replies via Reply-To" on and off; the DKIM domain of forwards; `POST /api/v1/alias-recipients` with `alias_id` and `recipient_ids` (its body was not read in addy.io's source); a soft-deleted alias deleted again
+- [ ] Firefox Relay: a forwarded message from a random and a premium subdomain mask; the DKIM domain (sent through SES); `domainaddresses` for a free account
+- [ ] Fastmail: Masked Email with a real API token (session, `emailPrefix`, deleted masks)
+- [ ] DuckDuckGo: the `From` of a forwarded message (only the reply address form is documented)
+- [ ] Apple: `X-Icloud-Hme` on a Hide My Email forward (documented only by users), whether `From` is rewritten, and Sign in with Apple relay mail
+- [ ] People after a SimpleLogin archive: senders behind reverse aliases joined with their contacts, aliases not listed as people
+- [ ] Settings → Aliases: connect a service, list, create (random and custom), edit, switch, delete at the service, add by hand, filters; the reader's alias line with signed, known and not verified mail
+
 ## The web app, by eye
 
 None of these screens has been opened in a browser; they were checked with types, lint, tests and builds only.
@@ -207,6 +221,7 @@ None of these screens has been opened in a browser; they were checked with types
 
 ## Log
 
+- 2026-11-06: email aliases added (Phases 32–34); SimpleLogin proved against a self-hosted instance (TESTPLAN step 9).
 - 2026-11-05: list written from the "Not verified" notes of Phases 4–11, the JMAP and Graph sources and the review fixes.
 - 2026-11-05: CardDAV and CalDAV servers added (Phase 15).
 - 2026-11-05: People added (Phase 16).

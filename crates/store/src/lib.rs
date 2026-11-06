@@ -6,6 +6,7 @@
 //! [`holtmail_blob::BlobId`]. Everything in the store except accounts, archives, sync state and
 //! task history can be rebuilt from the blobs.
 
+mod aliases;
 mod calendar;
 mod deletion;
 mod ledger;
@@ -26,6 +27,7 @@ use holtmail_core::{
     PersonOverrideId, ThreadId, Timestamp, UserId,
 };
 
+pub use aliases::*;
 pub use calendar::*;
 pub use deletion::*;
 pub use ledger::*;
@@ -576,7 +578,9 @@ pub trait PimStore: Send + Sync {
 #[async_trait]
 pub trait PeopleStore: Send + Sync {
     /// Every address of the archive's mail with its counts, and the owner's addresses. Empty
-    /// for an archive without mail or an unknown one.
+    /// for an archive without mail or an unknown one. A reverse alias recorded with a sender
+    /// (see [`AliasStore::set_message_alias`]) counts as that sender, with the sender's name; the
+    /// archive's aliases (known or seen in mail) are among the owner's addresses.
     async fn mail_addresses(&self, archive: ArchiveId) -> Result<MailAddresses, StoreError>;
 
     /// Replaces every person of the archive with `people`, in one step: readers see the old
@@ -605,7 +609,7 @@ pub trait PeopleStore: Send + Sync {
     ) -> Result<Vec<(String, PersonId)>, StoreError>;
 
     /// The archive's mail with any of `emails` (compared without regard to letter case) in
-    /// `From`, `To`, `Cc` or `Bcc`: counts, years, at most `threads` conversations and at most
+    /// `From`, `To`, `Cc` or `Bcc`, or a reverse alias recorded for one of them: counts, years, at most `threads` conversations and at most
     /// `attachments` attachments. Empty for no addresses.
     async fn correspondence(
         &self,
@@ -713,6 +717,7 @@ pub trait Store:
     + LedgerStore
     + DeletionStore
     + WebhookStore
+    + AliasStore
 {
 }
 
@@ -733,5 +738,6 @@ impl<T> Store for T where
         + LedgerStore
         + DeletionStore
         + WebhookStore
+        + AliasStore
 {
 }

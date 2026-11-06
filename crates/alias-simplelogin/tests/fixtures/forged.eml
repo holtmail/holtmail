@@ -1,0 +1,10 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=example.com header.s=one
+X-SimpleLogin-Type: Forward
+X-SimpleLogin-Envelope-To: shop.one@alias.example.org
+X-SimpleLogin-Original-From: Bank <security@example.com>
+From: "Bank - security at example.com" <anyone@example.com>
+To: shop.one@alias.example.org
+Subject: Verify your account
+Date: Mon, 3 Mar 2025 20:00:00 +0000
+
+Click here.

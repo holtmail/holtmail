@@ -129,7 +129,7 @@ impl PeopleStore for SqliteStore {
         .filter_map(|a| address_key(&a))
         .collect();
         let sent: Vec<String> = sqlx::query_scalar(
-            "SELECT DISTINCT a.email FROM message_addresses a
+            "SELECT DISTINCT a.email FROM resolved_addresses a
              WHERE a.archive_id = ?1 AND a.field = 'from' AND a.message_id IN (
                  SELECT l.message_id FROM locations l
                  JOIN folders f ON f.id = l.folder_id
@@ -145,12 +145,21 @@ impl PeopleStore for SqliteStore {
         .await
         .map_err(backend)?;
         own.extend(sent);
+        let aliases: Vec<String> = sqlx::query_scalar(
+            "SELECT address FROM aliases WHERE archive_id = ?1
+             UNION SELECT alias FROM message_aliases WHERE archive_id = ?1",
+        )
+        .bind(&archive)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?;
+        own.extend(aliases.iter().filter_map(|a| address_key(a)));
         own.sort();
         own.dedup();
 
         let mut names: HashMap<String, (String, i64)> = HashMap::new();
         for row in sqlx::query(
-            "SELECT email, name, COUNT(*) AS uses FROM message_addresses
+            "SELECT email, name, COUNT(*) AS uses FROM resolved_addresses
              WHERE archive_id = ? AND name IS NOT NULL GROUP BY email, name",
         )
         .bind(&archive)
@@ -171,7 +180,7 @@ impl PeopleStore for SqliteStore {
 
         let rows = sqlx::query(
             "WITH sent AS (
-                 SELECT DISTINCT message_id FROM message_addresses
+                 SELECT DISTINCT message_id FROM resolved_addresses
                  WHERE archive_id = ?1 AND field = 'from'
                  AND email IN (SELECT value FROM json_each(?2)))
              SELECT a.email,
@@ -180,7 +189,7 @@ impl PeopleStore for SqliteStore {
                  COUNT(DISTINCT CASE WHEN a.field != 'from' AND s.message_id IS NOT NULL
                      THEN a.message_id END) AS from_me,
                  MIN(a.date) AS first_at, MAX(a.date) AS last_at
-             FROM message_addresses a LEFT JOIN sent s ON s.message_id = a.message_id
+             FROM resolved_addresses a LEFT JOIN sent s ON s.message_id = a.message_id
              WHERE a.archive_id = ?1 GROUP BY a.email ORDER BY a.email",
         )
         .bind(&archive)
@@ -476,7 +485,10 @@ impl PeopleStore for SqliteStore {
                      MAX(field = 'from') AS from_them,
                      MAX(field != 'from') AS to_them
                  FROM message_addresses
-                 WHERE archive_id = ?1 AND email IN (SELECT value FROM json_each(?2))
+                 WHERE archive_id = ?1 AND (email IN (SELECT value FROM json_each(?2))
+                     OR email IN (SELECT reverse_alias FROM message_aliases
+                         WHERE archive_id = ?1 AND reverse_alias IS NOT NULL
+                         AND sender_email IN (SELECT value FROM json_each(?2))))
                  GROUP BY message_id)";
         let totals = sqlx::query(AssertSqlSafe(format!(
             "{hits} SELECT COUNT(*) AS messages, COALESCE(SUM(h.from_them), 0) AS from_them,

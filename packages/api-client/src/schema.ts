@@ -36,6 +36,86 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/alias-providers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['alias_providers']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alias-services/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['remove_alias_service']
+    options?: never
+    head?: never
+    patch: operations['update_alias_service']
+    trace?: never
+  }
+  '/api/alias-services/{id}/aliases': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['create_alias']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alias-services/{id}/options': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['alias_options']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/alias-services/{id}/sync': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['sync_alias_service']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives': {
     parameters: {
       query?: never
@@ -98,6 +178,54 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/alias-services': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['add_alias_service']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/aliases': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_aliases']
+    put?: never
+    post: operations['add_manual_alias']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/aliases/{address}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['remove_alias']
+    options?: never
+    head?: never
+    patch: operations['update_alias']
     trace?: never
   }
   '/api/archives/{id}/calendar': {
@@ -1148,6 +1276,133 @@ export interface components {
       email: string
       person_id: string
     }
+    /** @description An account receiving an alias's mail. */
+    AliasAccountDto: {
+      account_id: string
+      address?: string | null
+      /** Format: int64 */
+      messages: number
+      name: string
+    }
+    /** @description A domain or suffix for new aliases. */
+    AliasDomainDto: {
+      id: string
+      label: string
+    }
+    /** @description One alias of an archive. */
+    AliasDto: {
+      /** @description Accounts its mail was archived from, most first. */
+      accounts: components['schemas']['AliasAccountDto'][]
+      address: string
+      /** Format: int64 */
+      blocked?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds of when the service made it.
+       */
+      created_at?: number | null
+      /** @description Forwarding is on, when known. */
+      enabled?: boolean | null
+      /** Format: int64 */
+      first_at?: number | null
+      for_domain?: string | null
+      /**
+       * Format: int64
+       * @description Counts from the service.
+       */
+      forwarded?: number | null
+      /** Format: int64 */
+      last_at?: number | null
+      /** @description Addresses the service forwards it to. */
+      mailboxes: string[]
+      /**
+       * Format: int64
+       * @description Archived messages forwarded or addressed to it.
+       */
+      messages: number
+      name?: string | null
+      note?: string | null
+      provider: string
+      /** Format: int64 */
+      replied?: number | null
+      /** Format: int64 */
+      senders: number
+      service_id?: string | null
+      /**
+       * Format: int64
+       * @description Forwarded messages with the provider's passing signature.
+       */
+      signed: number
+      /**
+       * @description `service`: listed by a connected service; `manual`: added by hand; `mail`: only seen in
+       *     mail.
+       */
+      source: string
+    }
+    /** @description The aliases and alias services of an archive. */
+    AliasListDto: {
+      aliases: components['schemas']['AliasDto'][]
+      services: components['schemas']['AliasServiceDto'][]
+    }
+    /** @description A mailbox an alias can forward to. */
+    AliasMailboxDto: {
+      email: string
+      id: string
+    }
+    /** @description Choices for a new alias at a service. */
+    AliasOptionsDto: {
+      can_create: boolean
+      capabilities: components['schemas']['CapabilitiesDto']
+      domains: components['schemas']['AliasDomainDto'][]
+      mailboxes: components['schemas']['AliasMailboxDto'][]
+      prefix_hint?: string | null
+    }
+    /** @description An alias service the server knows. */
+    AliasProviderDto: {
+      capabilities?: components['schemas']['CapabilitiesDto'] | null
+      default_url?: string | null
+      /** @description Mail it forwarded is recognised. */
+      detects: boolean
+      id: string
+      key_help: string
+      key_label: string
+      name: string
+    }
+    /** @description An account at an alias service. */
+    AliasServiceDto: {
+      archive_id: string
+      base_url: string
+      capabilities?: components['schemas']['CapabilitiesDto'] | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      id: string
+      name: string
+      provider: string
+      /** @description Why the last listing failed. */
+      sync_error?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the last listing.
+       */
+      synced_at?: number | null
+    }
+    /** @description Changes a service; missing fields stay. */
+    AliasServiceUpdateRequest: {
+      base_url?: string | null
+      key?: string | null
+      name?: string | null
+    }
+    /** @description Changes an alias; missing fields stay, an empty string clears. */
+    AliasUpdateRequest: {
+      enabled?: boolean | null
+      for_domain?: string | null
+      mailbox_ids?: string[] | null
+      name?: string | null
+      note?: string | null
+    }
     /** @description An archive with its totals. */
     ArchiveDto: {
       /**
@@ -1266,6 +1521,17 @@ export interface components {
        * @description When it was removed from its source, Unix milliseconds.
        */
       removed_at?: number | null
+    }
+    /** @description What an alias service API can do. */
+    CapabilitiesDto: {
+      create_custom: boolean
+      create_random: boolean
+      delete: boolean
+      for_domain: boolean
+      mailboxes: boolean
+      name: boolean
+      note: boolean
+      switch: boolean
     }
     /** @description One difference between a version and the one before it. */
     ChangeDto: {
@@ -1470,6 +1736,16 @@ export interface components {
       to_them: number
       /** @description Oldest year first. */
       years: components['schemas']['YearCountDto'][]
+    }
+    /** @description Creates an alias at a service. Without `prefix` the service picks it. */
+    CreateAliasRequest: {
+      /** @description A domain id from the options. */
+      domain?: string | null
+      for_domain?: string | null
+      mailbox_ids?: string[]
+      name?: string | null
+      note?: string | null
+      prefix?: string | null
     }
     /** @description Confirms a review. */
     DeletionConfirmRequest: {
@@ -2073,6 +2349,14 @@ export interface components {
       email: string
       password: string
     }
+    /** @description Adds an alias by hand, e.g. an Apple Hide My Email address. */
+    ManualAliasRequest: {
+      address: string
+      for_domain?: string | null
+      note?: string | null
+      /** @description A provider id, or any lowercase name. */
+      provider: string
+    }
     /** @description An event a person organizes or attends. */
     MeetingDto: {
       all_day: boolean
@@ -2104,8 +2388,22 @@ export interface components {
       status?: string | null
       title?: string | null
     }
+    /** @description The alias a message was forwarded to. */
+    MessageAliasDto: {
+      alias: string
+      /** @description The alias is known: listed by a service or added by hand. */
+      known: boolean
+      note?: string | null
+      provider: string
+      /** @description The address that reaches the sender through the service. */
+      reverse_alias?: string | null
+      sender?: components['schemas']['AddressDto'] | null
+      /** @description The provider's signature passed; without it the forwarding fields may be forged. */
+      signed: boolean
+    }
     /** @description Everything the reader shows about a message, except its HTML body. */
     MessageDetail: {
+      alias?: components['schemas']['MessageAliasDto'] | null
       archive_id: string
       /** Format: int64 */
       archived_at: number
@@ -2193,6 +2491,14 @@ export interface components {
       thread_count: number
       thread_id: string
       to: components['schemas']['AddressDto'][]
+    }
+    /** @description Connects an account at an alias service. */
+    NewAliasServiceRequest: {
+      /** @description Another address, for a self-hosted service. */
+      base_url?: string | null
+      key: string
+      name?: string | null
+      provider: string
     }
     /** @description A new archive. */
     NewArchiveRequest: {
@@ -3067,6 +3373,379 @@ export interface operations {
       }
     }
   }
+  alias_providers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasProviderDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  remove_alias_service: {
+    parameters: {
+      query?: {
+        /** @description Keep its aliases as aliases added by hand. */
+        keep_aliases?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Alias service id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed; nothing changes at the service */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such alias service */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_alias_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alias service id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AliasServiceUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasServiceDto']
+        }
+      }
+      /** @description A refused key or an unreachable service */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such alias service */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_alias: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alias service id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAliasRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasDto']
+        }
+      }
+      /** @description The service refused the alias */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such alias service */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  alias_options: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alias service id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasOptionsDto']
+        }
+      }
+      /** @description The service refused or could not be reached */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such alias service */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  sync_alias_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Alias service id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasServiceDto']
+        }
+      }
+      /** @description The service refused or could not be reached; kept as sync_error */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such alias service */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_archives: {
     parameters: {
       query?: never
@@ -3523,6 +4202,341 @@ export interface operations {
         }
       }
       /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  add_alias_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewAliasServiceRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasServiceDto']
+        }
+      }
+      /** @description An unknown provider, a refused key or an unreachable service */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_aliases: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasListDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  add_manual_alias: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ManualAliasRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasDto']
+        }
+      }
+      /** @description Not an address, or a known alias */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  remove_alias: {
+    parameters: {
+      query?: {
+        /** @description Delete it at the service, so its mail is no longer forwarded. */
+        at_service?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+        /** @description The alias */
+        address: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Forgotten; its mail stays */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description The service refused to delete it */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_alias: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+        /** @description The alias */
+        address: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AliasUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasDto']
+        }
+      }
+      /** @description The service refused the change or cannot make it */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or alias */
       404: {
         headers: {
           [name: string]: unknown

@@ -141,3 +141,26 @@ fn unwraps_an_exchange_journal_report() {
     assert!(holtmail_mime::journal_original(&fixture("plain.eml")).is_none());
     assert!(holtmail_mime::journal_original(&fixture("alternative-with-attachment.eml")).is_none());
 }
+
+#[test]
+fn keeps_header_fields_in_order_unfolded_and_decoded() {
+    let message = parse(&fixture("extra-headers.eml")).unwrap();
+    let fields: Vec<(&str, &str)> = message
+        .headers
+        .iter()
+        .map(|h| (h.name.as_str(), h.value.as_str()))
+        .collect();
+    assert_eq!(
+        &fields[..4],
+        &[
+            (
+                "Received",
+                "from relay.example.net by mx.example.org; Mon, 3 Mar 2025 18:00:01 +0000"
+            ),
+            ("X-Forwarded-For", "Ada Lovelace <ada@example.com>"),
+            ("X-Note", "Привет"),
+            ("X-Note", "second"),
+        ]
+    );
+    assert_eq!(fields.len(), 8);
+}

@@ -226,6 +226,13 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
         .as_ref()
         .map(|p| addresses(&p.reply_to))
         .unwrap_or_default();
+    let recipients: Vec<String> = [&message.to, &message.cc, &message.bcc]
+        .into_iter()
+        .flatten()
+        .map(|a| a.email.clone())
+        .collect();
+    let alias =
+        crate::aliases::message_alias(state, message.archive_id, message.id, &recipients).await?;
     let people = crate::persons::address_people(
         state,
         message.archive_id,
@@ -233,7 +240,13 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
             .into_iter()
             .flatten()
             .map(|a| a.email.clone())
-            .chain(reply_to.iter().map(|a| a.email.clone())),
+            .chain(reply_to.iter().map(|a| a.email.clone()))
+            .chain(
+                alias
+                    .as_ref()
+                    .and_then(|a| a.sender.as_ref())
+                    .map(|s| s.email.clone()),
+            ),
     )
     .await?;
     Ok(MessageDetail {
@@ -271,6 +284,7 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
         labels: state.store.labels(message.id).await?,
         invitations: crate::pim::invitations(state, &message).await?,
         people,
+        alias,
     })
 }
 

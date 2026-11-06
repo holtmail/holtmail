@@ -1,0 +1,15 @@
+Authentication-Results: mx.example.org;
+	dkim=pass (2048-bit key; unprotected) header.d=sl.example.org header.i=@sl.example.org header.a=rsa-sha256 header.s=dkim header.b=HV6FNGOV
+Received: from sl.example.org by mx.example.org; Mon, 3 Mar 2025 18:00:02 +0000
+X-SimpleLogin-Type: Forward
+X-SimpleLogin-EmailLog-ID: 1234
+X-SimpleLogin-Envelope-From: bounce-77@example.com
+X-SimpleLogin-Envelope-To: shop.one@alias.example.org
+X-SimpleLogin-Original-From: Ada Lovelace <ada@example.com>
+From: "Ada Lovelace - ada at example.com" <ra_k3j5h9x2@sl.example.org>
+To: shop.one@alias.example.org
+Subject: Your order
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+Message-ID: <order-1@example.com>
+
+Your order has shipped.

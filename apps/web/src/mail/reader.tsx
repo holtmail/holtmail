@@ -43,6 +43,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { replyMailto, senderLabel } from '../lib/address.ts'
+import { shownFrom } from '../lib/aliases.ts'
 import { readerLabels } from '../lib/labels.ts'
 import { manages } from '../lib/roles.ts'
 import { DeletionDialog } from '../manage/deletion-dialog.tsx'
@@ -210,7 +211,7 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
   const reply = message
     ? replyMailto(
         message,
-        strings.reader.quoteAttribution(senderLabel(message.from, strings.list.noSender)),
+        strings.reader.quoteAttribution(senderLabel(shownFrom(message), strings.list.noSender)),
       )
     : undefined
 

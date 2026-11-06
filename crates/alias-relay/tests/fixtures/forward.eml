@@ -1,0 +1,11 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=relay.example.org header.s=ses
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Subject: Your receipt
+From: "Ada Lovelace <ada@example.com> [via Relay]" <k3j5h9x2@relay.example.org>
+To: owner@example.org
+Reply-To: replies@relay.example.org
+Resent-From: ada@example.com
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+
+Receipt.

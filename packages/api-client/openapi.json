@@ -247,6 +247,447 @@
         }
       }
     },
+    "/api/alias-providers": {
+      "get": {
+        "tags": ["aliases"],
+        "operationId": "alias_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AliasProviderDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alias-services/{id}": {
+      "delete": {
+        "tags": ["aliases"],
+        "operationId": "remove_alias_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alias service id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "keep_aliases",
+            "in": "query",
+            "description": "Keep its aliases as aliases added by hand.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed; nothing changes at the service"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such alias service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["aliases"],
+        "operationId": "update_alias_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alias service id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AliasServiceUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasServiceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refused key or an unreachable service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such alias service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alias-services/{id}/aliases": {
+      "post": {
+        "tags": ["aliases"],
+        "operationId": "create_alias",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alias service id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The service refused the alias",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such alias service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alias-services/{id}/options": {
+      "get": {
+        "tags": ["aliases"],
+        "operationId": "alias_options",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alias service id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasOptionsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The service refused or could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such alias service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alias-services/{id}/sync": {
+      "post": {
+        "tags": ["aliases"],
+        "operationId": "sync_alias_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Alias service id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasServiceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The service refused or could not be reached; kept as sync_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such alias service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives": {
       "get": {
         "tags": ["routes"],
@@ -782,6 +1223,423 @@
           },
           "404": {
             "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/alias-services": {
+      "post": {
+        "tags": ["aliases"],
+        "operationId": "add_alias_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewAliasServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasServiceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown provider, a refused key or an unreachable service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/aliases": {
+      "get": {
+        "tags": ["aliases"],
+        "operationId": "list_aliases",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasListDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["aliases"],
+        "operationId": "add_manual_alias",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an address, or a known alias",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/aliases/{address}": {
+      "delete": {
+        "tags": ["aliases"],
+        "operationId": "remove_alias",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "address",
+            "in": "path",
+            "description": "The alias",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "at_service",
+            "in": "query",
+            "description": "Delete it at the service, so its mail is no longer forwarded.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Forgotten; its mail stays"
+          },
+          "400": {
+            "description": "The service refused to delete it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["aliases"],
+        "operationId": "update_alias",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "address",
+            "in": "path",
+            "description": "The alias",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AliasUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The service refused the change or cannot make it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive or alias",
             "content": {
               "application/json": {
                 "schema": {
@@ -5604,6 +6462,325 @@
           }
         }
       },
+      "AliasAccountDto": {
+        "type": "object",
+        "description": "An account receiving an alias's mail.",
+        "required": ["account_id", "name", "messages"],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "address": {
+            "type": ["string", "null"]
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AliasDomainDto": {
+        "type": "object",
+        "description": "A domain or suffix for new aliases.",
+        "required": ["id", "label"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "AliasDto": {
+        "type": "object",
+        "description": "One alias of an archive.",
+        "required": [
+          "address",
+          "provider",
+          "source",
+          "mailboxes",
+          "messages",
+          "senders",
+          "signed",
+          "accounts"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasAccountDto"
+            },
+            "description": "Accounts its mail was archived from, most first."
+          },
+          "address": {
+            "type": "string"
+          },
+          "blocked": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds of when the service made it."
+          },
+          "enabled": {
+            "type": ["boolean", "null"],
+            "description": "Forwarding is on, when known."
+          },
+          "first_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "for_domain": {
+            "type": ["string", "null"]
+          },
+          "forwarded": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Counts from the service.",
+            "minimum": 0
+          },
+          "last_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Addresses the service forwards it to."
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Archived messages forwarded or addressed to it.",
+            "minimum": 0
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "replied": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0
+          },
+          "senders": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "service_id": {
+            "type": ["string", "null"]
+          },
+          "signed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Forwarded messages with the provider's passing signature.",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string",
+            "description": "`service`: listed by a connected service; `manual`: added by hand; `mail`: only seen in\nmail."
+          }
+        }
+      },
+      "AliasListDto": {
+        "type": "object",
+        "description": "The aliases and alias services of an archive.",
+        "required": ["aliases", "services"],
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasDto"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasServiceDto"
+            }
+          }
+        }
+      },
+      "AliasMailboxDto": {
+        "type": "object",
+        "description": "A mailbox an alias can forward to.",
+        "required": ["id", "email"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "AliasOptionsDto": {
+        "type": "object",
+        "description": "Choices for a new alias at a service.",
+        "required": ["capabilities", "domains", "mailboxes", "can_create"],
+        "properties": {
+          "can_create": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilitiesDto"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasDomainDto"
+            }
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AliasMailboxDto"
+            }
+          },
+          "prefix_hint": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "AliasProviderDto": {
+        "type": "object",
+        "description": "An alias service the server knows.",
+        "required": ["id", "name", "key_label", "key_help", "detects"],
+        "properties": {
+          "capabilities": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CapabilitiesDto",
+                "description": "What its API can do; `null` when it has none."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_url": {
+            "type": ["string", "null"]
+          },
+          "detects": {
+            "type": "boolean",
+            "description": "Mail it forwarded is recognised."
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_help": {
+            "type": "string"
+          },
+          "key_label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AliasServiceDto": {
+        "type": "object",
+        "description": "An account at an alias service.",
+        "required": ["id", "archive_id", "provider", "name", "base_url", "created_at"],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "capabilities": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CapabilitiesDto",
+                "description": "What its API can do."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "sync_error": {
+            "type": ["string", "null"],
+            "description": "Why the last listing failed."
+          },
+          "synced_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds of the last listing."
+          }
+        }
+      },
+      "AliasServiceUpdateRequest": {
+        "type": "object",
+        "description": "Changes a service; missing fields stay.",
+        "properties": {
+          "base_url": {
+            "type": ["string", "null"]
+          },
+          "key": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "AliasUpdateRequest": {
+        "type": "object",
+        "description": "Changes an alias; missing fields stay, an empty string clears.",
+        "properties": {
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "for_domain": {
+            "type": ["string", "null"]
+          },
+          "mailbox_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "note": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "ArchiveDto": {
         "type": "object",
         "description": "An archive with its totals.",
@@ -5838,6 +7015,46 @@
             "type": ["integer", "null"],
             "format": "int64",
             "description": "When it was removed from its source, Unix milliseconds."
+          }
+        }
+      },
+      "CapabilitiesDto": {
+        "type": "object",
+        "description": "What an alias service API can do.",
+        "required": [
+          "create_random",
+          "create_custom",
+          "note",
+          "name",
+          "for_domain",
+          "switch",
+          "mailboxes",
+          "delete"
+        ],
+        "properties": {
+          "create_custom": {
+            "type": "boolean"
+          },
+          "create_random": {
+            "type": "boolean"
+          },
+          "delete": {
+            "type": "boolean"
+          },
+          "for_domain": {
+            "type": "boolean"
+          },
+          "mailboxes": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "boolean"
+          },
+          "switch": {
+            "type": "boolean"
           }
         }
       },
@@ -6190,6 +7407,34 @@
               "$ref": "#/components/schemas/YearCountDto"
             },
             "description": "Oldest year first."
+          }
+        }
+      },
+      "CreateAliasRequest": {
+        "type": "object",
+        "description": "Creates an alias at a service. Without `prefix` the service picks it.",
+        "properties": {
+          "domain": {
+            "type": ["string", "null"],
+            "description": "A domain id from the options."
+          },
+          "for_domain": {
+            "type": ["string", "null"]
+          },
+          "mailbox_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "prefix": {
+            "type": ["string", "null"]
           }
         }
       },
@@ -7448,6 +8693,26 @@
           }
         }
       },
+      "ManualAliasRequest": {
+        "type": "object",
+        "description": "Adds an alias by hand, e.g. an Apple Hide My Email address.",
+        "required": ["address", "provider"],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "for_domain": {
+            "type": ["string", "null"]
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "provider": {
+            "type": "string",
+            "description": "A provider id, or any lowercase name."
+          }
+        }
+      },
       "MeetingDto": {
         "type": "object",
         "description": "An event a person organizes or attends.",
@@ -7499,6 +8764,45 @@
           }
         }
       },
+      "MessageAliasDto": {
+        "type": "object",
+        "description": "The alias a message was forwarded to.",
+        "required": ["provider", "alias", "signed", "known"],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean",
+            "description": "The alias is known: listed by a service or added by hand."
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reverse_alias": {
+            "type": ["string", "null"],
+            "description": "The address that reaches the sender through the service."
+          },
+          "sender": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto",
+                "description": "Who really sent it, when the service hid them."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signed": {
+            "type": "boolean",
+            "description": "The provider's signature passed; without it the forwarding fields may be forged."
+          }
+        }
+      },
       "MessageDetail": {
         "type": "object",
         "description": "Everything the reader shows about a message, except its HTML body.",
@@ -7525,6 +8829,17 @@
           "people"
         ],
         "properties": {
+          "alias": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MessageAliasDto",
+                "description": "The alias it was forwarded or addressed to, with the sender the service hid."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "archive_id": {
             "type": "string"
           },
@@ -7757,6 +9072,26 @@
             "items": {
               "$ref": "#/components/schemas/AddressDto"
             }
+          }
+        }
+      },
+      "NewAliasServiceRequest": {
+        "type": "object",
+        "description": "Connects an account at an alias service.",
+        "required": ["provider", "key"],
+        "properties": {
+          "base_url": {
+            "type": ["string", "null"],
+            "description": "Another address, for a self-hosted service."
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "provider": {
+            "type": "string"
           }
         }
       },

@@ -5,6 +5,7 @@
 - [Work plan](WORKPLAN.md) — the current checklist, decisions and lessons from Mail-Archiver
 - [Contacts and calendars](PIM.md) — plan for archiving contacts and events with their history and links to mail
 - [Push and fast change tracking](PUSH.md) — IMAP IDLE, JMAP push, WebDAV-Push and contacts and calendars on their own schedule
+- [Email aliases](ALIASES.md) — recognising forwarded mail, the alias list and managing aliases at their services
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 
@@ -42,6 +43,16 @@
 | `holtmail-people` | [People derived from contacts and mail](../crates/people/docs/README.md) |
 | `holtmail-recur` | [Recurrence expansion with time zones](../crates/recur/docs/README.md) |
 | `holtmail-calendar` | [The derived calendar: event groups, stored instances, copy differences](../crates/calendar/docs/README.md) |
+| `holtmail-alias` | [Contract for alias services: detectors and directories](../crates/alias/docs/README.md) |
+| `holtmail-alias-simplelogin` | [SimpleLogin and Proton Pass aliases](../crates/alias-simplelogin/docs/README.md) |
+| `holtmail-alias-addy` | [addy.io aliases](../crates/alias-addy/docs/README.md) |
+| `holtmail-alias-relay` | [Firefox Relay masks](../crates/alias-relay/docs/README.md) |
+| `holtmail-alias-fastmail` | [Fastmail Masked Email through JMAP](../crates/alias-fastmail/docs/README.md) |
+| `holtmail-alias-duck` | [DuckDuckGo Email Protection](../crates/alias-duck/docs/README.md) |
+| `holtmail-alias-apple` | [Apple Hide My Email and Sign in with Apple](../crates/alias-apple/docs/README.md) |
+| `holtmail-alias-rules` | [Alias detection from config rules](../crates/alias-rules/docs/README.md) |
+| `holtmail-aliases` | [Alias services connected to archives](../crates/aliases/docs/README.md) |
+| `holtmail-json-http` | [JSON over HTTPS for provider APIs](../crates/json-http/docs/README.md) |
 | `holtmail-ingest` | [From raw bytes to an archived message](../crates/ingest/docs/README.md) |
 | `holtmail-import` | [Reading mbox, Maildir, .eml and zip](../crates/import/docs/README.md) |
 | `holtmail-export` | [Writing mbox and zips of .eml files](../crates/export/docs/README.md) |

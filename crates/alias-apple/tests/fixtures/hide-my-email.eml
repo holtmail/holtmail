@@ -1,0 +1,8 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=icloud.example.org header.s=1a1hai
+X-Icloud-Hme: p=quiet.river.42@icloud.example.org; d=shop.example.com; f=owner@example.org; r=to; s=news@example.com
+From: Example News <news_at_example_com_x7y8@icloud.example.org>
+To: quiet.river.42@icloud.example.org
+Subject: Sale
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+
+Sale.

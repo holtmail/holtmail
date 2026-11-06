@@ -1,0 +1,23 @@
+[package]
+name = "holtmail-json-http"
+description = "JSON over HTTPS for provider APIs: allowed addresses, a size limit and status codes as errors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

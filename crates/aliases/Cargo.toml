@@ -1,0 +1,24 @@
+[package]
+name = "holtmail-aliases"
+description = "Alias services connected to archives: sealed keys, listing aliases and changing them at the service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-alias.workspace = true
+holtmail-core.workspace = true
+holtmail-secret.workspace = true
+holtmail-store.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-alias = { workspace = true, features = ["testing"] }
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

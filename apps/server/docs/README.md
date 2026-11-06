@@ -130,6 +130,16 @@ Owners and admins add webhooks in Settings → Webhooks (or `POST /api/webhooks`
 
 Events are written to the database when they happen, also from the command line (`holtmail delete`, `holtmail ledger verify`), and `serve` delivers them: at once, then 30 seconds, 2 minutes, 10 minutes, 1 hour and 6 hours after failures (any answer other than `2xx`, no connection, or no answer within 10 seconds), and gives up after six attempts. Deliveries survive restarts; the newest 200 finished ones per webhook are kept. A turned-off webhook gets no new events; waiting deliveries still go. Redirects are not followed. The log carries webhook ids, delivery ids, statuses and attempt counts only. `messages.deleted` and `ledger.verified` carry the ledger's head, so a receiver that keeps them holds the anchors `holtmail ledger verify --anchor` checks.
 
+## Email aliases
+
+See [ALIASES.md](../../../docs/ALIASES.md). `src/aliases.rs` is the only place that names the alias implementations: `detectors(&config.aliases)` (SimpleLogin, addy.io, Firefox Relay, DuckDuckGo, Apple, then each `[[aliases.rules]]` in order; the first that recognises a message wins), `providers()` (with their capabilities and where the owner finds a key) and `connect(roots)` (SimpleLogin, addy.io, Relay and Fastmail directories, trusting `tls_ca_file`). The ingest pipeline gets the detectors; `holtmail_aliases::AliasManager` gets the providers and `connect`, and `Runner` implements the API's `Aliases` with it.
+
+- At start, after the other passes, every message is detected again when the detectors' fingerprint (their versions, so trusted domains and rules too) differs from the setting `alias_detectors`; the archives that changed get their people rebuilt. Changing a rule therefore takes effect for old mail on the next start.
+- Every `sync_interval_minutes` (from a minute after start) every service's aliases are listed; a failure is kept on the service and logged with the count only.
+- Keys are sealed with the instance's secret box for `alias-service:<id>` and never logged; logs carry service ids and providers.
+
+A rule with a bad provider id stops the server at start with the rule named.
+
 ## Back up and move an instance
 
 An instance is its database, its blobs and `secret.key`; the search index, uploads and thumbnails can be made again.
@@ -232,6 +242,14 @@ web_dir = "apps/web/dist" # HOLTMAIL_WEB_DIR: serve the built web app; unknown p
 [watch]
 enabled = true # HOLTMAIL_WATCH: watch accounts whose servers push (IMAP IDLE, JMAP, WebDAV-Push); false leaves the intervals
 parallel_syncs = 4 # accounts syncing at once, 1 to 64
+
+[aliases]
+detect = true # recognise mail forwarded by alias services; false records no aliases for new mail
+sync_interval_minutes = 360 # list every connected alias service's aliases; 0 only on request
+# simplelogin_signing_domains = ["sl.example.org"] # self-hosted SimpleLogin
+# addy_signing_domains = ["addy.example.org"] # self-hosted addy.io or custom domains
+# relay_domains = ["relay.example.org"] # self-hosted Firefox Relay
+# [[aliases.rules]] provider, domains, header, alias_header, sender_header, signing_domains; see "Email aliases"
 
 # [oauth.google] and [oauth.microsoft]: public_client, client_id, client_secret, redirect_url, authorize_url, token_url,
 # imap_host, imap_port, and for Microsoft graph_url; see "Gmail and Microsoft sign-in"

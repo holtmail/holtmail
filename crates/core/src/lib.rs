@@ -107,6 +107,10 @@ id!(
     /// An address the server tells about events.
     WebhookId
 );
+id!(
+    /// An account at an alias service, connected to an archive.
+    AliasServiceId
+);
 
 /// A person derived from contacts and mail in an archive.
 ///

@@ -1,0 +1,11 @@
+Received: from sl.example.org by mx.example.org; Mon, 3 Mar 2025 18:00:02 +0000
+X-SimpleLogin-Type: Forward
+X-SimpleLogin-EmailLog-ID: 1235
+X-SimpleLogin-Envelope-To: News.Letters@alias.example.org
+From: =?utf-8?Q?Ren=C3=A9e_Martin_-_renee_at_example.com?= <ra_zz81@sl.example.org>
+To: news.letters@alias.example.org
+Subject: Weekly letter
+Date: Mon, 3 Mar 2025 19:00:00 +0000
+Message-ID: <letter-9@example.com>
+
+This week.

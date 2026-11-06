@@ -164,6 +164,13 @@ const webhooksSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/webhooks-page.tsx'), 'WebhooksPage'),
 })
 
+const aliasesSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'aliases',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/aliases-page.tsx'), 'AliasesPage'),
+})
+
 const smtpSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'smtp',
@@ -263,6 +270,7 @@ const routeTree = rootRoute.addChildren([
     networkSettingsRoute,
     integritySettingsRoute,
     webhooksSettingsRoute,
+    aliasesSettingsRoute,
     smtpSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,

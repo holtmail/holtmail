@@ -30,7 +30,7 @@ fi
 
 mkdir -p "$here/.state"
 touch "$here/.state/dovecot-locked-users"
-mkdir -p "$here/.state/images" "$here/.state/pdf"
+mkdir -p "$here/.state/images" "$here/.state/pdf" "$here/.state/sl"
 docker compose -f "$here/compose.yaml" ${profiles[@]+"${profiles[@]}"} up -d --wait "${pull[@]}"
 
 if [[ ",$IT_PROFILES," == *",docker,"* ]]; then

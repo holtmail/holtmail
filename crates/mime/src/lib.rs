@@ -5,7 +5,7 @@
 
 use bytes::Bytes;
 pub use holtmail_core::Address;
-use mail_parser::{AddressList, MessageParser, MessagePart};
+use mail_parser::{AddressList, HeaderForm, MessageParser, MessagePart};
 
 /// Characters kept in [`ParsedMessage::preview`].
 pub const PREVIEW_CHARS: usize = 200;
@@ -33,6 +33,8 @@ pub struct ParsedMessage {
     pub bcc: Vec<Address>,
     /// `Reply-To` mailboxes.
     pub reply_to: Vec<Address>,
+    /// Every header field of the message itself, in message order, repeated fields repeated.
+    pub headers: Vec<HeaderField>,
     /// The plain text body; derived from the HTML body when the message has no text part.
     pub text: Option<String>,
     /// The HTML body exactly as sent, unsanitized; `None` when the message has no HTML part.
@@ -45,6 +47,15 @@ pub struct ParsedMessage {
     /// attached to it, in document order, inline or not: text parts converted to UTF-8 from their
     /// charset, others transfer-decoded only.
     pub calendars: Vec<Bytes>,
+}
+
+/// One header field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderField {
+    /// The name as written, letter case kept.
+    pub name: String,
+    /// The value unfolded into one line, encoded words decoded, without surrounding whitespace.
+    pub value: String,
 }
 
 /// A part of a message that is not its body.
@@ -110,6 +121,19 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError> {
         cc: addresses(message.cc()),
         bcc: addresses(message.bcc()),
         reply_to: addresses(message.reply_to()),
+        headers: message
+            .headers()
+            .iter()
+            .map(|header| HeaderField {
+                name: header.raw_name().to_owned(),
+                value: header
+                    .parse_as(HeaderForm::Text)
+                    .value()
+                    .as_text()
+                    .map(one_line)
+                    .unwrap_or_else(|| one_line(&String::from_utf8_lossy(header.raw_value()))),
+            })
+            .collect(),
         text,
         html,
         preview,

@@ -8,6 +8,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+holtmail-alias.workspace = true
 holtmail-auth.workspace = true
 holtmail-blob.workspace = true
 holtmail-calendar.workspace = true
@@ -37,6 +38,10 @@ url.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+holtmail-alias = { workspace = true, features = ["testing"] }
+holtmail-aliases.workspace = true
+holtmail-alias-simplelogin.workspace = true
+holtmail-secret.workspace = true
 holtmail-fetch.workspace = true
 holtmail-hooks.workspace = true
 holtmail-blob-fs.workspace = true

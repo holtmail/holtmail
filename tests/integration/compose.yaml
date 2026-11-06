@@ -265,12 +265,128 @@ services:
     volumes:
       - ./.state/pdf:/pdf:ro
 
+  sl-db:
+    image: postgres:16.10-alpine
+    profiles: [aliases]
+    environment:
+      POSTGRES_USER: sl
+      POSTGRES_PASSWORD: it-sl-db-password
+      POSTGRES_DB: simplelogin
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'sl', '-d', 'simplelogin']
+      interval: 1s
+      timeout: 3s
+      retries: 60
+    volumes:
+      - sl-db:/var/lib/postgresql/data
+
+  sl-seed:
+    image: simplelogin/app-ci:v4.82.4
+    platform: linux/amd64
+    profiles: [aliases]
+    entrypoint: ['/bin/sh', '/seed/seed.sh']
+    depends_on:
+      sl-db:
+        condition: service_healthy
+    volumes:
+      - ./seed/simplelogin:/seed:ro
+      - ./seed/simplelogin/simplelogin.env:/code/.env:ro
+      - ./.state:/state
+
+  sl-dns:
+    image: coredns/coredns:1.15.0
+    profiles: [aliases]
+    command: ['-conf', '/etc/coredns/Corefile']
+    depends_on:
+      sl-seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./seed/simplelogin/Corefile:/etc/coredns/Corefile:ro
+      - ./.state/sl:/zones:ro
+    networks:
+      default:
+      aliases:
+        ipv4_address: 11.88.78.53
+
+  sl-mx:
+    build: ./seed/sl-mx
+    profiles: [aliases]
+    dns: [11.88.78.53]
+    depends_on:
+      sl-dns:
+        condition: service_started
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      default:
+      aliases:
+    ports:
+      - '127.0.0.1:47025:25'
+    healthcheck:
+      test: ['CMD', 'postfix', 'status']
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  sl-app:
+    image: simplelogin/app-ci:v4.82.4
+    platform: linux/amd64
+    profiles: [aliases]
+    depends_on:
+      sl-seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./seed/simplelogin/simplelogin.env:/code/.env:ro
+      - ./.state:/state:ro
+    networks:
+      default:
+      aliases:
+    healthcheck:
+      test:
+        ['CMD', 'python', '-c', 'import socket; socket.create_connection(("127.0.0.1", 7777), 2)']
+      interval: 2s
+      timeout: 3s
+      retries: 90
+      start_period: 10s
+    ports:
+      - '127.0.0.1:47777:7777'
+
+  sl-email:
+    image: simplelogin/app-ci:v4.82.4
+    platform: linux/amd64
+    profiles: [aliases]
+    command: ['python', 'email_handler.py']
+    depends_on:
+      sl-seed:
+        condition: service_completed_successfully
+      sl-mx:
+        condition: service_healthy
+    volumes:
+      - ./seed/simplelogin/simplelogin.env:/code/.env:ro
+      - ./.state:/state:ro
+    networks:
+      default:
+      aliases:
+    healthcheck:
+      test:
+        ['CMD', 'python', '-c', 'import socket; socket.create_connection(("127.0.0.1", 20381), 2)']
+      interval: 2s
+      timeout: 3s
+      retries: 90
+      start_period: 10s
+    ports:
+      - '127.0.0.1:47381:20381'
+
 networks:
   images:
     internal: true
     ipam:
       config:
         - subnet: 11.88.77.0/24
+  aliases:
+    ipam:
+      config:
+        - subnet: 11.88.78.0/24
 
 volumes:
   stalwart-data:
@@ -279,3 +395,4 @@ volumes:
   baikal-data:
   nextcloud-data:
   minio-data:
+  sl-db:

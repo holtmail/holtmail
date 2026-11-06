@@ -58,7 +58,7 @@ pub(crate) async fn check(
         ["me", ..] => return next.run(request).await,
         [
             "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth" | "ledger"
-            | "deletions" | "webhooks" | "smtp",
+            | "deletions" | "webhooks" | "smtp" | "alias-providers" | "alias-services",
             ..,
         ] => return forbidden(),
         _ if !read => return forbidden(),

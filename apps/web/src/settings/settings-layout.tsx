@@ -14,6 +14,7 @@ import {
   ShieldCheckIcon,
   UserIcon,
   UsersIcon,
+  VenetianMaskIcon,
   WebhookIcon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
@@ -34,6 +35,7 @@ interface Section {
     | '/settings/network'
     | '/settings/integrity'
     | '/settings/webhooks'
+    | '/settings/aliases'
     | '/settings/smtp'
     | '/settings/reading'
     | '/settings/profile'
@@ -49,6 +51,7 @@ const sections: Section[] = [
   { to: '/settings/network', label: t.network, icon: GlobeIcon, managers: true },
   { to: '/settings/integrity', label: t.integrity, icon: ShieldCheckIcon, managers: true },
   { to: '/settings/webhooks', label: t.webhooks, icon: WebhookIcon, managers: true },
+  { to: '/settings/aliases', label: t.aliases, icon: VenetianMaskIcon, managers: true },
   { to: '/settings/smtp', label: t.smtp, icon: InboxIcon, managers: true },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },

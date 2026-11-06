@@ -1641,6 +1641,118 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-alias"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "holtmail-core",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-alias-addy"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-json-http",
+ "holtmail-mime",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-alias-apple"
+version = "0.0.0"
+dependencies = [
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-mime",
+]
+
+[[package]]
+name = "holtmail-alias-duck"
+version = "0.0.0"
+dependencies = [
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-mime",
+]
+
+[[package]]
+name = "holtmail-alias-fastmail"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-json-http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "holtmail-alias-relay"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-json-http",
+ "holtmail-mime",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-alias-rules"
+version = "0.0.0"
+dependencies = [
+ "holtmail-alias",
+ "holtmail-core",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-alias-simplelogin"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-json-http",
+ "holtmail-mime",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-aliases"
+version = "0.0.0"
+dependencies = [
+ "holtmail-alias",
+ "holtmail-core",
+ "holtmail-secret",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "holtmail-api"
 version = "0.0.0"
 dependencies = [
@@ -1648,6 +1760,9 @@ dependencies = [
  "axum",
  "bytes",
  "futures",
+ "holtmail-alias",
+ "holtmail-alias-simplelogin",
+ "holtmail-aliases",
  "holtmail-auth",
  "holtmail-blob",
  "holtmail-blob-fs",
@@ -1666,6 +1781,7 @@ dependencies = [
  "holtmail-query",
  "holtmail-recur",
  "holtmail-sanitize",
+ "holtmail-secret",
  "holtmail-store",
  "holtmail-store-sqlite",
  "holtmail-thumbnail",
@@ -1962,6 +2078,8 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "holtmail-alias",
+ "holtmail-alias-simplelogin",
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-calendar",
@@ -2009,6 +2127,20 @@ dependencies = [
  "url",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "holtmail-json-http"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "holtmail-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -2193,9 +2325,19 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "blake3",
  "bytes",
  "chrono",
  "clap",
+ "holtmail-alias",
+ "holtmail-alias-addy",
+ "holtmail-alias-apple",
+ "holtmail-alias-duck",
+ "holtmail-alias-fastmail",
+ "holtmail-alias-relay",
+ "holtmail-alias-rules",
+ "holtmail-alias-simplelogin",
+ "holtmail-aliases",
  "holtmail-api",
  "holtmail-auth",
  "holtmail-blob",

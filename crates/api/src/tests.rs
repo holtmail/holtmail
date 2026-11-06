@@ -50,6 +50,148 @@ struct FakeMailboxes {
     tested: std::sync::Mutex<Vec<holtmail_core::WebhookId>>,
 }
 
+struct PlainSecrets;
+
+impl holtmail_secret::SecretBox for PlainSecrets {
+    fn seal(&self, _: &str, plaintext: &[u8]) -> Result<Vec<u8>, holtmail_secret::SecretError> {
+        Ok(plaintext.to_vec())
+    }
+
+    fn open(&self, _: &str, sealed: &[u8]) -> Result<Vec<u8>, holtmail_secret::SecretError> {
+        Ok(sealed.to_vec())
+    }
+}
+
+/// The real manager over a fake service that takes the key `good-key`.
+struct FakeAliases(holtmail_aliases::AliasManager);
+
+impl FakeAliases {
+    fn new(store: Arc<dyn Store>) -> Self {
+        let directory = Arc::new(holtmail_alias::testing::FakeDirectory::new());
+        let caps = holtmail_alias::AliasDirectory::capabilities(&*directory);
+        let connect: holtmail_aliases::Connect = Arc::new(move |_, _, key| {
+            if key == "good-key" {
+                Ok(directory.clone() as Arc<dyn holtmail_alias::AliasDirectory>)
+            } else {
+                Err(holtmail_alias::AliasError::Auth)
+            }
+        });
+        Self(holtmail_aliases::AliasManager::new(
+            store,
+            Arc::new(PlainSecrets),
+            vec![holtmail_aliases::ProviderInfo {
+                id: "fake".into(),
+                name: "Fake".into(),
+                default_url: Some("https://alias.example".into()),
+                capabilities: Some(caps),
+                key_label: "API key".into(),
+                key_help: "Settings".into(),
+                detects: false,
+            }],
+            connect,
+        ))
+    }
+}
+
+fn manage_error(error: holtmail_aliases::ManageError) -> MailboxError {
+    match error {
+        holtmail_aliases::ManageError::Invalid(m) => MailboxError::Invalid(m),
+        holtmail_aliases::ManageError::Store(e) => MailboxError::Backend(e.to_string()),
+    }
+}
+
+#[async_trait::async_trait]
+impl Aliases for FakeAliases {
+    fn providers(&self) -> Vec<AliasProvider> {
+        self.0
+            .providers()
+            .iter()
+            .map(|p| AliasProvider {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                default_url: p.default_url.clone(),
+                capabilities: p.capabilities,
+                key_label: p.key_label.clone(),
+                key_help: p.key_help.clone(),
+                detects: p.detects,
+            })
+            .collect()
+    }
+
+    async fn add_service(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        s: NewService,
+    ) -> Result<holtmail_store::AliasService, MailboxError> {
+        self.0
+            .add_service(archive, &s.provider, &s.name, s.base_url.as_deref(), &s.key)
+            .await
+            .map_err(manage_error)
+    }
+
+    async fn update_service(
+        &self,
+        id: holtmail_core::AliasServiceId,
+        c: ServiceChange,
+    ) -> Result<holtmail_store::AliasService, MailboxError> {
+        self.0
+            .update_service(
+                id,
+                c.name.as_deref(),
+                c.base_url.as_deref(),
+                c.key.as_deref(),
+            )
+            .await
+            .map_err(manage_error)
+    }
+
+    async fn sync_service(
+        &self,
+        id: holtmail_core::AliasServiceId,
+    ) -> Result<holtmail_store::AliasService, MailboxError> {
+        self.0.sync_service(id).await.map_err(manage_error)
+    }
+
+    async fn alias_options(
+        &self,
+        id: holtmail_core::AliasServiceId,
+    ) -> Result<(holtmail_alias::Capabilities, holtmail_alias::AliasOptions), MailboxError> {
+        self.0.options(id).await.map_err(manage_error)
+    }
+
+    async fn create_alias(
+        &self,
+        id: holtmail_core::AliasServiceId,
+        alias: holtmail_alias::NewAlias,
+    ) -> Result<holtmail_store::KnownAlias, MailboxError> {
+        self.0.create_alias(id, &alias).await.map_err(manage_error)
+    }
+
+    async fn update_alias(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        address: &str,
+        change: holtmail_alias::AliasChange,
+    ) -> Result<holtmail_store::KnownAlias, MailboxError> {
+        self.0
+            .update_alias(archive, address, &change)
+            .await
+            .map_err(manage_error)
+    }
+
+    async fn delete_alias(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        address: &str,
+        at_service: bool,
+    ) -> Result<(), MailboxError> {
+        self.0
+            .delete_alias(archive, address, at_service)
+            .await
+            .map_err(manage_error)
+    }
+}
+
 #[async_trait::async_trait]
 impl Operations for FakeMailboxes {
     async fn ledger(&self) -> Result<LedgerStatus, MailboxError> {
@@ -672,6 +814,7 @@ async fn empty_fixture() -> Fixture {
             auth: auth.clone(),
             mailboxes: mailboxes.clone(),
             operations: mailboxes.clone(),
+            aliases: Arc::new(FakeAliases::new(store.clone())),
             fetcher: fetcher.clone(),
             secure_cookies: false,
         }),
@@ -1473,6 +1616,7 @@ async fn members_read_only_granted_archives() {
     for uri in [
         "/api/webhooks",
         "/api/smtp",
+        "/api/alias-providers",
         "/api/ledger",
         "/api/oauth/providers",
         "/api/tasks",
@@ -3734,4 +3878,178 @@ async fn receives_push_messages_without_a_session() {
         ))
         .await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+const FORWARDED: &[u8] = b"X-SimpleLogin-Type: Forward\r\nX-SimpleLogin-Envelope-To: shop@alias.example.org\r\nFrom: \"Grace Hopper - grace at example.com\" <ra_q1@sl.example.org>\r\nTo: shop@alias.example.org\r\nSubject: Parcel\r\nMessage-ID: <p1@example.com>\r\nDate: Fri, 14 Mar 2025 11:00:00 +0000\r\n\r\nOn its way.\r\n";
+
+fn send_json(method: &str, uri: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn aliases_from_mail_services_and_by_hand() {
+    let f = fixture().await;
+    let ingest = f.ingest.clone().with_alias_detectors(vec![Arc::new(
+        holtmail_alias_simplelogin::SimpleLoginDetector::default(),
+    )]);
+    let folder: holtmail_core::FolderId = f.folder.parse().unwrap();
+    let forwarded = ingest
+        .ingest(
+            f.archive.parse().unwrap(),
+            Bytes::from_static(FORWARDED),
+            &Placement {
+                folder: Some(folder),
+                uid: Some(9),
+                ..Placement::default()
+            },
+        )
+        .await
+        .unwrap();
+    ingest.commit().await.unwrap();
+
+    let message = f
+        .json(&format!("/api/messages/{}", forwarded.message_id))
+        .await;
+    assert_eq!(message["alias"]["provider"], "simplelogin");
+    assert_eq!(message["alias"]["alias"], "shop@alias.example.org");
+    assert_eq!(message["alias"]["sender"]["email"], "grace@example.com");
+    assert_eq!(message["alias"]["sender"]["name"], "Grace Hopper");
+    assert_eq!(message["alias"]["signed"], false);
+    assert_eq!(message["alias"]["known"], false);
+
+    let providers = f.json("/api/alias-providers").await;
+    assert_eq!(providers[0]["id"], "fake");
+    assert_eq!(providers[0]["capabilities"]["switch"], true);
+
+    let list = format!("/api/archives/{}/aliases", f.archive);
+    let listed = f.json(&list).await;
+    assert_eq!(listed["aliases"][0]["address"], "shop@alias.example.org");
+    assert_eq!(listed["aliases"][0]["source"], "mail");
+    assert_eq!(listed["aliases"][0]["messages"], 1);
+    assert_eq!(listed["aliases"][0]["accounts"][0]["messages"], 1);
+
+    let services = format!("/api/archives/{}/alias-services", f.archive);
+    let (status, _, body) = f
+        .send(post_json(
+            &services,
+            json!({"provider": "fake", "key": "wrong"}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("refused the key"));
+    let (status, _, body) = f
+        .send(post_json(
+            &services,
+            json!({"provider": "fake", "name": "Main", "key": "good-key"}),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let service: Value = serde_json::from_slice(&body).unwrap();
+    let service_id = service["id"].as_str().unwrap().to_owned();
+    assert_eq!(service["name"], "Main");
+    assert!(service["synced_at"].is_i64());
+
+    let options = f
+        .json(&format!("/api/alias-services/{service_id}/options"))
+        .await;
+    assert_eq!(options["domains"][0]["label"], "@alias.example");
+    assert_eq!(options["capabilities"]["create_custom"], true);
+
+    let (status, _, body) = f
+        .send(post_json(
+            &format!("/api/alias-services/{service_id}/aliases"),
+            json!({"prefix": "news", "note": "letters", "mailbox_ids": ["2"]}),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let made: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(made["address"], "news@alias.example");
+    assert_eq!(made["source"], "service");
+    assert_eq!(made["mailboxes"], json!(["other@example.org"]));
+
+    let alias_uri = format!("/api/archives/{}/aliases/news@alias.example", f.archive);
+    let (status, _, body) = f
+        .send(send_json(
+            "PATCH",
+            &alias_uri,
+            json!({"enabled": false, "note": ""}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let changed: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(changed["enabled"], false);
+    assert_eq!(changed["note"], Value::Null);
+
+    let (status, _, body) = f
+        .send(post_json(
+            &list,
+            json!({"address": "Quiet.River@icloud.example.org", "provider": "apple", "note": "shop"}),
+        ))
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, _, _) = f
+        .send(post_json(
+            &list,
+            json!({"address": "quiet.river@icloud.example.org", "provider": "apple"}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, _) = f
+        .send(post_json(
+            &list,
+            json!({"address": "not an address", "provider": "apple"}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _, _) = f
+        .send(
+            Request::delete(format!("{alias_uri}?at_service=true"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let listed = f.json(&list).await;
+    let addresses: Vec<&str> = listed["aliases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["address"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        addresses,
+        ["quiet.river@icloud.example.org", "shop@alias.example.org"]
+    );
+    assert_eq!(listed["services"][0]["id"], service_id.as_str());
+
+    let (status, _, _) = f
+        .send(
+            Request::delete(format!("/api/alias-services/{service_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(f.json(&list).await["services"], json!([]));
 }

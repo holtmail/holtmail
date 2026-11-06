@@ -159,13 +159,13 @@ The people derived from an archive's contacts and mail (see [`holtmail-people`](
 
 | Method | Guarantees |
 | --- | --- |
-| `mail_addresses(archive)` | `MailAddresses { own, addresses }`: every address of the archive's mail (`From`, `To`, `Cc`, `Bcc`), trimmed and lowercased, sorted, as `MailAddress { email, name, messages, from_them, from_me, first_at, last_at }`. `name` is the display name used most (ties: the one that sorts first); `from_me` counts messages whose `From` is one of `own`. `own` are the archive's account addresses and every `From` of a message located in a folder with role `sent` or carrying the label `Sent`. Empty for an archive without mail |
+| `mail_addresses(archive)` | `MailAddresses { own, addresses }`: every address of the archive's mail (`From`, `To`, `Cc`, `Bcc`), trimmed and lowercased, sorted, as `MailAddress { email, name, messages, from_them, from_me, first_at, last_at }`. A reverse alias recorded with a sender (`AliasStore`) counts as that sender, with the sender's name. `name` is the display name used most (ties: the one that sorts first); `from_me` counts messages whose `From` is one of `own`. `own` are the archive's account addresses, every `From` of a message located in a folder with role `sent` or carrying the label `Sent`, and the archive's aliases (known or seen in mail). Empty for an archive without mail |
 | `replace_people(archive, people)` | Replaces every person of the archive in one transaction: readers see the old set or the new one. `Invalid` when a person belongs to another archive, `NotFound` for an unknown archive |
 | `list_people(query)` | `PersonQuery { archive_id, text, source, differences, after, limit }`: by name without regard to letter case, nameless last, then id; `text` matches a name, address or phone substring without regard to case; `source` is `PersonSource::{Contacts, Mail, Collection(id)}` (with a card, from mail alone, with a card in that address book); `differences` keeps people whose current cards disagree. Keyset pages of at most 500; `Invalid` for a foreign cursor |
 | `count_people(query)` | How many people the query lists, ignoring paging |
 | `get_person(id)` | The person, or `None` |
 | `people_by_email(archive, emails)` | `(email as given, person)` for each address that belongs to a person of the archive, in the order given |
-| `correspondence(archive, emails, threads, attachments)` | Every message of the archive with one of the addresses, each once: `messages`, `from_them`, `to_them`, `first_at`, `last_at`, `years` (UTC, oldest first), up to `threads` conversations as `ThreadActivity { thread_id, messages, latest, last_at }` (most recently active first) and up to `attachments` `ExchangedAttachment { message_id, date, from_them, attachment }`, not inline and not calendar parts, newest first. Empty for no addresses |
+| `correspondence(archive, emails, threads, attachments)` | Every message of the archive with one of the addresses (or a reverse alias recorded for one of them), each once: `messages`, `from_them`, `to_them`, `first_at`, `last_at`, `years` (UTC, oldest first), up to `threads` conversations as `ThreadActivity { thread_id, messages, latest, last_at }` (most recently active first) and up to `attachments` `ExchangedAttachment { message_id, date, from_them, attachment }`, not inline and not calendar parts, newest first. Empty for no addresses |
 | `items_by_email(archive, kind, emails, limit)` | Items of the kind, removed ones too, whose normalized emails (organizer and attendees for events) include one of the addresses, latest start first, undated last |
 | `add_person_override(value)` | Stores a split or join made by hand: `PersonOverride { id: PersonOverrideId, archive_id, kind: PersonOverrideKind::{Join, Split}, keys, from, created_at, created_by }`. `NotFound` for an unknown archive; `Invalid` for an id already stored, a join with fewer than two keys, or a split without keys or without `from` |
 | `person_overrides(archive)` | The archive's overrides, oldest first (by id); empty for an unknown archive |
@@ -225,6 +225,24 @@ Webhooks and their deliveries, which survive restarts.
 | `record_attempt(id, status, error, next_at, delivered_at)` | Counts one attempt and keeps its result; `next_at: None` ends the delivery (delivered or given up); unknown ids are ignored |
 | `recent_deliveries(webhook, limit)` | Newest first |
 | `prune_deliveries(keep)` | Keeps the newest `keep` finished deliveries per webhook; waiting ones stay |
+
+### AliasStore
+
+What alias detection found per message, the alias services connected to archives and the aliases they list or the owner added (see [ALIASES.md](../../../docs/ALIASES.md)).
+
+| Method | Guarantees |
+| --- | --- |
+| `set_message_alias(message, Option<&MessageAlias>)` | Replaces what was recorded; `None` records nothing found. Idempotent; addresses stored lowercase. `NotFound` for an unknown message |
+| `message_alias(message)` | `MessageAlias { provider, alias, sender, reverse_alias, signed }` or `None` |
+| `known_aliases_among(archive, addresses)` | The known aliases among the addresses, compared lowercase |
+| `aliases(archive)` | `AliasSummary { address, provider, known, mail }` for every known alias and every alias seen in mail, each once, sorted by address. `AliasMail { messages, senders, signed, first_at, last_at, accounts }` counts messages forwarded to it plus messages addressed (`To`, `Cc`, `Bcc`) to a known alias that no detector recognised; `accounts` are the accounts with a location of those messages, most first |
+| `put_alias(archive, &KnownAlias)` / `remove_alias(archive, address)` | Adds or replaces / forgets a known alias (whether there was one); what mail says of it stays |
+| `replace_service_aliases(service, aliases, at)` | Makes these the service's aliases: adds and replaces them (with the service's provider), forgets its others, takes over an alias added by hand with the same address, sets `synced_at`, clears `sync_error`. `NotFound` for an unknown service |
+| `create_alias_service` / `alias_services(archive)` / `all_alias_services()` / `get_alias_service(id)` / `update_alias_service` | `AliasService { id, archive_id, provider, name, base_url, sealed_key, created_at, synced_at, sync_error }`; the id is the caller's so the key can be sealed for it first (`Invalid` when taken, `NotFound` for an unknown archive); oldest first; `NotFound` for an unknown id on update |
+| `delete_alias_service(id, keep_aliases)` | Removes it; its aliases become aliases added by hand, or are forgotten. `NotFound` for an unknown id |
+| `own_alias_addresses(archive)` | Every alias of the archive, known or seen in mail, lowercase, sorted |
+
+Deleting a message removes its record; deleting an archive removes its records, services and aliases.
 
 ### LedgerStore
 

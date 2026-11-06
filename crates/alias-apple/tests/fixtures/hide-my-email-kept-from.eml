@@ -1,0 +1,7 @@
+X-Icloud-Hme: p=quiet.river.42@icloud.example.org; s=billing@example.com; r=to
+From: Billing <billing@example.com>
+To: quiet.river.42@icloud.example.org
+Subject: Invoice
+Date: Mon, 3 Mar 2025 19:00:00 +0000
+
+Invoice.

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use holtmail_blob::BlobId;
 use holtmail_core::{
-    AccountId, Address, ArchiveId, CollectionId, EventGroupId, ItemId, MessageId, PersonId,
-    PersonOverrideId, Timestamp, UserId,
+    AccountId, Address, AliasServiceId, ArchiveId, CollectionId, EventGroupId, ItemId, MessageId,
+    PersonId, PersonOverrideId, Timestamp, UserId,
 };
 use serde_json::json;
 
@@ -47,6 +47,7 @@ pub async fn conformance(store: Arc<dyn Store>) {
     ledger(&*store).await;
     deletions(&*store).await;
     webhooks(&*store).await;
+    aliases(&*store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -3784,4 +3785,292 @@ async fn webhooks(store: &dyn Store) {
         store.delete_webhook(hook.id).await,
         Err(StoreError::NotFound(_))
     ));
+}
+
+fn known(address: &str, provider: &str) -> KnownAlias {
+    KnownAlias {
+        address: address.into(),
+        provider: provider.into(),
+        service_id: None,
+        remote_id: None,
+        enabled: None,
+        note: None,
+        name: None,
+        for_domain: None,
+        mailboxes: Vec::new(),
+        created_at: None,
+        forwarded: None,
+        blocked: None,
+        replied: None,
+    }
+}
+
+async fn aliases(store: &dyn Store) {
+    let archive = archive(store).await;
+    let account = import_account(store, archive).await;
+    let inbox = store
+        .upsert_folder(account.id, "INBOX", Some(FolderRole::Inbox))
+        .await
+        .unwrap();
+    assert!(store.aliases(archive).await.unwrap().is_empty());
+    assert!(matches!(
+        store.set_message_alias(MessageId::new(), None).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let forwarded = store
+        .insert_message(mail_from(
+            archive,
+            501,
+            1_700_000_000,
+            ("Ada Lovelace - ada at example.com", "RA_1@sl.example.org"),
+            &["shop@alias.example.org"],
+        ))
+        .await
+        .unwrap();
+    store
+        .record_location(
+            forwarded.message_id,
+            inbox.id,
+            Some(1),
+            &[],
+            Timestamp::from_secs(1),
+        )
+        .await
+        .unwrap();
+    let hit = MessageAlias {
+        provider: "simplelogin".into(),
+        alias: "Shop@Alias.example.org".into(),
+        sender: Some(Address {
+            name: Some("Ada Lovelace".into()),
+            email: "Ada@Example.com".into(),
+        }),
+        reverse_alias: Some("RA_1@sl.example.org".into()),
+        signed: true,
+    };
+    store
+        .set_message_alias(forwarded.message_id, Some(&hit))
+        .await
+        .unwrap();
+    store
+        .set_message_alias(forwarded.message_id, Some(&hit))
+        .await
+        .unwrap();
+    let stored = store
+        .message_alias(forwarded.message_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.alias, "shop@alias.example.org");
+    assert_eq!(stored.reverse_alias.as_deref(), Some("ra_1@sl.example.org"));
+    assert_eq!(stored.sender.as_ref().unwrap().email, "ada@example.com");
+    assert_eq!(
+        stored.sender.as_ref().unwrap().name.as_deref(),
+        Some("Ada Lovelace")
+    );
+    assert!(stored.signed);
+
+    let delivered = store
+        .insert_message(mail_from(
+            archive,
+            502,
+            1_700_100_000,
+            ("Cleo", "cleo@example.org"),
+            &["quiet.river@icloud.example.org"],
+        ))
+        .await
+        .unwrap();
+    store
+        .put_alias(archive, &known("Quiet.River@icloud.example.org", "apple"))
+        .await
+        .unwrap();
+    let found = store
+        .known_aliases_among(
+            archive,
+            &[
+                "QUIET.RIVER@icloud.example.org".into(),
+                "nobody@example.org".into(),
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].address, "quiet.river@icloud.example.org");
+
+    let all = store.aliases(archive).await.unwrap();
+    assert_eq!(
+        all.iter().map(|a| a.address.as_str()).collect::<Vec<_>>(),
+        ["quiet.river@icloud.example.org", "shop@alias.example.org"]
+    );
+    assert_eq!(all[0].provider, "apple");
+    assert!(all[0].known.is_some());
+    assert_eq!(all[0].mail.messages, 1);
+    assert_eq!(all[0].mail.senders, 1);
+    assert_eq!(
+        all[0].mail.first_at,
+        Some(Timestamp::from_secs(1_700_100_000))
+    );
+    assert_eq!(all[1].provider, "simplelogin");
+    assert!(all[1].known.is_none());
+    assert_eq!(all[1].mail.messages, 1);
+    assert_eq!(all[1].mail.signed, 1);
+    assert_eq!(all[1].mail.accounts, vec![(account.id, 1)]);
+    let _ = delivered;
+
+    let mail = store.mail_addresses(archive).await.unwrap();
+    assert!(mail.own.contains(&"shop@alias.example.org".to_owned()));
+    assert!(
+        mail.own
+            .contains(&"quiet.river@icloud.example.org".to_owned())
+    );
+    let ada = mail
+        .addresses
+        .iter()
+        .find(|a| a.email == "ada@example.com")
+        .expect("the reverse alias counts as its sender");
+    assert_eq!(ada.name.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(ada.from_them, 1);
+    assert!(
+        !mail
+            .addresses
+            .iter()
+            .any(|a| a.email == "ra_1@sl.example.org")
+    );
+    let with_ada = store
+        .correspondence(archive, &["ada@example.com".into()], 10, 10)
+        .await
+        .unwrap();
+    assert_eq!(with_ada.messages, 1);
+    assert_eq!(with_ada.from_them, 1);
+
+    let service = AliasService {
+        id: AliasServiceId::new(),
+        archive_id: archive,
+        provider: "simplelogin".into(),
+        name: "Main".into(),
+        base_url: "https://sl.example.org".into(),
+        sealed_key: vec![1, 2, 3],
+        created_at: Timestamp::from_secs(10),
+        synced_at: None,
+        sync_error: Some("old".into()),
+    };
+    assert!(matches!(
+        store
+            .create_alias_service(&AliasService {
+                archive_id: ArchiveId::new(),
+                ..service.clone()
+            })
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    store.create_alias_service(&service).await.unwrap();
+    assert!(matches!(
+        store.create_alias_service(&service).await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert_eq!(
+        store.alias_services(archive).await.unwrap(),
+        vec![service.clone()]
+    );
+    assert_eq!(store.all_alias_services().await.unwrap().len(), 1);
+    let mut listed = known("shop@alias.example.org", "ignored");
+    listed.remote_id = Some("7".into());
+    listed.enabled = Some(false);
+    listed.mailboxes = vec!["owner@example.org".into()];
+    listed.forwarded = Some(12);
+    store
+        .replace_service_aliases(
+            service.id,
+            &[listed.clone(), known("other@alias.example.org", "x")],
+            Timestamp::from_secs(20),
+        )
+        .await
+        .unwrap();
+    let synced = store.get_alias_service(service.id).await.unwrap().unwrap();
+    assert_eq!(synced.synced_at, Some(Timestamp::from_secs(20)));
+    assert_eq!(synced.sync_error, None);
+    let all = store.aliases(archive).await.unwrap();
+    assert_eq!(all.len(), 3);
+    let shop = all
+        .iter()
+        .find(|a| a.address == "shop@alias.example.org")
+        .unwrap();
+    let shop_known = shop.known.as_ref().unwrap();
+    assert_eq!(shop_known.provider, "simplelogin");
+    assert_eq!(shop_known.service_id, Some(service.id));
+    assert_eq!(shop_known.enabled, Some(false));
+    assert_eq!(shop_known.forwarded, Some(12));
+    assert_eq!(shop.mail.messages, 1);
+
+    store
+        .replace_service_aliases(service.id, &[listed], Timestamp::from_secs(30))
+        .await
+        .unwrap();
+    assert!(
+        !store
+            .aliases(archive)
+            .await
+            .unwrap()
+            .iter()
+            .any(|a| a.address == "other@alias.example.org"),
+        "an alias the service no longer lists is forgotten"
+    );
+
+    let mut renamed = synced.clone();
+    renamed.name = "Renamed".into();
+    renamed.sync_error = Some("the service refused the key".into());
+    store.update_alias_service(&renamed).await.unwrap();
+    assert_eq!(
+        store.get_alias_service(service.id).await.unwrap(),
+        Some(renamed)
+    );
+    store.delete_alias_service(service.id, true).await.unwrap();
+    assert!(matches!(
+        store.delete_alias_service(service.id, true).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let kept = store
+        .known_aliases_among(archive, &["shop@alias.example.org".into()])
+        .await
+        .unwrap();
+    assert_eq!(kept[0].service_id, None);
+    assert!(
+        store
+            .remove_alias(archive, "SHOP@alias.example.org")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .remove_alias(archive, "shop@alias.example.org")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store.own_alias_addresses(archive).await.unwrap(),
+        ["quiet.river@icloud.example.org", "shop@alias.example.org"]
+    );
+
+    store
+        .set_message_alias(forwarded.message_id, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.message_alias(forwarded.message_id).await.unwrap(),
+        None
+    );
+    store
+        .set_message_alias(forwarded.message_id, Some(&hit))
+        .await
+        .unwrap();
+    store
+        .delete_messages(archive, &[forwarded.message_id], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.message_alias(forwarded.message_id).await.unwrap(),
+        None
+    );
+    store.delete_archive(archive).await.unwrap();
+    assert!(store.aliases(archive).await.unwrap().is_empty());
 }

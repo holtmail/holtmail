@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-alias-simplelogin"
+description = "SimpleLogin and Proton Pass aliases: forwarded mail and the alias API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-alias.workspace = true
+holtmail-core.workspace = true
+holtmail-json-http.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+holtmail-alias = { workspace = true, features = ["testing"] }
+holtmail-mime.workspace = true
+axum.workspace = true
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "sync"] }
+
+[lints]
+workspace = true

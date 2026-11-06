@@ -1,6 +1,7 @@
 //! The `holtmail` binary: the server and the command-line tools.
 
 mod accounts;
+mod aliases;
 mod backup;
 mod config;
 mod dav;
@@ -1298,6 +1299,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         auth: auth.clone(),
         mailboxes: Arc::new(runner.clone()),
         operations: Arc::new(runner.clone()),
+        aliases: Arc::new(runner.clone()),
         fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
     });
@@ -1309,15 +1311,21 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     }
     runner.resume().await;
     let services_for_passes = services.clone();
+    let runner_for_passes = runner.clone();
     tokio::spawn(async {
         let services = services_for_passes;
         ledger::enter_at_start(services.store.clone()).await;
         reindex_if_needed(services.clone()).await;
         invitations_if_needed(services.clone()).await;
         directory_text_if_needed(services.clone()).await;
+        aliases::detect_if_needed(runner_for_passes).await;
         people::build_if_needed(&*services.store).await;
     });
     tokio::spawn(runner.clone().run_schedule());
+    tokio::spawn(aliases::run_schedule(
+        runner.clone(),
+        services.alias_sync_minutes,
+    ));
     tokio::spawn(watch::run(runner.clone()));
     tokio::spawn(push::run(runner.clone()));
     tokio::spawn(runner.clone().find_caldav_offers(None));

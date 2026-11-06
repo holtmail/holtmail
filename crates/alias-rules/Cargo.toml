@@ -1,0 +1,20 @@
+[package]
+name = "holtmail-alias-rules"
+description = "Alias detection from rules in the config, for own domains and other services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-alias.workspace = true
+holtmail-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-alias = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

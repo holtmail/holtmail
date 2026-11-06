@@ -10,6 +10,15 @@ rust-version = "1.99"
 repository = "https://github.com/holtmail/holtmail"
 
 [workspace.dependencies]
+holtmail-alias = { path = "crates/alias" }
+holtmail-alias-addy = { path = "crates/alias-addy" }
+holtmail-alias-apple = { path = "crates/alias-apple" }
+holtmail-alias-duck = { path = "crates/alias-duck" }
+holtmail-alias-fastmail = { path = "crates/alias-fastmail" }
+holtmail-alias-relay = { path = "crates/alias-relay" }
+holtmail-alias-rules = { path = "crates/alias-rules" }
+holtmail-alias-simplelogin = { path = "crates/alias-simplelogin" }
+holtmail-aliases = { path = "crates/aliases" }
 holtmail-api = { path = "crates/api" }
 holtmail-auth = { path = "crates/auth" }
 holtmail-blob = { path = "crates/blob" }
@@ -33,6 +42,7 @@ holtmail-ledger = { path = "crates/ledger" }
 holtmail-index-tantivy = { path = "crates/index-tantivy" }
 holtmail-hooks = { path = "crates/hooks" }
 holtmail-ingest = { path = "crates/ingest" }
+holtmail-json-http = { path = "crates/json-http" }
 holtmail-mime = { path = "crates/mime" }
 holtmail-oauth = { path = "crates/oauth" }
 holtmail-oauth-http = { path = "crates/oauth-http" }

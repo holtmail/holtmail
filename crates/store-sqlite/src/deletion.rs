@@ -100,6 +100,7 @@ impl DeletionStore for SqliteStore {
                 "DELETE FROM attachments WHERE message_id = ?",
                 "DELETE FROM message_labels WHERE message_id = ?",
                 "DELETE FROM message_addresses WHERE message_id = ?",
+                "DELETE FROM message_aliases WHERE message_id = ?",
                 "DELETE FROM message_parents WHERE message_id = ?",
                 "DELETE FROM message_remote_images WHERE message_id = ?",
                 "DELETE FROM remote_scans WHERE message_id = ?",

@@ -1,5 +1,6 @@
 //! Holtmail's metadata [`Store`](holtmail_store::Store) on SQLite.
 
+mod aliases;
 mod calendar;
 mod deletion;
 mod ledger;
@@ -209,6 +210,9 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM people WHERE archive_id = ?1",
             "DELETE FROM person_overrides WHERE archive_id = ?1",
             "DELETE FROM message_addresses WHERE archive_id = ?1",
+            "DELETE FROM message_aliases WHERE archive_id = ?1",
+            "DELETE FROM aliases WHERE archive_id = ?1",
+            "DELETE FROM alias_services WHERE archive_id = ?1",
             "DELETE FROM item_version_messages WHERE item_id IN (SELECT id FROM items WHERE archive_id = ?1)",
             "DELETE FROM occurrences WHERE archive_id = ?1",
             "DELETE FROM event_series WHERE archive_id = ?1",

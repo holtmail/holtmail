@@ -6,10 +6,12 @@ The one path into the archive. Sync and import both hand raw message bytes to `I
 
 ```rust
 let ingest = Ingest::new(blobs, store, index) // Arc<dyn BlobStore>, Arc<dyn Store>, Arc<dyn SearchIndex>
-    .with_extractor(extractor); // Arc<dyn Extractor>, optional
+    .with_extractor(extractor) // Arc<dyn Extractor>, optional
+    .with_alias_detectors(detectors); // Vec<Arc<dyn AliasDetector>>, optional
 let done = ingest.ingest(archive, raw, &Placement { folder, uid, flags, labels, received_at }).await?;
 ingest.commit().await?; // once per batch
 ingest.reindex(message).await?; // after folders, flags or labels change
+ingest.refresh_alias(message).await?; // detect the alias again; true when it changed
 ```
 
 `Ingested { message_id, thread_id, created }`; `created` is `false` when the archive already had these bytes.
@@ -23,7 +25,7 @@ ingest.reindex(message).await?; // after folders, flags or labels change
 5. Replaces the message's labels when the placement has `labels: Some(..)`; `None` (imports, servers without labels) leaves them as they are.
 6. Puts an index document built from the parsed message, every folder, flag and label the message currently has, and the text of its attachments.
 
-Between steps 3 and 4, a new message's calendar parts become events (see [Invitations in mail](#invitations-in-mail)).
+Between steps 3 and 4, a new message's alias is recorded (see [Aliases](#aliases)) and its calendar parts become events (see [Invitations in mail](#invitations-in-mail)).
 
 Ingesting the same bytes again only adds or updates the location and refreshes the index document, so syncs and imports can be repeated safely.
 
@@ -47,6 +49,10 @@ let added = ingest.record_invitations(message).await?; // the stored message's c
 ```
 
 Every `text/calendar` or `application/ics` part of a message (`ParsedMessage::calendars`: iMIP invitations, updates, replies, cancellations, and attached `.ics` files) is cut by `holtmail_pim::split`; each `VEVENT` or `VTODO` with a `UID` becomes a version of an item in the archive's "From mail" calendar (`MAIL_COLLECTION`, one per archive, no account). The item's `remote_id` is the `UID` (`task:<UID>` for tasks), so the series and its changed instances are one item. The version records the part's `METHOD` and is ordered by `SEQUENCE`, `DTSTAMP` and the message's `Date` through `PimStore::record_mail_version`, which also links the message. After a new version the item's `PimIndex` is rebuilt from every version merged by `holtmail_pim::merge`: the latest invitation, every attendee's latest answer, and `CANCELLED` once cancelled. `ingest` does this for new messages only; `record_invitations` reads a stored message again for mail archived before this existed, and is idempotent. `rebuild_item` merges the same way for items from mail.
+
+## Aliases
+
+With `with_alias_detectors`, the first detector (in the given order) that recognises a new message decides its alias, recorded with `AliasStore::set_message_alias` (see [holtmail-alias](../../alias/docs/README.md) and [ALIASES.md](../../../docs/ALIASES.md)); a message no detector recognises is recorded as having none. The sender a service hid is added to the index document's `from`, so `from:` finds the message by either address; `reindex` keeps it. `detect_alias(&parsed)` is the detection alone. `refresh_alias(message)` reads the stored bytes, detects again, records the answer and reindexes the message only when the answer changed; the server runs it over every message when the detectors' versions change.
 
 ## Attachment text
 

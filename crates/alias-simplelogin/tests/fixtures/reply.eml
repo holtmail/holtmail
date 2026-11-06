@@ -1,0 +1,8 @@
+X-SimpleLogin-Type: Reply
+X-SimpleLogin-Envelope-To: ada@example.com
+From: shop.one@alias.example.org
+To: Ada Lovelace <ada@example.com>
+Subject: Re: Your order
+Date: Mon, 3 Mar 2025 21:00:00 +0000
+
+Thanks.

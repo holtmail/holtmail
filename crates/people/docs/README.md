@@ -54,3 +54,4 @@ Undoing an override (removing it) and rebuilding gives exactly the people there 
 - A split moves cards, not addresses: a person from mail joined to a card is undone by removing the join.
 - The API rebuilds the archive right after storing or removing an override; a background rebuild that read the overrides just before may write once more without it, until the next rebuild (any import, sync with changes or `reindex`).
 - `Reply-To` is not stored with messages, so it does not count as mail with a person.
+- Mail through alias services counts with the real sender: the store reports a reverse alias recorded by alias detection as its sender (see [ALIASES.md](../../../docs/ALIASES.md)), and the archive's aliases are the owner's addresses, so they never become people.

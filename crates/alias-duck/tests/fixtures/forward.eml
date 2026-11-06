@@ -1,0 +1,7 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=duck.example.org header.s=d1
+From: Ada Lovelace <ada_at_example.com_jane@duck.example.org>
+To: shop.one@duck.example.org
+Subject: Order
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+
+Order.

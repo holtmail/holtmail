@@ -60,6 +60,9 @@ pub struct Config {
     /// sync at once.
     #[serde(default)]
     pub watch: WatchConfig,
+    /// Recognising mail forwarded by alias services and listing connected services' aliases.
+    #[serde(default)]
+    pub aliases: crate::aliases::AliasConfig,
     #[serde(skip)]
     pub tls_roots: TlsRoots,
 }
@@ -395,6 +398,12 @@ pub struct Services {
     /// Where contacts and calendars servers post WebDAV-Push messages: the https `public_url`
     /// without a trailing slash; `None` when the instance has no public https address.
     pub push_base: Option<String>,
+    /// Recognise mail forwarded by alias services, in this order.
+    pub detectors: Vec<Arc<dyn holtmail_alias::AliasDetector>>,
+    /// Connected alias services.
+    pub aliases: holtmail_aliases::AliasManager,
+    /// Minutes between listings of the services' aliases; 0 for only on request.
+    pub alias_sync_minutes: u64,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -526,6 +535,13 @@ impl Services {
             ),
         ));
         oauth.set_hooks(hooks.clone());
+        let detectors = crate::aliases::detectors(&config.aliases)?;
+        let aliases = holtmail_aliases::AliasManager::new(
+            store.clone(),
+            secrets.clone(),
+            crate::aliases::providers(),
+            crate::aliases::connect(config.tls_roots.clone()),
+        );
         Ok(Self {
             secrets,
             blobs,
@@ -538,6 +554,9 @@ impl Services {
             smtp: Default::default(),
             watch: config.watch.clone(),
             push_base: config.https().then(|| config.base_url()),
+            detectors,
+            aliases,
+            alias_sync_minutes: config.aliases.sync_interval_minutes,
         })
     }
 
@@ -545,6 +564,7 @@ impl Services {
     pub fn ingest(&self) -> Ingest {
         Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
             .with_extractor(self.extractor.clone())
+            .with_alias_detectors(self.detectors.clone())
     }
 }
 

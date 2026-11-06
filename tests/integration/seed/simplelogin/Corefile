@@ -1,0 +1,6 @@
+sl.example.org {
+    file /zones/db.sl.example.org
+}
+. {
+    forward . /etc/resolv.conf
+}

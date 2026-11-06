@@ -1,0 +1,13 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=addy.example.org header.s=default
+Received: from mail.addy.example.org by mx.example.org; Mon, 3 Mar 2025 18:00:02 +0000
+Feedback-ID: F:5e1d2c3b-0000-4000-8000-000000000001:anonaddy
+X-AnonAddy-Original-Sender: news@example.com
+X-AnonAddy-Original-From-Header: "Example News" <news@example.com>
+X-AnonAddy-Original-To: shop@ada.addy.example.org
+From: "Example News 'news at example.com'" <shop+news=example.com@ada.addy.example.org>
+To: owner@example.org
+Subject: This week
+Date: Mon, 3 Mar 2025 18:00:00 +0000
+Message-ID: <news-12@example.com>
+
+News.

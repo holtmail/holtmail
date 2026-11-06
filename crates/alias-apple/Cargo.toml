@@ -1,0 +1,19 @@
+[package]
+name = "holtmail-alias-apple"
+description = "Apple Hide My Email and Sign in with Apple relay: recognising forwarded mail"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-alias.workspace = true
+holtmail-core.workspace = true
+
+[dev-dependencies]
+holtmail-alias = { workspace = true, features = ["testing"] }
+holtmail-mime.workspace = true
+
+[lints]
+workspace = true

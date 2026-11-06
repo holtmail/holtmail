@@ -535,3 +535,21 @@ fn derives_uids_from_receive_time_and_id() {
         ) < 1 << 62
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let server = ca.serve_https(401, "{}").await;
+    let settings = GraphSettings {
+        api_url: Some(format!("https://localhost:{}/v1.0", server.port())),
+    };
+    let source = || GraphSource::new(&settings, Credentials::AccessToken(TOKEN.into())).unwrap();
+    let trusted = source().with_roots(&ca.roots()).unwrap();
+    let mut session = trusted.connect().await.unwrap();
+    assert!(matches!(session.folders().await, Err(SourceError::Auth(_))));
+    let mut session = source().connect().await.unwrap();
+    assert!(matches!(
+        session.folders().await,
+        Err(SourceError::Connection(_))
+    ));
+}

@@ -8,6 +8,7 @@ Reads mail from Microsoft 365 (work and school), Outlook.com and Hotmail mailbox
 | --- | --- |
 | `GraphSettings { api_url }` | Stored in the account's settings JSON next to `oauth`; other keys are ignored. `api_url` is the Graph endpoint with its version, `GRAPH_URL` (`https://graph.microsoft.com/v1.0`) when missing; only `https`, or `http` to a loopback address. `from_json` fails with `Config` |
 | `GraphSource::new(&settings, credentials)` | Takes only `Credentials::AccessToken`, an OAuth access token with `Mail.Read`; a password is `Config`, as is an unusable address |
+| `GraphSource::with_roots(roots)` | Also trusts the CA certificates in `TlsRoots` besides the system's roots; verification stays on. `Config` for an unusable certificate |
 | `GraphSource::address()` | The signed-in mailbox's primary SMTP address, else its user principal name (`GET /me`, needs `User.Read`); `None` when Graph names neither |
 
 The token is sent only to the origin of `api_url`: next-page links, delta links and stored links that point anywhere else are refused (`Protocol`, or "changed" for a stored link), and redirects are not followed.
@@ -42,4 +43,4 @@ Accounts are created by the server's OAuth flow with Graph scopes (see [holtmail
 - `$batch` is not used; the six well-known folder lookups are separate requests.
 - A folder name containing `/` reads as a deeper path.
 - Only the global cloud's endpoints are built in; national clouds would need `api_url` and their own sign-in endpoints.
-- Tested only against the in-process fake Graph server in `src/tests.rs` (folders with hidden and child folders, a search folder, paged delta, delta links, an expired link, `$value`, throttling, a wrong token); not yet against Microsoft.
+- Tested only against the in-process fake Graph server in `src/tests.rs` (folders with hidden and child folders, a search folder, paged delta, delta links, an expired link, `$value`, throttling, a wrong token), and a TLS server in the process whose test CA is trusted only through `with_roots`; not yet against Microsoft.

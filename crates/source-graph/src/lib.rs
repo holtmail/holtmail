@@ -89,6 +89,13 @@ pub struct GraphSource {
 }
 
 impl GraphSource {
+    /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
+    /// not a usable certificate.
+    pub fn with_roots(mut self, roots: &holtmail_core::TlsRoots) -> Result<Self, SourceError> {
+        self.http = self.http.with_roots(roots)?;
+        Ok(self)
+    }
+
     /// A source for the mailbox behind `credentials`, which must be an OAuth access token with
     /// `Mail.Read`. `Config` for a password or an unusable Graph address.
     pub fn new(settings: &GraphSettings, credentials: Credentials) -> Result<Self, SourceError> {

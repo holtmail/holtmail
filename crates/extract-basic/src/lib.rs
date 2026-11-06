@@ -1,6 +1,7 @@
 //! Holtmail's [`Extractor`] in pure Rust: plain text, CSV, HTML, PDF, DOCX, XLSX, PPTX, ODT, ODS
 //! and ODP.
 
+mod directory;
 mod office;
 mod pdf;
 
@@ -19,6 +20,7 @@ pub const MAX_UNPACKED: usize = 128 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Text,
+    Directory,
     Html,
     Pdf,
     Docx,
@@ -71,6 +73,7 @@ impl Extractor for BasicExtractor {
 fn read(kind: Kind, content: &[u8]) -> Result<String, ExtractError> {
     match kind {
         Kind::Text => Ok(String::from_utf8_lossy(content).into_owned()),
+        Kind::Directory => Ok(directory::text(content)),
         Kind::Html => Ok(mail_parser::decoders::html::html_to_text(
             &String::from_utf8_lossy(content),
         )),
@@ -107,6 +110,8 @@ fn kind(content_type: &str, filename: Option<&str>) -> Option<Kind> {
         .to_ascii_lowercase();
     let by_type = match content_type.as_str() {
         "text/html" | "application/xhtml+xml" => Some(Kind::Html),
+        "text/calendar" | "application/ics" | "text/vcard" | "text/x-vcard" | "text/directory"
+        | "text/x-vcalendar" => Some(Kind::Directory),
         "application/pdf" | "application/x-pdf" => Some(Kind::Pdf),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
             Some(Kind::Docx)
@@ -140,9 +145,8 @@ fn kind(content_type: &str, filename: Option<&str>) -> Option<Kind> {
     }
     let extension = filename?.rsplit_once('.')?.1.to_ascii_lowercase();
     match extension.as_str() {
-        "txt" | "text" | "csv" | "tsv" | "md" | "log" | "json" | "xml" | "ics" | "vcf" => {
-            Some(Kind::Text)
-        }
+        "txt" | "text" | "csv" | "tsv" | "md" | "log" | "json" | "xml" => Some(Kind::Text),
+        "ics" | "ical" | "ifb" | "vcf" | "vcard" | "vcs" => Some(Kind::Directory),
         "html" | "htm" => Some(Kind::Html),
         "pdf" => Some(Kind::Pdf),
         "docx" => Some(Kind::Docx),

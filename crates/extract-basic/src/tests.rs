@@ -257,3 +257,46 @@ fn picks_the_kind_from_the_type_then_the_name() {
     assert_eq!(kind("application/octet-stream", Some("archive")), None);
     assert_eq!(kind("image/png", Some("a.txt")), None);
 }
+
+#[tokio::test]
+async fn reads_calendar_and_card_words_without_their_syntax() {
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:x1@example.com\r\nDTSTART:20250310T090000Z\r\nSUMMARY:Harbour walk\\, then lunch\r\nLOCATION:Pier 4\r\nDESCRIPTION:Bring boots.\\nWe meet at the gate\r\n  near the café.\r\nORGANIZER;CN=\"Doe, Jane\":mailto:jane@example.com\r\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:MAILTO:ada@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let got = text("text/calendar; method=REQUEST", None, ics.into()).await;
+    for word in [
+        "Harbour walk, then lunch",
+        "Pier 4",
+        "Bring boots.",
+        "We meet at the gate near the café.",
+        "Doe, Jane",
+        "jane@example.com",
+        "Ada",
+        "ada@example.org",
+    ] {
+        assert!(got.contains(word), "{word} missing in {got:?}");
+    }
+    for syntax in [
+        "BEGIN",
+        "VEVENT",
+        "DTSTART",
+        "PRODID",
+        "mailto",
+        "MAILTO",
+        "x1@example.com",
+        "2025",
+    ] {
+        assert!(!got.contains(syntax), "{syntax} kept in {got:?}");
+    }
+
+    let vcf = b"BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nORG:Analytical Engines;Research\nitem1.EMAIL;TYPE=INTERNET:ada@example.org\nADR;TYPE=HOME:;;12 Harbour Road;Bristol;;BS1 4ND;UK\nREV:20250101T000000Z\nEND:VCARD\n".to_vec();
+    let got = text("application/octet-stream", Some("ada.vcf"), vcf).await;
+    for word in [
+        "Ada Lovelace",
+        "Analytical Engines Research",
+        "ada@example.org",
+        "12 Harbour Road",
+        "Bristol",
+    ] {
+        assert!(got.contains(word), "{word} missing in {got:?}");
+    }
+    assert!(!got.contains("VCARD") && !got.contains("REV"), "{got:?}");
+}

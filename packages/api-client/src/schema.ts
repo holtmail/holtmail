@@ -180,6 +180,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/deletions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['review']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/events': {
     parameters: {
       query?: never
@@ -356,6 +372,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/deletions/{id}/confirm': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['confirm']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/events/{id}': {
     parameters: {
       query?: never
@@ -414,6 +446,38 @@ export interface paths {
     get: operations['get_version_raw']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ledger': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_ledger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ledger/verify': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['verify_ledger']
     delete?: never
     options?: never
     head?: never
@@ -564,6 +628,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/messages/{id}/pdf': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_pdf']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/messages/{id}/raw': {
     parameters: {
       query?: never
@@ -622,6 +702,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['finish']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/oauth/providers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['providers']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -740,6 +836,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/smtp': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/sync-schedule': {
     parameters: {
       query?: never
@@ -834,6 +946,86 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['update_user']
+    trace?: never
+  }
+  '/api/webhooks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list']
+    put?: never
+    post: operations['create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/webhooks/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['remove']
+    options?: never
+    head?: never
+    patch: operations['update']
+    trace?: never
+  }
+  '/api/webhooks/{id}/deliveries': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['deliveries']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/webhooks/{id}/secret': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['rotate']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/webhooks/{id}/test': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['test']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
 }
@@ -1224,6 +1416,96 @@ export interface components {
       to_them: number
       /** @description Oldest year first. */
       years: components['schemas']['YearCountDto'][]
+    }
+    /** @description Confirms a review. */
+    DeletionConfirmRequest: {
+      /**
+       * Format: int64
+       * @description The review's `count`, typed again by the person deleting.
+       */
+      count: number
+    }
+    /** @description What to delete: a search or a list of messages, exactly one of them. */
+    DeletionRequest: {
+      /** @description Message ids; those not in the archive are left out. */
+      message_ids?: string[] | null
+      /** @description A search as the search box reads it, e.g. `from:news@example.com before:2020-01-01`. */
+      query?: string | null
+    }
+    /** @description A frozen list of messages waiting to be deleted. */
+    DeletionReviewDto: {
+      archive_id: string
+      /**
+       * Format: int64
+       * @description Their size together, in bytes.
+       */
+      bytes: number
+      /**
+       * Format: int64
+       * @description Messages it deletes; the confirmation repeats this number.
+       */
+      count: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds; after this the review cannot be confirmed.
+       */
+      expires_at: number
+      /** @description Confirm with `POST /api/deletions/{id}/confirm`. */
+      id: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      newest?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      oldest?: number | null
+      query?: string | null
+      /** @description Up to 20 of them, newest first. */
+      sample: components['schemas']['DeletionSampleDto'][]
+    }
+    /** @description One of the messages a deletion would remove. */
+    DeletionSampleDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      date: number
+      from: components['schemas']['AddressDto'][]
+      id: string
+      /** Format: int64 */
+      size: number
+      subject?: string | null
+    }
+    /** @description One delivery of an event to a webhook. */
+    DeliveryDto: {
+      /** Format: int32 */
+      attempts: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      delivered_at?: number | null
+      event: string
+      /** @description The `id` in the body and the `Holtmail-Delivery` header. */
+      event_id: string
+      /** Format: int64 */
+      id: number
+      last_error?: string | null
+      /** Format: int32 */
+      last_status?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the next attempt; `null` once delivered or given up.
+       */
+      next_at?: number | null
     }
     /** @description An error. */
     ErrorDto: {
@@ -1663,6 +1945,65 @@ export interface components {
        */
       unread: number
     }
+    /** @description The ledger as it stands. */
+    LedgerDto: {
+      head?: components['schemas']['LedgerEntryDto'] | null
+      last_verification?: components['schemas']['LedgerVerificationDto'] | null
+    }
+    /** @description One ledger entry. */
+    LedgerEntryDto: {
+      archive_id: string
+      /**
+       * Format: int64
+       * @description When it happened, Unix milliseconds.
+       */
+      at: number
+      /** @description The message's BLAKE3 hash. */
+      blob_id?: string | null
+      /** @description `archived`, `deleted` or `archive_deleted`. */
+      event: string
+      /** @description BLAKE3 over the entry and the hash before it, 64 hex digits. */
+      hash: string
+      message_id?: string | null
+      /**
+       * Format: int64
+       * @description Its position, from 1.
+       */
+      seq: number
+    }
+    /** @description How a verification ended. */
+    LedgerVerificationDto: {
+      /**
+       * Format: int64
+       * @description The position of the anchor it was given.
+       */
+      anchor_seq?: number | null
+      /**
+       * Format: int64
+       * @description Message bytes read, when it was asked to read them.
+       */
+      blobs_checked?: number | null
+      /** Format: int64 */
+      entries: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      finished_at: number
+      head_hash?: string | null
+      /** Format: int64 */
+      head_seq?: number | null
+      ok: boolean
+      /** Format: int64 */
+      problem_count: number
+      /** @description At most 100 lines with ids and positions. */
+      problems: string[]
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      started_at: number
+    }
     /** @description A folder a message is in. */
     LocationDto: {
       flags: string[]
@@ -1815,10 +2156,23 @@ export interface components {
       /** @description `owner`, `admin` or `member` (default). Only an owner adds owners. */
       role?: string | null
     }
+    /** @description Adds a webhook. */
+    NewWebhookRequest: {
+      events: string[]
+      /** @description An `http://` or `https://` address without a user name or password. */
+      url: string
+    }
     /** @description Finishes a sign-in. */
     OAuthFinishRequest: {
       /** @description The address the browser landed on after sign-in, or its query. */
       pasted_url: string
+    }
+    /** @description A provider this server signs in with. */
+    OAuthProviderDto: {
+      /** @description `google` or `microsoft`. */
+      provider: string
+      /** @description Thunderbird's public client is used, so the consent screen names Thunderbird. */
+      thunderbird_client: boolean
     }
     /** @description A started sign-in. */
     OAuthStartDto: {
@@ -2203,6 +2557,46 @@ export interface components {
       /** @description `true` while there are no users; the web app then shows the setup screen. */
       needed: boolean
     }
+    /** @description The SMTP listener, from the server's config. */
+    SmtpDto: {
+      allow: string[]
+      auth: boolean
+      /** Format: int64 */
+      deleted: number
+      /** @description `false` when the config has no `[smtp]`; the other fields are then empty. */
+      enabled: boolean
+      /** Format: int64 */
+      failed: number
+      hostname?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      last_received_at?: number | null
+      listen?: string | null
+      /** Format: int64 */
+      max_size_mb?: number | null
+      /**
+       * Format: int64
+       * @description Counted since the server started.
+       */
+      received: number
+      /** Format: int64 */
+      refused_recipients: number
+      require_tls: boolean
+      routes: components['schemas']['SmtpRouteDto'][]
+      starttls: boolean
+    }
+    /** @description One SMTP route. */
+    SmtpRouteDto: {
+      archive_id: string
+      /** @description The folder of the archive's "Received by SMTP" account. */
+      folder: string
+      /** @description Exchange journal reports are unwrapped to the original message. */
+      journal: boolean
+      /** @description An address or `*@domain`. */
+      recipient: string
+    }
     /** @description A message a version of an item was found in. */
     SourceMessageDto: {
       /**
@@ -2260,7 +2654,7 @@ export interface components {
       /** Format: int64 */
       finished_at?: number | null
       id: string
-      /** @description `sync`, `import` or `remote_images`. */
+      /** @description `sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`. */
       kind: string
       log: components['schemas']['TaskLineDto'][]
       /**
@@ -2334,6 +2728,49 @@ export interface components {
        *     when its address book last synced, else when its latest version was seen.
        */
       seen_at: number
+    }
+    /** @description Starts a verification. */
+    VerifyLedgerRequest: {
+      /** @description A head written down earlier, as `<seq>:<hash>`. */
+      anchor?: string | null
+      /** @description Also read every message's bytes and compare their hash; as slow as reading the archive. */
+      blobs?: boolean
+    }
+    /** @description A webhook with its signing secret, shown only when it is made. */
+    WebhookCreatedDto: {
+      /** @description HMAC-SHA256 key for `Holtmail-Signature`; keep it now, it is not shown again. */
+      secret: string
+      webhook: components['schemas']['WebhookDto']
+    }
+    /** @description An address the server tells about events. */
+    WebhookDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      enabled: boolean
+      /** @description Event names it gets, besides `webhook.test`. */
+      events: string[]
+      id: string
+      last_delivery?: components['schemas']['DeliveryDto'] | null
+      url: string
+    }
+    /** @description The webhooks and the events they can get. */
+    WebhookListDto: {
+      /** @description Every event name a webhook can subscribe to. */
+      events: string[]
+      webhooks: components['schemas']['WebhookDto'][]
+    }
+    /** @description A new signing secret. */
+    WebhookSecretDto: {
+      secret: string
+    }
+    /** @description Changes a webhook; missing fields stay. */
+    WebhookUpdateRequest: {
+      enabled?: boolean | null
+      events?: string[] | null
+      url?: string | null
     }
     /** @description Messages of a year. */
     YearCountDto: {
@@ -2527,6 +2964,15 @@ export interface operations {
           'application/json': components['schemas']['ErrorDto']
         }
       }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
       /** @description No such account */
       404: {
         headers: {
@@ -2616,6 +3062,15 @@ export interface operations {
       }
       /** @description Not signed in */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -2905,6 +3360,15 @@ export interface operations {
       }
       /** @description Not signed in */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -3334,6 +3798,78 @@ export interface operations {
       }
     }
   }
+  review: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeletionRequest']
+      }
+    }
+    responses: {
+      /** @description What would be deleted; nothing is deleted yet */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DeletionReviewDto']
+        }
+      }
+      /** @description Neither or both of query and message_ids, a query that does not parse or is empty, nothing found, or more than 100000 messages */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_events: {
     parameters: {
       query?: {
@@ -3562,6 +4098,15 @@ export interface operations {
       }
       /** @description Not signed in */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -4032,6 +4577,69 @@ export interface operations {
       }
     }
   }
+  confirm: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Review id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeletionConfirmRequest']
+      }
+    }
+    responses: {
+      /** @description Deleting in the background */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskDto']
+        }
+      }
+      /** @description An unknown, used or expired review, another user's review, or another count */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_event: {
     parameters: {
       query?: {
@@ -4254,6 +4862,112 @@ export interface operations {
       }
       /** @description No such item or version */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_ledger: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LedgerDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  verify_ledger: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VerifyLedgerRequest']
+      }
+    }
+    responses: {
+      /** @description Started, or already running */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TaskDto']
+        }
+      }
+      /** @description A malformed anchor */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -4738,6 +5452,56 @@ export interface operations {
       }
     }
   }
+  get_pdf: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The message as a PDF with the original message attached inside it */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/pdf': unknown
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_raw: {
     parameters: {
       query?: never
@@ -4894,6 +5658,52 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  providers: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OAuthProviderDto'][]
         }
       }
       /** @description Not signed in */
@@ -5367,6 +6177,43 @@ export interface operations {
       }
     }
   }
+  status: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['SmtpDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_sync_schedule: {
     parameters: {
       query?: never
@@ -5831,6 +6678,413 @@ export interface operations {
       }
       /** @description The email is taken */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WebhookListDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewWebhookRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WebhookCreatedDto']
+        }
+      }
+      /** @description A bad address or an unknown event */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Webhook id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with its deliveries */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such webhook */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Webhook id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WebhookUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WebhookDto']
+        }
+      }
+      /** @description A bad address or an unknown event */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such webhook */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  deliveries: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Webhook id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The newest 50 deliveries first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DeliveryDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such webhook */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  rotate: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Webhook id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WebhookSecretDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such webhook */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  test: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Webhook id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A webhook.test delivery is queued */
+      202: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such webhook */
+      404: {
         headers: {
           [name: string]: unknown
         }

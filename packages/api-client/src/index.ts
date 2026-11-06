@@ -49,6 +49,19 @@ export type OAuthStartRequest = Omit<Schemas['OAuthStartRequest'], 'provider' | 
   kind?: OAuthKind | null
 }
 export type OAuthStart = Schemas['OAuthStartDto']
+export type OAuthProviderInfo = Schemas['OAuthProviderDto']
+export type Ledger = Schemas['LedgerDto']
+export type LedgerEntry = Schemas['LedgerEntryDto']
+export type LedgerVerification = Schemas['LedgerVerificationDto']
+export type VerifyLedgerRequest = Schemas['VerifyLedgerRequest']
+export type DeletionRequest = Schemas['DeletionRequest']
+export type DeletionReview = Schemas['DeletionReviewDto']
+export type Webhook = Schemas['WebhookDto']
+export type WebhookDelivery = Schemas['DeliveryDto']
+export type WebhookList = Schemas['WebhookListDto']
+export type NewWebhookRequest = Schemas['NewWebhookRequest']
+export type WebhookUpdateRequest = Schemas['WebhookUpdateRequest']
+export type SmtpStatus = Schemas['SmtpDto']
 export type Invitation = Schemas['InvitationDto']
 export type EventTime = Schemas['EventTimeDto']
 export type Participant = Schemas['ParticipantDto']
@@ -294,6 +307,34 @@ export const setSyncSchedule = async (minutes: number) =>
 export const setImageProxy = async (proxy: string | null) =>
   unwrap(await client.PUT('/api/image-proxy', { body: { proxy } }))
 
+export const verifyLedger = async (request: VerifyLedgerRequest) =>
+  unwrap(await client.POST('/api/ledger/verify', { body: request }))
+
+export const reviewDeletion = async (archiveId: string, request: DeletionRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/deletions', { ...archivePath(archiveId), body: request }),
+  )
+
+export const confirmDeletion = async (reviewId: string, count: number) =>
+  unwrap(
+    await client.POST('/api/deletions/{id}/confirm', { ...archivePath(reviewId), body: { count } }),
+  )
+
+export const createWebhook = async (request: NewWebhookRequest) =>
+  unwrap(await client.POST('/api/webhooks', { body: request }))
+
+export const updateWebhook = async (id: string, request: WebhookUpdateRequest) =>
+  unwrap(await client.PATCH('/api/webhooks/{id}', { ...archivePath(id), body: request }))
+
+export const deleteWebhook = async (id: string) =>
+  done(await client.DELETE('/api/webhooks/{id}', { ...archivePath(id) }))
+
+export const rotateWebhookSecret = async (id: string) =>
+  unwrap(await client.POST('/api/webhooks/{id}/secret', { ...archivePath(id), headers: json }))
+
+export const testWebhook = async (id: string) =>
+  done(await client.POST('/api/webhooks/{id}/test', { ...archivePath(id), headers: json }))
+
 export const createUser = async (request: NewUserRequest) =>
   unwrap(await client.POST('/api/users', { body: request }))
 
@@ -373,10 +414,12 @@ export function bodyUrl(id: string, remote: RemoteMode = 'block', saved = true):
 
 export const rawUrl = (id: string): string => `/api/messages/${encode(id)}/raw`
 
+export const pdfUrl = (id: string): string => `/api/messages/${encode(id)}/pdf`
+
 export const itemVersionRawUrl = (id: string, version: number): string =>
   `/api/items/${encode(id)}/versions/${version}/raw`
 
-export type ExportFormat = 'mbox' | 'zip'
+export type ExportFormat = 'mbox' | 'zip' | 'pdf'
 
 export interface ExportScope {
   folder?: string
@@ -518,6 +561,35 @@ export const syncScheduleQuery = queryOptions({
 export const imageProxyQuery = queryOptions({
   queryKey: ['image-proxy'],
   queryFn: async ({ signal }) => unwrap(await client.GET('/api/image-proxy', { signal })),
+})
+
+export const oauthProvidersQuery = queryOptions({
+  queryKey: ['oauth-providers'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/oauth/providers', { signal })),
+  staleTime: Infinity,
+})
+
+export const ledgerQuery = queryOptions({
+  queryKey: ['ledger'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/ledger', { signal })),
+})
+
+export const webhooksQuery = queryOptions({
+  queryKey: ['webhooks'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/webhooks', { signal })),
+})
+
+export const webhookDeliveriesQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['webhooks', id, 'deliveries'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/webhooks/{id}/deliveries', { ...archivePath(id), signal })),
+  })
+
+export const smtpQuery = queryOptions({
+  queryKey: ['smtp'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/smtp', { signal })),
+  refetchInterval: 30_000,
 })
 
 export const usersQuery = queryOptions({

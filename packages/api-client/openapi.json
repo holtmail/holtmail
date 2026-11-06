@@ -214,6 +214,16 @@
               }
             }
           },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such account",
             "content": {
@@ -311,6 +321,16 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
             "content": {
               "application/json": {
                 "schema": {
@@ -653,6 +673,16 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
             "content": {
               "application/json": {
                 "schema": {
@@ -1262,6 +1292,95 @@
         }
       }
     },
+    "/api/archives/{id}/deletions": {
+      "post": {
+        "tags": ["deletion"],
+        "operationId": "review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What would be deleted; nothing is deleted yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionReviewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither or both of query and message_ids, a query that does not parse or is empty, nothing found, or more than 100000 messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/events": {
       "get": {
         "tags": ["pim"],
@@ -1594,6 +1713,16 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
             "content": {
               "application/json": {
                 "schema": {
@@ -2266,6 +2395,85 @@
         }
       }
     },
+    "/api/deletions/{id}/confirm": {
+      "post": {
+        "tags": ["deletion"],
+        "operationId": "confirm",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Review id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Deleting in the background",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown, used or expired review, another user's review, or another count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/events/{id}": {
       "get": {
         "tags": ["calendar"],
@@ -2528,6 +2736,121 @@
           },
           "404": {
             "description": "No such item or version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger": {
+      "get": {
+        "tags": ["ledger"],
+        "operationId": "get_ledger",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger/verify": {
+      "post": {
+        "tags": ["ledger"],
+        "operationId": "verify_ledger",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyLedgerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Started, or already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed anchor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
             "content": {
               "application/json": {
                 "schema": {
@@ -3118,6 +3441,61 @@
         }
       }
     },
+    "/api/messages/{id}/pdf": {
+      "get": {
+        "tags": ["routes"],
+        "operationId": "get_pdf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message as a PDF with the original message attached inside it",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/messages/{id}/raw": {
       "get": {
         "tags": ["routes"],
@@ -3309,6 +3687,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/providers": {
+      "get": {
+        "tags": ["oauth"],
+        "operationId": "providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthProviderDto"
+                  }
                 }
               }
             }
@@ -3850,6 +4278,43 @@
         "security": [{}]
       }
     },
+    "/api/smtp": {
+      "get": {
+        "tags": ["smtp"],
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmtpDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sync-schedule": {
       "get": {
         "tags": ["tasks"],
@@ -4365,6 +4830,468 @@
           },
           "409": {
             "description": "The email is taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks": {
+      "get": {
+        "tags": ["webhooks"],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookListDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["webhooks"],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCreatedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad address or an unknown event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/{id}": {
+      "delete": {
+        "tags": ["webhooks"],
+        "operationId": "remove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed with its deliveries"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["webhooks"],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad address or an unknown event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": ["webhooks"],
+        "operationId": "deliveries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newest 50 deliveries first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/{id}/secret": {
+      "post": {
+        "tags": ["webhooks"],
+        "operationId": "rotate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSecretDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/{id}/test": {
+      "post": {
+        "tags": ["webhooks"],
+        "operationId": "test",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Webhook id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "A webhook.test delivery is queued"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such webhook",
             "content": {
               "application/json": {
                 "schema": {
@@ -5157,6 +6084,163 @@
               "$ref": "#/components/schemas/YearCountDto"
             },
             "description": "Oldest year first."
+          }
+        }
+      },
+      "DeletionConfirmRequest": {
+        "type": "object",
+        "description": "Confirms a review.",
+        "required": ["count"],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The review's `count`, typed again by the person deleting.",
+            "minimum": 0
+          }
+        }
+      },
+      "DeletionRequest": {
+        "type": "object",
+        "description": "What to delete: a search or a list of messages, exactly one of them.",
+        "properties": {
+          "message_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "Message ids; those not in the archive are left out."
+          },
+          "query": {
+            "type": ["string", "null"],
+            "description": "A search as the search box reads it, e.g. `from:news@example.com before:2020-01-01`."
+          }
+        }
+      },
+      "DeletionReviewDto": {
+        "type": "object",
+        "description": "A frozen list of messages waiting to be deleted.",
+        "required": ["id", "archive_id", "count", "bytes", "sample", "expires_at"],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Their size together, in bytes.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages it deletes; the confirmation repeats this number.",
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds; after this the review cannot be confirmed."
+          },
+          "id": {
+            "type": "string",
+            "description": "Confirm with `POST /api/deletions/{id}/confirm`."
+          },
+          "newest": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "oldest": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "query": {
+            "type": ["string", "null"]
+          },
+          "sample": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeletionSampleDto"
+            },
+            "description": "Up to 20 of them, newest first."
+          }
+        }
+      },
+      "DeletionSampleDto": {
+        "type": "object",
+        "description": "One of the messages a deletion would remove.",
+        "required": ["id", "from", "date", "size"],
+        "properties": {
+          "date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "subject": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "DeliveryDto": {
+        "type": "object",
+        "description": "One delivery of an event to a webhook.",
+        "required": ["id", "event", "event_id", "created_at", "attempts"],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "delivered_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "event": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string",
+            "description": "The `id` in the body and the `Holtmail-Delivery` header."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": ["string", "null"]
+          },
+          "last_status": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "minimum": 0
+          },
+          "next_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds of the next attempt; `null` once delivered or given up."
           }
         }
       },
@@ -6103,6 +7187,127 @@
           }
         }
       },
+      "LedgerDto": {
+        "type": "object",
+        "description": "The ledger as it stands.",
+        "properties": {
+          "head": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LedgerEntryDto",
+                "description": "The newest entry; write its `seq` and `hash` down elsewhere to prove later that nothing\nup to it changed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_verification": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LedgerVerificationDto",
+                "description": "The last finished verification."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "LedgerEntryDto": {
+        "type": "object",
+        "description": "One ledger entry.",
+        "required": ["seq", "event", "at", "archive_id", "hash"],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it happened, Unix milliseconds."
+          },
+          "blob_id": {
+            "type": ["string", "null"],
+            "description": "The message's BLAKE3 hash."
+          },
+          "event": {
+            "type": "string",
+            "description": "`archived`, `deleted` or `archive_deleted`."
+          },
+          "hash": {
+            "type": "string",
+            "description": "BLAKE3 over the entry and the hash before it, 64 hex digits."
+          },
+          "message_id": {
+            "type": ["string", "null"]
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Its position, from 1.",
+            "minimum": 0
+          }
+        }
+      },
+      "LedgerVerificationDto": {
+        "type": "object",
+        "description": "How a verification ended.",
+        "required": ["started_at", "finished_at", "ok", "entries", "problems", "problem_count"],
+        "properties": {
+          "anchor_seq": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The position of the anchor it was given.",
+            "minimum": 0
+          },
+          "blobs_checked": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Message bytes read, when it was asked to read them.",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "finished_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "head_hash": {
+            "type": ["string", "null"]
+          },
+          "head_seq": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problem_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "At most 100 lines with ids and positions."
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          }
+        }
+      },
       "LocationDto": {
         "type": "object",
         "description": "A folder a message is in.",
@@ -6488,6 +7693,23 @@
           }
         }
       },
+      "NewWebhookRequest": {
+        "type": "object",
+        "description": "Adds a webhook.",
+        "required": ["url", "events"],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string",
+            "description": "An `http://` or `https://` address without a user name or password."
+          }
+        }
+      },
       "OAuthFinishRequest": {
         "type": "object",
         "description": "Finishes a sign-in.",
@@ -6496,6 +7718,21 @@
           "pasted_url": {
             "type": "string",
             "description": "The address the browser landed on after sign-in, or its query."
+          }
+        }
+      },
+      "OAuthProviderDto": {
+        "type": "object",
+        "description": "A provider this server signs in with.",
+        "required": ["provider", "thunderbird_client"],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "`google` or `microsoft`."
+          },
+          "thunderbird_client": {
+            "type": "boolean",
+            "description": "Thunderbird's public client is used, so the consent screen names Thunderbird."
           }
         }
       },
@@ -7267,6 +8504,108 @@
           }
         }
       },
+      "SmtpDto": {
+        "type": "object",
+        "description": "The SMTP listener, from the server's config.",
+        "required": [
+          "enabled",
+          "allow",
+          "starttls",
+          "require_tls",
+          "auth",
+          "routes",
+          "received",
+          "deleted",
+          "refused_recipients",
+          "failed"
+        ],
+        "properties": {
+          "allow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "auth": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "`false` when the config has no `[smtp]`; the other fields are then empty."
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hostname": {
+            "type": ["string", "null"]
+          },
+          "last_received_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "listen": {
+            "type": ["string", "null"]
+          },
+          "max_size_mb": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "minimum": 0
+          },
+          "received": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Counted since the server started.",
+            "minimum": 0
+          },
+          "refused_recipients": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "require_tls": {
+            "type": "boolean"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SmtpRouteDto"
+            }
+          },
+          "starttls": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SmtpRouteDto": {
+        "type": "object",
+        "description": "One SMTP route.",
+        "required": ["recipient", "archive_id", "folder", "journal"],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string",
+            "description": "The folder of the archive's \"Received by SMTP\" account."
+          },
+          "journal": {
+            "type": "boolean",
+            "description": "Exchange journal reports are unwrapped to the original message."
+          },
+          "recipient": {
+            "type": "string",
+            "description": "An address or `*@domain`."
+          }
+        }
+      },
       "SourceMessageDto": {
         "type": "object",
         "description": "A message a version of an item was found in.",
@@ -7403,7 +8742,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "`sync`, `import` or `remote_images`."
+            "description": "`sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`."
           },
           "log": {
             "type": "array",
@@ -7542,6 +8881,121 @@
             "type": "integer",
             "format": "int64",
             "description": "When the card was last known to say this, Unix milliseconds: when it was removed, else\nwhen its address book last synced, else when its latest version was seen."
+          }
+        }
+      },
+      "VerifyLedgerRequest": {
+        "type": "object",
+        "description": "Starts a verification.",
+        "properties": {
+          "anchor": {
+            "type": ["string", "null"],
+            "description": "A head written down earlier, as `<seq>:<hash>`."
+          },
+          "blobs": {
+            "type": "boolean",
+            "description": "Also read every message's bytes and compare their hash; as slow as reading the archive."
+          }
+        }
+      },
+      "WebhookCreatedDto": {
+        "type": "object",
+        "description": "A webhook with its signing secret, shown only when it is made.",
+        "required": ["webhook", "secret"],
+        "properties": {
+          "secret": {
+            "type": "string",
+            "description": "HMAC-SHA256 key for `Holtmail-Signature`; keep it now, it is not shown again."
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/WebhookDto"
+          }
+        }
+      },
+      "WebhookDto": {
+        "type": "object",
+        "description": "An address the server tells about events.",
+        "required": ["id", "url", "events", "enabled", "created_at"],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Event names it gets, besides `webhook.test`."
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_delivery": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryDto",
+                "description": "Its newest delivery."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookListDto": {
+        "type": "object",
+        "description": "The webhooks and the events they can get.",
+        "required": ["events", "webhooks"],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every event name a webhook can subscribe to."
+          },
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDto"
+            }
+          }
+        }
+      },
+      "WebhookSecretDto": {
+        "type": "object",
+        "description": "A new signing secret.",
+        "required": ["secret"],
+        "properties": {
+          "secret": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookUpdateRequest": {
+        "type": "object",
+        "description": "Changes a webhook; missing fields stay.",
+        "properties": {
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "events": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": ["string", "null"]
           }
         }
       },

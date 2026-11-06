@@ -1,0 +1,15 @@
+Authentication-Results: mx.example.org; dkim=none (no signature);
+	spf=softfail smtp.mailfrom=relay.example.com; dmarc=fail header.from=bank.example.com
+Received: from relay.example.com (relay.example.com [192.0.2.66])
+	by mx.example.org with ESMTP; Mon, 2 Nov 2026 11:00:00 +0000
+Authentication-Results: mx.example.org;
+	dkim=pass header.d=bank.example.com header.s=sel header.b=Forged12;
+	dmarc=pass header.from=bank.example.com
+From: Example Bank <alerts@bank.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your statement is ready
+Date: Mon, 2 Nov 2026 11:00:00 +0000
+Message-ID: <forged-2@relay.example.com>
+Content-Type: text/plain; charset=utf-8
+
+An invented message that carries a forged field with the trusted id below the real one.

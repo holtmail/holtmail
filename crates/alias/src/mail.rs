@@ -84,66 +84,42 @@ impl Mail {
     /// passing DKIM signature by one of `domains` or a domain below one of them. Comments in
     /// parentheses are ignored, as RFC 8601 allows them anywhere.
     pub fn dkim_pass(&self, domains: &[&str]) -> bool {
-        let Some(results) = self.header("Authentication-Results") else {
-            return false;
-        };
-        let results = without_comments(results);
-        results.split(';').skip(1).any(|clause| {
-            let mut words = clause.split_whitespace();
-            let Some(first) = words.next() else {
-                return false;
-            };
-            if !first.eq_ignore_ascii_case("dkim=pass") {
-                return false;
-            }
-            words.any(|word| {
-                let lower = word.to_ascii_lowercase();
-                let signer = lower
-                    .strip_prefix("header.d=")
-                    .or_else(|| lower.strip_prefix("header.i=@"));
-                signer.is_some_and(|signer| {
-                    let signer = signer.trim_end_matches([')', ',']);
-                    domains.iter().any(|d| within(signer, d))
-                })
-            })
-        })
+        self.dkim_pass_domains()
+            .iter()
+            .any(|signer| domains.iter().any(|d| within(signer, d)))
     }
-}
 
-fn without_comments(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    let mut depth = 0usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    for c in value.chars() {
-        if escaped {
-            escaped = false;
-            if depth == 0 {
-                out.push(c);
+    /// The signing domains the topmost `Authentication-Results` field records as `dkim=pass`:
+    /// each `header.d`, and the domain of each `header.i` written as `@domain`. Lowercase, each
+    /// once, in field order. Empty when the field is missing or records no pass.
+    pub fn dkim_pass_domains(&self) -> Vec<String> {
+        let Some(results) = self
+            .header("Authentication-Results")
+            .and_then(holtmail_auth_results::parse_auth_results)
+        else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+        let passes = results
+            .results
+            .iter()
+            .filter(|r| r.method == "dkim" && r.result == "pass");
+        for property in passes.flat_map(|r| &r.properties) {
+            let signer = match (property.ptype.as_str(), property.name.as_str()) {
+                ("header", "d") => property.value.as_str(),
+                ("header", "i") => match property.value.strip_prefix('@') {
+                    Some(domain) => domain,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            let signer = signer.trim_end_matches([')', ',']).to_ascii_lowercase();
+            if !signer.is_empty() && !out.contains(&signer) {
+                out.push(signer);
             }
-            continue;
         }
-        match c {
-            '\\' => {
-                escaped = true;
-                if depth == 0 {
-                    out.push(c);
-                }
-            }
-            '"' if depth == 0 => {
-                quoted = !quoted;
-                out.push(c);
-            }
-            '(' if !quoted => {
-                depth += 1;
-                out.push(' ');
-            }
-            ')' if !quoted && depth > 0 => depth -= 1,
-            _ if depth == 0 => out.push(c),
-            _ => {}
-        }
+        out
     }
-    out
 }
 
 /// The domain of an address, after the last `@`.
@@ -261,6 +237,25 @@ mod tests {
         )]);
         assert!(!lookalike.dkim_pass(&["relay.example.net"]));
         assert!(!mail(&[]).dkim_pass(&["relay.example.net"]));
+    }
+
+    #[test]
+    fn dkim_pass_domains_lists_passing_signers_of_the_topmost_field() {
+        let m = mail(&[
+            (
+                "Authentication-Results",
+                "mx.example.org; dkim=pass header.d=Relay.Example.NET header.i=@relay.example.net; dkim=pass header.i=user@other.example.org; dkim=pass header.i=@sub.example.org; dkim=fail header.d=failed.example.com",
+            ),
+            (
+                "Authentication-Results",
+                "mx.example.org; dkim=pass header.d=lower.example.com",
+            ),
+        ]);
+        assert_eq!(
+            m.dkim_pass_domains(),
+            ["relay.example.net", "sub.example.org"]
+        );
+        assert!(mail(&[]).dkim_pass_domains().is_empty());
     }
 
     #[test]

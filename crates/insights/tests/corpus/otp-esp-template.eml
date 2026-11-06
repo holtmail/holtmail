@@ -1,0 +1,18 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your verification code
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <a529d58f839b@example.com>
+MIME-Version: 1.0
+Feedback-ID: otp:accounts:example
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<table width="100%"><tr><td><img src="https://cdn.example.com/logo.png" alt="Example"></td></tr>
+<tr><td><p>Use this code to verify your account:</p></td></tr>
+<tr><td style="font-size:36px;letter-spacing:6px">846102</td></tr>
+<tr><td><p>&copy; 2026 Example Inc. 100 Example Street, Springfield 62704</p></td></tr></table>
+</body></html>

@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-html-scan-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+holtmail-html-scan = { path = ".." }
+holtmail-sanitize = { path = "../../sanitize" }
+
+[[bin]]
+name = "scan"
+path = "fuzz_targets/scan.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

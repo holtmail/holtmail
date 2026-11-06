@@ -1,0 +1,19 @@
+[package]
+name = "holtmail-html-scan"
+description = "Bounded scan of message HTML into visible anchors, text segments and structured-data blocks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-insight.workspace = true
+html5ever.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+holtmail-sanitize.workspace = true
+
+[lints]
+workspace = true

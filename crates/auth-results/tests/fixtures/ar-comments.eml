@@ -1,0 +1,16 @@
+Authentication-Results: mx.example.org (Example MX; version 2.1) 1;
+	dkim=pass (1024-bit key; "unprotected" (test mode)) header.d=shop.example.com
+	(the d tag) header.s=mail (selector; header.d=other.example.org) header.b="Zz9+/aBc";
+	dkim=fail (dkim=pass header.d=lookalike.example.org) header.d=lookalike.example.org;
+	spf=pass smtp.mailfrom="orders@shop.example.com"
+DKIM-Signature: v=1; a=rsa-sha256; d=shop.example.com; s=mail;
+	h=from:to:subject; bh=frcCV1k9oG9oKj3dpUqdJg1PxRT2RSN/XKdLCPjaYaY=;
+	b=Zz9+/aBcdefg
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Order 1001 received
+Date: Mon, 2 Nov 2026 12:00:00 +0000
+Message-ID: <order-1001@shop.example.com>
+Content-Type: text/plain; charset=utf-8
+
+Thank you for your invented order.

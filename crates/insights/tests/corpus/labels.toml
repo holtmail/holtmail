@@ -1,0 +1,746 @@
+# Labels for the corpus gate (docs/INSIGHTS.md §15). Every message here is invented.
+#
+# code: the one code the card must show (Likely or higher); absent means none.
+# origin: the origin of a WICG origin-bound code.
+# unsubscribe: the exact unsubscribe item; absent means none.
+# negative: the hard-negative family a message without a code belongs to.
+
+[[case]]
+file = "fwd-inline-otp.eml"
+negative = "forwarded"
+
+[[case]]
+file = "neg-backup-de.eml"
+negative = "backup"
+
+[[case]]
+file = "neg-backup-ru.eml"
+negative = "backup"
+
+[[case]]
+file = "neg-booking-alnum.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-card-ending.eml"
+negative = "card"
+
+[[case]]
+file = "neg-case-number.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-customer-number.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-date-de.eml"
+negative = "year"
+
+[[case]]
+file = "neg-date-en.eml"
+negative = "year"
+
+[[case]]
+file = "neg-date-iso.eml"
+negative = "year"
+
+[[case]]
+file = "neg-date-ru.eml"
+negative = "year"
+
+[[case]]
+file = "neg-date-slash.eml"
+negative = "year"
+
+[[case]]
+file = "neg-date-zh.eml"
+negative = "year"
+
+[[case]]
+file = "neg-flight-number.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-footer-registration.eml"
+negative = "footer"
+
+[[case]]
+file = "neg-footer-text.eml"
+negative = "footer"
+
+[[case]]
+file = "neg-forward-begin.eml"
+negative = "forwarded"
+
+[[case]]
+file = "neg-forward-de.eml"
+negative = "forwarded"
+
+[[case]]
+file = "neg-forward-ru.eml"
+negative = "forwarded"
+
+[[case]]
+file = "neg-gift-card.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-hex-colour.eml"
+negative = "hex_colour"
+
+[[case]]
+file = "neg-hidden-code.eml"
+negative = "hidden"
+
+[[case]]
+file = "neg-invoice-en.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-list-discussion.eml"
+negative = "list"
+unsubscribe = { mailto = "mailto:dev-leave@lists.example.org", list_id = "dev.lists.example.org" }
+
+[[case]]
+file = "neg-meeting-room.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-de.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-en.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-es.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-fr.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-it.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-ja.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-ko.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-pl.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-pt.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-ru.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-tr.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-order-zh.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-personal-numbers.eml"
+negative = "personal"
+
+[[case]]
+file = "neg-phone-de.eml"
+negative = "phone"
+
+[[case]]
+file = "neg-phone-en.eml"
+negative = "phone"
+
+[[case]]
+file = "neg-phone-ru.eml"
+negative = "phone"
+
+[[case]]
+file = "neg-phone-us.eml"
+negative = "phone"
+
+[[case]]
+file = "neg-postcode-de.eml"
+negative = "postcode"
+
+[[case]]
+file = "neg-postcode-fr.eml"
+negative = "postcode"
+
+[[case]]
+file = "neg-postcode-jp.eml"
+negative = "postcode"
+
+[[case]]
+file = "neg-postcode-ru.eml"
+negative = "postcode"
+
+[[case]]
+file = "neg-postcode-us.eml"
+negative = "postcode"
+
+[[case]]
+file = "neg-price-eur.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-gbp.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-jpy.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-krw.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-pln.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-rub.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-try.eml"
+negative = "money"
+
+[[case]]
+file = "neg-price-usd.eml"
+negative = "money"
+
+[[case]]
+file = "neg-promo-de.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-en.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-es.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-fr.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-html-strong.eml"
+negative = "promo"
+unsubscribe = { mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "neg-promo-it.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-pl.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-pt.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-ru.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-tr.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-promo-zh.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-referral.eml"
+negative = "promo"
+
+[[case]]
+file = "neg-style-attr.eml"
+negative = "in_url"
+
+[[case]]
+file = "neg-ticket-en.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-title-only.eml"
+negative = "hidden"
+
+[[case]]
+file = "neg-tracking-de.eml"
+negative = "order_number"
+
+[[case]]
+file = "neg-two-codes-devices.eml"
+negative = "two_codes"
+
+[[case]]
+file = "neg-url-path.eml"
+negative = "in_url"
+
+[[case]]
+file = "neg-url-text.eml"
+negative = "in_url"
+
+[[case]]
+file = "neg-version-build.eml"
+negative = "version"
+
+[[case]]
+file = "neg-year-newsletter-html.eml"
+negative = "year"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+
+[[case]]
+file = "otp-auto-submitted-list.eml"
+code = "175302"
+
+[[case]]
+file = "otp-backup-codes.eml"
+negative = "backup"
+
+[[case]]
+file = "otp-barcode-word.eml"
+negative = "barcode"
+
+[[case]]
+file = "otp-css-in-style-block.eml"
+code = "739120"
+
+[[case]]
+file = "otp-de-html-h1.eml"
+code = "551203"
+
+[[case]]
+file = "otp-de-html-inline.eml"
+code = "702915"
+
+[[case]]
+file = "otp-de-plain.eml"
+code = "381920"
+
+[[case]]
+file = "otp-de-subject-only.eml"
+code = "381204"
+
+[[case]]
+file = "otp-de-tan.eml"
+code = "482019"
+
+[[case]]
+file = "otp-en-2fa.eml"
+code = "204718"
+
+[[case]]
+file = "otp-en-8-digit.eml"
+code = "58301947"
+
+[[case]]
+file = "otp-en-access-alnum-plain.eml"
+code = "H4K9W2"
+
+[[case]]
+file = "otp-en-alnum.eml"
+code = "K7P2QX"
+
+[[case]]
+file = "otp-en-base64.eml"
+code = "662019"
+
+[[case]]
+file = "otp-en-confirm-alone.eml"
+code = "530194"
+
+[[case]]
+file = "otp-en-inline.eml"
+code = "304857"
+
+[[case]]
+file = "otp-en-link-and-code.eml"
+code = "920481"
+
+[[case]]
+file = "otp-en-multipart.eml"
+code = "306182"
+
+[[case]]
+file = "otp-en-pin-4.eml"
+code = "7391"
+
+[[case]]
+file = "otp-en-qp.eml"
+code = "381047"
+
+[[case]]
+file = "otp-en-split-space.eml"
+code = "381902"
+
+[[case]]
+file = "otp-es-html.eml"
+code = "860412"
+
+[[case]]
+file = "otp-es-html-strong-footer.eml"
+code = "930176"
+
+[[case]]
+file = "otp-es-inline.eml"
+code = "418036"
+
+[[case]]
+file = "otp-es-plain.eml"
+code = "257391"
+
+[[case]]
+file = "otp-esp-template.eml"
+code = "846102"
+
+[[case]]
+file = "otp-expiry-date.eml"
+code = "593017"
+
+[[case]]
+file = "otp-fr-html-footer.eml"
+code = "507381"
+
+[[case]]
+file = "otp-fr-html-letter-spacing.eml"
+code = "195037"
+
+[[case]]
+file = "otp-fr-plain.eml"
+code = "640218"
+
+[[case]]
+file = "otp-hex-color.eml"
+code = "902817"
+
+[[case]]
+file = "otp-in-footer.eml"
+negative = "footer"
+
+[[case]]
+file = "otp-in-href-only.eml"
+negative = "in_url"
+
+[[case]]
+file = "otp-it-html.eml"
+code = "720581"
+
+[[case]]
+file = "otp-it-inline-html.eml"
+code = "582037"
+
+[[case]]
+file = "otp-it-plain.eml"
+code = "463728"
+
+[[case]]
+file = "otp-ja-ascii.eml"
+code = "304918"
+
+[[case]]
+file = "otp-ja-fullwidth.eml"
+code = "876543"
+
+[[case]]
+file = "otp-ja-html.eml"
+code = "481027"
+
+[[case]]
+file = "otp-ko.eml"
+code = "304918"
+
+[[case]]
+file = "otp-ko-html.eml"
+code = "593027"
+
+[[case]]
+file = "otp-ko-plain-brackets.eml"
+code = "604182"
+
+[[case]]
+file = "otp-near-order-number.eml"
+code = "604281"
+
+[[case]]
+file = "otp-newsletter-year.eml"
+negative = "year"
+unsubscribe = { https = "https://news.example.com/unsubscribe/q81" }
+
+[[case]]
+file = "otp-order-in-subject.eml"
+code = "718203"
+
+[[case]]
+file = "otp-phone-in-footer.eml"
+code = "401928"
+
+[[case]]
+file = "otp-pl-html.eml"
+code = "264093"
+
+[[case]]
+file = "otp-pl-inline-html.eml"
+code = "715920"
+
+[[case]]
+file = "otp-pl-plain.eml"
+code = "831940"
+
+[[case]]
+file = "otp-plain-en.eml"
+code = "482913"
+
+[[case]]
+file = "otp-price-date-phone.eml"
+code = "715309"
+
+[[case]]
+file = "otp-promo-code-newsletter.eml"
+negative = "promo"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+
+[[case]]
+file = "otp-pt-html.eml"
+code = "402719"
+
+[[case]]
+file = "otp-pt-plain.eml"
+code = "918273"
+
+[[case]]
+file = "otp-pt-senha.eml"
+code = "739104"
+
+[[case]]
+file = "otp-ru-html-letter-spacing.eml"
+code = "615038"
+
+[[case]]
+file = "otp-ru-html-strong.eml"
+code = "738204"
+
+[[case]]
+file = "otp-ru-html-table.eml"
+code = "9031"
+
+[[case]]
+file = "otp-ru-plain-4.eml"
+code = "4829"
+
+[[case]]
+file = "otp-split-dash.eml"
+code = "482913"
+
+[[case]]
+file = "otp-subject-and-body-same.eml"
+code = "482913"
+
+[[case]]
+file = "otp-text-html-disagree.eml"
+code = "638291"
+
+[[case]]
+file = "otp-tie-two-codes.eml"
+negative = "two_codes"
+
+[[case]]
+file = "otp-tr-html.eml"
+code = "390264"
+
+[[case]]
+file = "otp-tr-inline.eml"
+code = "607142"
+
+[[case]]
+file = "otp-tr-plain.eml"
+code = "572819"
+
+[[case]]
+file = "otp-wicg-origin-bound.eml"
+code = "482913"
+origin = "example.com"
+
+[[case]]
+file = "otp-with-promo-banner.eml"
+code = "284019"
+
+[[case]]
+file = "otp-zh-html.eml"
+code = "847201"
+
+[[case]]
+file = "otp-zh-no-space.eml"
+code = "592817"
+
+[[case]]
+file = "otp-zh-subject-code.eml"
+code = "263815"
+
+[[case]]
+file = "otp-zh-trad.eml"
+code = "618204"
+
+[[case]]
+file = "unsub-all-three.eml"
+unsubscribe = { https = "https://news.example.com/u/s", http = "http://news.example.com/u/h", mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-bad-item-stops.eml"
+unsubscribe = { mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-comment-after.eml"
+unsubscribe = { https = "https://news.example.com/u/c", mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-empty-item-first.eml"
+
+[[case]]
+file = "unsub-esp-one-click.eml"
+unsubscribe = { https = "https://esp.example.net/u/Xy7", mailto = "mailto:u-Xy7@esp.example.net", one_click = true }
+
+[[case]]
+file = "unsub-file-only.eml"
+
+[[case]]
+file = "unsub-file-scheme.eml"
+unsubscribe = { mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-folded-whitespace.eml"
+unsubscribe = { https = "https://news.example.com/u/folded-7", mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-http-only.eml"
+unsubscribe = { http = "http://news.example.com/u/plain-1" }
+
+[[case]]
+file = "unsub-https-mailto.eml"
+unsubscribe = { https = "https://news.example.com/u/b2", mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-https-only.eml"
+unsubscribe = { https = "https://news.example.com/u/a1b2" }
+
+[[case]]
+file = "unsub-javascript-then-https.eml"
+unsubscribe = { https = "https://news.example.com/u/js" }
+
+[[case]]
+file = "unsub-list-id.eml"
+unsubscribe = { https = "https://news.example.com/u/w", list_id = "weekly.news.example.com" }
+
+[[case]]
+file = "unsub-list-id-invalid.eml"
+unsubscribe = { https = "https://news.example.com/u/w" }
+
+[[case]]
+file = "unsub-list-id-no-link.eml"
+
+[[case]]
+file = "unsub-mailto-encoded.eml"
+unsubscribe = { mailto = "mailto:leave@news.example.com?subject=Unsubscribe%20me" }
+
+[[case]]
+file = "unsub-mailto-only.eml"
+unsubscribe = { mailto = "mailto:leave@lists.example.org?subject=unsubscribe" }
+
+[[case]]
+file = "unsub-missing-close.eml"
+
+[[case]]
+file = "unsub-multiple-https.eml"
+unsubscribe = { https = "https://news.example.com/u/1" }
+
+[[case]]
+file = "unsub-newsletter-with-numbers.eml"
+unsubscribe = { https = "https://news.example.com/u/n" }
+
+[[case]]
+file = "unsub-not-oversigned.eml"
+unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+
+[[case]]
+file = "unsub-one-click-covered.eml"
+unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+
+[[case]]
+file = "unsub-one-click-h-missing-post.eml"
+unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+
+[[case]]
+file = "unsub-one-click-lowercase-post.eml"
+unsubscribe = { https = "https://news.example.com/u/oc" }
+
+[[case]]
+file = "unsub-one-click-other-selector.eml"
+unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+
+[[case]]
+file = "unsub-one-click-plain.eml"
+unsubscribe = { https = "https://news.example.com/u/oc", one_click = true }
+
+[[case]]
+file = "unsub-one-click-unaligned.eml"
+unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+
+[[case]]
+file = "unsub-post-http-only.eml"
+unsubscribe = { http = "http://news.example.com/u/h" }
+
+[[case]]
+file = "unsub-post-mailto-only.eml"
+unsubscribe = { mailto = "mailto:leave@news.example.com" }
+
+[[case]]
+file = "unsub-post-with-params.eml"
+unsubscribe = { https = "https://news.example.com/u/oc" }
+
+[[case]]
+file = "unsub-post-without-field.eml"
+
+[[case]]
+file = "unsub-prepended-second-field.eml"
+unsubscribe = { https = "https://attacker.example.net/u/1" }
+
+[[case]]
+file = "unsub-two-fields.eml"
+unsubscribe = { https = "https://news.example.com/u/first" }
+
+[[case]]
+file = "unsub-two-post-fields.eml"
+unsubscribe = { https = "https://news.example.com/u/oc" }
+
+[[case]]
+file = "unsub-unbracketed-first.eml"
+
+[[case]]
+file = "unsub-upper-scheme.eml"
+unsubscribe = { https = "https://news.example.com/U/9" }
+
+[[case]]
+file = "unsub-userinfo-refused.eml"
+unsubscribe = { https = "https://news.example.com/u/clean" }

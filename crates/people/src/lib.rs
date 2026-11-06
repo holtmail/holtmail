@@ -20,7 +20,9 @@ use holtmail_store::{
 };
 
 pub use fields::{Field, FieldValue, SourceCard, contact_name, fields};
-pub use group::{Card, MIN_MESSAGES, anchor, group, holds, is_correspondent, person_id};
+pub use group::{
+    Card, MIN_MESSAGES, anchor, group, holds, is_automated_local, is_correspondent, person_id,
+};
 
 /// What a rebuild made.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

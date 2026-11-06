@@ -1,0 +1,10 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Verify your email
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <b32ed272ef09@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Verify your email: https://accounts.example.com/verify?code=482913

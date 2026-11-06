@@ -1,0 +1,14 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Kod jednorazowy
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <2d22ad27ecf9@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Twój jednorazowy kod: <b>715920</b></p>
+</body></html>

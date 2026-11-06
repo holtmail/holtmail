@@ -12,6 +12,7 @@ testing = ["dep:tokio"]
 
 [dependencies]
 holtmail-core.workspace = true
+holtmail-auth-results.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["sync"] }

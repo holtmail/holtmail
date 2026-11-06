@@ -1,0 +1,16 @@
+[package]
+name = "holtmail-auth-results"
+description = "Grammar of Authentication-Results and DKIM-Signature header fields, without verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

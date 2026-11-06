@@ -1,0 +1,211 @@
+# Word lists and weights for holtmail-insight-code.
+#
+# Every phrase is matched NFKC-normalised and lowercased. Phrases in spaced scripts match as whole
+# words; phrases with CJK, kana, Hangul or Thai characters match as substrings. A phrase written
+# with a leading "-" also matches at the end of a longer word ("-straße" in "Musterstraße"). When a hit of one
+# list lies inside a longer hit of another list, the longer hit wins ("promo code" beats "code").
+# The hash of this file is part of the extractor's version.
+
+[weights]
+base = 300
+keyword = 300
+keyword_window = 80
+subject = 150
+emphasis = 150
+alone_on_line = 100
+early = 50
+early_chars = 1024
+both_parts = 50
+alphanumeric = -100
+extra_occurrence = 25
+extra_cap = 75
+margin = 150
+likely = 600
+year_like = -150
+gate_chars = 4096
+promo_window = 40
+context_tokens = 3
+list_values = 3
+max_occurrences = 4096
+
+[keywords]
+en = [
+  "code", "codes", "verification code", "security code", "login code", "sign-in code",
+  "access code", "confirmation code", "one-time", "one time", "otp", "passcode", "pin", "verify",
+  "verification", "2fa", "two-factor", "authentication", "authenticate",
+]
+ru = [
+  "код", "кода", "коде", "кодом", "пароль", "одноразовый", "подтверждения", "подтвердите",
+  "проверочный", "верификации", "авторизации", "входа",
+]
+de = [
+  "code", "bestätigungscode", "sicherheitscode", "verifizierungscode", "einmalcode",
+  "anmeldecode", "einmalpasswort", "tan", "pin", "bestätigen", "verifizierung",
+]
+fr = [
+  "code", "code de vérification", "code de sécurité", "code de confirmation", "vérification",
+  "usage unique", "authentification",
+]
+es = [
+  "código", "codigo", "código de verificación", "código de seguridad", "verificación",
+  "un solo uso", "clave", "clave de acceso", "autenticación",
+]
+pt = [
+  "código", "codigo", "código de verificação", "código de segurança", "verificação", "senha",
+  "autenticação", "uso único",
+]
+it = [
+  "codice", "codice di verifica", "codice di sicurezza", "verifica", "monouso",
+  "autenticazione",
+]
+zh = ["验证码", "驗證碼", "校验码", "动态码", "确认码", "安全码", "登录码", "动态密码"]
+ja = [
+  "認証コード", "確認コード", "ワンタイムパスワード", "セキュリティコード", "認証番号",
+  "コード",
+]
+ko = ["인증번호", "인증 코드", "인증코드", "확인 코드", "확인코드", "보안 코드", "일회용 비밀번호", "코드"]
+tr = [
+  "kod", "kodu", "kodunuz", "doğrulama", "doğrulama kodu", "güvenlik kodu", "tek kullanımlık",
+  "şifre", "şifreniz",
+]
+pl = [
+  "kod", "kodu", "kod weryfikacyjny", "weryfikacyjny", "jednorazowy", "jednorazowe",
+  "kod bezpieczeństwa", "weryfikacji",
+]
+
+[promo]
+en = [
+  "promo", "promo code", "promocode", "promotional", "coupon", "coupon code", "discount",
+  "discount code", "voucher", "gift card", "giftcard", "referral", "referral code",
+]
+ru = ["промокод", "промокода", "промокодом", "купон", "скидка", "скидку", "скидки", "подарочная", "реферальный"]
+de = ["gutschein", "gutscheincode", "rabatt", "rabattcode", "aktionscode", "geschenkkarte"]
+fr = ["code promo", "promo", "coupon", "réduction", "bon de réduction", "carte cadeau", "parrainage"]
+es = ["cupón", "descuento", "código promocional", "promocional", "tarjeta regalo", "referido"]
+pt = ["cupom", "cupão", "desconto", "código promocional", "promocional", "vale-presente", "indicação"]
+it = ["sconto", "codice sconto", "promozionale", "codice promozionale", "buono regalo", "carta regalo"]
+zh = ["优惠码", "優惠碼", "优惠券", "折扣", "兑换码", "礼品卡", "促销", "推荐码"]
+ja = ["クーポン", "割引", "プロモーションコード", "ギフトカード", "紹介コード"]
+ko = ["쿠폰", "할인", "프로모션", "기프트카드", "추천인"]
+tr = ["indirim", "kupon", "promosyon", "promosyon kodu", "hediye kartı"]
+pl = ["rabat", "rabatowy", "kod rabatowy", "kupon", "promocja", "promocyjny", "karta podarunkowa"]
+
+[reference]
+marks = ["#", "№", "nº", "n°", "no.", "nr.", "nr"]
+en = [
+  "order", "invoice", "ticket", "tracking", "ref", "reference", "booking", "reservation",
+  "customer", "member", "case", "transaction", "receipt", "item", "sku", "isbn", "barcode",
+  "ean", "upc", "serial", "model", "flight", "seat", "gate", "room", "pnr", "id", "ending",
+  "build", "version", "release",
+]
+ru = ["заказ", "заказа", "заказу", "счёт", "счет", "счета", "квитанция", "билет", "билета", "бронирование", "бронь", "трек", "договор", "договора", "накладная", "рейс"]
+de = ["bestellung", "bestellnummer", "rechnung", "rechnungsnummer", "ticket", "sendung", "sendungsnummer", "kundennummer", "auftrag", "buchung", "buchungsnummer", "vorgang"]
+fr = ["commande", "facture", "billet", "réservation", "suivi", "colis", "référence", "dossier", "client"]
+es = ["pedido", "factura", "billete", "boleto", "reserva", "seguimiento", "referencia", "envío", "cliente"]
+pt = ["pedido", "fatura", "encomenda", "bilhete", "reserva", "rastreamento", "referência", "cliente"]
+it = ["ordine", "fattura", "biglietto", "prenotazione", "spedizione", "riferimento", "cliente"]
+zh = ["订单", "訂單", "单号", "发票", "發票", "运单", "快递", "票号"]
+ja = ["注文", "請求書", "予約", "追跡", "お問い合わせ番号", "伝票"]
+ko = ["주문", "송장", "예약", "운송장", "영수증"]
+tr = ["sipariş", "siparişiniz", "fatura", "bilet", "rezervasyon", "takip", "kargo", "müşteri"]
+pl = ["zamówienie", "zamówienia", "faktura", "faktury", "bilet", "rezerwacja", "przesyłka", "przesyłki", "klienta"]
+
+[months]
+en = [
+  "january", "february", "march", "april", "may", "june", "july", "august", "september",
+  "october", "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep",
+  "sept", "oct", "nov", "dec",
+]
+ru = [
+  "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь",
+  "ноябрь", "декабрь", "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+  "сентября", "октября", "ноября", "декабря", "янв", "фев", "мар", "апр", "авг", "сен", "окт",
+  "ноя", "дек",
+]
+de = [
+  "januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober",
+  "november", "dezember", "jän", "mär", "okt", "dez",
+]
+fr = [
+  "janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
+  "octobre", "novembre", "décembre",
+]
+es = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+  "setiembre", "octubre", "noviembre", "diciembre",
+]
+pt = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro",
+  "outubro", "novembro", "dezembro",
+]
+it = [
+  "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre",
+  "ottobre", "novembre", "dicembre",
+]
+zh = ["年", "月"]
+ja = ["年", "月"]
+ko = ["년", "월"]
+tr = ["ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül", "ekim", "kasım", "aralık"]
+pl = [
+  "styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec", "lipiec", "sierpień", "wrzesień",
+  "październik", "listopad", "grudzień", "stycznia", "lutego", "marca", "kwietnia", "maja",
+  "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
+]
+
+[money]
+symbols = ["$", "€", "£", "¥", "₽", "₹", "₩", "₺", "₴", "₸", "₪", "฿", "₫", "₱", "¢", "円", "元", "원", "zł"]
+codes = [
+  "usd", "eur", "gbp", "jpy", "cny", "rmb", "rub", "inr", "krw", "pln", "chf", "cad", "aud",
+  "brl", "mxn", "sek", "nok", "dkk", "czk", "huf", "uah", "kzt", "hkd", "sgd", "nzd", "zar", "tl",
+]
+words = [
+  "dollar", "dollars", "euro", "euros", "yuan", "yen", "lira", "zloty", "złotych", "руб", "рублей",
+  "рубля", "рубль", "долларов", "евро",
+]
+
+[address]
+en = [
+  "street", "st", "avenue", "ave", "road", "rd", "suite", "ste", "floor", "blvd", "boulevard",
+  "lane", "zip", "postcode", "postal code", "p.o. box", "po box", "apt", "building",
+]
+ru = ["ул", "улица", "проспект", "индекс", "дом", "офис", "город"]
+de = [
+  "straße", "strasse", "str", "platz", "weg", "allee", "plz", "postfach", "-straße", "-strasse",
+  "-str", "-platz", "-weg", "-allee", "-gasse",
+]
+fr = ["rue", "avenue", "boulevard", "bd", "cedex", "code postal", "chemin"]
+es = ["calle", "avenida", "av", "plaza", "piso", "código postal", "cp"]
+pt = ["rua", "avenida", "av", "praça", "cep", "código postal", "andar"]
+it = ["via", "viale", "piazza", "corso", "cap"]
+zh = ["路", "街", "邮编", "邮政编码"]
+ja = ["〒", "丁目", "番地", "郵便番号"]
+ko = ["우편번호", "번길"]
+tr = ["cadde", "caddesi", "sokak", "sok", "mahallesi", "mah", "posta kodu"]
+pl = ["ul", "ulica", "aleja", "al", "kod pocztowy", "lok"]
+
+[footer]
+words = [
+  "©", "unsubscribe", "opt out", "отписаться", "отписка", "abmelden", "se désabonner",
+  "désinscrire", "darse de baja", "cancelar inscrição", "annulla iscrizione", "退订",
+  "取消订阅", "配信停止", "수신거부", "abonelikten çık", "wypisz się",
+]
+
+[backup]
+words = [
+  "backup codes", "backup code list", "recovery codes", "резервные коды", "резервных кодов",
+  "sicherungscodes", "backup-codes", "codes de secours", "códigos de respaldo",
+  "códigos de backup", "codici di backup", "备用码", "备用验证码", "バックアップコード",
+  "백업 코드", "yedek kodlar", "kody zapasowe",
+]
+
+[words]
+# Alphanumeric runs that are never codes, besides every word of the lists above.
+never = ["code128", "code39", "code93", "ean13", "ean8", "pdf417", "itf14", "gs1128", "utf8", "base64", "sha256", "mp4", "h264", "x86"]
+
+[bulk]
+precedence = ["bulk", "list", "junk"]
+esp_header_prefixes = [
+  "x-mailgun-", "x-ses-", "x-sg-", "x-sendgrid", "x-mc-user", "x-mandrill", "x-pm-message-id",
+  "x-campaign", "x-mailchimp", "x-mailjet", "x-sib-", "x-sparkpost", "x-msys-api", "x-cmail",
+  "x-mailerlite", "x-hs-", "x-marketo",
+]

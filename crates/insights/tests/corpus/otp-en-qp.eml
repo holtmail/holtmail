@@ -1,0 +1,18 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your one-time passcode
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <d0d7acb9b0a0@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html>
+<html><head><meta charset=3D"utf-8"><style>body{font-family:Arial,sans-seri=
+f;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<table><tr><td>Your one-time passcode is</td></tr>
+<tr><td style=3D"font-size:32px;font-weight:bold;letter-spacing:4px">381047=
+</td></tr>
+</table>
+</body></html>

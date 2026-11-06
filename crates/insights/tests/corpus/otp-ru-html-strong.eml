@@ -1,0 +1,17 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?0JrQvtC0INC/0L7QtNGC0LLQtdGA0LbQtNC10L3QuNGP?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <faeda03ee6d7@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Здравствуйте!</p>
+<p>Ваш код подтверждения:</p>
+<p><strong>738204</strong></p>
+<p>Код действует 10 минут. Никому его не сообщайте.</p>
+</body></html>

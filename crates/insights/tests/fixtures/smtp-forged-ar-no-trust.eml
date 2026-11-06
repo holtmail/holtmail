@@ -1,0 +1,11 @@
+Authentication-Results: mx.example.org; dkim=pass header.d=bank.example.com header.s=s1 header.b=Forged12
+Received: from relay.example.net by mx.example.org
+DKIM-Signature: v=1; a=rsa-sha256; d=relay.example.net; s=r1; h=from:subject; bh=x; b=Relay999
+From: Example Bank <alerts@bank.example.com>
+To: ada@example.org
+Subject: Statement ready
+Date: Thu, 05 Nov 2026 10:00:00 +0000
+Message-ID: <forged-1@relay.example.net>
+Content-Type: text/plain; charset=utf-8
+
+Your statement is ready.

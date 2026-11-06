@@ -1,0 +1,16 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your login code
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <803207730ebf@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>.code{font-size:28px;letter-spacing:6px;color:#123456} .w{width:482913px}</style></head>
+<body>
+<p>Your login code:</p>
+<p class="code">739120</p>
+<p>It expires in 5 minutes.</p>
+</body></html>

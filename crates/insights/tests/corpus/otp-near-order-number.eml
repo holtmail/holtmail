@@ -1,0 +1,18 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Confirm your payment
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <6bbfd94164da@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Ada,
+
+Order #12345678 is waiting for your confirmation.
+
+Your verification code:
+
+604281
+
+Enter it on the payment page.

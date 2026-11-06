@@ -45,7 +45,19 @@ pub fn is_correspondent(address: &MailAddress) -> bool {
         return true;
     }
     let local = address.email.split('@').next().unwrap_or_default();
-    address.messages >= MIN_MESSAGES && !AUTOMATED.iter().any(|a| local.starts_with(a))
+    address.messages >= MIN_MESSAGES && !is_automated_local(local)
+}
+
+/// Whether a local part (the part of an address before `@`) starts like an automatic sender's:
+/// `noreply`, `no-reply`, `no_reply`, `donotreply`, `do-not-reply`, `do_not_reply`,
+/// `mailer-daemon`, `postmaster` or `bounce`, without regard to ASCII letter case. Anything
+/// after the prefix is allowed (`noreply-billing`, `bounces+123`).
+pub fn is_automated_local(local: &str) -> bool {
+    AUTOMATED.iter().any(|a| {
+        local
+            .get(..a.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(a))
+    })
 }
 
 /// The id of the person whose smallest key is `key`: a UUIDv8 from the BLAKE3 hash of the
@@ -987,5 +999,23 @@ mod tests {
                 key: "email:shared@example.com".into()
             }]
         );
+    }
+
+    #[test]
+    fn automated_local_parts() {
+        for local in [
+            "noreply",
+            "no-reply-billing",
+            "NoReply",
+            "bounces+123",
+            "MAILER-DAEMON",
+            "postmaster",
+            "do_not_reply",
+        ] {
+            assert!(is_automated_local(local), "{local}");
+        }
+        for local in ["ada", "reply", "info", "", "ñoreply", "no.reply"] {
+            assert!(!is_automated_local(local), "{local}");
+        }
     }
 }

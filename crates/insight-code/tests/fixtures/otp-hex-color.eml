@@ -1,0 +1,17 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your Example Design login code
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <09682dc8338e@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>h2{color:#3a5f9e} .x{background:#a1b2c3}</style></head>
+<body>
+<h2 style="color:#3a5f9e">Example Design</h2>
+<p>Your workspace accent colour is now #1a2b3c.</p>
+<p>Your login code:</p>
+<p><b>902817</b></p>
+</body></html>

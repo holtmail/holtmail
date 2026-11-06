@@ -1,0 +1,927 @@
+# Stage A rows of tests/corpus. Rewrite with UPDATE_GOLDEN=1; see docs/README.md.
+extract_fp e2db96605d39ec19e027638d574a1ba52a5ffdc079cc450ff34df0688c96deb7
+
+== fwd-inline-otp.eml
+outcome=Ok truncated=false from=ada@example.org signals=2048 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[]}
+
+== neg-backup-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-backup-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-booking-alnum.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-card-ending.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-case-number.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-customer-number.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-iso.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-slash.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-date-zh.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-flight-number.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-footer-registration.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-footer-text.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-forward-begin.eml
+outcome=Ok truncated=false from=ada@example.org signals=2048 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[]}
+
+== neg-forward-de.eml
+outcome=Ok truncated=false from=ada@example.org signals=2048 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[]}
+
+== neg-forward-ru.eml
+outcome=Ok truncated=false from=ada@example.org signals=2048 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[]}
+
+== neg-gift-card.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-hex-colour.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-hidden-code.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-invoice-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-list-discussion.eml
+outcome=Ok truncated=false from=bob@example.org signals=9 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:dev-leave@lists.example.org","http":null,"one_click":false,"list_id":"dev.lists.example.org","p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== neg-meeting-room.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-es.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-fr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-it.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-ja.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-ko.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-pl.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-pt.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-tr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-order-zh.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-personal-numbers.eml
+outcome=Ok truncated=false from=bob@example.org signals=0 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"example.org"}
+items {"v":1,"items":[]}
+
+== neg-phone-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-phone-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-phone-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-phone-us.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-postcode-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-postcode-fr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-postcode-jp.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-postcode-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-postcode-us.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-eur.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-gbp.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-jpy.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-krw.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-pln.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-rub.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-try.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-price-usd.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-es.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-fr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-html-strong.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1032 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== neg-promo-it.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-pl.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-pt.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-ru.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-tr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-promo-zh.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-referral.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-style-attr.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-ticket-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-title-only.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-tracking-de.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-two-codes-devices.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-url-path.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-url-text.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-version-build.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== neg-year-newsletter-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1032 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/u-7","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false},{"type":"code","value":"2026","origin_bound":null,"p":"heuristic","c":"possible","score":580,"origin":"html","forwarded":false}]}
+
+== otp-auto-submitted-list.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1089 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"175302","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-backup-codes.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== otp-barcode-word.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== otp-css-in-style-block.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"739120","origin_bound":null,"p":"heuristic","c":"likely","score":792,"origin":"html","forwarded":false}]}
+
+== otp-de-html-h1.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"551203","origin_bound":null,"p":"heuristic","c":"likely","score":892,"origin":"html","forwarded":false}]}
+
+== otp-de-html-inline.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"702915","origin_bound":null,"p":"heuristic","c":"likely","score":820,"origin":"html","forwarded":false}]}
+
+== otp-de-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"381920","origin_bound":null,"p":"heuristic","c":"likely","score":720,"origin":"text","forwarded":false}]}
+
+== otp-de-subject-only.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"381204","origin_bound":null,"p":"heuristic","c":"likely","score":716,"origin":"subject","forwarded":false}]}
+
+== otp-de-tan.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"482019","origin_bound":null,"p":"heuristic","c":"likely","score":630,"origin":"text","forwarded":false}]}
+
+== otp-en-2fa.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"204718","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-en-8-digit.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"58301947","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-en-access-alnum-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"H4K9W2","origin_bound":null,"p":"heuristic","c":"likely","score":631,"origin":"text","forwarded":false}]}
+
+== otp-en-alnum.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"K7P2QX","origin_bound":null,"p":"heuristic","c":"likely","score":835,"origin":"html","forwarded":false}]}
+
+== otp-en-base64.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"662019","origin_bound":null,"p":"heuristic","c":"likely","score":642,"origin":"text","forwarded":false}]}
+
+== otp-en-confirm-alone.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"530194","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-en-inline.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"304857","origin_bound":null,"p":"heuristic","c":"likely","score":635,"origin":"text","forwarded":false}]}
+
+== otp-en-link-and-code.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"920481","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-en-multipart.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"306182","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-en-pin-4.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"7391","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-en-qp.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"381047","origin_bound":null,"p":"heuristic","c":"likely","score":935,"origin":"html","forwarded":false}]}
+
+== otp-en-split-space.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"381902","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-es-html-strong-footer.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"930176","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-es-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"860412","origin_bound":null,"p":"heuristic","c":"likely","score":867,"origin":"html","forwarded":false}]}
+
+== otp-es-inline.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"418036","origin_bound":null,"p":"heuristic","c":"likely","score":635,"origin":"text","forwarded":false}]}
+
+== otp-es-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"257391","origin_bound":null,"p":"heuristic","c":"likely","score":720,"origin":"text","forwarded":false}]}
+
+== otp-esp-template.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1280 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"846102","origin_bound":null,"p":"heuristic","c":"likely","score":893,"origin":"html","forwarded":false}]}
+
+== otp-expiry-date.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"593017","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-fr-html-footer.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"507381","origin_bound":null,"p":"heuristic","c":"likely","score":890,"origin":"html","forwarded":false}]}
+
+== otp-fr-html-letter-spacing.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"195037","origin_bound":null,"p":"heuristic","c":"likely","score":938,"origin":"html","forwarded":false}]}
+
+== otp-fr-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"640218","origin_bound":null,"p":"heuristic","c":"likely","score":712,"origin":"text","forwarded":false}]}
+
+== otp-hex-color.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"902817","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-in-footer.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== otp-in-href-only.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== otp-it-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"720581","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-it-inline-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"582037","origin_bound":null,"p":"heuristic","c":"likely","score":838,"origin":"html","forwarded":false}]}
+
+== otp-it-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"463728","origin_bound":null,"p":"heuristic","c":"likely","score":723,"origin":"text","forwarded":false}]}
+
+== otp-ja-ascii.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"304918","origin_bound":null,"p":"heuristic","c":"likely","score":701,"origin":"text","forwarded":false}]}
+
+== otp-ja-fullwidth.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"876543","origin_bound":null,"p":"heuristic","c":"likely","score":646,"origin":"text","forwarded":false}]}
+
+== otp-ja-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"481027","origin_bound":null,"p":"heuristic","c":"likely","score":946,"origin":"html","forwarded":false}]}
+
+== otp-ko-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"593027","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-ko-plain-brackets.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"604182","origin_bound":null,"p":"heuristic","c":"likely","score":642,"origin":"text","forwarded":false}]}
+
+== otp-ko.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"304918","origin_bound":null,"p":"heuristic","c":"likely","score":735,"origin":"text","forwarded":false}]}
+
+== otp-near-order-number.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"604281","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-newsletter-year.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1032 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/q81","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== otp-order-in-subject.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"718203","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-phone-in-footer.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"401928","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-pl-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"264093","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-pl-inline-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"715920","origin_bound":null,"p":"heuristic","c":"likely","score":842,"origin":"html","forwarded":false}]}
+
+== otp-pl-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"831940","origin_bound":null,"p":"heuristic","c":"likely","score":735,"origin":"text","forwarded":false}]}
+
+== otp-plain-en.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"482913","origin_bound":null,"p":"heuristic","c":"likely","score":720,"origin":"text","forwarded":false}]}
+
+== otp-price-date-phone.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"715309","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-promo-code-newsletter.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1032 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/u-7","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== otp-pt-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"402719","origin_bound":null,"p":"heuristic","c":"likely","score":938,"origin":"html","forwarded":false}]}
+
+== otp-pt-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"918273","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-pt-senha.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"739104","origin_bound":null,"p":"heuristic","c":"likely","score":690,"origin":"text","forwarded":false}]}
+
+== otp-ru-html-letter-spacing.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"615038","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-ru-html-strong.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"738204","origin_bound":null,"p":"heuristic","c":"likely","score":946,"origin":"html","forwarded":false}]}
+
+== otp-ru-html-table.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"9031","origin_bound":null,"p":"heuristic","c":"likely","score":946,"origin":"html","forwarded":false}]}
+
+== otp-ru-plain-4.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"4829","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-split-dash.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"482913","origin_bound":null,"p":"heuristic","c":"likely","score":720,"origin":"text","forwarded":false}]}
+
+== otp-subject-and-body-same.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"482913","origin_bound":null,"p":"heuristic","c":"likely","score":810,"origin":"text","forwarded":false}]}
+
+== otp-text-html-disagree.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"638291","origin_bound":null,"p":"heuristic","c":"likely","score":885,"origin":"html","forwarded":false}]}
+
+== otp-tie-two-codes.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[]}
+
+== otp-tr-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"390264","origin_bound":null,"p":"heuristic","c":"likely","score":942,"origin":"html","forwarded":false}]}
+
+== otp-tr-inline.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"607142","origin_bound":null,"p":"heuristic","c":"likely","score":642,"origin":"text","forwarded":false}]}
+
+== otp-tr-plain.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"572819","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-wicg-origin-bound.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"482913","origin_bound":"example.com","p":"origin_bound","c":"certain","score":1000,"origin":"text","forwarded":false}]}
+
+== otp-with-promo-banner.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"284019","origin_bound":null,"p":"heuristic","c":"likely","score":731,"origin":"text","forwarded":false}]}
+
+== otp-zh-html.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"847201","origin_bound":null,"p":"heuristic","c":"likely","score":946,"origin":"html","forwarded":false}]}
+
+== otp-zh-no-space.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"592817","origin_bound":null,"p":"heuristic","c":"likely","score":646,"origin":"text","forwarded":false}]}
+
+== otp-zh-subject-code.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"263815","origin_bound":null,"p":"heuristic","c":"likely","score":821,"origin":"text","forwarded":false}]}
+
+== otp-zh-trad.eml
+outcome=Ok truncated=false from=no-reply@accounts.example.com signals=1024 kinds=1
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"accounts.example.com"}
+items {"v":1,"items":[{"type":"code","value":"618204","origin_bound":null,"p":"heuristic","c":"likely","score":642,"origin":"text","forwarded":false}]}
+
+== unsub-all-three.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/s","mailto":"mailto:leave@news.example.com","http":"http://news.example.com/u/h","one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-bad-item-stops.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-comment-after.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/c","mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-empty-item-first.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-esp-one-click.eml
+outcome=Ok truncated=false from=news@news.example.com signals=792 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://esp.example.net/u/Xy7","mailto":"mailto:u-Xy7@esp.example.net","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-file-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-file-scheme.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-folded-whitespace.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/folded-7","mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-http-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":null,"http":"http://news.example.com/u/plain-1","one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-https-mailto.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/b2","mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-https-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/a1b2","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-javascript-then-https.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/js","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-list-id-invalid.eml
+outcome=Ok truncated=false from=news@news.example.com signals=9 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/w","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-list-id-no-link.eml
+outcome=Ok truncated=false from=news@news.example.com signals=1 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-list-id.eml
+outcome=Ok truncated=false from=news@news.example.com signals=9 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/w","mailto":null,"http":null,"one_click":false,"list_id":"weekly.news.example.com","p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-mailto-encoded.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@news.example.com?subject=Unsubscribe%20me","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-mailto-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@lists.example.org?subject=unsubscribe","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-missing-close.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-multiple-https.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/1","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-newsletter-with-numbers.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/n","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-not-oversigned.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":7,"authserv":"mx.example.org","dkim":[{"d":"news.example.com","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"news.example.com","s":"s1","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"l":false}],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/one/7f3a","mailto":"mailto:leave@news.example.com","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-covered.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":7,"authserv":"mx.example.org","dkim":[{"d":"news.example.com","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"news.example.com","s":"s1","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"l":false}],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/one/7f3a","mailto":"mailto:leave@news.example.com","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-h-missing-post.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":7,"authserv":"mx.example.org","dkim":[{"d":"news.example.com","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"news.example.com","s":"s1","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1},"l":false}],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/one/7f3a","mailto":"mailto:leave@news.example.com","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-lowercase-post.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/oc","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-other-selector.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":8,"authserv":"mx.example.org","dkim":[{"d":"news.example.com","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"news.example.com","s":"s2","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"l":false},{"d":"news.example.com","s":"s1","b":"AbCdEf12","h":{"from":1},"l":false}],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/one/7f3a","mailto":"mailto:leave@news.example.com","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-plain.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/oc","mailto":null,"http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-one-click-unaligned.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":7,"authserv":"mx.example.org","dkim":[{"d":"esp.example.net","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"esp.example.net","s":"s1","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"l":false}],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/unsubscribe/one/7f3a","mailto":"mailto:leave@news.example.com","http":null,"one_click":true,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-post-http-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":null,"http":"http://news.example.com/u/h","one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-post-mailto-only.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":null,"mailto":"mailto:leave@news.example.com","http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-post-with-params.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/oc","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-post-without-field.eml
+outcome=Ok truncated=false from=news@news.example.com signals=16 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":0,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-prepended-second-field.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[{"pos":8,"authserv":"mx.example.org","dkim":[{"d":"news.example.com","i":null,"s":"s1","b":"AbCdEf12"}]}],"signatures":[{"d":"news.example.com","s":"s1","b":"AbCdEf12","h":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":1},"l":false}],"fields":{"from":1,"list-unsubscribe":2,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://attacker.example.net/u/1","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-two-fields.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":2,"list-unsubscribe-post":1},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/first","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-two-post-fields.eml
+outcome=Ok truncated=false from=news@news.example.com signals=24 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":2},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/oc","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-unbracketed-first.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=0
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[]}
+
+== unsub-upper-scheme.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/U/9","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}
+
+== unsub-userinfo-refused.eml
+outcome=Ok truncated=false from=news@news.example.com signals=8 kinds=4
+auth {"v":1,"results":[],"signatures":[],"fields":{"from":1,"list-unsubscribe":1,"list-unsubscribe-post":0},"sig_cap_hit":false,"from_domain":"news.example.com"}
+items {"v":1,"items":[{"type":"unsubscribe","https":"https://news.example.com/u/clean","mailto":null,"http":null,"one_click":false,"list_id":null,"p":"header","c":"certain","score":1000,"origin":{"header":"List-Unsubscribe"},"forwarded":false}]}

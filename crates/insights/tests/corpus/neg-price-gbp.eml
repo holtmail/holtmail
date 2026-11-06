@@ -1,0 +1,11 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your receipt
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <8a74f78efc89@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Amount paid: £2500
+You will not need a code for this payment.

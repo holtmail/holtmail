@@ -1,0 +1,15 @@
+From: Example News <news@news.example.com>
+To: Ada Example <ada@example.org>
+Subject: This week at Example
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <392c935ddcbc@example.com>
+MIME-Version: 1.0
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=news.example.com; s=s2; h=from:to:subject:date:list-unsubscribe:list-unsubscribe-post; bh=Zm9vYmFyYmF6cXV4ZXhhbXBsZWJvZHloYXNoMDA=; b=AbCdEf12GhIj34KlMn56OpQr78StUv90WxYz
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=news.example.com; s=s1; h=from:to:subject:date; bh=Zm9vYmFyYmF6cXV4ZXhhbXBsZWJvZHloYXNoMDA=; b=AbCdEf12ZzZz
+Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=news.example.com; dkim=pass header.d=news.example.com header.s=s1 header.b=AbCdEf12
+List-Unsubscribe: <https://news.example.com/unsubscribe/one/7f3a>, <mailto:leave@news.example.com>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This week at Example: three new features and a short story from the team.

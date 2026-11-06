@@ -1,0 +1,12 @@
+From: Bob Example <bob@example.org>
+To: Ada Example <ada@example.org>
+Subject: Re: [dev] verification code emails
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <6f77c90dc3c7@example.com>
+MIME-Version: 1.0
+List-Id: Example developers <dev.lists.example.org>
+List-Unsubscribe: <mailto:dev-leave@lists.example.org>
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Our verification code mail says "Your code is 482913" which looks fine to me.

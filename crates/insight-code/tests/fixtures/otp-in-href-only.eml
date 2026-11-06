@@ -1,0 +1,27 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Verify your email
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <98df2435ab15@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-98df2435ab15"
+
+--b-98df2435ab15
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Verify your email:
+https://accounts.example.com/verify?code=482913
+
+--b-98df2435ab15
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Click the button to verify your email address.</p>
+<p><a href="https://accounts.example.com/verify?code=482913" style="background:#1a73e8;padding:12px">Verify email</a></p>
+</body></html>
+
+--b-98df2435ab15--

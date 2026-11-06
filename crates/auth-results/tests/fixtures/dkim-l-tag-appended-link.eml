@@ -1,0 +1,15 @@
+Authentication-Results: mx.example.org;
+	dkim=pass header.d=news.example.com header.s=s1 header.b=LtAg0001
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=news.example.com;
+	s=s1; l=64; h=from:to:subject:date;
+	bh=2jUSOH9NhtVGCQWNr9BrIAPreKQjO6Sn7XIkfJVOzv8=;
+	b=LtAg0001abcdefghijklmnopqrstuvwxyz
+From: Example News <news@news.example.com>
+To: Ada Example <ada@example.org>
+Subject: Short signed body
+Date: Mon, 2 Nov 2026 13:00:00 +0000
+Message-ID: <short-1@news.example.com>
+Content-Type: text/plain; charset=utf-8
+
+This line is signed by the body length tag.
+Reset your password: https://attacker.example.com/reset

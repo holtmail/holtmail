@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-insight-unsubscribe"
+description = "Insight extractor for List-Unsubscribe and one-click unsubscribe (RFC 2369, RFC 8058)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-insight.workspace = true
+
+[dev-dependencies]
+holtmail-insight = { workspace = true, features = ["testing"] }
+holtmail-insights.workspace = true
+holtmail-mime.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-insights-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+holtmail-insight = { path = "../../insight" }
+holtmail-insight-code = { path = "../../insight-code" }
+holtmail-insight-unsubscribe = { path = "../../insight-unsubscribe" }
+holtmail-insights = { path = ".." }
+holtmail-mime = { path = "../../mime" }
+
+[[bin]]
+name = "extract"
+path = "fuzz_targets/extract.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

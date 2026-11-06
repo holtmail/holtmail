@@ -6,10 +6,13 @@
 //! change (Graph delta links) offer [`SourceSession::state`] and
 //! [`SourceSession::unchanged_since`].
 //!
+//! Sources whose server can push offer [`Source::watch`]: a [`SourceWatch`] that returns when
+//! something may have changed. A watch is a hint to sync, never a record of what changed.
+//!
 //! A source is read-only. It never changes, moves, deletes or marks messages on the server; for
 //! IMAP that means `EXAMINE` and `BODY.PEEK[]`, so archiving leaves unread mail unread.
 
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
 use std::ops::RangeInclusive;
@@ -131,6 +134,59 @@ impl SourceError {
 pub trait Source: Send + Sync {
     /// Connects and signs in.
     async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError>;
+
+    /// Starts watching the account for changes, signed in on connections of its own. `folders`
+    /// names the folder paths to watch; a source that can only watch the whole account watches
+    /// that and reports [`Changed::folders`] as `None`. `Ok(None)` (the default) when the server
+    /// cannot push. Fails like [`Source::connect`] when it cannot sign in.
+    async fn watch(&self, folders: &[String]) -> Result<Option<Box<dyn SourceWatch>>, SourceError> {
+        let _ = folders;
+        Ok(None)
+    }
+}
+
+/// What a [`SourceWatch`] noticed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Changed {
+    /// The folder paths that may have changed, each once; `None` when the source cannot tell
+    /// which, so every folder should be looked at.
+    pub folders: Option<Vec<String>>,
+}
+
+impl Changed {
+    /// Every folder may have changed.
+    pub fn all() -> Self {
+        Self { folders: None }
+    }
+
+    /// Joins two notices into one that covers both.
+    pub fn merge(self, other: Changed) -> Changed {
+        match (self.folders, other.folders) {
+            (Some(mut a), Some(b)) => {
+                for path in b {
+                    if !a.contains(&path) {
+                        a.push(path);
+                    }
+                }
+                Changed { folders: Some(a) }
+            }
+            _ => Changed::all(),
+        }
+    }
+}
+
+/// A running watch on one account. Not shared between tasks.
+#[async_trait]
+pub trait SourceWatch: Send {
+    /// Waits until something in the watched folders may have changed since the watch started or
+    /// since the last call returned, and says where. A change made while the watch is alive is
+    /// never swallowed; a return without a change is allowed. An error ends the watch: the
+    /// caller starts a new one, and changes made in between are only found by a sync.
+    /// Dropping the future while it waits gives the watch up: drop the watch with it.
+    async fn next(&mut self) -> Result<Changed, SourceError>;
+
+    /// Ends the watch and signs out. Dropping a watch without it is allowed.
+    async fn close(self: Box<Self>);
 }
 
 /// One signed-in connection. Not shared between tasks.
@@ -178,4 +234,56 @@ pub trait SourceSession: Send {
 
     /// Signs out. Dropping a session without it is allowed.
     async fn logout(&mut self) -> Result<(), SourceError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::{FakeSource, watch_conformance};
+    use super::*;
+
+    #[test]
+    fn merging_notices_keeps_each_folder_once() {
+        let a = Changed {
+            folders: Some(vec!["INBOX".into(), "Sent".into()]),
+        };
+        let b = Changed {
+            folders: Some(vec!["Sent".into(), "Work".into()]),
+        };
+        assert_eq!(
+            a.clone().merge(b).folders,
+            Some(vec!["INBOX".into(), "Sent".into(), "Work".into()])
+        );
+        assert_eq!(a.merge(Changed::all()), Changed::all());
+    }
+
+    #[tokio::test]
+    async fn the_fake_keeps_the_watch_contract() {
+        let source = FakeSource::new();
+        source.add_folder("INBOX", Some(FolderRole::Inbox));
+        source.add_folder("Archive", None);
+        assert!(
+            source.watch(&[]).await.unwrap().is_none(),
+            "no push by default"
+        );
+        source.enable_watch();
+        watch_conformance(&source, &source, "INBOX", "Archive").await;
+        assert_eq!(source.watches(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_broken_watch_ends_with_a_connection_error() {
+        let source = FakeSource::new();
+        source.add_folder("INBOX", Some(FolderRole::Inbox));
+        source.enable_watch();
+        let mut watch = source.watch(&["INBOX".into()]).await.unwrap().unwrap();
+        source.break_watches(Some("cut"));
+        assert!(matches!(
+            watch.next().await,
+            Err(SourceError::Connection(_))
+        ));
+        assert!(source.watch(&[]).await.is_err());
+        source.break_watches(None);
+        source.reject_watch_sign_in(Some("no"));
+        assert!(matches!(source.watch(&[]).await, Err(SourceError::Auth(_))));
+    }
 }

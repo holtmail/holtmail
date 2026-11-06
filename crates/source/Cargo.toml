@@ -8,7 +8,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
-testing = []
+testing = ["dep:tokio"]
 
 [dependencies]
 holtmail-core.workspace = true
@@ -16,6 +16,10 @@ holtmail-store.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["sync", "time", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [lints]
 workspace = true

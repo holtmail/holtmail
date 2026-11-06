@@ -1,0 +1,27 @@
+[package]
+name = "holtmail-collection-dav"
+description = "Reading address books and calendars from CardDAV and CalDAV servers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-collection.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+quick-xml.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+holtmail-collection = { workspace = true, features = ["testing"] }
+axum.workspace = true
+base64.workspace = true
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

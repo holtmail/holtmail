@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-people"
+description = "People derived from contacts and mail: grouping by email and phone, merged fields with their sources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-pim.workspace = true
+holtmail-store.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+holtmail-blob.workspace = true
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -16,6 +16,7 @@ pub struct Totals {
     pub new: u64,
     pub known: u64,
     pub failed: u64,
+    pub deleted: u64,
     pub items: ItemTotals,
 }
 
@@ -34,6 +35,9 @@ impl Totals {
             "{} new, {} already archived, {} failed",
             self.new, self.known, self.failed
         );
+        if self.deleted > 0 {
+            out.push_str(&format!(", {} deleted earlier left out", self.deleted));
+        }
         let items = &self.items;
         if items.new + items.changed + items.known + items.removed > 0 {
             out.push_str(&format!(
@@ -131,13 +135,14 @@ pub async fn import_path(
         match ingest.ingest(archive, message.raw, &placement).await {
             Ok(done) if done.created => totals.new += 1,
             Ok(_) => totals.known += 1,
+            Err(IngestError::Deleted) => totals.deleted += 1,
             Err(IngestError::Mime(error)) => {
                 tracing::warn!(%error, "skipped bytes that are not a message");
                 totals.failed += 1;
             }
             Err(error) => return Err(error.into()),
         }
-        let seen = totals.new + totals.known + totals.failed;
+        let seen = totals.new + totals.known + totals.failed + totals.deleted;
         if seen % COMMIT_EVERY == 0 {
             ingest.commit().await?;
             progress(&totals);
@@ -323,6 +328,7 @@ mod tests {
                 new: 2,
                 known: 0,
                 failed: 1,
+                deleted: 0,
                 items: ItemTotals::default(),
             }
         );
@@ -335,6 +341,7 @@ mod tests {
                 new: 0,
                 known: 2,
                 failed: 1,
+                deleted: 0,
                 items: ItemTotals::default(),
             }
         );

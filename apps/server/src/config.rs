@@ -53,6 +53,9 @@ pub struct Config {
     /// mail, contacts, OAuth, S3 and image servers with a private CA.
     #[serde(default)]
     pub tls_ca_file: Option<PathBuf>,
+    /// An SMTP listener that archives mail sent or journaled to it; off when missing.
+    #[serde(default)]
+    pub smtp: Option<crate::smtp::SmtpConfig>,
     #[serde(skip)]
     pub tls_roots: TlsRoots,
 }
@@ -73,10 +76,15 @@ pub struct OAuthConfig {
     pub microsoft: OAuthClientConfig,
 }
 
-/// One provider's client. Without `client_id` Thunderbird's client is used.
+/// One provider's client. Without `client_id` Thunderbird's client is used, unless
+/// `public_client` is `false`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OAuthClientConfig {
+    /// `false` turns Thunderbird's client off: without `client_id` the provider is then not
+    /// offered. On by default.
+    #[serde(default)]
+    pub public_client: Option<bool>,
     #[serde(default)]
     pub client_id: Option<String>,
     #[serde(default)]
@@ -163,6 +171,11 @@ impl Config {
         if let Ok(minutes) = std::env::var("HOLTMAIL_SYNC_INTERVAL") {
             config.sync_interval_minutes = Some(minutes.parse().context("HOLTMAIL_SYNC_INTERVAL")?);
         }
+        if let Some(smtp) = &mut config.smtp
+            && let Ok(password) = std::env::var("HOLTMAIL_SMTP_PASSWORD")
+        {
+            smtp.password = Some(password).filter(|p| !p.is_empty());
+        }
         if let Ok(proxy) = std::env::var("HOLTMAIL_IMAGE_PROXY") {
             config.image_proxy = Some(proxy).filter(|p| !p.trim().is_empty());
         }
@@ -177,6 +190,12 @@ impl Config {
             };
             if let Some(id) = read("CLIENT_ID") {
                 client.client_id = Some(id);
+            }
+            if let Some(on) = read("PUBLIC_CLIENT") {
+                client.public_client = Some(
+                    on.parse()
+                        .with_context(|| format!("HOLTMAIL_OAUTH_{name}_PUBLIC_CLIENT"))?,
+                );
             }
             if let Some(secret) = read("CLIENT_SECRET") {
                 client.client_secret = Some(secret);
@@ -231,8 +250,9 @@ impl Config {
         }
     }
 
-    /// The OAuth client for `provider`, from `[oauth.*]` or Thunderbird's.
-    pub fn oauth_client(&self, provider: Provider) -> anyhow::Result<Client> {
+    /// The OAuth client for `provider`, from `[oauth.*]` or Thunderbird's; `None` when the
+    /// provider has no own client and Thunderbird's is turned off.
+    pub fn oauth_client(&self, provider: Provider) -> anyhow::Result<Option<Client>> {
         let own = match provider {
             Provider::Google => &self.oauth.google,
             Provider::Microsoft => &self.oauth.microsoft,
@@ -250,6 +270,9 @@ impl Config {
                     "oauth.{}.client_secret is set without client_id",
                     provider.as_str()
                 );
+                if own.public_client == Some(false) {
+                    return Ok(None);
+                }
                 Client::thunderbird(provider)
             }
         };
@@ -269,7 +292,7 @@ impl Config {
         if let Some(url) = &own.token_url {
             client.token_url = secure_url(url, provider, "token_url")?;
         }
-        Ok(client)
+        Ok(Some(client))
     }
 
     /// The IMAP server and port new OAuth accounts of `provider` connect to over TLS.
@@ -323,6 +346,8 @@ pub struct Services {
     pub extractor: Arc<dyn Extractor>,
     pub fetcher: Arc<ProxiedFetcher>,
     pub oauth: Arc<OAuth>,
+    pub hooks: Arc<crate::webhooks::Hooks>,
+    pub smtp: std::sync::OnceLock<Arc<crate::smtp::Listener>>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -405,7 +430,7 @@ fn secure_url(raw: &str, provider: Provider, key: &str) -> anyhow::Result<String
 pub fn open_oauth(config: &Config) -> anyhow::Result<Arc<OAuth>> {
     let mut clients = Vec::new();
     for provider in Provider::ALL {
-        clients.push(config.oauth_client(provider)?);
+        clients.extend(config.oauth_client(provider)?);
     }
     let mut oauth = OAuth::new(
         clients,
@@ -445,6 +470,15 @@ impl Services {
             .await?,
         );
         let oauth = open_oauth(config)?;
+        let hooks = Arc::new(crate::webhooks::Hooks::new(
+            store.clone(),
+            secrets.clone(),
+            Arc::new(
+                holtmail_webhook_http::HttpWebhookSender::new(std::time::Duration::from_secs(10))?
+                    .with_roots(&config.tls_roots)?,
+            ),
+        ));
+        oauth.set_hooks(hooks.clone());
         Ok(Self {
             secrets,
             blobs,
@@ -453,6 +487,8 @@ impl Services {
             extractor: Arc::new(BasicExtractor::new()),
             fetcher,
             oauth,
+            hooks,
+            smtp: Default::default(),
         })
     }
 
@@ -508,7 +544,7 @@ mod tests {
     #[test]
     fn picks_oauth_clients() {
         let config: Config = toml::from_str("public_url = \"https://mail.example.com/\"").unwrap();
-        let google = config.oauth_client(Provider::Google).unwrap();
+        let google = config.oauth_client(Provider::Google).unwrap().unwrap();
         assert!(google.is_thunderbird());
         assert_eq!(google.redirect_url, "http://127.0.0.1");
         let config: Config = toml::from_str(
@@ -522,14 +558,14 @@ mod tests {
             "#,
         )
         .unwrap();
-        let microsoft = config.oauth_client(Provider::Microsoft).unwrap();
+        let microsoft = config.oauth_client(Provider::Microsoft).unwrap().unwrap();
         assert!(!microsoft.is_thunderbird());
         assert_eq!(microsoft.client_secret.as_deref(), Some("own-secret"));
         assert_eq!(
             microsoft.redirect_url,
             "https://mail.example.com/api/oauth/callback"
         );
-        let google = config.oauth_client(Provider::Google).unwrap();
+        let google = config.oauth_client(Provider::Google).unwrap().unwrap();
         assert!(google.is_thunderbird());
         assert_eq!(
             google.redirect_url,
@@ -564,6 +600,17 @@ mod tests {
         let config: Config = toml::from_str("[oauth.google]\nclient_secret = \"x\"").unwrap();
         assert!(config.oauth_client(Provider::Google).is_err());
         assert!(toml::from_str::<Config>("[oauth.yahoo]\nclient_id = \"x\"").is_err());
+    }
+
+    #[test]
+    fn turns_thunderbirds_client_off() {
+        let config: Config = toml::from_str(
+            "[oauth.google]\npublic_client = false\n[oauth.microsoft]\npublic_client = false\nclient_id = \"own-id\"",
+        )
+        .unwrap();
+        assert!(config.oauth_client(Provider::Google).unwrap().is_none());
+        let microsoft = config.oauth_client(Provider::Microsoft).unwrap().unwrap();
+        assert!(!microsoft.is_thunderbird());
     }
 
     #[test]

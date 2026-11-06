@@ -69,9 +69,8 @@ pub async fn find_folder(
 
 fn format_for(raw: Option<&str>, output: &Path) -> anyhow::Result<Format> {
     match raw {
-        Some(raw) => {
-            Format::parse(raw).with_context(|| format!("unknown format {raw:?}; use mbox or zip"))
-        }
+        Some(raw) => Format::parse(raw)
+            .with_context(|| format!("unknown format {raw:?}; use mbox, zip or pdf")),
         None => Ok(
             match output
                 .extension()
@@ -346,7 +345,11 @@ mod tests {
             format_for(Some("zip"), Path::new("a.mbox")).unwrap(),
             Format::Zip
         );
-        assert!(format_for(Some("pdf"), Path::new("a")).is_err());
+        assert!(format_for(Some("rar"), Path::new("a")).is_err());
+        assert_eq!(
+            format_for(Some("pdf"), Path::new("a.zip")).unwrap(),
+            holtmail_export::Format::Pdf
+        );
     }
 
     #[test]

@@ -23,6 +23,7 @@ pub struct Tasks {
     pending: Mutex<Pending>,
     wake: Notify,
     writing: tokio::sync::Mutex<()>,
+    hooks: std::sync::OnceLock<Arc<crate::webhooks::Hooks>>,
 }
 
 struct Entry {
@@ -251,7 +252,13 @@ impl Tasks {
         Ok(())
     }
 
-    pub fn running(&self, kind: TaskKind, archive: ArchiveId) -> Option<Task> {
+    /// Tells `hooks` when a task finishes.
+    pub fn set_hooks(&self, hooks: Arc<crate::webhooks::Hooks>) {
+        let _ = self.hooks.set(hooks);
+    }
+
+    pub fn running(&self, kind: TaskKind, archive: impl Into<Option<ArchiveId>>) -> Option<Task> {
+        let archive = archive.into();
         self.entries
             .lock()
             .expect("tasks lock")
@@ -259,7 +266,7 @@ impl Tasks {
             .find(|e| {
                 e.task.state == TaskState::Running
                     && e.task.kind == kind
-                    && e.task.archive_id == Some(archive)
+                    && e.task.archive_id == archive
             })
             .map(|e| e.task.clone())
     }
@@ -329,15 +336,39 @@ impl TaskHandle {
 
     pub fn finish(&self, state: TaskState, summary: impl Into<String>) {
         let summary = summary.into();
-        if self.tasks.update(&self.id, |task| {
+        let finished = self.tasks.update(&self.id, |task| {
             task.state = state;
             task.summary = summary;
             task.finished_at = Some(Timestamp::now());
             if task.total.is_some() || state == TaskState::Done {
                 task.total = Some(task.total.unwrap_or(task.done).max(task.done));
             }
-        }) {
-            self.tasks.changed(&self.id, None, true);
+        });
+        if !finished {
+            return;
+        }
+        self.tasks.changed(&self.id, None, true);
+        if let (Some(hooks), Some(task), Ok(runtime)) = (
+            self.tasks.hooks.get().cloned(),
+            self.snapshot(),
+            tokio::runtime::Handle::try_current(),
+        ) {
+            runtime.spawn(async move {
+                hooks
+                    .emit(holtmail_hooks::Event::TaskFinished {
+                        task_id: task.id,
+                        kind: task.kind.as_str().to_owned(),
+                        state: serde_json::to_value(task.state)
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_owned))
+                            .unwrap_or_default(),
+                        archive_id: task.archive_id,
+                        account_id: task.account_id,
+                        done: task.done,
+                        total: task.total,
+                    })
+                    .await
+            });
         }
     }
 }

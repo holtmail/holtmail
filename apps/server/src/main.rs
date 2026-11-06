@@ -4,14 +4,19 @@ mod accounts;
 mod backup;
 mod config;
 mod dav;
+mod deletion;
 mod export;
 mod image_proxy;
 mod import;
+mod ledger;
 mod mailboxes;
 mod oauth;
+mod operations;
 mod people;
 mod schedule;
+mod smtp;
 mod tasks;
+mod webhooks;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -116,7 +121,7 @@ enum Command {
         /// .ics too; a zip has them always.
         #[arg(long)]
         include_removed: bool,
-        /// mbox or zip for messages, vcf or zip for contacts, ics or zip for calendars; taken
+        /// mbox, zip or pdf (a zip of PDFs) for messages, vcf or zip for contacts, ics or zip for calendars; taken
         /// from the output's extension when omitted (zip for .zip, else mbox, vcf or ics).
         #[arg(long)]
         format: Option<String>,
@@ -154,6 +159,39 @@ enum Command {
     },
     /// Print the API's OpenAPI description.
     Openapi,
+    /// Delete the messages of an archive that a search finds, after showing what goes. They are
+    /// never archived again. Needs the search index, so stop `serve` first.
+    Delete {
+        /// Archive name or id.
+        #[arg(long)]
+        archive: String,
+        /// The search, as in the web app, e.g. "from:news@example.com before:2020-01-01".
+        #[arg(long)]
+        query: String,
+        /// Delete without asking to type the number of messages.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Look at the archive ledger, the hash chain of every message archived and deleted.
+    #[command(subcommand)]
+    Ledger(LedgerCommand),
+}
+
+#[derive(Subcommand)]
+enum LedgerCommand {
+    /// Print the newest entry's position and hash; write them down elsewhere to prove later
+    /// that nothing up to them changed. Works while `serve` runs.
+    Head,
+    /// Check the chain and compare it with the messages. Exits with 1 when anything is wrong.
+    /// Works while `serve` runs.
+    Verify {
+        /// Also read every message's bytes and compare them with their hash.
+        #[arg(long)]
+        blobs: bool,
+        /// A position and hash written down earlier, as <position>:<hash>.
+        #[arg(long)]
+        anchor: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -345,6 +383,134 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Serve => serve(Config::load(cli.config.as_deref())?).await,
+        Command::Delete {
+            archive,
+            query,
+            yes,
+        } => {
+            let config = Config::load(cli.config.as_deref())?;
+            let services = Services::open(&config).await?;
+            let archive = export::find_archive(&*services.store, &archive).await?;
+            let actor = None;
+            let reviews = deletion::Reviews::default();
+            let review = reviews
+                .review(
+                    &services,
+                    archive,
+                    holtmail_api::DeletionSelection::Query(query),
+                    actor,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let day = |t: holtmail_core::Timestamp| {
+                chrono::DateTime::from_timestamp_millis(t.as_millis())
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default()
+            };
+            println!(
+                "{} messages, {} bytes, from {} to {}:",
+                review.count,
+                review.bytes,
+                review.oldest.map(day).unwrap_or_default(),
+                review.newest.map(day).unwrap_or_default()
+            );
+            for message in review.sample.iter().take(10) {
+                println!(
+                    "  {}  {}",
+                    day(message.date),
+                    message.subject.as_deref().unwrap_or("(no subject)")
+                );
+            }
+            if !yes {
+                eprint!("Type {} to delete them for good: ", review.count);
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                anyhow::ensure!(line.trim() == review.count.to_string(), "nothing deleted");
+            }
+            let confirmed = reviews
+                .confirm(&review.id, review.count, actor)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let tasks = Arc::new(tasks::Tasks::default());
+            let task = tasks.start(tasks::NewTask {
+                kind: holtmail_api::TaskKind::DeleteMessages,
+                archive: Some(archive),
+                account: None,
+                title: confirmed.title,
+                cancellable: false,
+                job: None,
+            });
+            let done = deletion::delete(
+                &services,
+                &services.ingest(),
+                archive,
+                &confirmed.ids,
+                actor,
+                &task,
+            )
+            .await?;
+            people::rebuild(&*services.store, archive).await;
+            println!(
+                "Deleted {} messages and {} files.",
+                done.messages, done.blobs
+            );
+            Ok(())
+        }
+        Command::Ledger(command) => {
+            let config = Config::load(cli.config.as_deref())?;
+            let store = config::open_store(&config).await?;
+            match command {
+                LedgerCommand::Head => match store.ledger_head().await? {
+                    Some(head) => {
+                        println!("{}:{}", head.seq, head.hash);
+                        Ok(())
+                    }
+                    None => {
+                        println!("The ledger is empty.");
+                        Ok(())
+                    }
+                },
+                LedgerCommand::Verify { blobs, anchor } => {
+                    let anchor = anchor.as_deref().map(ledger::parse_anchor).transpose()?;
+                    let entered = ledger::enter_unentered(&*store).await?;
+                    if entered > 0 {
+                        eprintln!("  {entered} messages entered in the ledger first");
+                    }
+                    let blob_store = config::open_blobs(&config).await?;
+                    let cancel = std::sync::atomic::AtomicBool::new(false);
+                    let verification = ledger::verify(
+                        &*store,
+                        &*blob_store,
+                        holtmail_api::VerifyLedger { blobs, anchor },
+                        &cancel,
+                        |_, _| {},
+                    )
+                    .await?;
+                    ledger::keep(&*store, &verification).await?;
+                    let hooks = webhooks::Hooks::new(
+                        store.clone(),
+                        config::open_secrets(&config)?,
+                        Arc::new(holtmail_webhook_http::HttpWebhookSender::new(
+                            std::time::Duration::from_secs(10),
+                        )?),
+                    );
+                    ledger::announce(&hooks, &verification).await;
+                    for problem in &verification.problems {
+                        println!("{problem}");
+                    }
+                    if let (Some(seq), Some(hash)) = (verification.head_seq, verification.head_hash)
+                    {
+                        println!("Head {seq}:{hash}");
+                    }
+                    if verification.ok {
+                        println!("{} entries checked, nothing wrong.", verification.entries);
+                        Ok(())
+                    } else {
+                        println!("{} problems found.", verification.problem_count);
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
         Command::Export {
             archive,
             folder,
@@ -1070,16 +1236,24 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         index: services.index.clone(),
         auth: auth.clone(),
         mailboxes: Arc::new(runner.clone()),
+        operations: Arc::new(runner.clone()),
         fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
     });
     tokio::spawn(runner.clone().write_tasks());
+    tokio::spawn(services.hooks.clone().run());
+    if let Some(smtp) = &config.smtp {
+        let listener = smtp::start(smtp, &*services.store, services.ingest()).await?;
+        let _ = services.smtp.set(listener);
+    }
     runner.resume().await;
     let services_for_passes = services.clone();
     tokio::spawn(async {
         let services = services_for_passes;
+        ledger::enter_at_start(services.store.clone()).await;
         reindex_if_needed(services.clone()).await;
         invitations_if_needed(services.clone()).await;
+        directory_text_if_needed(services.clone()).await;
         people::build_if_needed(&*services.store).await;
     });
     tokio::spawn(runner.clone().run_schedule());
@@ -1292,6 +1466,101 @@ async fn invitations_if_needed(services: Arc<Services>) {
         Err(error) => {
             tracing::warn!(%error, "invitations not read; it is tried again at the next start")
         }
+    }
+}
+
+pub(crate) const DIRECTORY_TEXT_SETTING: &str = "directory_text";
+
+fn is_directory(attachment: &holtmail_store::Attachment) -> bool {
+    let media = attachment
+        .content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let extension = attachment
+        .filename
+        .as_deref()
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, ext)| ext.to_ascii_lowercase());
+    matches!(
+        media.as_str(),
+        "text/calendar"
+            | "application/ics"
+            | "text/vcard"
+            | "text/x-vcard"
+            | "text/directory"
+            | "text/x-vcalendar"
+    ) || matches!(
+        extension.as_deref(),
+        Some("ics" | "ical" | "ifb" | "vcf" | "vcard" | "vcs")
+    )
+}
+
+/// Reads calendar and vCard attachments of every message again, so their index text is their
+/// words rather than their raw lines, then sets [`DIRECTORY_TEXT_SETTING`]. Idempotent; messages
+/// that fail are logged and skipped. Returns how many messages changed.
+pub(crate) async fn refresh_directory_text(
+    store: &dyn Store,
+    ingest: &holtmail_ingest::Ingest,
+) -> anyhow::Result<u64> {
+    let mut messages = 0u64;
+    for archive in store.list_archives().await? {
+        let mut after = None;
+        loop {
+            let page = store
+                .list_messages(&holtmail_store::MessageQuery {
+                    archive_id: archive.id,
+                    folder_id: None,
+                    label: None,
+                    after,
+                    limit: 500,
+                })
+                .await?;
+            for message in page.items.iter().filter(|m| m.attachment_count > 0) {
+                match ingest
+                    .refresh_attachment_text(message.id, &is_directory)
+                    .await
+                {
+                    Ok(0) => {}
+                    Ok(_) => messages += 1,
+                    Err(error) => {
+                        tracing::warn!(message = %message.id, %error, "attachment text not read")
+                    }
+                }
+            }
+            match page.next {
+                Some(next) => after = Some(next),
+                None => break,
+            }
+        }
+        ingest.commit().await?;
+    }
+    store.set_setting(DIRECTORY_TEXT_SETTING, Some("1")).await?;
+    Ok(messages)
+}
+
+async fn directory_text_if_needed(services: Arc<Services>) {
+    match services.store.setting(DIRECTORY_TEXT_SETTING).await {
+        Ok(Some(_)) => return,
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "could not tell whether calendar attachments were read");
+            return;
+        }
+    }
+    let started = std::time::Instant::now();
+    match refresh_directory_text(&*services.store, &services.ingest()).await {
+        Ok(messages) => tracing::info!(
+            messages,
+            seconds = started.elapsed().as_secs(),
+            "calendar and contact attachments read again"
+        ),
+        Err(error) => tracing::warn!(
+            %error,
+            "calendar and contact attachments not read; it is tried again at the next start"
+        ),
     }
 }
 

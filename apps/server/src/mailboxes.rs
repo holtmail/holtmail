@@ -6,8 +6,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use holtmail_api::{
     AccountChange, AccountDetails, AccountStatus, ContactsCalendarsRun, ImageProxy, MailboxError,
-    Mailboxes, NewImapAccount, NewJmapAccount, OAuthFinished, OAuthStart, OAuthStarted,
-    OAuthTarget, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
+    Mailboxes, NewImapAccount, NewJmapAccount, OAuthFinished, OAuthProvider, OAuthStart,
+    OAuthStarted, OAuthTarget, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
 };
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
@@ -52,6 +52,7 @@ struct Inner {
     due: Mutex<HashSet<AccountId>>,
     interrupted: Mutex<Vec<TaskRecord>>,
     people: Arc<PeopleRefresh>,
+    reviews: crate::deletion::Reviews,
 }
 
 /// An account's contacts sync marked as running until dropped, also when the sync panics.
@@ -128,6 +129,26 @@ fn saved_summary(job: Job, saved: &Saved) -> String {
 }
 
 impl Runner {
+    pub(crate) fn services(&self) -> &Arc<Services> {
+        &self.0.services
+    }
+
+    pub(crate) fn task_list(&self) -> &Arc<Tasks> {
+        &self.0.tasks
+    }
+
+    pub(crate) fn reviews(&self) -> &crate::deletion::Reviews {
+        &self.0.reviews
+    }
+
+    pub(crate) fn ingester(&self) -> &Ingest {
+        &self.0.ingest
+    }
+
+    pub(crate) fn refresh_people(&self, archive: ArchiveId) {
+        self.0.people.request(archive);
+    }
+
     /// A runner with the tasks and last runs of earlier processes: tasks they left running
     /// are marked interrupted, accounts whose sync was interrupted are due at once, and
     /// [`Runner::resume`] starts interrupted image work again.
@@ -137,6 +158,7 @@ impl Runner {
         schedule: Arc<Schedule>,
     ) -> anyhow::Result<Self> {
         let (tasks, interrupted) = Tasks::open(services.store.clone()).await?;
+        tasks.set_hooks(services.hooks.clone());
         let status = services
             .store
             .last_runs()
@@ -192,6 +214,7 @@ impl Runner {
             due: Mutex::new(due),
             interrupted: Mutex::new(interrupted),
             people,
+            reviews: Default::default(),
         }));
         runner.clear_uploads().await;
         Ok(runner)
@@ -456,10 +479,15 @@ impl Runner {
                         folder.removed,
                         folder.flags_changed,
                         folder.failed,
-                        if folder.deferred > 0 {
-                            format!(", {} left until they are old enough", folder.deferred)
-                        } else {
-                            String::new()
+                        match (folder.deferred, folder.deleted) {
+                            (0, 0) => String::new(),
+                            (0, deleted) => format!(", {deleted} deleted earlier left out"),
+                            (deferred, 0) => {
+                                format!(", {deferred} left until they are old enough")
+                            }
+                            (deferred, deleted) => format!(
+                                ", {deferred} left until they are old enough, {deleted} deleted earlier left out"
+                            ),
                         },
                         if folder.renumbered {
                             ", renumbered by the server"
@@ -688,7 +716,7 @@ impl Runner {
             Some(&account.name),
             |totals| {
                 runner.progress(account.id, totals.new);
-                let done = totals.new + totals.known + totals.failed;
+                let done = totals.new + totals.known + totals.failed + totals.deleted;
                 task.progress(done, None, import_summary(totals));
                 if done > 0 && done.is_multiple_of(LOG_EVERY * 4) {
                     task.log(TaskLevel::Info, import_summary(totals));
@@ -1009,6 +1037,19 @@ impl Mailboxes for Runner {
         let account = accounts::finish_oauth(&self.0.services, answer).await?;
         self.sync(&account).await?;
         Ok(OAuthFinished { account, return_to })
+    }
+
+    fn oauth_providers(&self) -> Vec<OAuthProvider> {
+        holtmail_oauth::Provider::ALL
+            .into_iter()
+            .filter_map(|provider| {
+                let thunderbird = self.0.services.oauth.offered(provider)?;
+                Some(OAuthProvider {
+                    provider: provider.as_str().to_owned(),
+                    thunderbird_client: thunderbird,
+                })
+            })
+            .collect()
     }
 
     fn oauth_return_to(&self, answer: &str) -> Option<String> {

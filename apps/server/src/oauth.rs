@@ -84,6 +84,7 @@ pub struct OAuth {
     tokens: Mutex<HashMap<AccountId, Cached>>,
     graph_url: Option<String>,
     imap: HashMap<Provider, (String, u16)>,
+    hooks: std::sync::OnceLock<Arc<crate::webhooks::Hooks>>,
 }
 
 impl OAuth {
@@ -95,7 +96,13 @@ impl OAuth {
             tokens: Mutex::new(HashMap::new()),
             graph_url: None,
             imap: HashMap::new(),
+            hooks: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Tells `hooks` when an account's sign-in is revoked.
+    pub fn set_hooks(&self, hooks: Arc<crate::webhooks::Hooks>) {
+        let _ = self.hooks.set(hooks);
     }
 
     /// The same with the IMAP server new OAuth accounts of `provider` connect to over TLS.
@@ -124,10 +131,21 @@ impl OAuth {
         self.graph_url.as_deref()
     }
 
+    /// Whether `provider` is offered, and with Thunderbird's client: `None` when it has no
+    /// client.
+    pub fn offered(&self, provider: Provider) -> Option<bool> {
+        self.clients.get(&provider).map(Client::is_thunderbird)
+    }
+
     fn client(&self, provider: Provider, access: Access) -> Result<Client, OAuthError> {
         self.clients
             .get(&provider)
-            .expect("every provider has a client")
+            .ok_or_else(|| {
+                OAuthError::Rejected(format!(
+                    "{} sign-in is not set up on this server",
+                    provider.name()
+                ))
+            })?
             .for_access(access)
             .ok_or_else(|| {
                 OAuthError::Rejected(format!(
@@ -273,6 +291,15 @@ impl OAuth {
                     store.update_account(&stored).await?;
                 }
                 tracing::warn!(account = %account.id, provider = provider.as_str(), "OAuth sign-in revoked");
+                if let Some(hooks) = self.hooks.get() {
+                    hooks
+                        .emit(holtmail_hooks::Event::AccountNeedsSignIn {
+                            account_id: account.id,
+                            archive_id: account.archive_id,
+                            provider: provider.as_str().to_owned(),
+                        })
+                        .await;
+                }
                 Err(anyhow!(sign_in_again(provider)))
             }
             Err(error) => Err(anyhow!(

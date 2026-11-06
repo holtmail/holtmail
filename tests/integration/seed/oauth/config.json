@@ -1,0 +1,30 @@
+{
+  "interactiveLogin": false,
+  "rotateRefreshToken": true,
+  "httpServer": {
+    "type": "NettyWrapper",
+    "ssl": {
+      "keystoreFile": "/certs/oauth.p12",
+      "keystoreType": "PKCS12",
+      "keystorePassword": "it-oauth-keystore",
+      "keyPassword": "it-oauth-keystore"
+    }
+  },
+  "tokenCallbacks": [
+    {
+      "issuerId": "default",
+      "tokenExpiry": 60,
+      "requestMappings": [
+        {
+          "requestParam": "client_id",
+          "match": "*",
+          "claims": {
+            "sub": "${clientId}",
+            "email": "${clientId}",
+            "aud": ["holtmail-it"]
+          }
+        }
+      ]
+    }
+  ]
+}

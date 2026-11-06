@@ -1,0 +1,35 @@
+[package]
+name = "holtmail-integration"
+description = "Integration tests of the holtmail binary against real servers in local containers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+base64.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures.workspace = true
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-sanitize.workspace = true
+holtmail-secret.workspace = true
+holtmail-secret-local.workspace = true
+holtmail-source.workspace = true
+holtmail-source-imap.workspace = true
+image.workspace = true
+object_store.workspace = true
+reqwest = { workspace = true, features = ["cookies", "json"] }
+serde_json.workspace = true
+sqlx.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "macros", "rt-multi-thread"] }
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

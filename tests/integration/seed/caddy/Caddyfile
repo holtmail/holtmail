@@ -1,0 +1,11 @@
+{
+	admin off
+	auto_https disable_redirects
+	ocsp_stapling off
+	persist_config off
+}
+
+https://localhost:49443 {
+	tls /certs/server.crt /certs/server.key
+	reverse_proxy host.docker.internal:49480
+}

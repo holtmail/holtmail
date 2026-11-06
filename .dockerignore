@@ -3,6 +3,7 @@
 **/node_modules
 **/dist
 target
+tests/integration/.state
 data
 **/*.log
 **/.DS_Store

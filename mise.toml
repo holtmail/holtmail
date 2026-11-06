@@ -10,3 +10,14 @@ run = [
   "bun install --frozen-lockfile",
   "bun run check",
 ]
+
+[tasks.it]
+description = "Integration tests against the servers in tests/integration/compose.yaml; `mise run it -- imap` runs one area"
+run = "bash tests/integration/it.sh"
+
+[tasks.it-down]
+description = "Stop the integration stack and remove its volumes and certificates"
+run = [
+  "docker compose -f tests/integration/compose.yaml --profile '*' down -v",
+  "rm -rf tests/integration/.state",
+]

@@ -7,9 +7,10 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId};
 use holtmail_index::SortOrder;
-use holtmail_store::{Derived, DerivedKind, Message, MessageQuery, PageCursor};
+use holtmail_store::{Derived, DerivedKind, InsightView, Message, MessageQuery, PageCursor, User};
 
 use crate::dto::*;
+use crate::insights::Viewer;
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
 type AppState = State<Arc<ApiState>>;
@@ -120,6 +121,7 @@ pub(crate) async fn list_labels(
 )]
 pub(crate) async fn list_messages(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
     Path(raw): Path<String>,
     Query(params): Query<ListParams>,
 ) -> ApiResult<Json<MessagePage>> {
@@ -144,7 +146,7 @@ pub(crate) async fn list_messages(
             other => other.into(),
         })?;
     Ok(Json(MessagePage {
-        items: summaries(&state, &page.items, folder_id).await?,
+        items: summaries(&state, &user, archive, &page.items, folder_id).await?,
         next: page.next.map(|c| c.0),
     }))
 }
@@ -157,6 +159,7 @@ pub(crate) async fn list_messages(
 )]
 pub(crate) async fn search(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
     Path(raw): Path<String>,
     Query(params): Query<SearchParams>,
 ) -> ApiResult<Json<SearchResponse>> {
@@ -179,7 +182,7 @@ pub(crate) async fn search(
         })?;
     let messages = state.store.get_messages(&results.hits).await?;
     let end = u64::from(offset) + results.hits.len() as u64;
-    let mut items = summaries(&state, &messages, None).await?;
+    let mut items = summaries(&state, &user, archive, &messages, None).await?;
     for (item, message) in items.iter_mut().zip(&messages) {
         item.attachment_match = results.attachment_hits.contains(&message.id);
     }
@@ -192,14 +195,21 @@ pub(crate) async fn search(
 
 async fn summaries(
     state: &ApiState,
+    user: &User,
+    archive: ArchiveId,
     messages: &[Message],
     folder: Option<FolderId>,
 ) -> ApiResult<Vec<MessageSummary>> {
     let ids: Vec<MessageId> = messages.iter().map(|m| m.id).collect();
     let extras = state.store.message_extras(&ids, folder).await?;
+    let viewer = Viewer::new(state, user, archive).await?;
     Ok(messages
         .iter()
-        .map(|m| MessageSummary::new(m, extras.get(&m.id)))
+        .map(|m| {
+            let extra = extras.get(&m.id);
+            let kinds = viewer.kinds(m, extra.map_or(0, |e| e.insight_kinds));
+            MessageSummary::new(m, extra, kinds)
+        })
         .collect())
 }
 
@@ -218,7 +228,15 @@ pub(crate) async fn load(state: &ApiState, raw: &str) -> ApiResult<(Message, Vec
     Ok((message, bytes.to_vec()))
 }
 
-async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<MessageDetail> {
+async fn detail(
+    state: &ApiState,
+    message: Message,
+    raw: &[u8],
+    viewer: &Viewer,
+    insight: Option<&InsightView>,
+) -> ApiResult<MessageDetail> {
+    let insights =
+        crate::insights::message_insights(state.insights.as_ref(), insight, &message, viewer);
     let parsed = holtmail_mime::parse(raw).ok();
     let attachments = state.store.attachments(message.id).await?;
     let locations = state.store.locations(message.id).await?;
@@ -285,6 +303,7 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
         invitations: crate::pim::invitations(state, &message).await?,
         people,
         alias,
+        insights,
     })
 }
 
@@ -296,10 +315,15 @@ async fn detail(state: &ApiState, message: Message, raw: &[u8]) -> ApiResult<Mes
 )]
 pub(crate) async fn get_message(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
     Path(raw): Path<String>,
 ) -> ApiResult<Json<MessageDetail>> {
     let (message, bytes) = load(&state, &raw).await?;
-    Ok(Json(detail(&state, message, &bytes).await?))
+    let viewer = Viewer::new(&state, &user, message.archive_id).await?;
+    let insight = crate::insights::view(&state, message.id).await?;
+    Ok(Json(
+        detail(&state, message, &bytes, &viewer, insight.as_ref()).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -310,21 +334,26 @@ pub(crate) async fn get_message(
 )]
 pub(crate) async fn get_thread(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
     Path(raw): Path<String>,
 ) -> ApiResult<Json<ThreadDto>> {
     let thread: ThreadId = id(&raw, "thread")?;
     let messages = state.store.thread_messages(thread).await?;
-    if messages.is_empty() {
+    let Some(first) = messages.first() else {
         return Err(ApiError::not_found("thread"));
-    }
+    };
+    let viewer = Viewer::new(&state, &user, first.archive_id).await?;
+    let ids: Vec<MessageId> = messages.iter().map(|m| m.id).collect();
+    let views = crate::insights::views(&state, &ids).await?;
     let mut out = Vec::with_capacity(messages.len());
     for message in messages {
+        let insight = views.get(&message.id);
         let bytes = state
             .blobs
             .get(&message.blob_id)
             .await?
             .ok_or_else(|| ApiError::not_found("message bytes"))?;
-        out.push(detail(&state, message, &bytes).await?);
+        out.push(detail(&state, message, &bytes, &viewer, insight).await?);
     }
     Ok(Json(ThreadDto {
         id: thread.to_string(),

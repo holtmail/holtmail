@@ -17,6 +17,7 @@ holtmail-export.workspace = true
 holtmail-fetch.workspace = true
 holtmail-hooks.workspace = true
 holtmail-index.workspace = true
+holtmail-insight.workspace = true
 holtmail-mime.workspace = true
 holtmail-people.workspace = true
 holtmail-pim.workspace = true

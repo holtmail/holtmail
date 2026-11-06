@@ -701,8 +701,11 @@ struct Fixture {
     cookie: String,
     archive: String,
     folder: String,
+    progress: Arc<InsightProgress>,
     _dir: tempfile::TempDir,
 }
+
+const CURRENT_FP: &str = "fp-current";
 
 const PASSWORD: &str = "analytical engine";
 
@@ -725,7 +728,10 @@ fn auth(store: Arc<dyn Store>) -> Arc<Auth> {
 }
 
 async fn fixture() -> Fixture {
-    let mut f = empty_fixture().await;
+    signed_in(empty_fixture().await).await
+}
+
+async fn signed_in(mut f: Fixture) -> Fixture {
     f.auth
         .create_user(
             Signup {
@@ -749,6 +755,13 @@ async fn fixture() -> Fixture {
 }
 
 async fn empty_fixture() -> Fixture {
+    empty_fixture_with(Some(InsightsConfig::new(CURRENT_FP))).await
+}
+
+async fn empty_fixture_with(insights: Option<InsightsConfig>) -> Fixture {
+    let progress = insights
+        .as_ref()
+        .map_or_else(Default::default, |c| c.progress.clone());
     let dir = tempfile::tempdir().unwrap();
     let blobs: Arc<dyn BlobStore> =
         Arc::new(FsBlobStore::open(dir.path().join("b")).await.unwrap());
@@ -817,6 +830,7 @@ async fn empty_fixture() -> Fixture {
             aliases: Arc::new(FakeAliases::new(store.clone())),
             fetcher: fetcher.clone(),
             secure_cookies: false,
+            insights,
         }),
         mailboxes,
         fetcher,
@@ -827,6 +841,7 @@ async fn empty_fixture() -> Fixture {
         cookie: String::new(),
         archive: archive.to_string(),
         folder: folder.to_string(),
+        progress,
         _dir: dir,
     }
 }
@@ -1649,6 +1664,7 @@ async fn members_read_only_granted_archives() {
         format!("/api/messages/{message}"),
         format!("/api/messages/{message}/raw"),
         format!("/api/threads/{thread}"),
+        format!("/api/archives/{}/insights/status", f.archive),
     ] {
         let (status, _, _) = f
             .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
@@ -1682,6 +1698,7 @@ async fn members_read_only_granted_archives() {
         messages.clone(),
         format!("/api/messages/{message}"),
         format!("/api/threads/{thread}"),
+        format!("/api/archives/{}/insights/status", f.archive),
     ] {
         let (status, _, _) = f
             .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
@@ -4052,4 +4069,407 @@ async fn aliases_from_mail_services_and_by_hand() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(f.json(&list).await["services"], json!([]));
+}
+
+fn insight(
+    kind: holtmail_insight::InsightKind,
+    confidence: holtmail_insight::Confidence,
+    score: u16,
+) -> holtmail_insight::Insight {
+    holtmail_insight::Insight {
+        kind,
+        provenance: holtmail_insight::Provenance::Heuristic,
+        confidence,
+        score,
+        origin: holtmail_insight::PartRef::Text,
+        forwarded: false,
+    }
+}
+
+fn code(value: &str, confidence: holtmail_insight::Confidence) -> holtmail_insight::Insight {
+    insight(
+        holtmail_insight::InsightKind::Code {
+            value: value.into(),
+            origin_bound: None,
+        },
+        confidence,
+        if confidence == holtmail_insight::Confidence::Possible {
+            300
+        } else {
+            800
+        },
+    )
+}
+
+fn unsubscribe_item() -> holtmail_insight::Insight {
+    insight(
+        holtmail_insight::InsightKind::Unsubscribe {
+            https: Some(holtmail_insight::Url::parse("https://lists.example.com/u/42").unwrap()),
+            mailto: Some("mailto:leave@lists.example.com".into()),
+            http: None,
+            one_click: true,
+            list_id: Some("weekly.lists.example.com".into()),
+        },
+        holtmail_insight::Confidence::Certain,
+        1000,
+    )
+}
+
+impl Fixture {
+    async fn message_id(&self, subject: &str) -> holtmail_core::MessageId {
+        let page = self
+            .json(&format!("/api/archives/{}/messages", self.archive))
+            .await;
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["subject"] == subject)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    async fn store_insights(
+        &self,
+        message: holtmail_core::MessageId,
+        fingerprint: &str,
+        items: &str,
+        kinds: &[holtmail_insight::KindTag],
+    ) {
+        let row = holtmail_store::InsightRow {
+            message,
+            archive: self.archive.parse().unwrap(),
+            fingerprint: fingerprint.into(),
+            outcome: holtmail_store::InsightOutcome::Ok,
+            truncated: false,
+            from_address: None,
+            signals: 0,
+            kinds: kinds
+                .iter()
+                .copied()
+                .collect::<holtmail_insight::KindTags>()
+                .bits(),
+            auth: "{}".into(),
+            items: items.into(),
+            computed_at: holtmail_core::Timestamp::now(),
+        };
+        self.store
+            .set_message_insights(message, &row)
+            .await
+            .unwrap();
+    }
+
+    async fn store_newsletter_insights(&self, fingerprint: &str) -> holtmail_core::MessageId {
+        let id = self.message_id("Weekly news").await;
+        let items = holtmail_insight::Items {
+            items: vec![
+                code("482913", holtmail_insight::Confidence::Likely),
+                code("7731", holtmail_insight::Confidence::Possible),
+                unsubscribe_item(),
+            ],
+        };
+        self.store_insights(
+            id,
+            fingerprint,
+            &items.to_json(),
+            &[
+                holtmail_insight::KindTag::Code,
+                holtmail_insight::KindTag::Unsubscribe,
+            ],
+        )
+        .await;
+        id
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shows_insights_in_messages_threads_and_lists() {
+    let f = fixture().await;
+    let news = f.store_newsletter_insights(CURRENT_FP).await;
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    let insights = &detail["insights"];
+    assert_eq!(insights["status"], "ready");
+    assert_eq!(insights["trust"]["state"], "unknown");
+    assert_eq!(insights["own"], false);
+    let items = insights["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert_eq!(items[0]["type"], "code");
+    assert_eq!(items[0]["value"], "482913");
+    assert_eq!(items[0]["confidence"], "likely");
+    assert_eq!(items[0]["score"], 800);
+    assert_eq!(items[1]["type"], "unsubscribe");
+    assert_eq!(items[1]["list_id"], "weekly.lists.example.com");
+    assert_eq!(
+        insights["unsubscribe"],
+        json!({
+            "https": "https://lists.example.com/u/42",
+            "mailto": "mailto:leave@lists.example.com",
+            "http": null,
+            "one_click": { "available": false, "reason": "disabled" },
+        })
+    );
+
+    let page = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await;
+    let kinds: Vec<&Value> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| &m["insight_kinds"])
+        .collect();
+    assert!(
+        kinds.contains(&&json!(["code", "unsubscribe"])),
+        "{kinds:?}"
+    );
+    assert!(kinds.contains(&&json!([])), "{kinds:?}");
+
+    let plain = f.message_id("Re: Weekly news").await;
+    let detail = f.json(&format!("/api/messages/{plain}")).await;
+    assert_eq!(detail["insights"]["status"], "pending");
+    assert_eq!(detail["insights"]["items"], json!([]));
+    assert!(detail["insights"]["unsubscribe"].is_null());
+
+    let thread = f
+        .json(&format!(
+            "/api/threads/{}",
+            detail["thread_id"].as_str().unwrap()
+        ))
+        .await;
+    let statuses: Vec<&Value> = thread["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| &m["insights"]["status"])
+        .collect();
+    assert_eq!(statuses, [&json!("ready"), &json!("pending")]);
+
+    f.store_newsletter_insights("fp-old").await;
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    assert_eq!(detail["insights"]["status"], "outdated");
+    assert_eq!(detail["insights"]["items"][0]["value"], "482913");
+
+    f.store_insights(
+        news,
+        CURRENT_FP,
+        r#"{"v":1,"items":[{"type":"hologram","p":"header","c":"certain","score":1000,"origin":"text","forwarded":false}]}"#,
+        &[],
+    )
+    .await;
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    assert_eq!(detail["insights"]["status"], "outdated");
+    assert_eq!(detail["insights"]["items"], json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shows_possible_items_above_the_configured_score() {
+    let mut config = InsightsConfig::new(CURRENT_FP);
+    config
+        .show_possible
+        .insert(holtmail_insight::KindTag::Code, 250);
+    let f = signed_in(empty_fixture_with(Some(config)).await).await;
+    let news = f.store_newsletter_insights(CURRENT_FP).await;
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    let values: Vec<&Value> = detail["insights"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "code")
+        .map(|i| &i["value"])
+        .collect();
+    assert_eq!(values, [&json!("482913"), &json!("7731")]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn leaves_insights_out_without_a_runner() {
+    let f = signed_in(empty_fixture_with(None).await).await;
+    let news = f.store_newsletter_insights(CURRENT_FP).await;
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    assert!(detail["insights"].is_null());
+    let (status, _, _) = f
+        .get(&format!("/api/archives/{}/insights/status", f.archive))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hides_codes_on_own_mail() {
+    let f = fixture().await;
+    let news = f.store_newsletter_insights(CURRENT_FP).await;
+    f.store
+        .create_account(NewAccount {
+            archive_id: f.archive.parse().unwrap(),
+            kind: AccountKind::Import,
+            name: "News desk".into(),
+            address: Some("News@Example.com".into()),
+            settings: Default::default(),
+            sealed_secret: None,
+            enabled: false,
+        })
+        .await
+        .unwrap();
+    let detail = f.json(&format!("/api/messages/{news}")).await;
+    let insights = &detail["insights"];
+    assert_eq!(insights["own"], true);
+    let types: Vec<&Value> = insights["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| &i["type"])
+        .collect();
+    assert_eq!(types, [&json!("unsubscribe")]);
+    assert_eq!(
+        insights["unsubscribe"]["https"],
+        "https://lists.example.com/u/42"
+    );
+    let page = f
+        .json(&format!("/api/archives/{}/messages", f.archive))
+        .await;
+    let row = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == news.to_string())
+        .unwrap();
+    assert_eq!(row["insight_kinds"], json!(["unsubscribe"]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn filters_insights_for_members() {
+    let f = fixture().await;
+    let news = f.store_newsletter_insights(CURRENT_FP).await;
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/users",
+            json!({ "email": "grace@example.org", "name": "Grace", "password": "compiler 1952" }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let grace: Value = serde_json::from_slice(&body).unwrap();
+    let grace_id = grace["user"]["id"].as_str().unwrap().to_owned();
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/users/{grace_id}"),
+            json!({ "archives": [f.archive] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let member = f.sign_in("grace@example.org", "compiler 1952").await;
+    let read = |uri: String| {
+        let member = member.clone();
+        let f = &f;
+        async move {
+            let (status, _, body) = f
+                .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
+                .await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            serde_json::from_slice::<Value>(&body).unwrap()
+        }
+    };
+
+    let detail = read(format!("/api/messages/{news}")).await;
+    let insights = &detail["insights"];
+    assert_eq!(insights["status"], "ready");
+    assert_eq!(insights["items"], json!([]));
+    assert_eq!(
+        insights["unsubscribe"],
+        json!({
+            "https": null,
+            "mailto": null,
+            "http": null,
+            "one_click": { "available": false, "reason": "members" },
+        })
+    );
+    let body = detail.to_string();
+    assert!(!body.contains("482913"));
+    assert!(!body.contains("lists.example.com/u/42"));
+
+    let thread = read(format!(
+        "/api/threads/{}",
+        detail["thread_id"].as_str().unwrap()
+    ))
+    .await;
+    assert!(!thread.to_string().contains("482913"));
+
+    let page = read(format!("/api/archives/{}/messages", f.archive)).await;
+    let row = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == news.to_string())
+        .unwrap();
+    assert_eq!(row["insight_kinds"], json!(["unsubscribe"]));
+
+    let status = read(format!("/api/archives/{}/insights/status", f.archive)).await;
+    assert_eq!(status, json!({ "pending": 1, "running": false }));
+
+    let other = f.store.create_archive("Work").await.unwrap().id;
+    for uri in [
+        format!("/api/archives/{other}/insights/status"),
+        format!(
+            "/api/archives/{}/insights/status",
+            holtmail_core::ArchiveId::new()
+        ),
+    ] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(&uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_insights_progress() {
+    let f = fixture().await;
+    let uri = format!("/api/archives/{}/insights/status", f.archive);
+    assert_eq!(
+        f.json(&uri).await,
+        json!({ "pending": 2, "running": false })
+    );
+    f.store_newsletter_insights(CURRENT_FP).await;
+    f.progress.start();
+    assert_eq!(f.json(&uri).await, json!({ "pending": 1, "running": true }));
+    f.progress.finish();
+    f.store_newsletter_insights("fp-old").await;
+    assert_eq!(
+        f.json(&uri).await,
+        json!({ "pending": 2, "running": false })
+    );
+    for uri in [
+        format!(
+            "/api/archives/{}/insights/status",
+            holtmail_core::ArchiveId::new()
+        ),
+        "/api/archives/not-an-id/insights/status".to_owned(),
+    ] {
+        let (status, _, _) = f.get(&uri).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+    let spec: Value = serde_json::from_str(&openapi_json()).unwrap();
+    let responses = &spec["paths"]["/api/archives/{id}/insights/status"]["get"]["responses"];
+    for code in ["200", "401", "403", "404", "500"] {
+        assert!(responses[code].is_object(), "{code}");
+    }
+    for schema in ["MessageInsightsDto", "InsightDto", "InsightsStatusDto"] {
+        assert!(
+            spec["components"]["schemas"][schema].is_object(),
+            "{schema}"
+        );
+    }
+}
+
+#[test]
+fn gives_every_operation_its_own_id() {
+    let spec: Value = serde_json::from_str(&openapi_json()).unwrap();
+    let mut seen = std::collections::HashSet::new();
+    for (path, item) in spec["paths"].as_object().unwrap() {
+        for (method, operation) in item.as_object().unwrap() {
+            let id = operation["operationId"].as_str().unwrap();
+            assert!(seen.insert(id.to_owned()), "{method} {path}: {id}");
+        }
+    }
 }

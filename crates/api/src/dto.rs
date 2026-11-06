@@ -48,7 +48,7 @@ pub struct RemoteImagesRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TaskDto {
     pub id: String,
-    /// `sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`.
+    /// `sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`, `delete_messages` or `analyse`.
     pub kind: String,
     /// `running`, `done`, `failed`, `cancelled`, or `interrupted` when the server stopped while it
     /// ran.
@@ -597,6 +597,9 @@ pub struct MessageSummary {
     /// In search results: the words were found only in text inside its attachments. Always
     /// `false` in folder and label lists.
     pub attachment_match: bool,
+    /// The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`
+    /// is left out for members and on the archive's own mail.
+    pub insight_kinds: Vec<String>,
 }
 
 /// One page of a message list.
@@ -680,6 +683,8 @@ pub struct MessageDetail {
     pub people: Vec<crate::persons::AddressPersonDto>,
     /// The alias it was forwarded or addressed to, with the sender the service hid.
     pub alias: Option<crate::aliases::MessageAliasDto>,
+    /// Codes and unsubscribe links found in it; absent when the server computes no insights.
+    pub insights: Option<crate::insights::MessageInsightsDto>,
 }
 
 /// A conversation, oldest message first.
@@ -1008,7 +1013,11 @@ impl From<FolderSummary> for FolderDto {
 }
 
 impl MessageSummary {
-    pub fn new(message: &Message, extras: Option<&MessageExtras>) -> Self {
+    pub fn new(
+        message: &Message,
+        extras: Option<&MessageExtras>,
+        insight_kinds: Vec<String>,
+    ) -> Self {
         Self {
             id: message.id.to_string(),
             thread_id: message.thread_id.to_string(),
@@ -1026,6 +1035,7 @@ impl MessageSummary {
                 .unwrap_or_default(),
             labels: extras.map(|e| e.labels.clone()).unwrap_or_default(),
             attachment_match: false,
+            insight_kinds,
         }
     }
 }

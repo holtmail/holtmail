@@ -12,6 +12,7 @@ mod calendar;
 mod deletion;
 mod dto;
 mod export;
+mod insights;
 mod ledger;
 mod mailboxes;
 mod manage;
@@ -47,6 +48,7 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 pub use aliases::{AliasProvider, Aliases, NewService, ServiceChange};
 use dto::*;
+pub use insights::{InsightProgress, InsightsConfig};
 pub use mailboxes::{
     AccountChange, AccountDetails, AccountStatus, ConnectionChange, ContactsCalendars,
     ContactsCalendarsChange, ContactsCalendarsRun, ContactsProtocol, ImageProxy, ImapConnection,
@@ -83,6 +85,8 @@ pub struct ApiState {
     /// Mark the session cookie `Secure` on every response, for instances served over https.
     /// Without it the cookie is `Secure` only when `X-Forwarded-Proto` is `https`.
     pub secure_cookies: bool,
+    /// Message insights; `None` when the server runs no insights runner.
+    pub insights: Option<InsightsConfig>,
 }
 
 /// The API routes under `/api`.
@@ -139,6 +143,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/archives/{id}/labels", get(routes::list_labels))
         .route("/api/archives/{id}/messages", get(routes::list_messages))
         .route("/api/archives/{id}/search", get(routes::search))
+        .route(
+            "/api/archives/{id}/insights/status",
+            get(insights::insights_status),
+        )
         .route("/api/archives/{id}/export", get(export::export))
         .route(
             "/api/archives/{id}/contacts/export",
@@ -312,6 +320,7 @@ pub fn openapi_json() -> String {
         routes::list_labels,
         routes::list_messages,
         routes::search,
+        insights::insights_status,
         export::export,
         export::export_contacts,
         export::export_calendar,
@@ -445,6 +454,16 @@ pub fn openapi_json() -> String {
         AttachmentDto,
         LocationDto,
         MessageDetail,
+        insights::MessageInsightsDto,
+        insights::InsightStatusDto,
+        insights::TrustDto,
+        insights::TrustStateDto,
+        insights::ConfidenceDto,
+        insights::InsightDto,
+        insights::OneClickReasonDto,
+        insights::OneClickDto,
+        insights::UnsubscribeDto,
+        insights::InsightsStatusDto,
         ThreadDto,
         ErrorDto,
         UserDto,

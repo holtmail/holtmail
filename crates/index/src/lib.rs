@@ -1,13 +1,16 @@
-//! Contract for full-text search over archived messages.
+//! Contract for full-text search over archived messages, and over contacts and calendar events
+//! as documents of their own.
 //!
 //! The index is derived data: it can be dropped and rebuilt from the store and the blobs at any
-//! time. Searches always run inside one archive.
+//! time. Searches always run inside one archive. Messages and items (contacts and events) live
+//! side by side: [`SearchIndex::search`] only ever finds messages and
+//! [`SearchIndex::search_items`] only items, with the same [`Clause`]s.
 
 #[cfg(feature = "testing")]
 pub mod testing;
 
 use async_trait::async_trait;
-use holtmail_core::{Address, ArchiveId, MessageId, ThreadId, Timestamp};
+use holtmail_core::{Address, ArchiveId, ItemId, MessageId, ThreadId, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// What the index knows about one message.
@@ -43,7 +46,46 @@ pub struct IndexDocument {
     pub has_attachments: bool,
 }
 
+/// What a document is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentKind {
+    /// A message.
+    Mail,
+    /// A calendar event.
+    Event,
+    /// A contact card.
+    Contact,
+}
+
+/// What the index knows about one contact or event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemDocument {
+    /// The item.
+    pub item_id: ItemId,
+    /// Its archive.
+    pub archive_id: ArchiveId,
+    /// [`DocumentKind::Event`] or [`DocumentKind::Contact`].
+    pub kind: DocumentKind,
+    /// An event's summary or a contact's name; searched like a subject.
+    pub title: String,
+    /// An event's organizer; searched like a sender.
+    pub organizer: Vec<Address>,
+    /// An event's attendees, or a contact's own names and addresses; searched like recipients.
+    pub people: Vec<Address>,
+    /// Everything else worth finding: description and location, or organization, title, phone
+    /// numbers and notes; searched like a body.
+    pub text: String,
+    /// An event's start; `None` for contacts.
+    pub date: Option<Timestamp>,
+}
+
 /// One condition of a search. A message matches a [`SearchQuery`] when it matches every clause.
+///
+/// Contacts and events are searched with the same clauses: their title as the subject, an event's
+/// organizer as the sender, its attendees (or a contact's own names and addresses) as the
+/// recipients, their other text as the body and an event's start as the date. Clauses about
+/// folders, flags, labels and attachments never match them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Clause {
@@ -76,6 +118,11 @@ pub enum Clause {
     Before(Timestamp),
     /// Dated at or after this time.
     After(Timestamp),
+    /// Is a document of this kind: [`DocumentKind::Mail`] matches every message and no item.
+    Kind(DocumentKind),
+    /// Words in the name or address of anyone involved: a message's sender or recipients, an
+    /// event's organizer or attendees, a contact's own names and addresses.
+    With(String),
     /// The inner clause must not match.
     Not(Box<Clause>),
 }
@@ -111,6 +158,24 @@ pub struct SearchResults {
     pub attachment_hits: Vec<MessageId>,
 }
 
+/// A contact or event found by [`SearchIndex::search_items`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemHit {
+    /// The item.
+    pub item_id: ItemId,
+    /// [`DocumentKind::Event`] or [`DocumentKind::Contact`].
+    pub kind: DocumentKind,
+}
+
+/// One page of contacts and events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemResults {
+    /// Matching items in the requested order.
+    pub hits: Vec<ItemHit>,
+    /// How many items match in total.
+    pub total: u64,
+}
+
 /// Why an index operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
@@ -132,7 +197,15 @@ pub trait SearchIndex: Send + Sync {
     /// Removes the messages. Missing ones are ignored. Visible after [`SearchIndex::commit`].
     async fn remove(&self, ids: &[MessageId]) -> Result<(), IndexError>;
 
-    /// Makes every earlier `put` and `remove` visible and durable.
+    /// Adds contact and event documents, replacing any with the same `item_id`. Visible to
+    /// searches after [`SearchIndex::commit`].
+    async fn put_items(&self, documents: Vec<ItemDocument>) -> Result<(), IndexError>;
+
+    /// Removes the items' documents. Missing ones are ignored. Visible after
+    /// [`SearchIndex::commit`].
+    async fn remove_items(&self, ids: &[ItemId]) -> Result<(), IndexError>;
+
+    /// Makes every earlier `put`, `put_items`, `remove` and `remove_items` visible and durable.
     async fn commit(&self) -> Result<(), IndexError>;
 
     /// Messages of `archive` that match `query`, skipping `offset` and returning at most `limit`.
@@ -148,4 +221,17 @@ pub trait SearchIndex: Send + Sync {
         offset: u32,
         limit: u32,
     ) -> Result<SearchResults, IndexError>;
+
+    /// Contacts and events of `archive` that match `query`, skipping `offset` and returning at
+    /// most `limit`. Words match as in [`SearchIndex::search`]. [`SortOrder::Newest`] lists
+    /// events by start, the latest first, then contacts; [`SortOrder::Relevance`] the best match
+    /// first.
+    async fn search_items(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        sort: SortOrder,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ItemResults, IndexError>;
 }

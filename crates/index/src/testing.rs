@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use holtmail_core::{Address, ArchiveId, MessageId, ThreadId, Timestamp};
+use holtmail_core::{Address, ArchiveId, ItemId, MessageId, ThreadId, Timestamp};
 
 use crate::*;
 
@@ -10,6 +10,11 @@ use crate::*;
 ///
 /// `index` must be empty when the suite starts.
 pub async fn conformance(index: Arc<dyn SearchIndex>) {
+    messages(&*index).await;
+    items(&*index).await;
+}
+
+async fn messages(index: &dyn SearchIndex) {
     let archive = ArchiveId::new();
     let lunch = doc(
         archive,
@@ -53,7 +58,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         .unwrap();
     index.commit().await.unwrap();
 
-    let all = search(&*index, archive, vec![], SortOrder::Newest).await;
+    let all = search(index, archive, vec![], SortOrder::Newest).await;
     assert_eq!(
         all,
         [lunch.message_id, report.message_id, cafe.message_id],
@@ -162,7 +167,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         ),
     ];
     for (clauses, expected) in cases {
-        let found = search(&*index, archive, clauses.clone(), SortOrder::Newest).await;
+        let found = search(index, archive, clauses.clone(), SortOrder::Newest).await;
         assert_eq!(found, expected, "wrong result for {clauses:?}");
     }
 
@@ -202,7 +207,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
     }
 
     let relevant = search(
-        &*index,
+        index,
         archive,
         vec![Clause::Text("lunch".into())],
         SortOrder::Relevance,
@@ -227,7 +232,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
     index.commit().await.unwrap();
     assert_eq!(
         search(
-            &*index,
+            index,
             archive,
             vec![Clause::Subject("lunch".into())],
             SortOrder::Newest
@@ -237,7 +242,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         "put did not replace the document"
     );
     assert_eq!(
-        search(&*index, archive, vec![], SortOrder::Newest)
+        search(index, archive, vec![], SortOrder::Newest)
             .await
             .len(),
         3,
@@ -250,7 +255,7 @@ pub async fn conformance(index: Arc<dyn SearchIndex>) {
         .unwrap();
     index.commit().await.unwrap();
     assert_eq!(
-        search(&*index, archive, vec![], SortOrder::Newest).await,
+        search(index, archive, vec![], SortOrder::Newest).await,
         [lunch.message_id, cafe.message_id]
     );
 }
@@ -297,4 +302,224 @@ fn doc(
         date: Timestamp::from_secs(kilo_secs * 1000),
         has_attachments: false,
     }
+}
+
+fn person(name: &str, email: &str) -> Address {
+    Address {
+        name: Some(name.into()),
+        email: email.into(),
+    }
+}
+
+fn item(archive: ArchiveId, kind: DocumentKind, title: &str, date: Option<i64>) -> ItemDocument {
+    ItemDocument {
+        item_id: ItemId::new(),
+        archive_id: archive,
+        kind,
+        title: title.into(),
+        organizer: Vec::new(),
+        people: Vec::new(),
+        text: String::new(),
+        date: date.map(Timestamp::from_secs),
+    }
+}
+
+async fn found_items(
+    index: &dyn SearchIndex,
+    archive: ArchiveId,
+    clauses: Vec<Clause>,
+) -> Vec<ItemId> {
+    index
+        .search_items(archive, &SearchQuery { clauses }, SortOrder::Newest, 0, 100)
+        .await
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|h| h.item_id)
+        .collect()
+}
+
+async fn items(index: &dyn SearchIndex) {
+    let archive = ArchiveId::new();
+    let mut mail = doc(
+        archive,
+        "Harbour walk notes",
+        "ada@example.com",
+        "Ada Quill",
+        5,
+    );
+    mail.recipients = vec![person("Bob Stone", "bob@example.org")];
+    let other_mail = doc(archive, "Invoice", "shop@example.net", "Shop", 6);
+    let mut review = item(archive, DocumentKind::Event, "Lamp review", Some(2_000));
+    review.organizer = vec![person("Bob Stone", "bob@example.org")];
+    review.people = vec![
+        person("Ada Quill", "ada@example.com"),
+        person("Cleo Park", "cleo@example.org"),
+    ];
+    review.text = "Room 4, harbour office".into();
+    let mut walk = item(archive, DocumentKind::Event, "Harbour walk", Some(3_000));
+    walk.organizer = vec![person("Cleo Park", "cleo@example.org")];
+    let mut ada = item(archive, DocumentKind::Contact, "Ada Quill", None);
+    ada.people = vec![person("Ada Quill", "ada@example.com")];
+    ada.text = "Lighthouse Society +15550100".into();
+    let elsewhere = item(
+        ArchiveId::new(),
+        DocumentKind::Event,
+        "Harbour walk",
+        Some(3_000),
+    );
+    index
+        .put(vec![mail.clone(), other_mail.clone()])
+        .await
+        .unwrap();
+    index
+        .put_items(vec![review.clone(), walk.clone(), ada.clone(), elsewhere])
+        .await
+        .unwrap();
+    index.commit().await.unwrap();
+
+    assert_eq!(
+        search(index, archive, vec![], SortOrder::Newest).await,
+        [other_mail.message_id, mail.message_id],
+        "message searches never find items"
+    );
+    assert_eq!(
+        found_items(index, archive, vec![]).await,
+        [walk.item_id, review.item_id, ada.item_id],
+        "events by start, the latest first, then contacts"
+    );
+    let total = index
+        .search_items(archive, &SearchQuery::default(), SortOrder::Relevance, 1, 1)
+        .await
+        .unwrap();
+    assert_eq!(total.total, 3);
+    assert_eq!(total.hits.len(), 1);
+
+    let mail_cases: Vec<(Vec<Clause>, Vec<MessageId>)> = vec![
+        (
+            vec![Clause::Kind(DocumentKind::Mail)],
+            vec![other_mail.message_id, mail.message_id],
+        ),
+        (vec![Clause::Kind(DocumentKind::Event)], vec![]),
+        (
+            vec![Clause::Not(Box::new(Clause::Kind(DocumentKind::Contact)))],
+            vec![other_mail.message_id, mail.message_id],
+        ),
+        (vec![Clause::With("ada".into())], vec![mail.message_id]),
+        (
+            vec![Clause::With("bob@example.org".into())],
+            vec![mail.message_id],
+        ),
+        (vec![Clause::With("stone".into())], vec![mail.message_id]),
+        (vec![Clause::With("cleo".into())], vec![]),
+    ];
+    for (clauses, expected) in mail_cases {
+        assert_eq!(
+            search(index, archive, clauses.clone(), SortOrder::Newest).await,
+            expected,
+            "wrong messages for {clauses:?}"
+        );
+    }
+    let item_cases: Vec<(Vec<Clause>, Vec<ItemId>)> = vec![
+        (
+            vec![Clause::Text("harbour".into())],
+            vec![walk.item_id, review.item_id],
+        ),
+        (vec![Clause::Text("lighthouse".into())], vec![ada.item_id]),
+        (
+            vec![Clause::Phrase("lamp review".into())],
+            vec![review.item_id],
+        ),
+        (
+            vec![Clause::Kind(DocumentKind::Event)],
+            vec![walk.item_id, review.item_id],
+        ),
+        (vec![Clause::Kind(DocumentKind::Contact)], vec![ada.item_id]),
+        (vec![Clause::Kind(DocumentKind::Mail)], vec![]),
+        (
+            vec![Clause::Not(Box::new(Clause::Kind(DocumentKind::Contact)))],
+            vec![walk.item_id, review.item_id],
+        ),
+        (
+            vec![Clause::With("ada".into())],
+            vec![review.item_id, ada.item_id],
+        ),
+        (
+            vec![Clause::With("cleo@example.org".into())],
+            vec![walk.item_id, review.item_id],
+        ),
+        (
+            vec![
+                Clause::Kind(DocumentKind::Event),
+                Clause::With("bob".into()),
+            ],
+            vec![review.item_id],
+        ),
+        (vec![Clause::From("bob".into())], vec![review.item_id]),
+        (vec![Clause::To("cleo".into())], vec![review.item_id]),
+        (vec![Clause::Subject("walk".into())], vec![walk.item_id]),
+        (vec![Clause::Body("office".into())], vec![review.item_id]),
+        (
+            vec![Clause::After(Timestamp::from_secs(2_500))],
+            vec![walk.item_id],
+        ),
+        (
+            vec![Clause::Before(Timestamp::from_secs(2_500))],
+            vec![review.item_id],
+        ),
+        (vec![Clause::In("inbox".into())], vec![]),
+        (vec![Clause::HasAttachment], vec![]),
+        (
+            vec![Clause::Not(Box::new(Clause::Label("x".into())))],
+            vec![walk.item_id, review.item_id, ada.item_id],
+        ),
+    ];
+    for (clauses, expected) in item_cases {
+        assert_eq!(
+            found_items(index, archive, clauses.clone()).await,
+            expected,
+            "wrong items for {clauses:?}"
+        );
+    }
+    let kinds: Vec<DocumentKind> = index
+        .search_items(archive, &SearchQuery::default(), SortOrder::Newest, 0, 10)
+        .await
+        .unwrap()
+        .hits
+        .iter()
+        .map(|h| h.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            DocumentKind::Event,
+            DocumentKind::Event,
+            DocumentKind::Contact
+        ]
+    );
+
+    let mut renamed = walk.clone();
+    renamed.title = "Pier walk".into();
+    index.put_items(vec![renamed]).await.unwrap();
+    index
+        .remove_items(&[ada.item_id, ItemId::new()])
+        .await
+        .unwrap();
+    index.commit().await.unwrap();
+    assert_eq!(
+        found_items(index, archive, vec![Clause::Text("walk".into())]).await,
+        [walk.item_id],
+        "put_items replaced the document"
+    );
+    assert_eq!(
+        found_items(index, archive, vec![]).await,
+        [walk.item_id, review.item_id]
+    );
+    assert_eq!(
+        search(index, archive, vec![], SortOrder::Newest)
+            .await
+            .len(),
+        2,
+        "removing items leaves messages"
+    );
 }

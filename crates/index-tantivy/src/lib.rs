@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use holtmail_core::{ArchiveId, MessageId};
+use holtmail_core::{ArchiveId, ItemId, MessageId};
 use holtmail_index::*;
 use std::collections::HashSet;
 
@@ -35,6 +35,8 @@ const MAX_CLAUSES: usize = 64;
 
 #[derive(Clone, Copy)]
 struct Fields {
+    doc_type: Field,
+    item_id: Field,
     message_id: Field,
     archive_id: Field,
     subject: Field,
@@ -148,6 +150,8 @@ fn schema() -> (Schema, Fields) {
             .set_index_option(IndexRecordOption::WithFreqsAndPositions),
     );
     let fields = Fields {
+        doc_type: builder.add_text_field("doc_type", STRING | STORED),
+        item_id: builder.add_text_field("item_id", STRING | STORED),
         message_id: builder.add_text_field("message_id", STRING | STORED),
         archive_id: builder.add_text_field("archive_id", STRING),
         subject: builder.add_text_field("subject", text.clone()),
@@ -168,6 +172,7 @@ fn schema() -> (Schema, Fields) {
 
 fn document(fields: &Fields, doc: &IndexDocument) -> TantivyDocument {
     let mut out = TantivyDocument::new();
+    out.add_text(fields.doc_type, MAIL);
     out.add_text(fields.message_id, doc.message_id.to_string());
     out.add_text(fields.archive_id, doc.archive_id.to_string());
     out.add_text(fields.subject, &doc.subject);
@@ -202,6 +207,48 @@ fn document(fields: &Fields, doc: &IndexDocument) -> TantivyDocument {
     out.add_i64(fields.date, doc.date.as_millis());
     out.add_bool(fields.has_attachments, doc.has_attachments);
     out
+}
+
+const MAIL: &str = "mail";
+const NOTHING: &str = "nothing";
+
+fn kind_name(kind: DocumentKind) -> &'static str {
+    match kind {
+        DocumentKind::Mail => MAIL,
+        DocumentKind::Event => "event",
+        DocumentKind::Contact => "contact",
+    }
+}
+
+fn item_document(fields: &Fields, doc: &ItemDocument) -> TantivyDocument {
+    let mut out = TantivyDocument::new();
+    out.add_text(fields.doc_type, kind_name(doc.kind));
+    out.add_text(fields.item_id, doc.item_id.to_string());
+    out.add_text(fields.archive_id, doc.archive_id.to_string());
+    out.add_text(fields.subject, &doc.title);
+    out.add_text(fields.all, &doc.title);
+    for address in &doc.organizer {
+        let text = address_text(address);
+        out.add_text(fields.from, &text);
+        out.add_text(fields.all, &text);
+    }
+    for address in &doc.people {
+        let text = address_text(address);
+        out.add_text(fields.recipients, &text);
+        out.add_text(fields.all, &text);
+    }
+    out.add_text(fields.body, &doc.text);
+    out.add_text(fields.all, &doc.text);
+    if let Some(date) = doc.date {
+        out.add_i64(fields.date, date.as_millis());
+    }
+    out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Target {
+    Mail,
+    Items,
 }
 
 fn address_text(address: &holtmail_core::Address) -> String {
@@ -301,7 +348,12 @@ impl Inner {
         }
     }
 
-    fn clause(&self, clause: &Clause, attachments: bool) -> (Occur, Box<dyn Query>) {
+    fn clause(
+        &self,
+        clause: &Clause,
+        attachments: bool,
+        target: Target,
+    ) -> (Occur, Box<dyn Query>) {
         let f = &self.fields;
         let exact = |field: Field, value: &str| -> Box<dyn Query> {
             Box::new(TermQuery::new(
@@ -335,8 +387,22 @@ impl Inner {
                 Bound::Included(Term::from_field_i64(f.date, at.as_millis())),
                 Bound::Unbounded,
             )),
+            Clause::Kind(kind) => match (target, kind) {
+                (Target::Mail, DocumentKind::Mail) => Box::new(AllQuery),
+                (Target::Items, DocumentKind::Event | DocumentKind::Contact) => {
+                    exact(f.doc_type, kind_name(*kind))
+                }
+                _ => exact(f.doc_type, NOTHING),
+            },
+            Clause::With(text) => Box::new(BooleanQuery::new(vec![
+                (Occur::Should, self.words_query(f.from, text, true, false)),
+                (
+                    Occur::Should,
+                    self.words_query(f.recipients, text, true, false),
+                ),
+            ])),
             Clause::Not(inner) => {
-                let (occur, query) = self.clause(inner, attachments);
+                let (occur, query) = self.clause(inner, attachments, target);
                 let negated = match occur {
                     Occur::MustNot => Occur::Must,
                     _ => Occur::MustNot,
@@ -352,6 +418,7 @@ impl Inner {
         archive: ArchiveId,
         query: &SearchQuery,
         attachments: bool,
+        target: Target,
     ) -> Result<BooleanQuery, IndexError> {
         if query.clauses.len() > MAX_CLAUSES {
             return Err(IndexError::Invalid(format!(
@@ -365,7 +432,28 @@ impl Inner {
                 IndexRecordOption::Basic,
             )),
         )];
-        parts.extend(query.clauses.iter().map(|c| self.clause(c, attachments)));
+        let kind = |name: &str| -> Box<dyn Query> {
+            Box::new(TermQuery::new(
+                Term::from_field_text(self.fields.doc_type, name),
+                IndexRecordOption::Basic,
+            ))
+        };
+        parts.push((
+            Occur::Must,
+            match target {
+                Target::Mail => kind(MAIL),
+                Target::Items => Box::new(BooleanQuery::new(vec![
+                    (Occur::Should, kind(kind_name(DocumentKind::Event))),
+                    (Occur::Should, kind(kind_name(DocumentKind::Contact))),
+                ])),
+            },
+        ));
+        parts.extend(
+            query
+                .clauses
+                .iter()
+                .map(|c| self.clause(c, attachments, target)),
+        );
         Ok(BooleanQuery::new(parts))
     }
 
@@ -378,7 +466,7 @@ impl Inner {
         limit: u32,
     ) -> Result<SearchResults, IndexError> {
         let clauses = query;
-        let query = self.query(archive, clauses, true)?;
+        let query = self.query(archive, clauses, true, Target::Mail)?;
         let searcher = self.reader.searcher();
         let limit = limit.clamp(1, 1000) as usize;
         let top = TopDocs::with_limit(limit).and_offset(offset as usize);
@@ -434,7 +522,7 @@ impl Inner {
         let without = BooleanQuery::new(vec![
             (
                 Occur::Must,
-                Box::new(self.query(archive, query, false)?) as Box<dyn Query>,
+                Box::new(self.query(archive, query, false, Target::Mail)?) as Box<dyn Query>,
             ),
             (Occur::Must, Box::new(ids)),
         ]);
@@ -461,8 +549,102 @@ impl Inner {
     }
 }
 
+impl Inner {
+    fn search_items(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        sort: SortOrder,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ItemResults, IndexError> {
+        let query = self.query(archive, query, true, Target::Items)?;
+        let searcher = self.reader.searcher();
+        let limit = limit.clamp(1, 1000) as usize;
+        let top = TopDocs::with_limit(limit).and_offset(offset as usize);
+        let (addresses, total): (Vec<DocAddress>, usize) = match sort {
+            SortOrder::Newest => {
+                let (docs, total) = searcher
+                    .search(
+                        &query,
+                        &(top.order_by_fast_field::<i64>("date", Order::Desc), Count),
+                    )
+                    .map_err(backend)?;
+                (docs.into_iter().map(|(_, a)| a).collect(), total)
+            }
+            SortOrder::Relevance => {
+                let (docs, total) = searcher
+                    .search(&query, &(top.order_by_score(), Count))
+                    .map_err(backend)?;
+                (docs.into_iter().map(|(_, a)| a).collect(), total)
+            }
+        };
+        let mut hits = Vec::with_capacity(addresses.len());
+        for address in addresses {
+            let doc: TantivyDocument = searcher.doc(address).map_err(backend)?;
+            let text = |field: Field| doc.get_first(field).and_then(|v| v.as_str());
+            let item_id = text(self.fields.item_id)
+                .and_then(|s| s.parse::<ItemId>().ok())
+                .ok_or_else(|| IndexError::Invalid("document without an item id".into()))?;
+            let kind = match text(self.fields.doc_type) {
+                Some("contact") => DocumentKind::Contact,
+                _ => DocumentKind::Event,
+            };
+            hits.push(ItemHit { item_id, kind });
+        }
+        Ok(ItemResults {
+            hits,
+            total: total as u64,
+        })
+    }
+}
+
 #[async_trait]
 impl SearchIndex for TantivyIndex {
+    async fn put_items(&self, documents: Vec<ItemDocument>) -> Result<(), IndexError> {
+        let inner = self.inner.clone();
+        blocking(move || {
+            let writer = inner.writer.lock().map_err(|_| poisoned())?;
+            for doc in &documents {
+                writer.delete_term(Term::from_field_text(
+                    inner.fields.item_id,
+                    &doc.item_id.to_string(),
+                ));
+                writer
+                    .add_document(item_document(&inner.fields, doc))
+                    .map_err(backend)?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn remove_items(&self, ids: &[ItemId]) -> Result<(), IndexError> {
+        let inner = self.inner.clone();
+        let ids = ids.to_vec();
+        blocking(move || {
+            let writer = inner.writer.lock().map_err(|_| poisoned())?;
+            for id in ids {
+                writer.delete_term(Term::from_field_text(inner.fields.item_id, &id.to_string()));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn search_items(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        sort: SortOrder,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ItemResults, IndexError> {
+        let inner = self.inner.clone();
+        let query = query.clone();
+        blocking(move || inner.search_items(archive, &query, sort, offset, limit)).await
+    }
+
     async fn put(&self, documents: Vec<IndexDocument>) -> Result<(), IndexError> {
         let inner = self.inner.clone();
         blocking(move || {

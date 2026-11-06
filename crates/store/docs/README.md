@@ -1,6 +1,6 @@
 # holtmail-store
 
-The contract for Holtmail's metadata: archives, accounts, folders, messages with their attachments, locations, labels and threads, sync progress, and users with their sign-in sessions. The store never holds message bytes; it references blobs by `BlobId`. Everything except archives, accounts, sync state and users can be rebuilt from the blobs.
+The contract for Holtmail's metadata: archives, accounts, folders, messages with their attachments, locations, labels and threads, sync progress, users with their sign-in sessions, address books and calendars with every version of their contacts and events, and the people derived from contacts and mail. The store never holds message, contact or event bytes; it references blobs by `BlobId`. Everything except archives, accounts, sync state, users, the splits and joins of people made by hand and the history of items (which collection, which versions, when seen and when removed) can be rebuilt from the blobs; the normalized fields of items (`pim_index`) can.
 
 ## Traits
 
@@ -127,7 +127,67 @@ Background tasks (syncs, imports, remote image work) kept across restarts, so th
 | `interrupt_tasks(at)` | Every `Running` task becomes `Interrupted` with `finished_at = at`; returns them. Meant for a process start, before any task of its own runs |
 | `prune_tasks(keep)` | Removes the tasks that are not running, with their logs, except the `keep` most recently started; returns how many went |
 
-`TaskRecord` holds `id`, `kind` (`TaskKind::{Sync, Import, RemoteImages}`), `archive_id`, `account_id`, `title`, `state` (`TaskState::{Running, Done, Failed, Cancelled, Interrupted}`), `started_at`, `finished_at`, `done`, `total`, `summary`, `cancellable` and `job`, an opaque string the caller uses to start interrupted work again. `TaskLine` is `{ at, level: TaskLevel::{Info, Warning, Error}, text }`; lines carry counts, names and reasons, never message content or secrets. The kinds, states and levels have stable names (`as_str`, `parse`). Task records name archives and accounts without referencing them: a task outlives a removed archive.
+`TaskRecord` holds `id`, `kind` (`TaskKind::{Sync, Import, RemoteImages, ContactsCalendars}`), `archive_id`, `account_id`, `title`, `state` (`TaskState::{Running, Done, Failed, Cancelled, Interrupted}`), `started_at`, `finished_at`, `done`, `total`, `summary`, `cancellable` and `job`, an opaque string the caller uses to start interrupted work again. `TaskLine` is `{ at, level: TaskLevel::{Info, Warning, Error}, text }`; lines carry counts, names and reasons, never message content or secrets. The kinds, states and levels have stable names (`as_str`, `parse`). Task records name archives and accounts without referencing them: a task outlives a removed archive.
+
+### PimStore
+
+Address books and calendars (`Collection`, `CollectionKind::{Contacts, Calendar}`) with their items (`Item`, `ItemKind::{Contact, Event, Task, Other}`) and every version of each item (`ItemVersion`): the raw bytes as a blob, their media type, the source's ETag, when the version was seen, and a picture split off a vCard as a blob of its own. `PimIndex` holds the normalized fields of an item's latest version (title, start and end in UTC, all-day, original time zone, recurrence, `SEQUENCE`, `UID`, organizer, emails, E.164 phones, and the whole normalized view as JSON); it is derived and can be rebuilt. A collection belongs to an archive, and optionally to the account it is read from; access follows the archive, as for messages. The store does not parse vCard or iCalendar: callers (`holtmail-ingest`) pass the normalized fields in.
+
+| Method | Guarantees |
+| --- | --- |
+| `upsert_collection(new)` | The collection with this archive, account, kind and `remote_id`, created when missing; idempotent; a new name or color replaces the old, and a removed collection is no longer removed. `NotFound` for a missing archive or account, `Invalid` for an account of another archive |
+| `get_collection(id)`, `list_collections(archive)` | One collection, or all of an archive with counts of live and removed items, removed collections included, by kind, then name, then id |
+| `set_sync_token(id, token)` | Replaces the opaque sync token; `NotFound` for an unknown collection |
+| `set_collection_synced(id, token, ctag, at)` | Records a finished sync from the source: the sync token and the collection's tag (`Collection.ctag`, a DAV `getctag`), each replacing the stored one (`None` clears it), and `Collection.synced_at`; `NotFound` for an unknown collection |
+| `mark_collection_removed(id, at)` | Marks the collection and its live items removed; nothing is deleted; an earlier removal time is kept |
+| `record_version(new)` | Creates the item when missing. Adds a version only when `blob_id` differs from the latest version's; then the item's kind and key and its `PimIndex` follow the new version, numbered 1, 2, …. The same bytes again change nothing, except that a removed item is live again (`restored`) and the item's current ETag becomes the given one. Versions are never removed or rewritten. Returns `RecordedVersion { item_id, number, created_item, new_version, restored }` |
+| `record_mail_version(NewMailVersion { version, message_id, mail })` | For a calendar object found in a message (an invitation, update, reply or cancellation). Creates the item when missing. When one of the item's versions already has the bytes, adds nothing and links the message to that version (idempotent; the same invitation forwarded in another message is one version with two messages). Otherwise places the version by `mail.sequence`, then `mail.dtstamp`, then `mail.sent_at` (missing before present), then blob id, and numbers all versions 1, 2, … in that order, so later ones move up by one: the same messages give the same numbered versions whatever order they arrive in. When the new version is the latest, the item's kind, key and `PimIndex` follow `version`; callers that merge several versions replace the index afterwards. `NotFound` for an unknown collection or message, `Invalid` for a message of another archive |
+| `version_messages(item)`, `message_versions(message)` | The messages an item's versions were found in (by number, then message id), and the item versions found in a message (by item, then number), as `VersionSource { item_id, number, message_id }`; empty for items not from mail |
+| `live_remote_ids(collection)`, `mark_items_removed(collection, ids, at)` | The ids of live items, sorted; marking some removed returns how many were newly marked and keeps earlier times |
+| `item_etags(collection)` | The live items' ids with the ETag of their last `record_version`, sorted by id; empty for an unknown collection. A stored version keeps the ETag it was seen with; this is the source's current one, for diffing a listing |
+| `get_item(id)`, `item_versions(id)` | The item with its `PimIndex`; its versions by number, oldest first. A version found in mail carries `mail: Some(MailVersionInfo { method, sequence, dtstamp, sent_at })` |
+| `list_items(query)` | Items of an archive by `ItemOrder::Title` (case-insensitive, untitled last) or `ItemOrder::Start` (no start last), then id; filters by kind, collection and `RemovedFilter::{Hide, Include, Only}`; keyset pages of at most 500; `Invalid` for a foreign cursor |
+| `set_pim_index(item, index)` | Replaces the derived fields, for rebuilding; fields from an older version than the latest (`index.version` below `versions`) are ignored; `NotFound` for an unknown item |
+| `item_ids(after, limit)` | Every item id ascending, for rebuilds |
+
+Removing an account keeps its collections and items (their `account_id` becomes `None`), like its messages. Removing an archive removes its collections, items, versions and their links to messages and returns the version and picture blobs nothing else uses. A collection with no account from the start, such as each archive's "From mail" calendar, is one no source owns.
+
+### PeopleStore
+
+The people derived from an archive's contacts and mail (see [`holtmail-people`](../../people/docs/README.md)), and what the mail says about a set of addresses. `Person { id, archive_id, name, email, phone, emails, mail_emails, phones, cards: Vec<PersonCard { item_id, collection_id, removed }>, links: Vec<PersonLink { from, to, key }>, mail: Option<PersonMail { messages, from_them, from_me, first_at, last_at }>, differences, removed }`. The store keeps people as given; it never computes them. Addresses compare without regard to ASCII letter case.
+
+| Method | Guarantees |
+| --- | --- |
+| `mail_addresses(archive)` | `MailAddresses { own, addresses }`: every address of the archive's mail (`From`, `To`, `Cc`, `Bcc`), trimmed and lowercased, sorted, as `MailAddress { email, name, messages, from_them, from_me, first_at, last_at }`. `name` is the display name used most (ties: the one that sorts first); `from_me` counts messages whose `From` is one of `own`. `own` are the archive's account addresses and every `From` of a message located in a folder with role `sent` or carrying the label `Sent`. Empty for an archive without mail |
+| `replace_people(archive, people)` | Replaces every person of the archive in one transaction: readers see the old set or the new one. `Invalid` when a person belongs to another archive, `NotFound` for an unknown archive |
+| `list_people(query)` | `PersonQuery { archive_id, text, source, differences, after, limit }`: by name without regard to letter case, nameless last, then id; `text` matches a name, address or phone substring without regard to case; `source` is `PersonSource::{Contacts, Mail, Collection(id)}` (with a card, from mail alone, with a card in that address book); `differences` keeps people whose current cards disagree. Keyset pages of at most 500; `Invalid` for a foreign cursor |
+| `count_people(query)` | How many people the query lists, ignoring paging |
+| `get_person(id)` | The person, or `None` |
+| `people_by_email(archive, emails)` | `(email as given, person)` for each address that belongs to a person of the archive, in the order given |
+| `correspondence(archive, emails, threads, attachments)` | Every message of the archive with one of the addresses, each once: `messages`, `from_them`, `to_them`, `first_at`, `last_at`, `years` (UTC, oldest first), up to `threads` conversations as `ThreadActivity { thread_id, messages, latest, last_at }` (most recently active first) and up to `attachments` `ExchangedAttachment { message_id, date, from_them, attachment }`, not inline and not calendar parts, newest first. Empty for no addresses |
+| `items_by_email(archive, kind, emails, limit)` | Items of the kind, removed ones too, whose normalized emails (organizer and attendees for events) include one of the addresses, latest start first, undated last |
+| `add_person_override(value)` | Stores a split or join made by hand: `PersonOverride { id: PersonOverrideId, archive_id, kind: PersonOverrideKind::{Join, Split}, keys, from, created_at, created_by }`. `NotFound` for an unknown archive; `Invalid` for an id already stored, a join with fewer than two keys, or a split without keys or without `from` |
+| `person_overrides(archive)` | The archive's overrides, oldest first (by id); empty for an unknown archive |
+| `get_person_override(id)` | The override, or `None` |
+| `remove_person_override(id)` | Forgets it; whether it was stored. The people stay as they are until rebuilt |
+
+The overrides are the only stored state about people and are not derived: they name cards (`item:<item id>`) and addresses (`email:<address>`), never person ids, so they hold through rebuilds (see [`holtmail-people`](../../people/docs/README.md)). The store keeps them as given and never interprets the keys.
+
+Removing an archive removes its people and overrides. People and overrides are not part of backups' blob inventory; they live in the database snapshot (so a backup keeps the overrides), and the people are rebuilt by `holtmail reindex`.
+
+### CalendarStore
+
+The derived calendar (see [`holtmail-calendar`](../../calendar/docs/README.md)): for each event item its `EventSeries { item_id, group_id, sequence, stamp, starts_at, ends_at, recurring, window }` and its stored instances (`NewOccurrence { recurrence_id, starts_at, ends_at, component, start_local, end_local, time_zone, all_day, floating, cancelled, changed }`). The store keeps what it is given; it never expands rules.
+
+| Method | Guarantees |
+| --- | --- |
+| `replace_series(item, series, occurrences)` | Replaces the item's series and instances in one step; `None` forgets both. `NotFound` for an unknown item, `Invalid` when `series` names another item |
+| `series(item)` | The item's series, or `None` |
+| `occurrences(query)` | `OccurrenceQuery { archive_id, from, to, collections, removed }`: stored instances ending after `from` (or starting at it when they last no time) and starting before `to`, as `Occurrence { item_id, collection_id, group_id, removed, sequence, stamp, occurrence }`, by start, item, `recurrence_id`. `collections: Some(empty)` lists nothing; `removed: false` leaves out items and collections removed from their source. Items whose stored `window` does not cover all of `from..to` are left out |
+| `uncovered_series(query)` | Exactly those left-out repeating items whose `starts_at..ends_at` (no end for endless ones) reaches into the span, as `UncoveredSeries { summary, series, removed }`, by item id |
+| `group_members(group)` | Every item of the group, removed ones too, as `GroupMember { summary, series, collection_removed_at }`, by item id; empty for an unknown group |
+
+Removing an archive removes its series and instances. They are derived: `holtmail reindex` rebuilds them from the items' normalized fields.
 
 ### InventoryStore
 
@@ -135,7 +195,7 @@ What the store references in the blob store, for backups and checks after a rest
 
 | Method | Guarantees |
 | --- | --- |
-| `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, a saved remote image or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
+| `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, an item version or its picture, a saved remote image or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
 
 ## Errors
 

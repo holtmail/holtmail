@@ -1,10 +1,14 @@
 //! Contract for Holtmail's metadata: archives, accounts, folders, messages, threads, sync state,
-//! users and their sessions, and the recent background tasks.
+//! users and their sessions, the recent background tasks, contacts and calendars with every
+//! version of their items, and the people derived from contacts and mail.
 //!
 //! The store never holds message bytes; those live in a `BlobStore` and are referenced by
 //! [`holtmail_blob::BlobId`]. Everything in the store except accounts, archives, sync state and
 //! task history can be rebuilt from the blobs.
 
+mod calendar;
+mod people;
+mod pim;
 mod types;
 
 #[cfg(feature = "testing")]
@@ -14,8 +18,14 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use holtmail_blob::BlobId;
-use holtmail_core::{AccountId, ArchiveId, FolderId, MessageId, ThreadId, Timestamp, UserId};
+use holtmail_core::{
+    AccountId, ArchiveId, CollectionId, EventGroupId, FolderId, ItemId, MessageId, PersonId,
+    PersonOverrideId, ThreadId, Timestamp, UserId,
+};
 
+pub use calendar::*;
+pub use people::*;
+pub use pim::*;
 pub use types::*;
 
 /// Why a store operation failed.
@@ -52,10 +62,11 @@ pub trait ArchiveStore: Send + Sync {
     /// `NotFound` for an unknown archive.
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
 
-    /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state
-    /// and grants, the remote copies no remaining message links to, and what was derived from
-    /// blobs that are no longer used. Returns the blobs that no message, attachment, remote copy
-    /// or derived record references any more, so the caller can delete them.
+    /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state,
+    /// grants, people and their splits and joins, collections with their items and versions, the remote copies no remaining message
+    /// links to, and what was derived from blobs that are no longer used. Returns the blobs that no
+    /// message, attachment, item version, remote copy or derived record references any more, so
+    /// the caller can delete them.
     /// `NotFound` when the archive does not exist.
     async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError>;
 
@@ -75,7 +86,8 @@ pub trait ArchiveStore: Send + Sync {
     async fn update_account(&self, account: &Account) -> Result<(), StoreError>;
 
     /// Removes the account with its folders, locations and sync state. Its messages stay in the
-    /// archive. `NotFound` when the account does not exist.
+    /// archive, and so do its collections, which no longer name an account. `NotFound` when the
+    /// account does not exist.
     async fn delete_account(&self, id: AccountId) -> Result<(), StoreError>;
 
     /// The folder with `path` in the account, created when missing. Idempotent; a different `role`
@@ -417,11 +429,243 @@ pub trait DerivedStore: Send + Sync {
     async fn clear_derived(&self, kind: DerivedKind) -> Result<Vec<BlobId>, StoreError>;
 }
 
+/// Address books and calendars with every version of their items, as raw blobs, and the
+/// normalized fields of each item's latest version.
+#[async_trait]
+pub trait PimStore: Send + Sync {
+    /// The collection of the archive with this account, kind and `remote_id`, created when
+    /// missing. Idempotent; a different name or color replaces the stored one, and a collection
+    /// marked removed is no longer. `NotFound` when the archive, or a given account, does not
+    /// exist; `Invalid` when the account belongs to another archive.
+    async fn upsert_collection(&self, new: NewCollection) -> Result<Collection, StoreError>;
+
+    /// The collection, or `None`.
+    async fn get_collection(&self, id: CollectionId) -> Result<Option<Collection>, StoreError>;
+
+    /// Collections of the archive with item counts, removed ones included, by kind, then name,
+    /// then id.
+    async fn list_collections(
+        &self,
+        archive: ArchiveId,
+    ) -> Result<Vec<CollectionSummary>, StoreError>;
+
+    /// Replaces the collection's sync token. `NotFound` for an unknown collection.
+    async fn set_sync_token(
+        &self,
+        collection: CollectionId,
+        token: Option<&str>,
+    ) -> Result<(), StoreError>;
+
+    /// Records a finished sync of the collection from its source: its sync token and tag as of
+    /// that sync (each replacing the stored one, `None` clearing it) and when it ended.
+    /// `NotFound` for an unknown collection.
+    async fn set_collection_synced(
+        &self,
+        collection: CollectionId,
+        token: Option<&str>,
+        ctag: Option<&str>,
+        at: Timestamp,
+    ) -> Result<(), StoreError>;
+
+    /// Marks the collection and every item of it not yet removed as removed at `at`. Nothing is
+    /// deleted. Idempotent: earlier removal times are kept. `NotFound` for an unknown collection.
+    async fn mark_collection_removed(
+        &self,
+        collection: CollectionId,
+        at: Timestamp,
+    ) -> Result<(), StoreError>;
+
+    /// Records that the item `remote_id` of the collection had these bytes at `seen_at`.
+    ///
+    /// The item is created when missing. A new version is added only when `blob_id` differs from
+    /// the latest version's; then the item's kind and key and its normalized fields follow the new
+    /// version. The same bytes again change nothing, except that an item marked removed is no
+    /// longer and the item's current tag (see [`PimStore::item_etags`]) becomes `etag`. Versions
+    /// are never removed or rewritten. `NotFound` for an unknown collection.
+    async fn record_version(&self, version: NewItemVersion) -> Result<RecordedVersion, StoreError>;
+
+    /// Records that message `message_id` carried these bytes of the item `remote_id`, as an
+    /// invitation, update, reply or cancellation does.
+    ///
+    /// The item is created when missing. When one of its versions already has these bytes, no
+    /// version is added and the message is linked to that version (idempotent). Otherwise the
+    /// version is placed among the item's versions by `mail.sequence`, then `mail.dtstamp`, then
+    /// `mail.sent_at` (a missing value before any present one), then blob id, and the versions
+    /// are numbered 1, 2, … in that order: versions after the new one move up by one. So the same
+    /// messages give the same numbered versions in whatever order they are recorded. When the
+    /// added version is the latest, the item's kind, key and normalized fields follow `version`;
+    /// callers
+    /// that derive the fields from several versions replace them afterwards with
+    /// [`PimStore::set_pim_index`]. An item marked removed is no longer. `NotFound` for an
+    /// unknown collection or message; `Invalid` when the message is in another archive.
+    async fn record_mail_version(
+        &self,
+        version: NewMailVersion,
+    ) -> Result<RecordedVersion, StoreError>;
+
+    /// The messages the item's versions were found in, by version number, then message id.
+    /// Empty for an item not read from mail, or an unknown one.
+    async fn version_messages(&self, item: ItemId) -> Result<Vec<VersionSource>, StoreError>;
+
+    /// The item versions found in the message, by item id, then version number. Empty when
+    /// there are none.
+    async fn message_versions(&self, message: MessageId) -> Result<Vec<VersionSource>, StoreError>;
+
+    /// The `remote_id`s of the collection's items that are not marked removed, sorted.
+    async fn live_remote_ids(&self, collection: CollectionId) -> Result<Vec<String>, StoreError>;
+
+    /// The `remote_id`s of the collection's items that are not marked removed, each with the
+    /// source's tag given with the last [`PimStore::record_version`] of it, sorted by
+    /// `remote_id`. Empty for an unknown collection.
+    async fn item_etags(
+        &self,
+        collection: CollectionId,
+    ) -> Result<Vec<(String, Option<String>)>, StoreError>;
+
+    /// Marks the collection's items with these `remote_id`s as removed at `at`, unless they
+    /// already are. Unknown ids are ignored. Returns how many were newly marked.
+    async fn mark_items_removed(
+        &self,
+        collection: CollectionId,
+        remote_ids: &[String],
+        at: Timestamp,
+    ) -> Result<u64, StoreError>;
+
+    /// The item with its normalized fields, or `None`.
+    async fn get_item(&self, id: ItemId) -> Result<Option<ItemSummary>, StoreError>;
+
+    /// Every version of the item by number, oldest first; empty for an unknown item.
+    async fn item_versions(&self, id: ItemId) -> Result<Vec<ItemVersion>, StoreError>;
+
+    /// Items of the archive in the query's order, narrowed by its filters, a page at a time.
+    /// `Invalid` for a cursor from another query.
+    async fn list_items(&self, query: &ItemQuery) -> Result<Page<ItemSummary>, StoreError>;
+
+    /// Replaces the item's normalized fields, e.g. when rebuilding them. Fields made from an older
+    /// version than the item's latest (`index.version` below it) are ignored, so a rebuild that
+    /// raced a new version never overwrites it. `NotFound` for an unknown item.
+    async fn set_pim_index(&self, item: ItemId, index: &PimIndex) -> Result<(), StoreError>;
+
+    /// Up to `limit` item ids of every archive in ascending order, starting after `after`, for
+    /// rebuilding what is derived from them. A page shorter than `limit` is the last.
+    async fn item_ids(&self, after: Option<ItemId>, limit: u32) -> Result<Vec<ItemId>, StoreError>;
+}
+
+/// People derived from contacts and mail, and what the mail says about a set of addresses.
+/// The people are derived data: whoever derives them replaces them whole, per archive.
+#[async_trait]
+pub trait PeopleStore: Send + Sync {
+    /// Every address of the archive's mail with its counts, and the owner's addresses. Empty
+    /// for an archive without mail or an unknown one.
+    async fn mail_addresses(&self, archive: ArchiveId) -> Result<MailAddresses, StoreError>;
+
+    /// Replaces every person of the archive with `people`, in one step: readers see the old
+    /// people or the new ones, never a mix. A person of another archive in `people` is
+    /// `Invalid`; `NotFound` for an unknown archive.
+    async fn replace_people(&self, archive: ArchiveId, people: &[Person])
+    -> Result<(), StoreError>;
+
+    /// People of the archive by name without regard to letter case, people without a name
+    /// last, then by id, narrowed by the query's filters, a page at a time. `Invalid` for a
+    /// cursor from another query.
+    async fn list_people(&self, query: &PersonQuery) -> Result<Page<Person>, StoreError>;
+
+    /// How many people [`PeopleStore::list_people`] lists for the query, ignoring its paging.
+    async fn count_people(&self, query: &PersonQuery) -> Result<u64, StoreError>;
+
+    /// The person, or `None`.
+    async fn get_person(&self, id: PersonId) -> Result<Option<Person>, StoreError>;
+
+    /// The person of each of `emails` that belongs to one in the archive, compared without
+    /// regard to letter case, as `(email as given, person)` in the order of `emails`.
+    async fn people_by_email(
+        &self,
+        archive: ArchiveId,
+        emails: &[String],
+    ) -> Result<Vec<(String, PersonId)>, StoreError>;
+
+    /// The archive's mail with any of `emails` (compared without regard to letter case) in
+    /// `From`, `To`, `Cc` or `Bcc`: counts, years, at most `threads` conversations and at most
+    /// `attachments` attachments. Empty for no addresses.
+    async fn correspondence(
+        &self,
+        archive: ArchiveId,
+        emails: &[String],
+        threads: u32,
+        attachments: u32,
+    ) -> Result<Correspondence, StoreError>;
+
+    /// Up to `limit` items of the archive of `kind`, removed ones too, whose normalized emails
+    /// include one of `emails`, the latest start first, items without a start last, then by id.
+    async fn items_by_email(
+        &self,
+        archive: ArchiveId,
+        kind: ItemKind,
+        emails: &[String],
+        limit: u32,
+    ) -> Result<Vec<ItemSummary>, StoreError>;
+
+    /// Stores a split or join made by hand. `NotFound` for an unknown archive; `Invalid` when its
+    /// id is already stored, a join has fewer than two keys, or a split has no keys or no `from`.
+    async fn add_person_override(&self, value: &PersonOverride) -> Result<(), StoreError>;
+
+    /// The archive's splits and joins, oldest first (by id). Empty for an unknown archive.
+    async fn person_overrides(&self, archive: ArchiveId)
+    -> Result<Vec<PersonOverride>, StoreError>;
+
+    /// The split or join, or `None`.
+    async fn get_person_override(
+        &self,
+        id: PersonOverrideId,
+    ) -> Result<Option<PersonOverride>, StoreError>;
+
+    /// Forgets the split or join; whether it was stored. The people stay as they are until they
+    /// are rebuilt.
+    async fn remove_person_override(&self, id: PersonOverrideId) -> Result<bool, StoreError>;
+}
+
+/// The derived calendar: each event item's group of copies and its instances. Whoever derives
+/// them replaces them per item; nothing here is the truth.
+#[async_trait]
+pub trait CalendarStore: Send + Sync {
+    /// Replaces what the calendar knows about the item: its series facts and its stored
+    /// instances, in one step. `None` forgets both, for an item that is no event or cannot be
+    /// read. `NotFound` for an unknown item; `Invalid` when `series` names another item.
+    async fn replace_series(
+        &self,
+        item: ItemId,
+        series: Option<&EventSeries>,
+        occurrences: &[NewOccurrence],
+    ) -> Result<(), StoreError>;
+
+    /// The series facts of the item, or `None`.
+    async fn series(&self, item: ItemId) -> Result<Option<EventSeries>, StoreError>;
+
+    /// Stored instances of the archive's items that overlap the query's span, by start, then
+    /// item id, then `recurrence_id`, narrowed by its filters. Items whose stored instances do
+    /// not cover the whole span (see [`EventSeries::window`]) are left out; see
+    /// [`CalendarStore::uncovered_series`].
+    async fn occurrences(&self, query: &OccurrenceQuery) -> Result<Vec<Occurrence>, StoreError>;
+
+    /// Items of the archive, narrowed by the query's filters, that repeat into the query's span
+    /// (by [`EventSeries::starts_at`] and [`EventSeries::ends_at`]) but whose stored instances do
+    /// not cover all of it, by item id. Their instances there have to be worked out from their
+    /// normalized fields.
+    async fn uncovered_series(
+        &self,
+        query: &OccurrenceQuery,
+    ) -> Result<Vec<UncoveredSeries>, StoreError>;
+
+    /// Every item of the group with its series facts, removed ones too, by item id. Empty for
+    /// an unknown group.
+    async fn group_members(&self, group: EventGroupId) -> Result<Vec<GroupMember>, StoreError>;
+}
+
 /// What the store references in the blob store, for backups and consistency checks.
 #[async_trait]
 pub trait InventoryStore: Send + Sync {
-    /// Up to `limit` blobs that some record references: a message, an attachment, a saved remote
-    /// image or a derived file. Each blob is listed once, in ascending order of id, starting after
+    /// Up to `limit` blobs that some record references: a message, an attachment, an item
+    /// version or its picture, a saved remote image or a derived file. Each blob is listed once, in ascending order of id, starting after
     /// `after` (from the first when `None`), so paging with the last id of each page visits every
     /// referenced blob exactly once. A page shorter than `limit` is the last one.
     async fn referenced_blobs(
@@ -443,6 +687,9 @@ pub trait Store:
     + DerivedStore
     + InventoryStore
     + TaskStore
+    + PimStore
+    + PeopleStore
+    + CalendarStore
 {
 }
 
@@ -457,5 +704,8 @@ impl<T> Store for T where
         + DerivedStore
         + InventoryStore
         + TaskStore
+        + PimStore
+        + PeopleStore
+        + CalendarStore
 {
 }

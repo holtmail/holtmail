@@ -591,6 +591,8 @@ pub enum TaskKind {
     Import,
     /// Saving remote images.
     RemoteImages,
+    /// Syncing an account's contacts and calendars.
+    ContactsCalendars,
 }
 
 impl TaskKind {
@@ -600,14 +602,20 @@ impl TaskKind {
             Self::Sync => "sync",
             Self::Import => "import",
             Self::RemoteImages => "remote_images",
+            Self::ContactsCalendars => "contacts_calendars",
         }
     }
 
     /// The kind named `name`, as [`TaskKind::as_str`] writes it.
     pub fn parse(name: &str) -> Option<Self> {
-        [Self::Sync, Self::Import, Self::RemoteImages]
-            .into_iter()
-            .find(|kind| kind.as_str() == name)
+        [
+            Self::Sync,
+            Self::Import,
+            Self::RemoteImages,
+            Self::ContactsCalendars,
+        ]
+        .into_iter()
+        .find(|kind| kind.as_str() == name)
     }
 }
 

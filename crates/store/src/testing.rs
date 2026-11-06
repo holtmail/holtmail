@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use holtmail_blob::BlobId;
-use holtmail_core::{AccountId, Address, ArchiveId, MessageId, Timestamp, UserId};
+use holtmail_core::{
+    AccountId, Address, ArchiveId, CollectionId, EventGroupId, ItemId, MessageId, PersonId,
+    PersonOverrideId, Timestamp, UserId,
+};
 use serde_json::json;
 
 use crate::*;
@@ -32,6 +35,859 @@ pub async fn conformance(store: Arc<dyn Store>) {
     inventory(&*store).await;
     tasks(&*store).await;
     last_runs(&*store).await;
+    collections(&*store).await;
+    item_versions(&*store).await;
+    item_lists(&*store).await;
+    pim_removal(&*store).await;
+    mail_versions(&*store).await;
+    collection_sync(&*store).await;
+    people(&*store).await;
+    person_overrides(&*store).await;
+    calendar(&*store).await;
+}
+
+fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
+    PimIndex {
+        version: 0,
+        readable: true,
+        title: title.map(Into::into),
+        starts_at: starts.map(Timestamp::from_secs),
+        ends_at: starts.map(|s| Timestamp::from_secs(s + 1800)),
+        all_day: false,
+        time_zone: Some("Europe/Berlin".into()),
+        recurring: false,
+        sequence: Some(1),
+        uid: title.map(|t| format!("{t}@example.com")),
+        organizer: None,
+        emails: vec!["ada@example.com".into()],
+        phones: vec!["+15550100".into()],
+        data: json!({ "type": "contact", "full_name": title }),
+    }
+}
+
+fn item_version(
+    collection: CollectionId,
+    remote: &str,
+    bytes: &str,
+    kind: ItemKind,
+    index: PimIndex,
+) -> NewItemVersion {
+    NewItemVersion {
+        collection_id: collection,
+        remote_id: remote.into(),
+        kind,
+        key: Some(format!("{remote}-key")),
+        blob_id: BlobId::of(bytes.as_bytes()),
+        content_type: "text/vcard".into(),
+        etag: Some(format!("\"{bytes}\"")),
+        seen_at: Timestamp::from_secs(1_700_000_000),
+        photo_blob_id: None,
+        index,
+    }
+}
+
+async fn book(store: &dyn Store, archive: ArchiveId, remote: &str) -> CollectionId {
+    store
+        .upsert_collection(NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: CollectionKind::Contacts,
+            remote_id: remote.into(),
+            name: remote.into(),
+            color: None,
+        })
+        .await
+        .unwrap()
+        .id
+}
+
+async fn collections(store: &dyn Store) {
+    let archive = store.create_archive("Address books").await.unwrap().id;
+    let elsewhere = store.create_archive("Elsewhere").await.unwrap().id;
+    let account = import_account(store, archive).await;
+    let foreign = import_account(store, elsewhere).await;
+    let new = |remote: &str, name: &str, kind| NewCollection {
+        archive_id: archive,
+        account_id: Some(account.id),
+        kind,
+        remote_id: remote.into(),
+        name: name.into(),
+        color: None,
+    };
+    let people = store
+        .upsert_collection(new("people.vcf", "People", CollectionKind::Contacts))
+        .await
+        .unwrap();
+    assert_eq!(people.archive_id, archive);
+    assert_eq!(people.account_id, Some(account.id));
+    assert_eq!(people.removed_at, None);
+    let mut renamed = new("people.vcf", "Friends", CollectionKind::Contacts);
+    renamed.color = Some("#336699".into());
+    let again = store.upsert_collection(renamed).await.unwrap();
+    assert_eq!(again.id, people.id, "upsert is idempotent per remote id");
+    assert_eq!(again.name, "Friends");
+    assert_eq!(again.color.as_deref(), Some("#336699"));
+    let team = store
+        .upsert_collection(new("team.ics", "Team", CollectionKind::Calendar))
+        .await
+        .unwrap();
+    assert_ne!(team.id, people.id);
+    assert_eq!(
+        store.get_collection(people.id).await.unwrap(),
+        Some(again.clone())
+    );
+    assert_eq!(
+        store.get_collection(CollectionId::new()).await.unwrap(),
+        None
+    );
+
+    let listed = store.list_collections(archive).await.unwrap();
+    let names: Vec<_> = listed.iter().map(|c| c.collection.name.as_str()).collect();
+    assert_eq!(names, ["Team", "Friends"], "by kind, then name");
+    assert_eq!(listed[1].items, 0);
+    assert!(store.list_collections(elsewhere).await.unwrap().is_empty());
+
+    store
+        .set_sync_token(team.id, Some("token-1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .get_collection(team.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .sync_token
+            .as_deref(),
+        Some("token-1")
+    );
+    assert!(matches!(
+        store.set_sync_token(CollectionId::new(), None).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let mut missing = new("x.vcf", "X", CollectionKind::Contacts);
+    missing.archive_id = ArchiveId::new();
+    assert!(matches!(
+        store.upsert_collection(missing).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let mut stranger = new("x.vcf", "X", CollectionKind::Contacts);
+    stranger.account_id = Some(foreign.id);
+    assert!(matches!(
+        store.upsert_collection(stranger).await,
+        Err(StoreError::Invalid(_))
+    ));
+    let mut unknown = new("x.vcf", "X", CollectionKind::Contacts);
+    unknown.account_id = Some(AccountId::new());
+    assert!(matches!(
+        store.upsert_collection(unknown).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    store.delete_account(account.id).await.unwrap();
+    let kept = store.get_collection(people.id).await.unwrap().unwrap();
+    assert_eq!(
+        kept.account_id, None,
+        "a removed account leaves its collections"
+    );
+    store.delete_archive(archive).await.unwrap();
+    store.delete_archive(elsewhere).await.unwrap();
+}
+
+async fn item_versions(store: &dyn Store) {
+    let archive = store.create_archive("Versions").await.unwrap().id;
+    let people = book(store, archive, "people.vcf").await;
+    let first = store
+        .record_version(item_version(
+            people,
+            "ada",
+            "ada v1",
+            ItemKind::Contact,
+            pim_index(Some("Ada"), None),
+        ))
+        .await
+        .unwrap();
+    assert!(first.created_item && first.new_version && !first.restored);
+    assert_eq!(first.number, 1);
+
+    let same = store
+        .record_version(item_version(
+            people,
+            "ada",
+            "ada v1",
+            ItemKind::Contact,
+            pim_index(Some("Ignored"), None),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(same.item_id, first.item_id);
+    assert!(
+        !same.created_item && !same.new_version,
+        "same bytes, no version"
+    );
+    assert_eq!(same.number, 1);
+
+    let mut photo = item_version(
+        people,
+        "ada",
+        "ada v2",
+        ItemKind::Contact,
+        pim_index(Some("Ada Quill"), None),
+    );
+    photo.photo_blob_id = Some(BlobId::of(b"ada's picture"));
+    photo.key = Some("ada-new-key".into());
+    photo.seen_at = Timestamp::from_secs(1_700_000_500);
+    let second = store.record_version(photo).await.unwrap();
+    assert!(second.new_version && !second.created_item);
+    assert_eq!(second.number, 2);
+
+    let versions = store.item_versions(first.item_id).await.unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0].number, 1);
+    assert_eq!(versions[0].blob_id, BlobId::of(b"ada v1"));
+    assert_eq!(versions[0].etag.as_deref(), Some("\"ada v1\""));
+    assert_eq!(versions[0].content_type, "text/vcard");
+    assert_eq!(
+        versions[1].photo_blob_id,
+        Some(BlobId::of(b"ada's picture"))
+    );
+    assert_eq!(versions[1].seen_at, Timestamp::from_secs(1_700_000_500));
+
+    let item = store.get_item(first.item_id).await.unwrap().unwrap();
+    assert_eq!(item.item.versions, 2);
+    assert_eq!(item.item.key.as_deref(), Some("ada-new-key"));
+    assert_eq!(item.item.archive_id, archive);
+    assert_eq!(item.item.collection_id, people);
+    assert_eq!(item.item.first_seen_at, Timestamp::from_secs(1_700_000_000));
+    let index = item.index.unwrap();
+    assert_eq!(index.version, 2, "the index follows the latest version");
+    assert_eq!(index.title.as_deref(), Some("Ada Quill"));
+    assert_eq!(index.emails, ["ada@example.com"]);
+    assert_eq!(index.phones, ["+15550100"]);
+    assert_eq!(index.data["type"], "contact");
+    assert_eq!(index.time_zone.as_deref(), Some("Europe/Berlin"));
+
+    let back = store
+        .record_version(item_version(
+            people,
+            "ada",
+            "ada v1",
+            ItemKind::Contact,
+            pim_index(Some("Ada"), None),
+        ))
+        .await
+        .unwrap();
+    assert!(
+        back.new_version,
+        "going back to older bytes is a new version"
+    );
+    assert_eq!(back.number, 3);
+
+    let mut stale = pim_index(Some("Stale"), None);
+    stale.version = 2;
+    store.set_pim_index(first.item_id, &stale).await.unwrap();
+    assert_eq!(
+        store
+            .get_item(first.item_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .index
+            .unwrap()
+            .title
+            .as_deref(),
+        Some("Ada"),
+        "fields of an older version are ignored"
+    );
+    let mut rebuilt = pim_index(Some("Rebuilt"), None);
+    rebuilt.version = 3;
+    store.set_pim_index(first.item_id, &rebuilt).await.unwrap();
+    assert_eq!(
+        store
+            .get_item(first.item_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .index
+            .unwrap()
+            .title
+            .as_deref(),
+        Some("Rebuilt")
+    );
+    assert!(matches!(
+        store.set_pim_index(ItemId::new(), &rebuilt).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(matches!(
+        store
+            .record_version(item_version(
+                CollectionId::new(),
+                "x",
+                "x",
+                ItemKind::Contact,
+                pim_index(None, None)
+            ))
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(store.get_item(ItemId::new()).await.unwrap(), None);
+    assert!(store.item_versions(ItemId::new()).await.unwrap().is_empty());
+    store.delete_archive(archive).await.unwrap();
+}
+
+async fn item_lists(store: &dyn Store) {
+    let archive = store.create_archive("Lists").await.unwrap().id;
+    let people = book(store, archive, "people.vcf").await;
+    let more = book(store, archive, "more.vcf").await;
+    let team = store
+        .upsert_collection(NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: CollectionKind::Calendar,
+            remote_id: "team.ics".into(),
+            name: "Team".into(),
+            color: None,
+        })
+        .await
+        .unwrap()
+        .id;
+    for (collection, remote, title) in [
+        (people, "cleo", None),
+        (people, "bo", Some("bo Linden")),
+        (more, "ada", Some("Ada Quill")),
+        (people, "dee", Some("Dee")),
+    ] {
+        store
+            .record_version(item_version(
+                collection,
+                remote,
+                remote,
+                ItemKind::Contact,
+                pim_index(title, None),
+            ))
+            .await
+            .unwrap();
+    }
+    for (remote, start) in [
+        ("late", Some(1_700_100_000)),
+        ("none", None),
+        ("early", Some(1_700_000_000)),
+    ] {
+        store
+            .record_version(item_version(
+                team,
+                remote,
+                remote,
+                ItemKind::Event,
+                pim_index(Some(remote), start),
+            ))
+            .await
+            .unwrap();
+    }
+    let query = |kind, order, after, limit| ItemQuery {
+        archive_id: archive,
+        kind: Some(kind),
+        collection_id: None,
+        removed: RemovedFilter::Hide,
+        order,
+        after,
+        limit,
+    };
+    let mut seen = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store
+            .list_items(&query(ItemKind::Contact, ItemOrder::Title, after, 2))
+            .await
+            .unwrap();
+        assert!(page.items.len() <= 2);
+        seen.extend(page.items.iter().map(|s| s.item.remote_id.clone()));
+        match page.next {
+            Some(next) => after = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(
+        seen,
+        ["ada", "bo", "dee", "cleo"],
+        "by title ignoring case, untitled last"
+    );
+
+    let events = store
+        .list_items(&query(ItemKind::Event, ItemOrder::Start, None, 10))
+        .await
+        .unwrap();
+    let order: Vec<_> = events
+        .items
+        .iter()
+        .map(|s| s.item.remote_id.as_str())
+        .collect();
+    assert_eq!(order, ["early", "late", "none"], "by start, no start last");
+    let first = store
+        .list_items(&query(ItemKind::Event, ItemOrder::Start, None, 1))
+        .await
+        .unwrap();
+    let rest = store
+        .list_items(&query(ItemKind::Event, ItemOrder::Start, first.next, 10))
+        .await
+        .unwrap();
+    let order: Vec<_> = rest
+        .items
+        .iter()
+        .map(|s| s.item.remote_id.as_str())
+        .collect();
+    assert_eq!(order, ["late", "none"]);
+
+    let mut only_people = query(ItemKind::Contact, ItemOrder::Title, None, 10);
+    only_people.collection_id = Some(people);
+    let listed = store.list_items(&only_people).await.unwrap();
+    assert_eq!(listed.items.len(), 3);
+    assert!(listed.next.is_none());
+    let mut everything = query(ItemKind::Contact, ItemOrder::Title, None, 10);
+    everything.kind = None;
+    assert_eq!(store.list_items(&everything).await.unwrap().items.len(), 7);
+
+    assert_eq!(
+        store
+            .mark_items_removed(
+                people,
+                &["bo".into(), "missing".into()],
+                Timestamp::from_secs(1_700_000_900)
+            )
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        store
+            .mark_items_removed(people, &["bo".into()], Timestamp::from_secs(1_700_001_000))
+            .await
+            .unwrap(),
+        0,
+        "already removed"
+    );
+    assert_eq!(
+        store.live_remote_ids(people).await.unwrap(),
+        ["cleo", "dee"]
+    );
+    let removed = |filter| {
+        let mut q = query(ItemKind::Contact, ItemOrder::Title, None, 10);
+        q.removed = filter;
+        q
+    };
+    let names = |page: Page<ItemSummary>| -> Vec<String> {
+        page.items.into_iter().map(|s| s.item.remote_id).collect()
+    };
+    assert_eq!(
+        names(
+            store
+                .list_items(&removed(RemovedFilter::Hide))
+                .await
+                .unwrap()
+        ),
+        ["ada", "dee", "cleo"]
+    );
+    let gone = store
+        .list_items(&removed(RemovedFilter::Only))
+        .await
+        .unwrap();
+    assert_eq!(
+        gone.items[0].item.removed_at,
+        Some(Timestamp::from_secs(1_700_000_900)),
+        "the first removal time is kept"
+    );
+    assert_eq!(names(gone), ["bo"]);
+    assert_eq!(
+        store
+            .list_items(&removed(RemovedFilter::Include))
+            .await
+            .unwrap()
+            .items
+            .len(),
+        4
+    );
+    let summary = store.list_collections(archive).await.unwrap();
+    let people_summary = summary.iter().find(|c| c.collection.id == people).unwrap();
+    assert_eq!((people_summary.items, people_summary.removed_items), (2, 1));
+
+    let back = store
+        .record_version(item_version(
+            people,
+            "bo",
+            "bo",
+            ItemKind::Contact,
+            pim_index(Some("bo Linden"), None),
+        ))
+        .await
+        .unwrap();
+    assert!(back.restored && !back.new_version, "seen again, same bytes");
+    assert_eq!(store.live_remote_ids(people).await.unwrap().len(), 3);
+
+    store
+        .mark_collection_removed(team, Timestamp::from_secs(1_700_002_000))
+        .await
+        .unwrap();
+    let removed_team = store.get_collection(team).await.unwrap().unwrap();
+    assert_eq!(
+        removed_team.removed_at,
+        Some(Timestamp::from_secs(1_700_002_000))
+    );
+    assert!(store.live_remote_ids(team).await.unwrap().is_empty());
+    assert!(matches!(
+        store
+            .mark_collection_removed(CollectionId::new(), Timestamp::from_secs(1))
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let mut ids = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store.item_ids(after, 3).await.unwrap();
+        let done = page.len() < 3;
+        after = page.last().copied();
+        ids.extend(page);
+        if done {
+            break;
+        }
+    }
+    assert!(ids.windows(2).all(|w| w[0] < w[1]));
+    assert!(ids.len() >= 7);
+
+    let bad = query(
+        ItemKind::Contact,
+        ItemOrder::Title,
+        Some(PageCursor("garbage".into())),
+        10,
+    );
+    assert!(matches!(
+        store.list_items(&bad).await,
+        Err(StoreError::Invalid(_))
+    ));
+    store.delete_archive(archive).await.unwrap();
+}
+
+async fn pim_removal(store: &dyn Store) {
+    let gone = store.create_archive("Gone contacts").await.unwrap().id;
+    let kept = store.create_archive("Kept contacts").await.unwrap().id;
+    let old = book(store, gone, "people.vcf").await;
+    let other = book(store, kept, "people.vcf").await;
+    let mut ada = item_version(
+        old,
+        "ada",
+        "shared card",
+        ItemKind::Contact,
+        pim_index(Some("Ada"), None),
+    );
+    ada.photo_blob_id = Some(BlobId::of(b"only in the old archive"));
+    let ada = store.record_version(ada).await.unwrap().item_id;
+    store
+        .record_version(item_version(
+            old,
+            "ada",
+            "own card",
+            ItemKind::Contact,
+            pim_index(Some("Ada"), None),
+        ))
+        .await
+        .unwrap();
+    store
+        .record_version(item_version(
+            other,
+            "ada",
+            "shared card",
+            ItemKind::Contact,
+            pim_index(Some("Ada"), None),
+        ))
+        .await
+        .unwrap();
+
+    let referenced = store.referenced_blobs(None, 100_000).await.unwrap();
+    for blob in [
+        BlobId::of(b"shared card"),
+        BlobId::of(b"own card"),
+        BlobId::of(b"only in the old archive"),
+    ] {
+        assert!(referenced.contains(&blob), "item blobs are referenced");
+    }
+
+    let mut orphans = vec![
+        BlobId::of(b"own card"),
+        BlobId::of(b"only in the old archive"),
+    ];
+    orphans.sort();
+    assert_eq!(
+        store.delete_archive(gone).await.unwrap(),
+        orphans,
+        "a version blob another archive still uses is not an orphan"
+    );
+    assert_eq!(store.get_collection(old).await.unwrap(), None);
+    assert_eq!(store.get_item(ada).await.unwrap(), None);
+    assert!(store.item_versions(ada).await.unwrap().is_empty());
+    assert_eq!(store.list_collections(kept).await.unwrap().len(), 1);
+    store.delete_archive(kept).await.unwrap();
+}
+
+async fn collection_sync(store: &dyn Store) {
+    let archive = store.create_archive("Synced books").await.unwrap().id;
+    let people = book(store, archive, "/dav/people/").await;
+    let fresh = store.get_collection(people).await.unwrap().unwrap();
+    assert_eq!((fresh.ctag, fresh.synced_at), (None, None));
+
+    store
+        .set_collection_synced(
+            people,
+            Some("sync-1"),
+            Some("ctag-1"),
+            Timestamp::from_secs(1_700_000_100),
+        )
+        .await
+        .unwrap();
+    let synced = store.get_collection(people).await.unwrap().unwrap();
+    assert_eq!(synced.sync_token.as_deref(), Some("sync-1"));
+    assert_eq!(synced.ctag.as_deref(), Some("ctag-1"));
+    assert_eq!(synced.synced_at, Some(Timestamp::from_secs(1_700_000_100)));
+    store
+        .set_collection_synced(people, None, None, Timestamp::from_secs(1_700_000_200))
+        .await
+        .unwrap();
+    let cleared = store.get_collection(people).await.unwrap().unwrap();
+    assert_eq!((cleared.sync_token, cleared.ctag), (None, None));
+    assert!(matches!(
+        store
+            .set_collection_synced(CollectionId::new(), None, None, Timestamp::now())
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    for (remote, bytes) in [("b.vcf", "bea"), ("a.vcf", "ada")] {
+        store
+            .record_version(item_version(
+                people,
+                remote,
+                bytes,
+                ItemKind::Contact,
+                pim_index(Some(bytes), None),
+            ))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.item_etags(people).await.unwrap(),
+        [
+            ("a.vcf".to_owned(), Some("\"ada\"".to_owned())),
+            ("b.vcf".to_owned(), Some("\"bea\"".to_owned())),
+        ],
+        "sorted by remote id"
+    );
+    let mut touched = item_version(
+        people,
+        "a.vcf",
+        "ada",
+        ItemKind::Contact,
+        pim_index(Some("ada"), None),
+    );
+    touched.etag = Some("\"ada-2\"".into());
+    let same = store.record_version(touched).await.unwrap();
+    assert!(!same.new_version);
+    assert_eq!(
+        store.item_etags(people).await.unwrap()[0].1.as_deref(),
+        Some("\"ada-2\""),
+        "the same bytes under a new tag keep one version but the new tag"
+    );
+    assert_eq!(
+        store.item_versions(same.item_id).await.unwrap()[0]
+            .etag
+            .as_deref(),
+        Some("\"ada\""),
+        "a stored version keeps the tag it was seen with"
+    );
+    store
+        .mark_items_removed(people, &["b.vcf".into()], Timestamp::now())
+        .await
+        .unwrap();
+    let live: Vec<_> = store
+        .item_etags(people)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(live, ["a.vcf"], "removed items are left out");
+    assert!(
+        store
+            .item_etags(CollectionId::new())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    store.delete_archive(archive).await.unwrap();
+}
+
+fn mail_version(
+    collection: CollectionId,
+    message: MessageId,
+    bytes: &str,
+    method: &str,
+    sequence: i64,
+    sent_secs: i64,
+) -> NewMailVersion {
+    let mut version = item_version(
+        collection,
+        "plan@example.com",
+        bytes,
+        ItemKind::Event,
+        pim_index(Some(bytes), Some(sent_secs)),
+    );
+    version.content_type = "text/calendar".into();
+    version.etag = None;
+    NewMailVersion {
+        version,
+        message_id: message,
+        mail: MailVersionInfo {
+            method: Some(method.into()),
+            sequence: Some(sequence),
+            dtstamp: None,
+            sent_at: Some(Timestamp::from_secs(sent_secs)),
+        },
+    }
+}
+
+async fn mail_versions(store: &dyn Store) {
+    let archive = store.create_archive("Invitations").await.unwrap().id;
+    let other = store.create_archive("Other mail").await.unwrap().id;
+    let calendar = store
+        .upsert_collection(NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: CollectionKind::Calendar,
+            remote_id: "mail".into(),
+            name: "From mail".into(),
+            color: None,
+        })
+        .await
+        .unwrap()
+        .id;
+    let mut ids = Vec::new();
+    for n in 0..5 {
+        let message = store
+            .insert_message(message(archive, 9_100 + n, 1_700_000_000 + i64::from(n)))
+            .await
+            .unwrap();
+        ids.push(message.message_id);
+    }
+    let foreign = store
+        .insert_message(message(other, 9_199, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+
+    let cancel = mail_version(calendar, ids[3], "cancel", "CANCEL", 2, 1_700_000_300);
+    let first = store.record_mail_version(cancel.clone()).await.unwrap();
+    assert!(first.created_item && first.new_version);
+    assert_eq!(first.number, 1);
+    let item = first.item_id;
+    let request = mail_version(calendar, ids[0], "request", "REQUEST", 0, 1_700_000_000);
+    let added = store.record_mail_version(request).await.unwrap();
+    assert!(!added.created_item && added.new_version);
+    assert_eq!(added.number, 2, "the latest number after the call");
+    let moved = mail_version(calendar, ids[1], "moved", "REQUEST", 1, 1_700_000_100);
+    store.record_mail_version(moved).await.unwrap();
+    let reply = mail_version(calendar, ids[2], "reply", "REPLY", 1, 1_700_000_200);
+    store.record_mail_version(reply).await.unwrap();
+
+    let versions = store.item_versions(item).await.unwrap();
+    let order: Vec<_> = versions
+        .iter()
+        .map(|v| {
+            (
+                v.number,
+                v.blob_id,
+                v.mail.as_ref().and_then(|m| m.method.clone()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        order,
+        [
+            (1, BlobId::of(b"request"), Some("REQUEST".into())),
+            (2, BlobId::of(b"moved"), Some("REQUEST".into())),
+            (3, BlobId::of(b"reply"), Some("REPLY".into())),
+            (4, BlobId::of(b"cancel"), Some("CANCEL".into())),
+        ],
+        "versions follow SEQUENCE and the message date, not the order they were recorded in"
+    );
+    assert_eq!(versions[1].mail.as_ref().unwrap().sequence, Some(1));
+    assert_eq!(
+        versions[1].mail.as_ref().unwrap().sent_at,
+        Some(Timestamp::from_secs(1_700_000_100))
+    );
+    let summary = store.get_item(item).await.unwrap().unwrap();
+    assert_eq!(summary.item.versions, 4);
+    assert_eq!(summary.item.kind, ItemKind::Event);
+
+    let again = mail_version(calendar, ids[4], "moved", "REQUEST", 1, 1_700_000_400);
+    let same = store.record_mail_version(again.clone()).await.unwrap();
+    assert!(!same.new_version && !same.created_item);
+    assert_eq!(same.number, 4);
+    store.record_mail_version(again).await.unwrap();
+    assert_eq!(store.item_versions(item).await.unwrap().len(), 4);
+
+    let sources: Vec<_> = store
+        .version_messages(item)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.number, s.message_id))
+        .collect();
+    let mut expected = vec![
+        (1, ids[0]),
+        (2, ids[1]),
+        (2, ids[4]),
+        (3, ids[2]),
+        (4, ids[3]),
+    ];
+    expected.sort();
+    assert_eq!(sources, expected);
+    assert_eq!(
+        store.message_versions(ids[4]).await.unwrap(),
+        [VersionSource {
+            item_id: item,
+            number: 2,
+            message_id: ids[4],
+        }]
+    );
+    assert!(store.message_versions(foreign).await.unwrap().is_empty());
+
+    let mut wrong = mail_version(calendar, foreign, "foreign", "REQUEST", 3, 1_700_000_500);
+    assert!(matches!(
+        store.record_mail_version(wrong.clone()).await,
+        Err(StoreError::Invalid(_))
+    ));
+    wrong.message_id = MessageId::new();
+    assert!(matches!(
+        store.record_mail_version(wrong.clone()).await,
+        Err(StoreError::NotFound(_))
+    ));
+    wrong.message_id = ids[0];
+    wrong.version.collection_id = CollectionId::new();
+    assert!(matches!(
+        store.record_mail_version(wrong).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(
+        store
+            .version_messages(ItemId::new())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    assert!(store.message_versions(ids[0]).await.unwrap().is_empty());
+    assert!(store.version_messages(item).await.unwrap().is_empty());
+    store.delete_archive(other).await.unwrap();
 }
 
 fn task(id: &str, started: i64, state: TaskState) -> TaskRecord {
@@ -1728,4 +2584,814 @@ async fn derived(store: &dyn Store) {
             .unwrap(),
         None
     );
+}
+
+fn person(archive: ArchiveId, n: u8, name: Option<&str>, emails: &[&str]) -> Person {
+    Person {
+        id: PersonId::from_hash([n; 16]),
+        archive_id: archive,
+        name: name.map(Into::into),
+        email: emails.first().map(|e| (*e).into()),
+        phone: None,
+        emails: emails.iter().map(|e| (*e).into()).collect(),
+        mail_emails: emails.iter().map(|e| (*e).into()).collect(),
+        phones: Vec::new(),
+        cards: Vec::new(),
+        links: Vec::new(),
+        mail: None,
+        differences: false,
+        removed: false,
+    }
+}
+
+fn mail_from(archive: ArchiveId, n: u32, secs: i64, from: (&str, &str), to: &[&str]) -> NewMessage {
+    let mut message = message(archive, 9000 + n, secs);
+    message.from = vec![Address {
+        name: Some(from.0.into()),
+        email: from.1.into(),
+    }];
+    message.to = to
+        .iter()
+        .map(|e| Address {
+            name: None,
+            email: (*e).into(),
+        })
+        .collect();
+    message
+}
+
+async fn people(store: &dyn Store) {
+    let archive = archive(store).await;
+    let account = store
+        .create_account(NewAccount {
+            archive_id: archive,
+            kind: AccountKind::Imap,
+            name: "Work".into(),
+            address: Some("Me@Example.com".into()),
+            settings: json!({}),
+            sealed_secret: None,
+            enabled: true,
+        })
+        .await
+        .unwrap();
+    let sent = store
+        .upsert_folder(account.id, "Sent", Some(FolderRole::Sent))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.mail_addresses(archive).await.unwrap().addresses,
+        Vec::new()
+    );
+
+    let first = store
+        .insert_message(mail_from(
+            archive,
+            1,
+            1_700_000_000,
+            ("Ada L", "me@example.com"),
+            &["Ada@Example.com", "cleo@example.org"],
+        ))
+        .await
+        .unwrap();
+    let mut reply = mail_from(
+        archive,
+        2,
+        1_735_700_000,
+        ("Ada Lovelace", "ada@example.com"),
+        &["me@example.com"],
+    );
+    reply.parent_ids = vec!["m9001@example.com".into()];
+    reply.attachments = vec![
+        Attachment {
+            ordinal: 0,
+            blob_id: BlobId::of(b"plan.pdf"),
+            filename: Some("plan.pdf".into()),
+            content_type: "application/pdf".into(),
+            size: 8,
+            content_id: None,
+            inline: false,
+        },
+        Attachment {
+            ordinal: 1,
+            blob_id: BlobId::of(b"BEGIN:VCALENDAR"),
+            filename: None,
+            content_type: "text/calendar".into(),
+            size: 15,
+            content_id: None,
+            inline: false,
+        },
+    ];
+    let reply = store.insert_message(reply).await.unwrap();
+    assert_eq!(reply.thread_id, first.thread_id);
+    let other = store
+        .insert_message(mail_from(
+            archive,
+            3,
+            1_735_800_000,
+            ("Alias", "me+alias@example.com"),
+            &["news@example.net"],
+        ))
+        .await
+        .unwrap();
+    store
+        .record_location(other.message_id, sent.id, Some(1), &[], Timestamp::now())
+        .await
+        .unwrap();
+    store
+        .insert_message(mail_from(
+            archive,
+            4,
+            1_735_900_000,
+            ("News", "news@example.net"),
+            &["me@example.com"],
+        ))
+        .await
+        .unwrap();
+
+    let found = store.mail_addresses(archive).await.unwrap();
+    assert_eq!(
+        found.own,
+        vec!["me+alias@example.com".to_owned(), "me@example.com".into()],
+        "the account address and every From of sent mail are the owner's"
+    );
+    let ada = found
+        .addresses
+        .iter()
+        .find(|a| a.email == "ada@example.com")
+        .expect("addresses are lowercased");
+    assert_eq!(
+        (ada.messages, ada.from_them, ada.from_me),
+        (2, 1, 1),
+        "{ada:?}"
+    );
+    assert_eq!(ada.first_at, Timestamp::from_secs(1_700_000_000));
+    assert_eq!(ada.last_at, Timestamp::from_secs(1_735_700_000));
+    assert_eq!(ada.name.as_deref(), Some("Ada Lovelace"));
+    let news = found
+        .addresses
+        .iter()
+        .find(|a| a.email == "news@example.net")
+        .unwrap();
+    assert_eq!(
+        (news.messages, news.from_them, news.from_me),
+        (2, 1, 1),
+        "mail from a sent folder counts as the owner's"
+    );
+    let emails: Vec<&str> = found.addresses.iter().map(|a| a.email.as_str()).collect();
+    let mut sorted = emails.clone();
+    sorted.sort_unstable();
+    assert_eq!(emails, sorted);
+
+    let book = book(store, archive, "people.vcf").await;
+    let card = store
+        .record_version(item_version(
+            book,
+            "ada",
+            "BEGIN:VCARD ada",
+            ItemKind::Contact,
+            pim_index(Some("Ada"), None),
+        ))
+        .await
+        .unwrap();
+    let mut meeting = pim_index(Some("Review"), Some(1_735_000_000));
+    meeting.emails = vec!["bob@example.org".into(), "ada@example.com".into()];
+    let meeting = store
+        .record_version(item_version(
+            book,
+            "review",
+            "BEGIN:VCALENDAR review",
+            ItemKind::Event,
+            meeting,
+        ))
+        .await
+        .unwrap();
+    let mut undated = pim_index(Some("Someday"), None);
+    undated.emails = vec!["ada@example.com".into()];
+    let undated = store
+        .record_version(item_version(
+            book,
+            "someday",
+            "BEGIN:VCALENDAR someday",
+            ItemKind::Event,
+            undated,
+        ))
+        .await
+        .unwrap();
+    let mut later = pim_index(Some("Lunch"), Some(1_736_000_000));
+    later.emails = vec!["cleo@example.org".into()];
+    store
+        .record_version(item_version(
+            book,
+            "lunch",
+            "BEGIN:VCALENDAR lunch",
+            ItemKind::Event,
+            later,
+        ))
+        .await
+        .unwrap();
+    let meetings: Vec<ItemId> = store
+        .items_by_email(archive, ItemKind::Event, &["ADA@example.com".into()], 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| s.item.id)
+        .collect();
+    assert_eq!(meetings, vec![meeting.item_id, undated.item_id]);
+    assert!(
+        store
+            .items_by_email(archive, ItemKind::Event, &[], 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let talk = store
+        .correspondence(archive, &["ADA@example.com".into()], 10, 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        (talk.messages, talk.from_them, talk.to_them),
+        (2, 1, 1),
+        "{talk:?}"
+    );
+    assert_eq!(talk.first_at, Some(Timestamp::from_secs(1_700_000_000)));
+    assert_eq!(talk.last_at, Some(Timestamp::from_secs(1_735_700_000)));
+    assert_eq!(
+        talk.years,
+        vec![
+            YearCount {
+                year: 2023,
+                messages: 1
+            },
+            YearCount {
+                year: 2025,
+                messages: 1
+            }
+        ]
+    );
+    assert_eq!(talk.threads.len(), 1);
+    assert_eq!(talk.threads[0].thread_id, first.thread_id);
+    assert_eq!(talk.threads[0].messages, 2);
+    assert_eq!(talk.threads[0].latest, reply.message_id);
+    assert_eq!(
+        talk.attachments.len(),
+        1,
+        "calendar parts are meetings, not files"
+    );
+    assert_eq!(talk.attachments[0].message_id, reply.message_id);
+    assert!(talk.attachments[0].from_them);
+    assert_eq!(
+        talk.attachments[0].attachment.filename.as_deref(),
+        Some("plan.pdf")
+    );
+    assert_eq!(
+        store.correspondence(archive, &[], 10, 10).await.unwrap(),
+        Correspondence::default()
+    );
+    let both = store
+        .correspondence(
+            archive,
+            &["ada@example.com".into(), "cleo@example.org".into()],
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        both.messages, 2,
+        "a message with both addresses counts once"
+    );
+    assert!(both.threads.is_empty() && both.attachments.is_empty());
+
+    let mut ada = person(archive, 1, Some("Ada Lovelace"), &["ada@example.com"]);
+    ada.cards = vec![PersonCard {
+        item_id: card.item_id,
+        collection_id: book,
+        removed: false,
+    }];
+    ada.phones = vec!["+15550100".into()];
+    ada.differences = true;
+    ada.mail = Some(PersonMail {
+        messages: 2,
+        from_them: 1,
+        from_me: 1,
+        first_at: Timestamp::from_secs(1_700_000_000),
+        last_at: Timestamp::from_secs(1_735_700_000),
+    });
+    let cleo = person(archive, 2, Some("cleo"), &["cleo@example.org"]);
+    let nameless = person(archive, 3, None, &["x@example.com"]);
+    let bob = person(archive, 4, Some("Bob"), &["bob@example.org"]);
+    store
+        .replace_people(
+            archive,
+            &[cleo.clone(), nameless.clone(), ada.clone(), bob.clone()],
+        )
+        .await
+        .unwrap();
+    let query = |text: Option<&str>, source: Option<PersonSource>, differences: bool| PersonQuery {
+        archive_id: archive,
+        text: text.map(Into::into),
+        source,
+        differences,
+        after: None,
+        limit: 50,
+    };
+    let names = |page: &Page<Person>| -> Vec<Option<String>> {
+        page.items.iter().map(|p| p.name.clone()).collect()
+    };
+    let all = store.list_people(&query(None, None, false)).await.unwrap();
+    assert_eq!(
+        names(&all),
+        vec![
+            Some("Ada Lovelace".into()),
+            Some("Bob".into()),
+            Some("cleo".into()),
+            None
+        ],
+        "by name without regard to case, nameless last"
+    );
+    assert_eq!(all.items[0], ada, "a person reads back as stored");
+    assert_eq!(
+        store.count_people(&query(None, None, false)).await.unwrap(),
+        4
+    );
+    let mut paged = query(None, None, false);
+    paged.limit = 3;
+    let page = store.list_people(&paged).await.unwrap();
+    assert_eq!(page.items.len(), 3);
+    paged.after = page.next.clone();
+    let rest = store.list_people(&paged).await.unwrap();
+    assert_eq!(names(&rest), vec![None]);
+    assert_eq!(rest.next, None);
+    assert!(matches!(
+        store
+            .list_people(&PersonQuery {
+                after: Some(PageCursor("nope".into())),
+                ..query(None, None, false)
+            })
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    for (text, expected) in [
+        ("LOVE", vec![Some("Ada Lovelace".to_owned())]),
+        ("example.org", vec![Some("Bob".into()), Some("cleo".into())]),
+        ("+1555", vec![Some("Ada Lovelace".into())]),
+    ] {
+        let page = store
+            .list_people(&query(Some(text), None, false))
+            .await
+            .unwrap();
+        assert_eq!(names(&page), expected, "{text}");
+    }
+    assert_eq!(
+        names(
+            &store
+                .list_people(&query(None, Some(PersonSource::Contacts), false))
+                .await
+                .unwrap()
+        ),
+        vec![Some("Ada Lovelace".to_owned())]
+    );
+    assert_eq!(
+        store
+            .count_people(&query(None, Some(PersonSource::Mail), false))
+            .await
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        store
+            .count_people(&query(None, Some(PersonSource::Collection(book)), false))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        store
+            .count_people(&query(
+                None,
+                Some(PersonSource::Collection(CollectionId::new())),
+                false
+            ))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        names(&store.list_people(&query(None, None, true)).await.unwrap()),
+        vec![Some("Ada Lovelace".to_owned())]
+    );
+    assert_eq!(store.get_person(ada.id).await.unwrap(), Some(ada.clone()));
+    assert_eq!(
+        store
+            .people_by_email(
+                archive,
+                &[
+                    "Bob@Example.org".into(),
+                    "nobody@example.com".into(),
+                    "ada@example.com".into()
+                ]
+            )
+            .await
+            .unwrap(),
+        vec![
+            ("Bob@Example.org".to_owned(), bob.id),
+            ("ada@example.com".to_owned(), ada.id)
+        ]
+    );
+
+    let other = store.create_archive("Other").await.unwrap().id;
+    assert!(matches!(
+        store
+            .replace_people(other, std::slice::from_ref(&cleo))
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store.replace_people(ArchiveId::new(), &[]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(
+        store
+            .people_by_email(other, &["bob@example.org".into()])
+            .await
+            .unwrap()
+            .is_empty(),
+        "people belong to their archive"
+    );
+
+    store
+        .replace_people(archive, std::slice::from_ref(&bob))
+        .await
+        .unwrap();
+    assert_eq!(store.get_person(ada.id).await.unwrap(), None);
+    assert_eq!(
+        store.count_people(&query(None, None, false)).await.unwrap(),
+        1
+    );
+    assert!(
+        store
+            .people_by_email(archive, &["ada@example.com".into()])
+            .await
+            .unwrap()
+            .is_empty(),
+        "replaced people leave no addresses behind"
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    assert_eq!(store.get_person(bob.id).await.unwrap(), None);
+    assert_eq!(
+        store.mail_addresses(archive).await.unwrap(),
+        MailAddresses::default()
+    );
+    store.delete_archive(other).await.unwrap();
+}
+
+async fn person_overrides(store: &dyn Store) {
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let (a, b, c) = (ItemId::new(), ItemId::new(), ItemId::new());
+    let join = PersonOverride {
+        id: PersonOverrideId::new(),
+        archive_id: archive,
+        kind: PersonOverrideKind::Join,
+        keys: vec![format!("item:{a}"), "email:dan@example.net".into()],
+        from: Vec::new(),
+        created_at: Timestamp::from_secs(1_700_000_000),
+        created_by: None,
+    };
+    let split = PersonOverride {
+        id: PersonOverrideId::new(),
+        archive_id: archive,
+        kind: PersonOverrideKind::Split,
+        keys: vec![format!("item:{b}")],
+        from: vec![format!("item:{a}"), format!("item:{c}")],
+        created_at: Timestamp::from_secs(1_700_000_100),
+        created_by: None,
+    };
+    assert!(store.person_overrides(archive).await.unwrap().is_empty());
+    store.add_person_override(&split).await.unwrap();
+    store.add_person_override(&join).await.unwrap();
+    assert!(matches!(
+        store.add_person_override(&join).await,
+        Err(StoreError::Invalid(_))
+    ));
+    for bad in [
+        PersonOverride {
+            id: PersonOverrideId::new(),
+            keys: vec![format!("item:{a}")],
+            ..join.clone()
+        },
+        PersonOverride {
+            id: PersonOverrideId::new(),
+            from: Vec::new(),
+            ..split.clone()
+        },
+        PersonOverride {
+            id: PersonOverrideId::new(),
+            keys: Vec::new(),
+            ..split.clone()
+        },
+    ] {
+        assert!(
+            matches!(
+                store.add_person_override(&bad).await,
+                Err(StoreError::Invalid(_))
+            ),
+            "{bad:?}"
+        );
+    }
+    assert!(matches!(
+        store
+            .add_person_override(&PersonOverride {
+                id: PersonOverrideId::new(),
+                archive_id: ArchiveId::new(),
+                ..join.clone()
+            })
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    let mut expected = vec![join.clone(), split.clone()];
+    expected.sort_by_key(|o| o.id);
+    assert_eq!(store.person_overrides(archive).await.unwrap(), expected);
+    assert!(store.person_overrides(other).await.unwrap().is_empty());
+    assert_eq!(
+        store.get_person_override(split.id).await.unwrap(),
+        Some(split.clone())
+    );
+    assert!(store.remove_person_override(split.id).await.unwrap());
+    assert!(!store.remove_person_override(split.id).await.unwrap());
+    assert_eq!(store.get_person_override(split.id).await.unwrap(), None);
+    assert_eq!(
+        store.person_overrides(archive).await.unwrap(),
+        vec![join.clone()]
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    assert_eq!(store.get_person_override(join.id).await.unwrap(), None);
+    store.delete_archive(other).await.unwrap();
+}
+
+fn instance(rid: Option<&str>, start: i64, end: i64) -> NewOccurrence {
+    NewOccurrence {
+        recurrence_id: rid.map(Into::into),
+        starts_at: Timestamp::from_secs(start),
+        ends_at: Timestamp::from_secs(end),
+        component: 0,
+        start_local: format!("local {start}"),
+        end_local: format!("local {end}"),
+        time_zone: Some("Europe/Berlin".into()),
+        all_day: false,
+        floating: false,
+        cancelled: false,
+        changed: false,
+    }
+}
+
+async fn calendar(store: &dyn Store) {
+    let archive = store.create_archive("Calendar").await.unwrap().id;
+    let work = store
+        .upsert_collection(NewCollection {
+            archive_id: archive,
+            account_id: None,
+            kind: CollectionKind::Calendar,
+            remote_id: "work.ics".into(),
+            name: "Work".into(),
+            color: Some("#00f".into()),
+        })
+        .await
+        .unwrap()
+        .id;
+    let home = book(store, archive, "home.ics").await;
+    let event = |collection, remote: &str| {
+        item_version(
+            collection,
+            remote,
+            remote,
+            ItemKind::Event,
+            pim_index(Some(remote), Some(1_000)),
+        )
+    };
+    let once = store
+        .record_version(event(work, "once"))
+        .await
+        .unwrap()
+        .item_id;
+    let weekly = store
+        .record_version(event(work, "weekly"))
+        .await
+        .unwrap()
+        .item_id;
+    let copy = store
+        .record_version(event(home, "copy"))
+        .await
+        .unwrap()
+        .item_id;
+    let group = EventGroupId::from_hash([3; 16]);
+    let other = EventGroupId::from_hash([4; 16]);
+    let series = |item, group, recurring, window: Option<(i64, i64)>, seq| EventSeries {
+        item_id: item,
+        group_id: group,
+        sequence: Some(seq),
+        stamp: Some(Timestamp::from_secs(500)),
+        starts_at: Some(Timestamp::from_secs(1_000)),
+        ends_at: if recurring {
+            None
+        } else {
+            Some(Timestamp::from_secs(1_100))
+        },
+        recurring,
+        window: window.map(|(a, b)| (Timestamp::from_secs(a), Timestamp::from_secs(b))),
+    };
+
+    assert!(matches!(
+        store
+            .replace_series(
+                ItemId::new(),
+                Some(&series(once, other, false, None, 0)),
+                &[]
+            )
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    let unknown = ItemId::new();
+    assert!(matches!(
+        store
+            .replace_series(unknown, Some(&series(unknown, other, false, None, 0)), &[])
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    store
+        .replace_series(
+            once,
+            Some(&series(once, other, false, None, 0)),
+            &[instance(None, 1_000, 1_100)],
+        )
+        .await
+        .unwrap();
+    let weekly_series = series(weekly, group, true, Some((0, 10_000)), 2);
+    store
+        .replace_series(
+            weekly,
+            Some(&weekly_series),
+            &[
+                instance(Some("a"), 1_000, 1_050),
+                instance(Some("b"), 2_000, 2_000),
+                instance(Some("c"), 9_000, 9_050),
+            ],
+        )
+        .await
+        .unwrap();
+    store
+        .replace_series(
+            copy,
+            Some(&series(copy, group, true, Some((0, 10_000)), 1)),
+            &[instance(Some("a"), 1_000, 1_050)],
+        )
+        .await
+        .unwrap();
+    assert_eq!(store.series(weekly).await.unwrap(), Some(weekly_series));
+
+    let query = |from: i64, to: i64| OccurrenceQuery {
+        archive_id: archive,
+        from: Timestamp::from_secs(from),
+        to: Timestamp::from_secs(to),
+        collections: None,
+        removed: false,
+    };
+    let keys = |found: Vec<Occurrence>| -> Vec<(ItemId, Option<String>)> {
+        found
+            .into_iter()
+            .map(|o| (o.item_id, o.occurrence.recurrence_id))
+            .collect()
+    };
+    let mut first = vec![
+        (once, None),
+        (weekly, Some("a".to_owned())),
+        (copy, Some("a".to_owned())),
+    ];
+    first[1..].sort();
+    let found = store.occurrences(&query(1_040, 1_500)).await.unwrap();
+    assert_eq!(found[0].group_id, other);
+    assert_eq!(found[0].sequence, Some(0));
+    assert_eq!(found[0].stamp, Some(Timestamp::from_secs(500)));
+    assert_eq!(found[0].collection_id, work);
+    assert!(found.iter().all(|o| !o.removed));
+    let mut got = keys(found);
+    got[1..].sort();
+    assert_eq!(got, first, "overlapping instances, by start");
+    assert!(
+        store
+            .occurrences(&query(1_100, 1_500))
+            .await
+            .unwrap()
+            .is_empty(),
+        "an instance ending at the span's start is not in it"
+    );
+    assert_eq!(
+        keys(store.occurrences(&query(2_000, 2_001)).await.unwrap()),
+        [(weekly, Some("b".to_owned()))],
+        "an instance lasting no time is in a span starting at it"
+    );
+    assert!(
+        store
+            .uncovered_series(&query(0, 10_000))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let outside = query(9_000, 20_000);
+    assert!(
+        store.occurrences(&outside).await.unwrap().is_empty(),
+        "stored instances that do not cover the span are not listed"
+    );
+    let uncovered = store.uncovered_series(&outside).await.unwrap();
+    let mut ids: Vec<ItemId> = uncovered.iter().map(|u| u.summary.item.id).collect();
+    ids.sort();
+    let mut expected = vec![weekly, copy];
+    expected.sort();
+    assert_eq!(ids, expected);
+    assert!(
+        uncovered
+            .iter()
+            .all(|u| u.series.group_id == group && !u.removed && u.summary.index.is_some())
+    );
+    assert!(
+        store
+            .uncovered_series(&query(-5_000, 999))
+            .await
+            .unwrap()
+            .is_empty(),
+        "series starting after the span do not reach into it"
+    );
+
+    let only_home = OccurrenceQuery {
+        collections: Some(vec![home]),
+        ..query(0, 10_000)
+    };
+    assert_eq!(
+        keys(store.occurrences(&only_home).await.unwrap()),
+        [(copy, Some("a".to_owned()))]
+    );
+    let none = OccurrenceQuery {
+        collections: Some(Vec::new()),
+        ..query(0, 10_000)
+    };
+    assert!(store.occurrences(&none).await.unwrap().is_empty());
+
+    store
+        .mark_items_removed(home, &["copy".to_owned()], Timestamp::from_secs(3_000))
+        .await
+        .unwrap();
+    assert_eq!(store.occurrences(&query(0, 10_000)).await.unwrap().len(), 4);
+    let with_removed = OccurrenceQuery {
+        removed: true,
+        ..query(0, 10_000)
+    };
+    let found = store.occurrences(&with_removed).await.unwrap();
+    assert_eq!(found.len(), 5);
+    assert!(found.iter().any(|o| o.item_id == copy && o.removed));
+    store
+        .mark_collection_removed(work, Timestamp::from_secs(3_000))
+        .await
+        .unwrap();
+    assert!(
+        store
+            .occurrences(&query(0, 10_000))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let members = store.group_members(group).await.unwrap();
+    let mut member_ids: Vec<ItemId> = members.iter().map(|m| m.summary.item.id).collect();
+    member_ids.sort();
+    assert_eq!(member_ids, expected, "removed copies are still members");
+    let weekly_member = members
+        .iter()
+        .find(|m| m.summary.item.id == weekly)
+        .unwrap();
+    assert_eq!(weekly_member.series.sequence, Some(2));
+    assert_eq!(
+        weekly_member.collection_removed_at,
+        Some(Timestamp::from_secs(3_000))
+    );
+    assert!(
+        store
+            .group_members(EventGroupId::from_hash([9; 16]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    store.replace_series(copy, None, &[]).await.unwrap();
+    assert_eq!(store.series(copy).await.unwrap(), None);
+    assert_eq!(store.group_members(group).await.unwrap().len(), 1);
+    assert_eq!(store.occurrences(&with_removed).await.unwrap().len(), 4);
+
+    store.delete_archive(archive).await.unwrap();
+    assert!(store.group_members(group).await.unwrap().is_empty());
+    assert!(store.group_members(other).await.unwrap().is_empty());
 }

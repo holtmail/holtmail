@@ -1,6 +1,8 @@
 import {
   accountsQuery,
   archivesQuery,
+  calendarExportUrl,
+  contactsExportUrl,
   foldersQuery,
   labelsQuery,
   sessionQuery,
@@ -20,6 +22,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
+  CalendarIcon,
   DownloadIcon,
   FileUpIcon,
   KeyboardIcon,
@@ -30,10 +33,16 @@ import {
   SettingsIcon,
   SunMoonIcon,
   TagIcon,
+  UsersIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { exportFormats, exportHref } from '../lib/export.ts'
+import {
+  calendarExportFormats,
+  contactsExportFormats,
+  exportFormats,
+  exportHref,
+} from '../lib/export.ts'
 import { orderFolders } from '../lib/folders.ts'
 import { isMac } from '../lib/keymap.ts'
 import { manages } from '../lib/roles.ts'
@@ -126,6 +135,26 @@ export function CommandPalette({
             <MailIcon />
             {strings.archive.allMail}
             <CommandShortcut>{displayStroke('g a', isMac).join(' ')}</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            value={`people contacts ${strings.people.title}`}
+            onSelect={() =>
+              run(() => void navigate({ to: '/a/$archiveId/people', params: { archiveId } }))
+            }
+          >
+            <UsersIcon />
+            {strings.command.people}
+            <CommandShortcut>{displayStroke('g c', isMac).join(' ')}</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            value={`calendar events meetings ${strings.calendar.title}`}
+            onSelect={() =>
+              run(() => void navigate({ to: '/a/$archiveId/calendar', params: { archiveId } }))
+            }
+          >
+            <CalendarIcon />
+            {strings.command.calendar}
+            <CommandShortcut>{displayStroke('g e', isMac).join(' ')}</CommandShortcut>
           </CommandItem>
           {ordered.map(({ folder }) => {
             const Icon = folderIcon(folder)
@@ -257,6 +286,30 @@ export function CommandPalette({
             >
               <DownloadIcon />
               {strings.command.exportAs[format]}
+            </CommandItem>
+          ))}
+          {contactsExportFormats.map((format) => (
+            <CommandItem
+              key={`contacts-${format}`}
+              value={`action export download contacts ${format}`}
+              onSelect={() =>
+                run(() => window.location.assign(contactsExportUrl(archiveId, format)))
+              }
+            >
+              <DownloadIcon />
+              {strings.command.exportContactsAs[format]}
+            </CommandItem>
+          ))}
+          {calendarExportFormats.map((format) => (
+            <CommandItem
+              key={`calendar-${format}`}
+              value={`action export download calendar ${format}`}
+              onSelect={() =>
+                run(() => window.location.assign(calendarExportUrl(archiveId, format)))
+              }
+            >
+              <DownloadIcon />
+              {strings.command.exportCalendarAs[format]}
             </CommandItem>
           ))}
           <CommandItem value="action shortcuts" onSelect={() => run(onShowShortcuts)}>

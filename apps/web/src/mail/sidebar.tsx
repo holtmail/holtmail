@@ -24,6 +24,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
+  CalendarIcon,
   ChevronsUpDownIcon,
   FilePenIcon,
   FolderIcon,
@@ -37,6 +38,7 @@ import {
   ShieldAlertIcon,
   StarIcon,
   Trash2Icon,
+  UsersIcon,
 } from 'lucide-react'
 import { useMemo } from 'react'
 
@@ -111,11 +113,15 @@ export function Sidebar({
   folderId,
   label,
   isAllMail,
+  isPeople,
+  isCalendar,
   onNavigate,
 }: {
   folderId?: string
   label?: string
   isAllMail: boolean
+  isPeople: boolean
+  isCalendar: boolean
   onNavigate?: () => void
 }) {
   const { archiveId } = useMail()
@@ -142,6 +148,26 @@ export function Sidebar({
           <MailIcon />
           <span className="truncate">{strings.archive.allMail}</span>
           {archive && <Count value={archive.stats.messages} />}
+        </Link>
+        <Link
+          to="/a/$archiveId/people"
+          params={{ archiveId }}
+          aria-current={isPeople ? 'page' : undefined}
+          className={cn(itemClass, 'pl-4')}
+          onClick={onNavigate}
+        >
+          <UsersIcon />
+          <span className="truncate">{strings.people.title}</span>
+        </Link>
+        <Link
+          to="/a/$archiveId/calendar"
+          params={{ archiveId }}
+          aria-current={isCalendar ? 'page' : undefined}
+          className={cn(itemClass, 'pl-4')}
+          onClick={onNavigate}
+        >
+          <CalendarIcon />
+          <span className="truncate">{strings.calendar.title}</span>
         </Link>
 
         {folders.isPending && (

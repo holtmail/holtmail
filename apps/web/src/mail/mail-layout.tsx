@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Outlet, useMatch, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { KeyboardIcon, MenuIcon, SearchIcon } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react'
 
 import { useHotkeys } from '../hooks/use-hotkeys.ts'
 import { useLayout } from '../hooks/use-layout.ts'
@@ -29,13 +29,23 @@ import { ShortcutsDialog } from './shortcuts-dialog.tsx'
 import { Sidebar } from './sidebar.tsx'
 import { UserMenu } from './user-menu.tsx'
 
+const PersonPane = lazy(async () => ({
+  default: (await import('../people/person-pane.tsx')).PersonPane,
+}))
+const PeopleEmpty = lazy(async () => ({
+  default: (await import('../people/person-pane.tsx')).PeopleEmpty,
+}))
+
 export function MailLayout() {
   const { archiveId = '', folderId } = useParams({ strict: false })
-  const { m: selectedId } = useSearch({ strict: false })
+  const { m: messageId, p: personId } = useSearch({ strict: false })
   const isSearch = Boolean(useMatch({ from: '/a/$archiveId/search', shouldThrow: false }))
+  const isPeople = Boolean(useMatch({ from: '/a/$archiveId/people', shouldThrow: false }))
+  const isCalendar = Boolean(useMatch({ from: '/a/$archiveId/calendar', shouldThrow: false }))
   const labelMatch = useMatch({ from: '/a/$archiveId/label', shouldThrow: false })
   const label = labelMatch?.search.name
-  const isAllMail = !folderId && !isSearch && !labelMatch
+  const isAllMail = !folderId && !isSearch && !labelMatch && !isPeople && !isCalendar
+  const selectedId = isCalendar ? undefined : isPeople ? personId : messageId
   const layout = useLayout()
   const navigate = useNavigate()
   const folders = useQuery(foldersQuery(archiveId))
@@ -49,11 +59,11 @@ export function MailLayout() {
     (id: string | undefined, options?: { replace?: boolean }) => {
       void navigate({
         to: '.',
-        search: (previous) => ({ ...previous, m: id }),
+        search: (previous) => (isPeople ? { ...previous, p: id } : { ...previous, m: id }),
         replace: options?.replace,
       })
     },
-    [navigate],
+    [navigate, isPeople],
   )
 
   const focusReader = useCallback(() => {
@@ -108,6 +118,12 @@ export function MailLayout() {
       case 'allMail':
         void navigate({ to: '/a/$archiveId', params: { archiveId } })
         break
+      case 'people':
+        void navigate({ to: '/a/$archiveId/people', params: { archiveId } })
+        break
+      case 'calendar':
+        void navigate({ to: '/a/$archiveId/calendar', params: { archiveId } })
+        break
       case 'palette':
         setPaletteOpen((open) => !open)
         break
@@ -122,6 +138,8 @@ export function MailLayout() {
       folderId={folderId}
       label={label}
       isAllMail={isAllMail}
+      isPeople={isPeople}
+      isCalendar={isCalendar}
       onNavigate={layout === 'narrow' ? () => setSheetOpen(false) : undefined}
     />
   )
@@ -179,32 +197,59 @@ export function MailLayout() {
             </nav>
           )}
           <main className="relative flex min-w-0 flex-1 overflow-hidden">
-            <section
-              aria-label={strings.landmarks.messages}
-              inert={overlay && Boolean(selectedId)}
-              className={overlay ? 'min-w-0 flex-1' : 'w-pane-list shrink-0 border-r border-border'}
-            >
-              <Outlet />
-            </section>
-            {overlay ? (
-              <AnimatePresence initial={false}>
-                {selectedId && (
-                  <m.section
-                    key="reader"
-                    aria-label={strings.landmarks.reader}
-                    className="absolute inset-0 z-30 bg-bg"
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0, transition: transition.expressive.moderate02 }}
-                    exit={{ x: '100%', transition: transition.expressiveExit.moderate02 }}
-                  >
-                    <Reader messageId={selectedId} onBack={back} />
-                  </m.section>
-                )}
-              </AnimatePresence>
-            ) : (
-              <section aria-label={strings.landmarks.reader} className="min-w-0 flex-1">
-                {selectedId ? <Reader messageId={selectedId} /> : <ReaderEmpty />}
+            {isCalendar ? (
+              <section aria-label={strings.landmarks.calendar} className="min-w-0 flex-1">
+                <Outlet />
               </section>
+            ) : (
+              <>
+                <section
+                  aria-label={isPeople ? strings.landmarks.people : strings.landmarks.messages}
+                  inert={overlay && Boolean(selectedId)}
+                  className={
+                    overlay ? 'min-w-0 flex-1' : 'w-pane-list shrink-0 border-r border-border'
+                  }
+                >
+                  <Outlet />
+                </section>
+                {overlay ? (
+                  <AnimatePresence initial={false}>
+                    {selectedId && (
+                      <m.section
+                        key="reader"
+                        aria-label={isPeople ? strings.landmarks.person : strings.landmarks.reader}
+                        className="absolute inset-0 z-30 bg-bg"
+                        initial={{ x: '100%' }}
+                        animate={{ x: 0, transition: transition.expressive.moderate02 }}
+                        exit={{ x: '100%', transition: transition.expressiveExit.moderate02 }}
+                      >
+                        {isPeople ? (
+                          <Suspense>
+                            <PersonPane personId={selectedId} onBack={back} />
+                          </Suspense>
+                        ) : (
+                          <Reader messageId={selectedId} onBack={back} />
+                        )}
+                      </m.section>
+                    )}
+                  </AnimatePresence>
+                ) : (
+                  <section
+                    aria-label={isPeople ? strings.landmarks.person : strings.landmarks.reader}
+                    className="min-w-0 flex-1"
+                  >
+                    {isPeople ? (
+                      <Suspense>
+                        {selectedId ? <PersonPane personId={selectedId} /> : <PeopleEmpty />}
+                      </Suspense>
+                    ) : selectedId ? (
+                      <Reader messageId={selectedId} />
+                    ) : (
+                      <ReaderEmpty />
+                    )}
+                  </section>
+                )}
+              </>
             )}
           </main>
         </div>

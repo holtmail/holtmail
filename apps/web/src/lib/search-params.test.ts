@@ -3,8 +3,27 @@ import { describe, expect, test } from 'bun:test'
 import {
   parseArchivesSettingsSearch,
   parseMailSearch,
+  parseCalendarSearch,
+  parsePeopleSearch,
   parseSearchRouteSearch,
 } from './search-params.ts'
+
+describe('parsePeopleSearch', () => {
+  test('keeps the person, the text and the filters', () => {
+    expect(parsePeopleSearch({ p: 'p1', q: 'ada', source: 'mail', diff: true })).toEqual({
+      p: 'p1',
+      q: 'ada',
+      source: 'mail',
+      diff: true,
+    })
+    expect(parsePeopleSearch({ diff: 'true' })).toEqual({ diff: true })
+  })
+
+  test('drops empty or invalid values', () => {
+    expect(parsePeopleSearch({ p: ' ', q: '  ', source: '', diff: 'no' })).toEqual({})
+    expect(parsePeopleSearch({ p: ['x'], diff: false })).toEqual({})
+  })
+})
 
 describe('parseMailSearch', () => {
   test('keeps a message id', () => {
@@ -35,5 +54,14 @@ describe('parseArchivesSettingsSearch', () => {
     })
     expect(parseArchivesSettingsSearch({ add: 'import' })).toEqual({})
     expect(parseArchivesSettingsSearch({ archive: 'a1', add: 'delete' })).toEqual({ archive: 'a1' })
+  })
+})
+
+describe('parseCalendarSearch', () => {
+  test('keeps a known view, a real date, hidden calendars and the removed toggle', () => {
+    expect(
+      parseCalendarSearch({ view: 'week', d: '2025-03-30', off: ' a, ,b ', removed: 'true' }),
+    ).toEqual({ view: 'week', d: '2025-03-30', off: 'a,b', removed: true })
+    expect(parseCalendarSearch({ view: 'year', d: '2025-02-30', off: '' })).toEqual({})
   })
 })

@@ -85,6 +85,8 @@ describe('fileKind', () => {
     expect(fileKind('old.MBOX')).toBe('mbox')
     expect(fileKind('note.eml')).toBe('eml')
     expect(fileKind('takeout.zip')).toBe('zip')
+    expect(fileKind('My Contacts.VCF')).toBe('vcf')
+    expect(fileKind('team.ics')).toBe('ics')
     expect(fileKind('photo.png')).toBe('unknown')
   })
 })

@@ -33,6 +33,7 @@ import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
 import { EmptyArchive, EmptyState } from './empty-state.tsx'
 import { ExportMenu } from './export-menu.tsx'
+import { ItemHits } from './item-hits.tsx'
 import { SearchField } from './search-field.tsx'
 import { folderLabel } from './sidebar.tsx'
 
@@ -126,6 +127,7 @@ export function MessageListPane({ source }: { source: ListSource }) {
         </div>
         <SearchField query={q} error={searchError} />
       </header>
+      {isSearch && q !== '' && !searchError && <ItemHits archiveId={archiveId} q={q} />}
       {pending ? (
         <SkeletonRows />
       ) : failed ? (

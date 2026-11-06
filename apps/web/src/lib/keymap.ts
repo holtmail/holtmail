@@ -8,6 +8,8 @@ export const keymap = {
   search: ['/'],
   inbox: ['g i'],
   allMail: ['g a'],
+  people: ['g c'],
+  calendar: ['g e'],
   palette: ['mod+k'],
   help: ['?'],
 } as const satisfies Record<string, readonly string[]>
@@ -25,6 +27,11 @@ export const shortcutList: {
   { action: 'search', keys: ['/'] },
   { action: 'inbox', keys: ['g i'] },
   { action: 'allMail', keys: ['g a'] },
+  { action: 'people', keys: ['g c'] },
+  { action: 'calendar', keys: ['g e'] },
+  { action: 'calendarToday', keys: ['t'] },
+  { action: 'calendarViews', keys: ['a', 'w', 'm'] },
+  { action: 'calendarPeriods', keys: ['left', 'right'] },
   { action: 'palette', keys: ['mod+k'] },
   { action: 'help', keys: ['?'] },
 ]

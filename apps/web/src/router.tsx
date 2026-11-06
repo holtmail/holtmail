@@ -16,8 +16,10 @@ import { parseLoginSearch, parseSetupSearch, safeNext } from './lib/auth.ts'
 import { manages } from './lib/roles.ts'
 import {
   parseArchivesSettingsSearch,
+  parseCalendarSearch,
   parseLabelRouteSearch,
   parseMailSearch,
+  parsePeopleSearch,
   parseSearchRouteSearch,
 } from './lib/search-params.ts'
 import { MailLayout } from './mail/mail-layout.tsx'
@@ -160,6 +162,22 @@ const readingSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/reading-page.tsx'), 'ReadingPage'),
 })
 
+const itemRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/items/$itemId',
+  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  component: lazyRouteComponent(() => import('./items/item-page.tsx'), 'ItemPage'),
+  errorComponent: ServerFailed,
+})
+
+const eventRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/events/$groupId',
+  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  component: lazyRouteComponent(() => import('./calendar/event-page.tsx'), 'EventPage'),
+  errorComponent: ServerFailed,
+})
+
 const allMailRoute = createRoute({
   getParentRoute: () => archiveRoute,
   path: '/',
@@ -195,11 +213,27 @@ const searchRoute = createRoute({
   },
 })
 
+const peopleRoute = createRoute({
+  getParentRoute: () => archiveRoute,
+  path: 'people',
+  validateSearch: parsePeopleSearch,
+  component: lazyRouteComponent(() => import('./people/people-list.tsx'), 'PeopleListPane'),
+})
+
+const calendarRoute = createRoute({
+  getParentRoute: () => archiveRoute,
+  path: 'calendar',
+  validateSearch: parseCalendarSearch,
+  component: lazyRouteComponent(() => import('./calendar/calendar-pane.tsx'), 'CalendarPane'),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
   indexRoute,
   welcomeRoute,
+  itemRoute,
+  eventRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     archivesSettingsRoute,
@@ -209,7 +243,14 @@ const routeTree = rootRoute.addChildren([
     readingSettingsRoute,
     profileSettingsRoute,
   ]),
-  archiveRoute.addChildren([allMailRoute, folderRoute, labelRoute, searchRoute]),
+  archiveRoute.addChildren([
+    allMailRoute,
+    folderRoute,
+    labelRoute,
+    searchRoute,
+    peopleRoute,
+    calendarRoute,
+  ]),
 ])
 
 export function createAppRouter(queryClient: QueryClient) {

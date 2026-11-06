@@ -1,23 +1,57 @@
 import type { Address, MessageDetail } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
 import { cn } from '@holtmail/ui'
+import { Link } from '@tanstack/react-router'
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
-import { useId } from 'react'
+import { Fragment, useId, useMemo } from 'react'
 
 import { formatAddress, senderLabel } from '../lib/address.ts'
 import { formatFullDate, formatListDate } from '../lib/format.ts'
+import { addressPeople, personFor } from '../lib/people.ts'
 import { previewOf } from '../lib/text.ts'
 import { strings } from '../strings.ts'
 import { Attachments } from './attachments.tsx'
+import { Invitations } from './invitation-card.tsx'
 import { MessageBody } from './message-body.tsx'
 
-function AddressLine({ label, addresses }: { label: string; addresses: Address[] }) {
+function AddressLine({
+  label,
+  addresses,
+  archiveId,
+  people,
+}: {
+  label: string
+  addresses: Address[]
+  archiveId: string
+  people: Map<string, string>
+}) {
   if (addresses.length === 0) return null
   return (
     <div className="flex gap-2 text-sm">
       <dt className="w-16 shrink-0 text-fg-subtle">{label}</dt>
       <dd className="min-w-0 text-fg-muted wrap-break-word">
-        {addresses.map(formatAddress).join(', ')}
+        {addresses.map((address, index) => {
+          const person = personFor(people, address.email)
+          const text = formatAddress(address)
+          return (
+            <Fragment key={`${address.email}-${index}`}>
+              {index > 0 && ', '}
+              {person ? (
+                <Link
+                  to="/a/$archiveId/people"
+                  params={{ archiveId }}
+                  search={{ p: person }}
+                  title={strings.people.openPerson(address.name || address.email)}
+                  className="text-fg-muted underline decoration-border-strong underline-offset-2 hover:text-fg hover:decoration-fg-subtle focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+                >
+                  {text}
+                </Link>
+              ) : (
+                text
+              )}
+            </Fragment>
+          )
+        })}
       </dd>
     </div>
   )
@@ -42,6 +76,16 @@ export function ThreadItem({
   const sender = message.from[0]
   const name = senderLabel(message.from, strings.list.noSender)
   const attachments = message.attachments.filter((item) => !item.inline || !message.has_html)
+  const people = useMemo(() => addressPeople(message.people), [message.people])
+  const senderPerson = sender ? personFor(people, sender.email) : undefined
+  const line = (label: string, addresses: Address[]) => (
+    <AddressLine
+      label={label}
+      addresses={addresses}
+      archiveId={message.archive_id}
+      people={people}
+    />
+  )
 
   const summary = expanded ? (
     <span className="grid min-w-0 flex-1 gap-0.5">
@@ -115,13 +159,14 @@ export function ThreadItem({
           >
             <div className="grid gap-6 px-6 pb-8">
               <dl className="grid gap-0.5">
-                <AddressLine label={strings.reader.to} addresses={message.to} />
-                <AddressLine label={strings.reader.cc} addresses={message.cc} />
-                <AddressLine label={strings.reader.bcc} addresses={message.bcc} />
-                {message.reply_to.some((r) => !message.from.some((f) => f.email === r.email)) && (
-                  <AddressLine label={strings.reader.replyTo} addresses={message.reply_to} />
-                )}
+                {senderPerson && line(strings.reader.from, message.from)}
+                {line(strings.reader.to, message.to)}
+                {line(strings.reader.cc, message.cc)}
+                {line(strings.reader.bcc, message.bcc)}
+                {message.reply_to.some((r) => !message.from.some((f) => f.email === r.email)) &&
+                  line(strings.reader.replyTo, message.reply_to)}
               </dl>
+              <Invitations invitations={message.invitations} />
               <MessageBody message={message} />
               <Attachments attachments={attachments} />
             </div>

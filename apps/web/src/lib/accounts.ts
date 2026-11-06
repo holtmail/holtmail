@@ -65,12 +65,23 @@ export function accountState(account: Account, now: number): AccountState {
 export const anyRunning = (accounts: readonly Account[] | undefined): boolean =>
   accounts?.some((account) => account.status.running) ?? false
 
-export const importExtensions = ['.mbox', '.mbx', '.eml', '.zip'] as const
+export const importExtensions = [
+  '.mbox',
+  '.mbx',
+  '.eml',
+  '.zip',
+  '.vcf',
+  '.vcard',
+  '.ics',
+  '.ical',
+] as const
 
-export function fileKind(name: string): 'mbox' | 'eml' | 'zip' | 'unknown' {
+export function fileKind(name: string): 'mbox' | 'eml' | 'zip' | 'vcf' | 'ics' | 'unknown' {
   const lower = name.toLowerCase()
   if (lower.endsWith('.eml')) return 'eml'
   if (lower.endsWith('.zip')) return 'zip'
+  if (lower.endsWith('.vcf') || lower.endsWith('.vcard')) return 'vcf'
+  if (lower.endsWith('.ics') || lower.endsWith('.ical')) return 'ics'
   if (lower.endsWith('.mbox') || lower.endsWith('.mbx') || !lower.includes('.')) return 'mbox'
   return 'unknown'
 }

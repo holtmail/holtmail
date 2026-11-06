@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { exportHref, exportScope } from './export.ts'
+import { contactsScope, exportHref, exportScope } from './export.ts'
 
 describe('export', () => {
   test('narrows to what the list shows', () => {
@@ -23,5 +23,14 @@ describe('export', () => {
     expect(exportHref('a 1', { kind: 'search', q: 'is:unread' }, 'mbox')).toBe(
       '/api/archives/a%201/export?format=mbox&q=is%3Aunread',
     )
+  })
+})
+
+describe('contacts export', () => {
+  test('follows the address book filter only', () => {
+    expect(contactsScope(undefined)).toEqual({})
+    expect(contactsScope('contacts')).toEqual({})
+    expect(contactsScope('mail')).toEqual({})
+    expect(contactsScope('c1')).toEqual({ collection: 'c1' })
   })
 })

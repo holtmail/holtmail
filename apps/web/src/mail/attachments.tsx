@@ -31,14 +31,20 @@ const icons: Record<AttachmentKind, LucideIcon> = {
   other: FileIcon,
 }
 
-export function Attachments({ attachments }: { attachments: Attachment[] }) {
+export function Attachments({
+  attachments,
+  label = strings.reader.attachments,
+}: {
+  attachments: Attachment[]
+  label?: string
+}) {
   if (attachments.length === 0) return null
   return (
-    <section aria-label={strings.reader.attachments} className="grid gap-2">
-      <h3 className="text-xs text-fg-subtle">{strings.reader.attachments}</h3>
+    <section aria-label={label} className="grid gap-2">
+      <h3 className="text-xs text-fg-subtle">{label}</h3>
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(--spacing(32),1fr))] gap-2">
         {attachments.map((attachment) => (
-          <li key={attachment.ordinal}>
+          <li key={attachment.url}>
             <AttachmentTile attachment={attachment} />
           </li>
         ))}

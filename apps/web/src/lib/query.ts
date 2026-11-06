@@ -9,6 +9,9 @@ export const operators = [
   'in:',
   'label:',
   'is:unread',
+  'with:',
+  'is:event',
+  'is:contact',
 ] as const
 
 export function insertToken(

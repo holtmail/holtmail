@@ -27,6 +27,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArchiveIcon,
   ClockIcon,
+  ContactRoundIcon,
   EllipsisIcon,
   FileArchiveIcon,
   ServerCogIcon,
@@ -44,6 +45,7 @@ import { useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { type AccountTone, accountState } from '../lib/accounts.ts'
+import { contactsState, contactsSupport } from '../lib/contacts-calendars.ts'
 import { isOAuthProvider, oauthProviderNames, switchableProvider } from '../lib/oauth.ts'
 import {
   formatInterval,
@@ -54,6 +56,7 @@ import {
 } from '../lib/schedule.ts'
 import { strings } from '../strings.ts'
 import { ConfirmDialog, TextDialog } from './confirm-dialog.tsx'
+import { ContactsCalendarsDialog } from './contacts-calendars.tsx'
 import { EditConnectionDialog } from './edit-connection.tsx'
 import { OAuthSignInDialog } from './oauth-sign-in.tsx'
 
@@ -125,10 +128,12 @@ function AccountRow({
   const now = useNow(30_000)
   const queryClient = useQueryClient()
   const [dialog, setDialog] = useState<
-    'rename' | 'password' | 'edit' | 'remove' | 'sign-in' | null
+    'rename' | 'password' | 'edit' | 'remove' | 'sign-in' | 'contacts' | 'consent' | null
   >(null)
   const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
   const state = accountState(account, now)
+  const contacts = contactsState(account, now)
+  const support = contactsSupport(account)
   const imported = account.kind === 'import'
   const Icon = imported ? FileArchiveIcon : MailIcon
   const oauth = isOAuthProvider(account.oauth_provider) ? account.oauth_provider : undefined
@@ -191,6 +196,29 @@ function AccountRow({
           </span>
           {next && <span className="hidden shrink-0 text-fg-subtle sm:inline">· {next}</span>}
         </span>
+        {contacts && (
+          <span className="flex min-w-0 items-center gap-2 text-xs">
+            <StatusDot tone={contacts.tone} />
+            {manage && account.contacts_calendars?.needs_consent ? (
+              <button
+                type="button"
+                className="truncate text-danger underline decoration-dotted underline-offset-2"
+                onClick={() => setDialog('consent')}
+              >
+                {contacts.label}
+              </button>
+            ) : (
+              <span
+                className={cn(
+                  'truncate',
+                  contacts.tone === 'error' ? 'text-danger' : 'text-fg-muted',
+                )}
+              >
+                {contacts.label}
+              </span>
+            )}
+          </span>
+        )}
       </div>
       {manage && (
         <>
@@ -251,6 +279,12 @@ function AccountRow({
                     <DropdownMenuItem onSelect={() => setDialog('edit')}>
                       <ServerCogIcon />
                       {t.edit}
+                    </DropdownMenuItem>
+                  )}
+                  {support !== 'none' && (
+                    <DropdownMenuItem onSelect={() => setDialog('contacts')}>
+                      <ContactRoundIcon />
+                      {strings.contacts.menu}
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSub>
@@ -351,6 +385,21 @@ function AccountRow({
         open={dialog === 'edit'}
         onOpenChange={(open) => setDialog(open ? 'edit' : null)}
       />
+      <ContactsCalendarsDialog
+        account={account}
+        open={dialog === 'contacts'}
+        onOpenChange={(open) => setDialog(open ? 'contacts' : null)}
+        onSignIn={() => setDialog('consent')}
+      />
+      {oauth && (
+        <OAuthSignInDialog
+          account={account}
+          provider={oauth}
+          reason="consent"
+          open={dialog === 'consent'}
+          onOpenChange={(open) => setDialog(open ? 'consent' : null)}
+        />
+      )}
       {signInWith && (
         <OAuthSignInDialog
           account={account}

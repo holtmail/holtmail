@@ -214,7 +214,7 @@ export function OAuthSignInDialog({
 }: {
   account: Account
   provider: OAuthProvider
-  reason: 'again' | 'switch'
+  reason: 'again' | 'switch' | 'consent'
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -224,10 +224,18 @@ export function OAuthSignInDialog({
       <DialogContent className="max-h-[calc(100dvh-var(--spacing)*8)] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {reason === 'again' ? t.signInAgainTitle(account.name) : t.switchTo(name)}
+            {reason === 'again'
+              ? t.signInAgainTitle(account.name)
+              : reason === 'consent'
+                ? strings.contacts.consentTitle
+                : t.switchTo(name)}
           </DialogTitle>
           <DialogDescription>
-            {reason === 'again' ? t.signInAgainLead(name) : t.switchLead(name)}
+            {reason === 'again'
+              ? t.signInAgainLead(name)
+              : reason === 'consent'
+                ? strings.contacts.consentLead(name)
+                : t.switchLead(name)}
           </DialogDescription>
         </DialogHeader>
         {open && (

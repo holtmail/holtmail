@@ -4,6 +4,7 @@ import { Badge, type BadgeProps, Button, cn, Skeleton } from '@holtmail/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDownIcon,
+  ContactRoundIcon,
   FileArchiveIcon,
   ImageIcon,
   type LucideIcon,
@@ -26,6 +27,7 @@ const icons: Record<string, LucideIcon | undefined> = {
   sync: RefreshCwIcon,
   import: FileArchiveIcon,
   remote_images: ImageIcon,
+  contacts_calendars: ContactRoundIcon,
 }
 
 const stateBadge: Record<string, BadgeProps['variant'] | undefined> = {

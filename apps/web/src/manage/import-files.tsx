@@ -121,6 +121,8 @@ export function ImportFiles({
             'application/mbox',
             'message/rfc822',
             'application/zip',
+            'text/vcard',
+            'text/calendar',
           ].join(',')}
           className="sr-only"
           tabIndex={-1}

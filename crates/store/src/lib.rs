@@ -7,9 +7,12 @@
 //! task history can be rebuilt from the blobs.
 
 mod calendar;
+mod deletion;
+mod ledger;
 mod people;
 mod pim;
 mod types;
+mod webhooks;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -24,9 +27,12 @@ use holtmail_core::{
 };
 
 pub use calendar::*;
+pub use deletion::*;
+pub use ledger::*;
 pub use people::*;
 pub use pim::*;
 pub use types::*;
+pub use webhooks::*;
 
 /// Why a store operation failed.
 #[derive(Debug, thiserror::Error)]
@@ -66,7 +72,8 @@ pub trait ArchiveStore: Send + Sync {
     /// grants, people and their splits and joins, collections with their items and versions, the remote copies no remaining message
     /// links to, and what was derived from blobs that are no longer used. Returns the blobs that no
     /// message, attachment, item version, remote copy or derived record references any more, so
-    /// the caller can delete them.
+    /// the caller can delete them. Enters the deletion in the ledger as one `archive_deleted`
+    /// entry, in the same transaction; earlier entries stay.
     /// `NotFound` when the archive does not exist.
     async fn delete_archive(&self, id: ArchiveId) -> Result<Vec<BlobId>, StoreError>;
 
@@ -116,7 +123,8 @@ pub trait MessageStore: Send + Sync {
     /// message with `created: false` and changes nothing. A new message joins the thread of any
     /// message in the archive whose `Message-ID` is among its `parent_ids`, or whose `parent_ids`
     /// contain its `Message-ID`. When that touches several threads they merge into the oldest, so
-    /// the result does not depend on the order messages arrive in.
+    /// the result does not depend on the order messages arrive in. A created message is entered
+    /// in the ledger as `archived` in the same transaction.
     async fn insert_message(&self, message: NewMessage) -> Result<Inserted, StoreError>;
 
     /// The message, or `None`.
@@ -168,7 +176,8 @@ pub trait MessageStore: Send + Sync {
     /// Where the message was seen, oldest first.
     async fn locations(&self, message: MessageId) -> Result<Vec<Location>, StoreError>;
 
-    /// UIDs of the folder's locations that are not removed, ascending.
+    /// UIDs of the folder's locations that are not removed, and UIDs holding deleted messages
+    /// (see [`DeletionStore`]), ascending.
     async fn folder_uids(&self, folder: FolderId) -> Result<Vec<u64>, StoreError>;
 
     /// The message at `uid` in the folder, removed or not, or `None`.
@@ -179,6 +188,8 @@ pub trait MessageStore: Send + Sync {
     ) -> Result<Option<MessageId>, StoreError>;
 
     /// Marks the folder's locations with these UIDs as removed at `at`. Messages stay archived.
+    /// Tombstones of deleted messages at these UIDs are dropped, since the server no longer has
+    /// them there.
     async fn mark_removed(
         &self,
         folder: FolderId,
@@ -187,7 +198,7 @@ pub trait MessageStore: Send + Sync {
     ) -> Result<(), StoreError>;
 
     /// Forgets every UID in the folder, for when the server changed its `UIDVALIDITY`. Locations
-    /// stay; the next sync re-attaches UIDs.
+    /// stay; the next sync re-attaches UIDs. Tombstones of UIDs go; those of the bytes stay.
     async fn forget_uids(&self, folder: FolderId) -> Result<(), StoreError>;
 
     /// Replaces the flags of the folder's location with this UID, e.g. after the message was read
@@ -427,6 +438,15 @@ pub trait DerivedStore: Send + Sync {
     /// Forgets every record of `kind`, so it is made again on next use. Returns the derived blobs
     /// that nothing references any more, so the caller can delete them.
     async fn clear_derived(&self, kind: DerivedKind) -> Result<Vec<BlobId>, StoreError>;
+
+    /// Forgets what was recorded for `source` and `kind`, so it is made again on next use.
+    /// Returns the derived blob when nothing references it any more, so the caller can delete
+    /// it. Nothing recorded is not an error.
+    async fn forget_derived(
+        &self,
+        source: &BlobId,
+        kind: DerivedKind,
+    ) -> Result<Option<BlobId>, StoreError>;
 }
 
 /// Address books and calendars with every version of their items, as raw blobs, and the
@@ -690,6 +710,9 @@ pub trait Store:
     + PimStore
     + PeopleStore
     + CalendarStore
+    + LedgerStore
+    + DeletionStore
+    + WebhookStore
 {
 }
 
@@ -707,5 +730,8 @@ impl<T> Store for T where
         + PimStore
         + PeopleStore
         + CalendarStore
+        + LedgerStore
+        + DeletionStore
+        + WebhookStore
 {
 }

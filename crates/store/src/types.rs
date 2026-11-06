@@ -593,6 +593,10 @@ pub enum TaskKind {
     RemoteImages,
     /// Syncing an account's contacts and calendars.
     ContactsCalendars,
+    /// Verifying the archive ledger.
+    LedgerVerify,
+    /// Deleting messages after a review.
+    DeleteMessages,
 }
 
 impl TaskKind {
@@ -603,6 +607,8 @@ impl TaskKind {
             Self::Import => "import",
             Self::RemoteImages => "remote_images",
             Self::ContactsCalendars => "contacts_calendars",
+            Self::LedgerVerify => "ledger_verify",
+            Self::DeleteMessages => "delete_messages",
         }
     }
 
@@ -613,6 +619,8 @@ impl TaskKind {
             Self::Import,
             Self::RemoteImages,
             Self::ContactsCalendars,
+            Self::LedgerVerify,
+            Self::DeleteMessages,
         ]
         .into_iter()
         .find(|kind| kind.as_str() == name)

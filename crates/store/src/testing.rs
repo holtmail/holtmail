@@ -44,6 +44,9 @@ pub async fn conformance(store: Arc<dyn Store>) {
     people(&*store).await;
     person_overrides(&*store).await;
     calendar(&*store).await;
+    ledger(&*store).await;
+    deletions(&*store).await;
+    webhooks(&*store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -2557,6 +2560,43 @@ async fn derived(store: &dyn Store) {
         "clearing text touched thumbnails"
     );
 
+    let shared = BlobId::of(b"derived: text two sources share");
+    let first = BlobId::of(b"derived: first source");
+    let second = BlobId::of(b"derived: second source");
+    for source in [&first, &second] {
+        store
+            .set_derived(source, DerivedKind::Text, &Derived::Blob(shared))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store
+            .forget_derived(&first, DerivedKind::Text)
+            .await
+            .unwrap(),
+        None,
+        "a text still used by another source was returned"
+    );
+    assert_eq!(
+        store.derived(&first, DerivedKind::Text).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        store
+            .forget_derived(&second, DerivedKind::Text)
+            .await
+            .unwrap(),
+        Some(shared)
+    );
+    assert_eq!(
+        store
+            .forget_derived(&second, DerivedKind::Text)
+            .await
+            .unwrap(),
+        None,
+        "forgetting twice"
+    );
+
     let archive = store.create_archive("Derived").await.unwrap().id;
     let mut with_picture = message(archive, 9301, 1_700_000_000);
     with_picture.attachments.push(Attachment {
@@ -3394,4 +3434,354 @@ async fn calendar(store: &dyn Store) {
     store.delete_archive(archive).await.unwrap();
     assert!(store.group_members(group).await.unwrap().is_empty());
     assert!(store.group_members(other).await.unwrap().is_empty());
+}
+
+async fn whole_ledger(store: &dyn Store) -> Vec<LedgerEntry> {
+    let mut entries = Vec::new();
+    loop {
+        let after = entries.last().map_or(0, |e: &LedgerEntry| e.seq);
+        let page = store.ledger_entries(after, 7).await.unwrap();
+        if page.is_empty() {
+            return entries;
+        }
+        entries.extend(page);
+    }
+}
+
+async fn ledger(store: &dyn Store) {
+    let before = whole_ledger(store).await;
+    let mut check = holtmail_ledger::ChainCheck::new();
+    for entry in &before {
+        check.push(entry);
+    }
+    let report = check.finish();
+    assert!(report.problems.is_empty(), "{report:?}");
+    assert_eq!(
+        store.ledger_head().await.unwrap().map(|e| (e.seq, e.hash)),
+        report.head
+    );
+    assert!(
+        store.ledger_gaps(10).await.unwrap().is_empty(),
+        "earlier cases left messages and ledger apart"
+    );
+    assert_eq!(store.enter_unentered(100).await.unwrap(), 0);
+
+    let archive = store.create_archive("Ledger").await.unwrap().id;
+    let new = message(archive, 1, 1_741_600_000);
+    let blob = new.blob_id;
+    let inserted = store.insert_message(new.clone()).await.unwrap();
+    let head = store.ledger_head().await.unwrap().unwrap();
+    assert_eq!(head.seq, before.len() as u64 + 1);
+    assert_eq!(head.event, LedgerEvent::Archived);
+    assert_eq!(head.archive_id, archive);
+    assert_eq!(head.message_id, Some(inserted.message_id));
+    assert_eq!(head.blob_id, Some(blob));
+    assert_eq!(head.actor, None);
+    assert_eq!(
+        head.prev,
+        before.last().map_or(LedgerHash::ZERO, |e| e.hash)
+    );
+    assert_eq!(head.hash, head.expected_hash());
+
+    store.insert_message(new).await.unwrap();
+    assert_eq!(
+        store.ledger_head().await.unwrap().unwrap().seq,
+        head.seq,
+        "the same bytes again were entered twice"
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    let deleted = store.ledger_head().await.unwrap().unwrap();
+    assert_eq!(deleted.seq, head.seq + 1);
+    assert_eq!(deleted.event, LedgerEvent::ArchiveDeleted);
+    assert_eq!(deleted.archive_id, archive);
+    assert_eq!((deleted.message_id, deleted.blob_id), (None, None));
+    assert_eq!(deleted.prev, head.hash);
+    assert!(store.ledger_gaps(10).await.unwrap().is_empty());
+    assert_eq!(
+        store.ledger_entries(head.seq - 1, 10).await.unwrap(),
+        [head.clone(), deleted],
+        "entries of a deleted archive were changed"
+    );
+}
+
+async fn deletions(store: &dyn Store) {
+    let archive = store.create_archive("Deletions").await.unwrap().id;
+    let other = store
+        .create_archive("Deletions elsewhere")
+        .await
+        .unwrap()
+        .id;
+    let account = store
+        .create_account(NewAccount {
+            archive_id: archive,
+            kind: AccountKind::Imap,
+            name: "Mail".into(),
+            address: None,
+            settings: json!({}),
+            sealed_secret: None,
+            enabled: true,
+        })
+        .await
+        .unwrap();
+    let folder = store
+        .upsert_folder(account.id, "INBOX", None)
+        .await
+        .unwrap()
+        .id;
+    let shared = BlobId::of(b"deletions: a file two messages carry");
+    let own = BlobId::of(b"deletions: a file only the first carries");
+    let attachment = |ordinal, blob_id| Attachment {
+        ordinal,
+        blob_id,
+        filename: Some(format!("file{ordinal}.txt")),
+        content_type: "text/plain".into(),
+        size: 10,
+        content_id: None,
+        inline: false,
+    };
+    let mut first = message(archive, 9001, 1_741_600_000);
+    first.attachments = vec![attachment(0, shared), attachment(1, own)];
+    let mut second = message(archive, 9002, 1_741_600_100);
+    second.attachments = vec![attachment(0, shared)];
+    let third = message(archive, 9003, 1_741_600_200);
+    let (first_blob, third_blob) = (first.blob_id, third.blob_id);
+    let elsewhere = message(other, 9003, 1_741_600_200);
+    let mut ids = Vec::new();
+    for (uid, new) in [(11, first), (12, second), (13, third)] {
+        let id = store.insert_message(new).await.unwrap().message_id;
+        store
+            .record_location(id, folder, Some(uid), &[], Timestamp::from_secs(1))
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    let kept_elsewhere = store.insert_message(elsewhere).await.unwrap().message_id;
+    store
+        .set_labels(ids[0], &["Only first".into(), "Both".into()])
+        .await
+        .unwrap();
+    store.set_labels(ids[1], &["Both".into()]).await.unwrap();
+    let actor = UserId::new();
+
+    let deleted = store
+        .delete_messages(
+            archive,
+            &[ids[0], ids[2], kept_elsewhere, MessageId::new()],
+            Some(actor),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted.messages,
+        [ids[0], ids[2]],
+        "another archive's message was deleted"
+    );
+    assert!(store.get_message(ids[0]).await.unwrap().is_none());
+    assert!(store.get_message(ids[1]).await.unwrap().is_some());
+    assert!(store.get_message(kept_elsewhere).await.unwrap().is_some());
+    assert!(deleted.orphans.contains(&first_blob) && deleted.orphans.contains(&own));
+    assert!(
+        !deleted.orphans.contains(&shared),
+        "a file another message carries"
+    );
+    assert!(
+        !deleted.orphans.contains(&third_blob),
+        "bytes another archive keeps"
+    );
+    assert!(store.locations(ids[0]).await.unwrap().is_empty());
+    let labels: Vec<String> = store
+        .list_labels(archive)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|l| l.name)
+        .collect();
+    assert_eq!(labels, ["Both"]);
+
+    assert!(store.is_deleted(archive, &first_blob).await.unwrap());
+    assert!(!store.is_deleted(other, &third_blob).await.unwrap());
+    assert!(!store.is_deleted(archive, &shared).await.unwrap());
+    assert_eq!(store.folder_uids(folder).await.unwrap(), [11, 12, 13]);
+    assert_eq!(store.message_at_uid(folder, 11).await.unwrap(), None);
+
+    let head = store.ledger_head().await.unwrap().unwrap();
+    assert_eq!(head.event, LedgerEvent::Deleted);
+    assert_eq!(head.message_id, Some(ids[2]));
+    assert_eq!(head.blob_id, Some(third_blob));
+    assert_eq!(head.actor, Some(actor));
+    assert!(store.ledger_gaps(10).await.unwrap().is_empty());
+
+    let again = store
+        .delete_messages(archive, &[ids[0]], None)
+        .await
+        .unwrap();
+    assert_eq!(again, DeletedMessages::default());
+    assert_eq!(store.ledger_head().await.unwrap().unwrap().seq, head.seq);
+
+    store
+        .mark_removed(folder, &[11], Timestamp::from_secs(2))
+        .await
+        .unwrap();
+    store.record_deleted_location(folder, 40).await.unwrap();
+    store.record_deleted_location(folder, 40).await.unwrap();
+    assert_eq!(store.folder_uids(folder).await.unwrap(), [12, 13, 40]);
+    store.forget_uids(folder).await.unwrap();
+    assert!(store.folder_uids(folder).await.unwrap().is_empty());
+    assert!(
+        store.is_deleted(archive, &first_blob).await.unwrap(),
+        "forgetting UIDs forgot the bytes"
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    assert!(!store.is_deleted(archive, &first_blob).await.unwrap());
+    store.delete_archive(other).await.unwrap();
+}
+
+async fn webhooks(store: &dyn Store) {
+    let hook = Webhook {
+        id: holtmail_core::WebhookId::new(),
+        url: "https://hooks.example.com/holtmail".into(),
+        events: vec![
+            "task.finished".into(),
+            "messages.deleted".into(),
+            "task.finished".into(),
+        ],
+        sealed_secret: vec![1, 2, 3],
+        enabled: true,
+        created_at: Timestamp::from_secs(10),
+    };
+    store.create_webhook(&hook).await.unwrap();
+    assert!(matches!(
+        store.create_webhook(&hook).await,
+        Err(StoreError::Invalid(_))
+    ));
+    let stored = store.get_webhook(hook.id).await.unwrap().unwrap();
+    assert_eq!(stored.events, ["messages.deleted", "task.finished"]);
+    assert_eq!(stored.sealed_secret, [1, 2, 3]);
+    let mut changed = stored.clone();
+    changed.enabled = false;
+    changed.url = "http://127.0.0.1:9/hook".into();
+    store.update_webhook(&changed).await.unwrap();
+    assert_eq!(store.list_webhooks().await.unwrap(), [changed.clone()]);
+    let mut unknown = changed.clone();
+    unknown.id = holtmail_core::WebhookId::new();
+    assert!(matches!(
+        store.update_webhook(&unknown).await,
+        Err(StoreError::NotFound(_))
+    ));
+
+    let new = |n: i64| NewDelivery {
+        webhook_id: hook.id,
+        event: "task.finished".into(),
+        event_id: format!("e{n}"),
+        payload: format!("{{\"n\":{n}}}").into_bytes(),
+        at: Timestamp::from_secs(100 + n),
+    };
+    store
+        .enqueue_deliveries(&[new(1), new(2), new(3)])
+        .await
+        .unwrap();
+    let orphan = NewDelivery {
+        webhook_id: holtmail_core::WebhookId::new(),
+        ..new(4)
+    };
+    assert!(matches!(
+        store.enqueue_deliveries(&[new(5), orphan]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let due = store
+        .due_deliveries(Timestamp::from_secs(102), 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        due.iter().map(|d| d.event_id.as_str()).collect::<Vec<_>>(),
+        ["e1", "e2"],
+        "a delivery for an unknown webhook was half added, or not in order"
+    );
+    assert!(due[0].id < due[1].id);
+    assert_eq!(due[0].payload, br#"{"n":1}"#);
+    assert_eq!(
+        (due[0].attempts, due[0].next_at),
+        (0, Some(Timestamp::from_secs(101)))
+    );
+
+    store
+        .record_attempt(
+            due[0].id,
+            Some(200),
+            None,
+            None,
+            Some(Timestamp::from_secs(103)),
+        )
+        .await
+        .unwrap();
+    store
+        .record_attempt(
+            due[1].id,
+            None,
+            Some("unreachable"),
+            Some(Timestamp::from_secs(500)),
+            None,
+        )
+        .await
+        .unwrap();
+    store
+        .record_attempt(9_999_999, Some(200), None, None, None)
+        .await
+        .unwrap();
+    let due = store
+        .due_deliveries(Timestamp::from_secs(400), 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        due.iter().map(|d| d.event_id.as_str()).collect::<Vec<_>>(),
+        ["e3"]
+    );
+    let recent = store.recent_deliveries(hook.id, 10).await.unwrap();
+    assert_eq!(
+        recent
+            .iter()
+            .map(|d| d.event_id.as_str())
+            .collect::<Vec<_>>(),
+        ["e3", "e2", "e1"]
+    );
+    assert_eq!(recent[2].last_status, Some(200));
+    assert_eq!(recent[2].delivered_at, Some(Timestamp::from_secs(103)));
+    assert_eq!(recent[1].attempts, 1);
+    assert_eq!(recent[1].last_error.as_deref(), Some("unreachable"));
+    assert_eq!(recent[1].next_at, Some(Timestamp::from_secs(500)));
+
+    store
+        .record_attempt(recent[0].id, Some(500), None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(store.prune_deliveries(1).await.unwrap(), 1);
+    let kept = store.recent_deliveries(hook.id, 10).await.unwrap();
+    assert_eq!(
+        kept.iter().map(|d| d.event_id.as_str()).collect::<Vec<_>>(),
+        ["e3", "e2"],
+        "pruning dropped a waiting delivery or kept too many"
+    );
+
+    store.delete_webhook(hook.id).await.unwrap();
+    assert!(store.get_webhook(hook.id).await.unwrap().is_none());
+    assert!(
+        store
+            .recent_deliveries(hook.id, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        store
+            .due_deliveries(Timestamp::from_secs(10_000), 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(matches!(
+        store.delete_webhook(hook.id).await,
+        Err(StoreError::NotFound(_))
+    ));
 }

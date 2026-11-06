@@ -4,7 +4,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 
 ## Traits
 
-`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
+`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
 
 ### ArchiveStore
 
@@ -114,6 +114,7 @@ Files made from attachment blobs and kept as blobs of their own: thumbnails and 
 | `derived(source, kind)` | `None` when nothing was recorded; `Some(Derived::Blob(id))` for a stored result; `Some(Derived::Nothing)` when nothing can be made, so callers do not try again |
 | `set_derived(source, kind, derived)` | Replaces any earlier record of that kind; idempotent. Several sources may point at the same derived blob |
 | `clear_derived(kind)` | Forgets every record of the kind and returns the derived blobs nothing references any more, each once |
+| `forget_derived(source, kind)` | Forgets one record; returns its derived blob when nothing references it any more. Nothing recorded is not an error |
 
 ### TaskStore
 
@@ -196,6 +197,45 @@ What the store references in the blob store, for backups and checks after a rest
 | Method | Guarantees |
 | --- | --- |
 | `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, an item version or its picture, a saved remote image or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
+
+### DeletionStore
+
+Deleting messages on purpose. The archive otherwise never forgets; a deleted message leaves tombstones of its bytes' hash in its archive and of every folder and UID it had, so syncs and imports do not bring it back.
+
+| Method | Guarantees |
+| --- | --- |
+| `delete_messages(archive, ids, actor)` | In one transaction removes the archive's messages among `ids` with their locations, attachments, labels (labels left without messages go), addresses, thread links, remote image links and calendar version links; calendar versions read only from them go too, and an item left without versions is removed with its calendar instances. Records the tombstones and enters each message in the ledger as `deleted` by `actor`. Returns `DeletedMessages { messages, orphans, changed_items, removed_items }`: blobs nothing references any more (the caller deletes them), items to rebuild and items gone. Idempotent; ids not in the archive are skipped |
+| `is_deleted(archive, blob)` | Whether those bytes were deleted from the archive |
+| `record_deleted_location(folder, uid)` | Remembers a UID that holds a deleted message; idempotent |
+
+`folder_uids` lists tombstoned UIDs too; `mark_removed` drops the tombstones of UIDs the server no longer has; `forget_uids` drops the folder's UID tombstones and keeps those of the bytes; `delete_archive` and `delete_account` drop their tombstones.
+
+### WebhookStore
+
+Webhooks and their deliveries, which survive restarts.
+
+| Method | Guarantees |
+| --- | --- |
+| `create_webhook(&webhook)` | Adds it with the caller's id (so the secret can be sealed for it first); `Invalid` when the id is taken. Events are stored sorted and once |
+| `list_webhooks()` / `get_webhook(id)` | Oldest first / `None` when unknown |
+| `update_webhook(&webhook)` | Replaces address, events, sealed secret and switch; `NotFound` when unknown |
+| `delete_webhook(id)` | Removes it with all its deliveries; `NotFound` when unknown |
+| `enqueue_deliveries(&[NewDelivery])` | Adds them in order, each due at its event's time; all or nothing (`NotFound` for an unknown webhook) |
+| `due_deliveries(now, limit)` | Deliveries due at or before `now`, in the order they were added |
+| `record_attempt(id, status, error, next_at, delivered_at)` | Counts one attempt and keeps its result; `next_at: None` ends the delivery (delivered or given up); unknown ids are ignored |
+| `recent_deliveries(webhook, limit)` | Newest first |
+| `prune_deliveries(keep)` | Keeps the newest `keep` finished deliveries per webhook; waiting ones stay |
+
+### LedgerStore
+
+The archive ledger (`holtmail-ledger`): a hash chain of every message archived and deleted, written in the same transaction as the change it records. `insert_message` enters each created message as `archived`, `delete_archive` enters one `archive_deleted`, and message deletion enters `deleted` per message. Entries are numbered from 1 without gaps, each links to the hash before it, and none is ever changed or removed, also when its archive is deleted.
+
+| Method | Guarantees |
+| --- | --- |
+| `ledger_head()` | The newest entry; `None` while empty |
+| `ledger_entries(after, limit)` | Up to `limit` entries after position `after` (0 for the first), in order, exactly as stored, so a changed entry reads back changed |
+| `enter_unentered(limit)` | Enters up to `limit` live messages without an `archived` entry, oldest archived first, as entries made now; returns how many, 0 when none are left |
+| `ledger_gaps(limit)` | `LedgerGaps`: live messages without an entry, live messages whose entry names other bytes or another archive, and messages entered as archived that are gone without a `deleted` entry or a later `archive_deleted` of their archive; up to `limit` ids of each with full counts |
 
 ## Errors
 

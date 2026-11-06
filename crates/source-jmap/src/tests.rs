@@ -516,3 +516,82 @@ fn derives_uids_that_follow_the_received_time() {
         "/d/u%201/B%2F1/m.eml?t=message%2Frfc822"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let server = ca.serve_https(401, "{}").await;
+    let source = || {
+        JmapSource::new(
+            JmapSettings {
+                url: format!("https://localhost:{}/jmap/session", server.port()),
+                username: String::new(),
+                auth: JmapAuth::Token,
+            },
+            Credentials::AccessToken("token".into()),
+        )
+        .unwrap()
+    };
+    let trusted = source().with_roots(&ca.roots()).unwrap();
+    assert!(matches!(trusted.connect().await, Err(SourceError::Auth(_))));
+    assert!(matches!(
+        source().connect().await,
+        Err(SourceError::Connection(_))
+    ));
+    assert!(matches!(
+        source().with_roots(&holtmail_core::TlsRoots::from_der(vec![vec![1, 2, 3]])),
+        Err(SourceError::Config(_))
+    ));
+}
+
+async fn redirector(target: String) -> (String, Arc<Mutex<Vec<(String, bool)>>>) {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let seen = asked.clone();
+    let app = Router::new().fallback(move |uri: axum::http::Uri, headers: HeaderMap| {
+        let seen = seen.clone();
+        let target = target.clone();
+        async move {
+            seen.lock()
+                .unwrap()
+                .push((uri.path().to_owned(), headers.contains_key("authorization")));
+            Redirect::temporary(&target)
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://127.0.0.1:{port}"), asked)
+}
+
+#[tokio::test]
+async fn follows_a_well_known_redirect_to_another_host_without_credentials() {
+    let (_fake, base) = serve(2, 2).await;
+    let (elsewhere, asked) = redirector(format!("{base}/jmap/session")).await;
+    let mut session = password_source(&elsewhere).connect().await.unwrap();
+    assert_eq!(session.folders().await.unwrap().len(), 5);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [("/.well-known/jmap".to_owned(), false)]
+    );
+}
+
+#[tokio::test]
+async fn does_not_follow_a_session_redirect_with_credentials() {
+    let (_fake, base) = serve(2, 2).await;
+    let (target, target_asked) = redirector(format!("{base}/jmap/session")).await;
+    let (typed, typed_asked) = redirector(format!("{target}/jmap/session")).await;
+    let refused = password_source(&format!("{typed}/jmap/session"))
+        .connect()
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(&refused, SourceError::Protocol(r) if r.contains("not followed with credentials")),
+        "{refused:?}"
+    );
+    assert_eq!(
+        *typed_asked.lock().unwrap(),
+        [("/jmap/session".to_owned(), true)]
+    );
+    assert!(target_asked.lock().unwrap().is_empty());
+}

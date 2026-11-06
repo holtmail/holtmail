@@ -105,6 +105,13 @@ pub struct JmapSource {
 }
 
 impl JmapSource {
+    /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
+    /// not a usable certificate.
+    pub fn with_roots(mut self, roots: &holtmail_core::TlsRoots) -> Result<Self, SourceError> {
+        self.http = self.http.with_roots(roots)?;
+        Ok(self)
+    }
+
     /// A source for the account in `settings`. A password signs in with HTTP Basic as the user
     /// name in `settings`, an access token as a bearer token. `Config` when the address is not
     /// usable or a password comes without a user name.
@@ -132,8 +139,11 @@ impl JmapSource {
 impl Source for JmapSource {
     async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
         let url = session_url(&self.settings.url)?;
-        let session = self.http.get_json(&url).await?;
-        let base = Url::parse(&url).map_err(|e| SourceError::Config(e.to_string()))?;
+        let mut base = Url::parse(&url).map_err(|e| SourceError::Config(e.to_string()))?;
+        if base.path().starts_with("/.well-known/") {
+            base = self.http.resolve(base).await?;
+        }
+        let session = self.http.session(&base).await?;
         Ok(Box::new(JmapSession::from_session(
             self.http.clone(),
             &base,

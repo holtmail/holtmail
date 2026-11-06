@@ -1,0 +1,30 @@
+From: Microsoft Exchange <journal@contoso.example.com>
+To: archive@archive.example.com
+Subject: Harbour figures
+Date: Mon, 10 Mar 2025 09:00:00 +0000
+Message-ID: <report-1@contoso.example.com>
+X-MS-Journal-Report:
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="journal"
+
+--journal
+Content-Type: text/plain; charset=us-ascii
+
+Sender: ada@contoso.example.com
+Subject: Harbour figures
+Message-Id: <figures-1@contoso.example.com>
+To: bob@contoso.example.com
+Bcc: carol@contoso.example.com
+
+--journal
+Content-Type: message/rfc822
+
+From: Ada Quill <ada@contoso.example.com>
+To: Bob Stone <bob@contoso.example.com>
+Subject: Harbour figures
+Date: Mon, 10 Mar 2025 08:59:00 +0000
+Message-ID: <figures-1@contoso.example.com>
+Content-Type: text/plain; charset=utf-8
+
+The harbour figures for March are attached in spirit.
+--journal--

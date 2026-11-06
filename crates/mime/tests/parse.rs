@@ -115,3 +115,29 @@ fn finds_calendar_parts_inline_and_attached() {
         ["text/calendar", "application/ics", "message/rfc822"]
     );
 }
+
+#[test]
+fn unwraps_an_exchange_journal_report() {
+    let report = fixture("journal-report.eml");
+    let original = holtmail_mime::journal_original(&report).expect("a journal report");
+    let text = String::from_utf8_lossy(&original);
+    assert!(
+        text.starts_with("From: Ada Quill <ada@contoso.example.com>\r\n")
+            || text.starts_with("From: Ada Quill <ada@contoso.example.com>\n"),
+        "{text}"
+    );
+    assert!(text.contains("The harbour figures for March"));
+    assert!(!text.contains("Bcc: carol"), "the envelope came along");
+    let inner = holtmail_mime::parse(&original).unwrap();
+    assert_eq!(
+        inner.message_id.as_deref(),
+        Some("figures-1@contoso.example.com")
+    );
+    let start = report
+        .windows(original.len())
+        .position(|w| w == &original[..]);
+    assert!(start.is_some(), "not byte for byte");
+
+    assert!(holtmail_mime::journal_original(&fixture("plain.eml")).is_none());
+    assert!(holtmail_mime::journal_original(&fixture("alternative-with-attachment.eml")).is_none());
+}

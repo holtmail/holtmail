@@ -129,6 +129,19 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError> {
     })
 }
 
+/// The original message inside a Microsoft Exchange journal report, byte for byte as it was
+/// attached: the first `message/rfc822` part of a message with an `X-MS-Journal-Report` header.
+/// `None` for anything else, so the caller keeps the message as it came.
+pub fn journal_original(raw: &[u8]) -> Option<Bytes> {
+    let message = MessageParser::new().parse(raw)?;
+    if !message.headers().contains("X-MS-Journal-Report") {
+        return None;
+    }
+    let inner = message.messages().nth(1)?;
+    let bytes = inner.raw();
+    (!bytes.is_empty()).then(|| Bytes::copy_from_slice(bytes))
+}
+
 fn addresses(list: Option<AddressList<'_>>) -> Vec<Address> {
     list.map(|list| {
         list.mailboxes()

@@ -31,3 +31,5 @@ pub fn parse(raw: &[u8]) -> Result<ParsedMessage, MimeError>;
 ## Tests
 
 Fixtures in `tests/fixtures/` are invented messages: plain text, `multipart/alternative` with an attachment and threading headers, and legacy charsets (`windows-1251` encoded words, a `koi8-r` body).
+
+`journal_original(raw)` returns the original message inside a Microsoft Exchange journal report (a message with an `X-MS-Journal-Report` header) byte for byte, as it was attached; `None` for anything else. The envelope part of the report (with Bcc recipients) is not part of it. Fixture `journal-report.eml` is invented.

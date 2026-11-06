@@ -9,12 +9,15 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+axum.workspace = true
 base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
 holtmail-blob.workspace = true
 holtmail-core.workspace = true
+holtmail-hooks.workspace = true
+holtmail-mime.workspace = true
 holtmail-sanitize.workspace = true
 holtmail-secret.workspace = true
 holtmail-secret-local.workspace = true
@@ -30,6 +33,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "time", "macros", "rt-multi-thread"] }
 url.workspace = true
 uuid.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

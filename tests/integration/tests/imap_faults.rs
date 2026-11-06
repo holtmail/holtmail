@@ -7,7 +7,7 @@ use holtmail_integration::api::id;
 use holtmail_integration::data::Message;
 use holtmail_integration::imap::quote;
 use holtmail_integration::relay::{Mode, Relay};
-use holtmail_integration::services::{DOVECOT, local, lock_dovecot_user};
+use holtmail_integration::services::{DOVECOT, DOVECOT_IMAPS, local, lock_dovecot_user};
 use holtmail_integration::{Api, Holtmail, LogScanner, require_it};
 use holtmail_source::{Credentials, Source, SourceError};
 use holtmail_source_imap::{ImapSettings, ImapSource, Security};
@@ -303,4 +303,42 @@ async fn skips_folders_that_cannot_be_selected() {
     let synced = api.sync(&archive, &account).await;
     assert_eq!(synced["status"]["error"], Value::Null, "{synced}");
     scanner.check(&holtmail.logs());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn names_a_port_mixed_up_with_its_security() {
+    require_it!();
+    let source = |port, security| {
+        ImapSource::new(
+            ImapSettings {
+                host: "127.0.0.1".into(),
+                port: Some(port),
+                security,
+                username: "ada@example.com".into(),
+            },
+            Credentials::Password(DOVECOT.password.into()),
+        )
+        .with_timeout(Duration::from_secs(60))
+    };
+    let started = Instant::now();
+    let Err(error) = source(DOVECOT_IMAPS, Security::Plain).connect().await else {
+        panic!("signed in without TLS on the TLS port");
+    };
+    assert!(error.to_string().contains("security = tls"), "{error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+
+    let started = Instant::now();
+    let Err(error) = source(DOVECOT.port, Security::Tls).connect().await else {
+        panic!("TLS on the plain port");
+    };
+    assert!(error.to_string().contains("plain or STARTTLS"), "{error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
 }

@@ -110,13 +110,11 @@ impl Api {
         self.request(Method::PATCH, path, Some(&body)).await
     }
 
-    /// `DELETE path` without a body, declared JSON as the web app sends it (the server refuses
-    /// writes without a JSON or upload content type).
+    /// `DELETE path` without a body or content type.
     pub async fn delete(&self, path: &str) -> Reply {
         let response = self
             .client
             .delete(format!("{}{path}", self.base))
-            .header(CONTENT_TYPE, "application/json")
             .send()
             .await
             .expect("the instance answers");
@@ -281,6 +279,37 @@ impl Api {
     pub async fn tasks(&self) -> Vec<Value> {
         let reply = self.get("/api/tasks").await.ok();
         reply.as_array().cloned().unwrap_or_default()
+    }
+
+    /// The id of the archive named `name`; panics when there is none.
+    pub async fn archive_named(&self, name: &str) -> String {
+        let archives = self.get("/api/archives").await.ok();
+        archives
+            .as_array()
+            .and_then(|list| list.iter().find(|a| a["name"] == name))
+            .and_then(|a| a["id"].as_str())
+            .unwrap_or_else(|| panic!("no archive named {name}"))
+            .to_owned()
+    }
+
+    /// Waits up to `timeout` for the task `id` to finish and returns it.
+    pub async fn wait_task(&self, id: &str, timeout: std::time::Duration) -> Value {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(task) = self
+                .tasks()
+                .await
+                .into_iter()
+                .find(|t| t["id"] == id && t["state"] != "running")
+            {
+                return task;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "task {id} still running"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
     }
 
     /// The log lines of the latest sync task of `account`.

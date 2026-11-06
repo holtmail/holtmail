@@ -242,6 +242,29 @@ services:
     ports:
       - '127.0.0.1:49443:49443'
 
+  postfix:
+    build: ./seed/postfix
+    depends_on:
+      ca:
+        condition: service_completed_successfully
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ./.state:/certs:ro
+    ports:
+      - '127.0.0.1:42025:25'
+    healthcheck:
+      test: ['CMD', 'postfix', 'status']
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  pdftools:
+    build: ./seed/pdftools
+    network_mode: none
+    volumes:
+      - ./.state/pdf:/pdf:ro
+
 networks:
   images:
     internal: true

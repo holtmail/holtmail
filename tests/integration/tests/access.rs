@@ -53,7 +53,7 @@ impl Who {
 
 enum Body {
     Empty,
-    /// No body, declared JSON as the web app sends `DELETE`s.
+    /// No body and no content type, as `DELETE`s go.
     NoneAsJson,
     Json(Value),
     Octet(Vec<u8>),
@@ -97,7 +97,7 @@ impl Client {
         let mut request = self.http.request(method, format!("{}{path}", self.base));
         request = match body {
             Body::Empty => request,
-            Body::NoneAsJson => request.header(CONTENT_TYPE, "application/json"),
+            Body::NoneAsJson => request,
             Body::Json(value) => request
                 .header(CONTENT_TYPE, "application/json")
                 .body(value.to_string()),
@@ -491,6 +491,13 @@ impl World {
                 "/api/oauth/callback?state=unknown&code=unknown".to_owned(),
                 Body::Empty,
             ),
+            ("GET", "/api/webhooks/{id}/deliveries") => (
+                format!(
+                    "/api/webhooks/{}/deliveries",
+                    self.throwaway_webhook().await
+                ),
+                Body::Empty,
+            ),
             ("GET", t) => (t.to_owned(), Body::Empty),
             ("POST", "/api/setup") => (
                 "/api/setup".to_owned(),
@@ -673,8 +680,51 @@ impl World {
                     Body::NoneAsJson,
                 )
             }
+            ("POST", "/api/ledger/verify") => {
+                ("/api/ledger/verify".to_owned(), Body::Json(json!({})))
+            }
+            ("POST", "/api/archives/{id}/deletions") => (
+                fill("/api/archives/{archive}/deletions"),
+                Body::Json(json!({ "message_ids": [m] })),
+            ),
+            ("POST", "/api/deletions/{id}/confirm") => (
+                format!("/api/deletions/{}/confirm", uuid::Uuid::now_v7().simple()),
+                Body::Json(json!({ "count": 1 })),
+            ),
+            ("POST", "/api/webhooks") => (
+                "/api/webhooks".to_owned(),
+                Body::Json(json!({ "url": "https://hooks.example.com/access", "events": [] })),
+            ),
+            ("PATCH", "/api/webhooks/{id}") => (
+                format!("/api/webhooks/{}", self.throwaway_webhook().await),
+                Body::Json(json!({ "enabled": false })),
+            ),
+            ("DELETE", "/api/webhooks/{id}") => (
+                format!("/api/webhooks/{}", self.throwaway_webhook().await),
+                Body::NoneAsJson,
+            ),
+            ("POST", "/api/webhooks/{id}/secret") => (
+                format!("/api/webhooks/{}/secret", self.throwaway_webhook().await),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/webhooks/{id}/test") => (
+                format!("/api/webhooks/{}/test", self.throwaway_webhook().await),
+                Body::Json(json!({})),
+            ),
             (method, template) => panic!("no request for {method} {template}"),
         }
+    }
+
+    async fn throwaway_webhook(&self) -> String {
+        let created = self
+            .owner
+            .post(
+                "/api/webhooks",
+                json!({ "url": "https://hooks.example.com/target", "events": [] }),
+            )
+            .await
+            .ok();
+        id(&created["webhook"])
     }
 
     async fn throwaway_user(&self) -> String {
@@ -786,6 +836,32 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
         ("POST", "/api/tasks/{id}/cancel", [409, 409, 403, 403, 401]),
         ("GET", "/api/threads/{id}", READ),
         ("GET", "/api/users", MANAGE_READ),
+        ("GET", "/api/oauth/providers", MANAGE_READ),
+        ("GET", "/api/messages/{id}/pdf", READ),
+        ("GET", "/api/ledger", MANAGE_READ),
+        ("POST", "/api/ledger/verify", [202, 202, 403, 403, 401]),
+        (
+            "POST",
+            "/api/archives/{id}/deletions",
+            [200, 200, 403, 403, 401],
+        ),
+        (
+            "POST",
+            "/api/deletions/{id}/confirm",
+            [400, 400, 403, 403, 401],
+        ),
+        ("GET", "/api/smtp", MANAGE_READ),
+        ("GET", "/api/webhooks", MANAGE_READ),
+        ("POST", "/api/webhooks", [201, 201, 403, 403, 401]),
+        ("PATCH", "/api/webhooks/{id}", [200, 200, 403, 403, 401]),
+        ("DELETE", "/api/webhooks/{id}", [204, 204, 403, 403, 401]),
+        (
+            "POST",
+            "/api/webhooks/{id}/secret",
+            [200, 200, 403, 403, 401],
+        ),
+        ("POST", "/api/webhooks/{id}/test", [202, 202, 403, 403, 401]),
+        ("GET", "/api/webhooks/{id}/deliveries", MANAGE_READ),
         ("POST", "/api/users", [201, 201, 403, 403, 401]),
         ("PATCH", "/api/users/{id}", [200, 200, 403, 403, 401]),
         ("DELETE", "/api/users/{id}", [204, 204, 403, 403, 401]),

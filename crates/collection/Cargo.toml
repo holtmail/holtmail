@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-collection"
+description = "Contract for reading address books and calendars from an account's server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

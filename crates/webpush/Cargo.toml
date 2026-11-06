@@ -1,0 +1,18 @@
+[package]
+name = "holtmail-webpush"
+description = "Web Push message encryption (RFC 8291) for receiving push notices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+aws-lc-rs.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+
+[lints]
+workspace = true

@@ -124,7 +124,12 @@ impl TantivyIndex {
                 .filter(Stemmer::new(Language::Russian))
                 .build(),
         );
-        let writer = index.writer(WRITER_HEAP).map_err(backend)?;
+        let writer = index.writer(WRITER_HEAP).map_err(|error| match error {
+            tantivy::TantivyError::LockFailure(..) => backend(std::io::Error::other(
+                "the search index is in use by another process, such as a running `holtmail serve`",
+            )),
+            other => backend(other),
+        })?;
         let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::Manual)
@@ -755,6 +760,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(results.total, 0);
+    }
+
+    #[test]
+    fn a_second_writer_is_refused_with_a_readable_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let _first = TantivyIndex::open(dir.path()).unwrap();
+        let refused = TantivyIndex::open(dir.path())
+            .err()
+            .expect("a second writer opened");
+        assert!(
+            refused.to_string().contains("in use by another process"),
+            "{refused}"
+        );
     }
 
     #[test]

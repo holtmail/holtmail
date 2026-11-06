@@ -23,7 +23,7 @@ let index = TantivyIndex::in_memory()?; // tests
 - `put` deletes any document with the same message id before adding, so it replaces.
 - Changes become visible on `commit`, which also reloads the reader.
 - Work runs on Tokio's blocking pool, so a large commit does not stall the async runtime.
-- One writer per index directory: Tantivy locks it, so a second process fails to open it.
+- One writer per index directory: Tantivy locks it, so a second process fails to open it with `Backend` saying the index is in use by another process (a running `holtmail serve`).
 - At most 64 clauses and 1000 hits per page.
 - Search words are expanded at query time, so existing indexes need no rebuild. Outside phrases, a word of three letters or more matches words that start with it (`прив` finds `привет`), and `Text`, `Subject` and `Body` words also match by their English and Russian Snowball stem when it has four letters or more (`договора` finds `договор`, `repairing` finds `repairs`). Stems can over-match: `маяка` also finds `маяковский`.
 - `From`, `To` and `Filename` match prefixes but are not stemmed; phrases match exact words.

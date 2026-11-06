@@ -170,6 +170,59 @@ impl CollectionError {
     }
 }
 
+/// What a [`CollectionWatch`] noticed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollectionsChanged {
+    /// Ids of the collections that may have changed, each once; `None` when the source cannot
+    /// tell which, so every collection should be looked at.
+    pub collections: Option<Vec<String>>,
+}
+
+/// A running watch on one account's collections. Not shared between tasks.
+#[async_trait]
+pub trait CollectionWatch: Send {
+    /// Waits until something may have changed since the watch started or since the last call
+    /// returned. A change made while the watch is alive is never swallowed; a return without a
+    /// change is allowed. An error ends the watch; changes made before a new one starts are only
+    /// found by a sync. Dropping the future while it waits gives the watch up.
+    async fn next(&mut self) -> Result<CollectionsChanged, CollectionError>;
+
+    /// Ends the watch. Dropping a watch without it is allowed.
+    async fn close(self: Box<Self>);
+}
+
+/// A Web Push subscription (RFC 8030) that a server sends change notices to, encrypted for
+/// these keys as RFC 8291 says. `Debug` never shows the auth secret.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushSubscription {
+    /// The absolute https address notices are posted to.
+    pub endpoint: String,
+    /// The subscriber's P-256 public key, uncompressed (65 bytes).
+    pub public_key: Vec<u8>,
+    /// The 16-byte auth secret.
+    pub auth_secret: Vec<u8>,
+    /// When the subscriber would like the registration to end; the server may end it sooner.
+    pub expires: Option<std::time::SystemTime>,
+}
+
+impl std::fmt::Debug for PushSubscription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PushSubscription")
+            .field("endpoint", &self.endpoint)
+            .field("expires", &self.expires)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A subscription a server accepted for one collection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushRegistration {
+    /// The registration's own address on the server, for [`CollectionSource::unsubscribe`].
+    pub url: String,
+    /// When the server stops sending to it, if it said.
+    pub expires: Option<std::time::SystemTime>,
+}
+
 /// Reads one account's address books and calendars. Read-only, `Send + Sync`, usable as
 /// `dyn CollectionSource`; calls may run one after another on the same value.
 #[async_trait]
@@ -200,4 +253,74 @@ pub trait CollectionSource: Send + Sync {
     /// Every item now in `collection` with its version tag, sorted by id, without the bytes:
     /// the recovery listing when changes since a token are not available.
     async fn list(&self, collection: &str) -> Result<Vec<ItemTag>, CollectionError>;
+
+    /// Starts watching the account's collections on a connection of its own. `Ok(None)` (the
+    /// default) when the server cannot push that way.
+    async fn watch(&self) -> Result<Option<Box<dyn CollectionWatch>>, CollectionError> {
+        Ok(None)
+    }
+
+    /// Asks the server to post a notice to `subscription` whenever `collection` changes.
+    /// `Ok(None)` (the default) when the collection offers no such push, without asking. A new
+    /// registration for the same endpoint replaces the old one. Notices are hints: the server
+    /// may send one without a change, and none is sent once the registration expired.
+    async fn subscribe(
+        &self,
+        collection: &str,
+        subscription: &PushSubscription,
+    ) -> Result<Option<PushRegistration>, CollectionError> {
+        let _ = (collection, subscription);
+        Ok(None)
+    }
+
+    /// Ends a registration from [`CollectionSource::subscribe`]. One the server no longer knows
+    /// is not an error.
+    async fn unsubscribe(&self, registration: &PushRegistration) -> Result<(), CollectionError> {
+        let _ = registration;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::testing::{FakeCollections, watch_conformance};
+    use super::*;
+
+    #[tokio::test]
+    async fn the_fake_keeps_the_watch_contract() {
+        let fake = FakeCollections::new();
+        fake.add_collection("/book/", CollectionKind::Contacts, "Book", None);
+        assert!(fake.watch().await.unwrap().is_none(), "no push by default");
+        fake.enable_watch();
+        watch_conformance(&fake, &fake).await;
+        assert_eq!(fake.watches(), 1);
+        fake.break_watches(Some("cut"));
+        assert!(fake.watch().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn subscriptions_replace_and_end() {
+        let fake = FakeCollections::new();
+        fake.add_collection("/book/", CollectionKind::Contacts, "Book", None);
+        let sub = PushSubscription {
+            endpoint: "https://holtmail.example.com/api/push/dav/a".into(),
+            public_key: vec![4; 65],
+            auth_secret: vec![1; 16],
+            expires: None,
+        };
+        assert_eq!(fake.subscribe("/book/", &sub).await.unwrap(), None);
+        fake.enable_push();
+        let first = fake.subscribe("/book/", &sub).await.unwrap().unwrap();
+        let second = fake.subscribe("/book/", &sub).await.unwrap().unwrap();
+        assert_ne!(first.url, second.url);
+        assert_eq!(
+            fake.registrations().len(),
+            1,
+            "the same endpoint is replaced"
+        );
+        fake.unsubscribe(&second).await.unwrap();
+        fake.unsubscribe(&second).await.unwrap();
+        assert!(fake.registrations().is_empty());
+        assert!(!format!("{sub:?}").contains("auth_secret"));
+    }
 }

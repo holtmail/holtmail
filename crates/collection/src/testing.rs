@@ -2,14 +2,14 @@
 //! every implementation runs in its own tests.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 
 use crate::{
-    Changes, CollectionError, CollectionKind, CollectionSource, ItemTag, RemoteCollection,
-    RemoteItem,
+    Changes, CollectionError, CollectionKind, CollectionSource, CollectionWatch,
+    CollectionsChanged, ItemTag, PushRegistration, PushSubscription, RemoteCollection, RemoteItem,
 };
 
 /// Changes a server's collections behind a [`CollectionSource`], for [`conformance`].
@@ -53,14 +53,24 @@ struct State {
     reject: bool,
     fetches: Vec<Vec<String>>,
     listings: usize,
+    watchable: bool,
+    watch_error: Option<String>,
+    watches: usize,
+    change_seq: u64,
+    change_log: Vec<(u64, String)>,
+    pushable: bool,
+    registrations: Vec<(String, PushSubscription, String)>,
+    registered: u64,
 }
 
 /// An in-memory server: collections, items with counting ETags, a change log per collection
 /// for sync tokens, and switches for expired tokens, servers without changes and refused
 /// sign-ins. Item ids are `<collection id><name>`.
-#[derive(Default)]
+/// Clones share the same server.
+#[derive(Default, Clone)]
 pub struct FakeCollections {
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
+    notify: Arc<tokio::sync::Notify>,
 }
 
 impl FakeCollections {
@@ -109,7 +119,38 @@ impl FakeCollections {
 
     /// Removes a collection with its items.
     pub fn remove_collection(&self, id: &str) {
-        self.state.lock().expect("fake lock").collections.remove(id);
+        let mut state = self.state.lock().expect("fake lock");
+        state.collections.remove(id);
+        touch(&mut state, id);
+        drop(state);
+        self.notify.notify_waiters();
+    }
+
+    /// Makes [`CollectionSource::watch`] answer with a watch, as a JMAP server with push does.
+    pub fn enable_watch(&self) {
+        self.state.lock().expect("fake lock").watchable = true;
+    }
+
+    /// Ends every running watch with this connection error and makes new ones fail with it, or
+    /// lets watches run again with `None`.
+    pub fn break_watches(&self, reason: Option<&str>) {
+        self.state.lock().expect("fake lock").watch_error = reason.map(str::to_owned);
+        self.notify.notify_waiters();
+    }
+
+    /// How many watches were started so far.
+    pub fn watches(&self) -> usize {
+        self.state.lock().expect("fake lock").watches
+    }
+
+    /// Makes every collection accept [`CollectionSource::subscribe`], as a WebDAV-Push server.
+    pub fn enable_push(&self) {
+        self.state.lock().expect("fake lock").pushable = true;
+    }
+
+    /// The live registrations: collection id, subscription and registration address.
+    pub fn registrations(&self) -> Vec<(String, PushSubscription, String)> {
+        self.state.lock().expect("fake lock").registrations.clone()
     }
 
     /// Creates or changes the item `name` and returns its id.
@@ -129,6 +170,9 @@ impl FakeCollections {
             },
         );
         coll.log.push((seq, name.into()));
+        touch(&mut state, collection);
+        drop(state);
+        self.notify.notify_waiters();
         format!("{collection}{name}")
     }
 
@@ -143,7 +187,10 @@ impl FakeCollections {
             .expect("a known collection");
         if coll.items.remove(name).is_some() {
             coll.log.push((seq, name.into()));
+            touch(&mut state, collection);
         }
+        drop(state);
+        self.notify.notify_waiters();
     }
 
     /// Makes every token handed out so far expired.
@@ -182,6 +229,50 @@ impl FakeCollections {
     fn tag(seq: u64) -> String {
         format!("\"{seq}\"")
     }
+}
+
+fn touch(state: &mut State, collection: &str) {
+    state.change_seq += 1;
+    let seq = state.change_seq;
+    state.change_log.push((seq, collection.to_owned()));
+}
+
+struct FakeWatch {
+    source: FakeCollections,
+    seen: u64,
+}
+
+#[async_trait]
+impl CollectionWatch for FakeWatch {
+    async fn next(&mut self) -> Result<CollectionsChanged, CollectionError> {
+        loop {
+            let notify = self.source.notify.clone();
+            let notified = notify.notified();
+            let mut notified = std::pin::pin!(notified);
+            notified.as_mut().enable();
+            {
+                let state = self.source.state.lock().expect("fake lock");
+                if let Some(reason) = &state.watch_error {
+                    return Err(CollectionError::Connection(reason.clone()));
+                }
+                let mut changed: Vec<String> = Vec::new();
+                for (seq, id) in &state.change_log {
+                    if *seq > self.seen && !changed.contains(id) {
+                        changed.push(id.clone());
+                    }
+                }
+                self.seen = state.change_seq;
+                if !changed.is_empty() {
+                    return Ok(CollectionsChanged {
+                        collections: Some(changed),
+                    });
+                }
+            }
+            notified.await;
+        }
+    }
+
+    async fn close(self: Box<Self>) {}
 }
 
 fn split(collection: &str, id: &str) -> Option<String> {
@@ -325,6 +416,58 @@ impl CollectionSource for FakeCollections {
                 etag: Some(Self::tag(item.etag)),
             })
             .collect())
+    }
+
+    async fn watch(&self) -> Result<Option<Box<dyn CollectionWatch>>, CollectionError> {
+        let mut state = self.state.lock().expect("fake lock");
+        Self::check(&state)?;
+        if !state.watchable {
+            return Ok(None);
+        }
+        if let Some(reason) = &state.watch_error {
+            return Err(CollectionError::Connection(reason.clone()));
+        }
+        state.watches += 1;
+        Ok(Some(Box::new(FakeWatch {
+            source: self.clone(),
+            seen: state.change_seq,
+        })))
+    }
+
+    async fn subscribe(
+        &self,
+        collection: &str,
+        subscription: &PushSubscription,
+    ) -> Result<Option<PushRegistration>, CollectionError> {
+        let mut state = self.state.lock().expect("fake lock");
+        Self::check(&state)?;
+        if !state.pushable {
+            return Ok(None);
+        }
+        if !state.collections.contains_key(collection) {
+            return Err(CollectionError::Gone);
+        }
+        state
+            .registrations
+            .retain(|(c, s, _)| !(c == collection && s.endpoint == subscription.endpoint));
+        state.registered += 1;
+        let url = format!("fake-registration-{}", state.registered);
+        state
+            .registrations
+            .push((collection.to_owned(), subscription.clone(), url.clone()));
+        Ok(Some(PushRegistration {
+            url,
+            expires: subscription.expires,
+        }))
+    }
+
+    async fn unsubscribe(&self, registration: &PushRegistration) -> Result<(), CollectionError> {
+        let mut state = self.state.lock().expect("fake lock");
+        Self::check(&state)?;
+        state
+            .registrations
+            .retain(|(_, _, url)| url != &registration.url);
+        Ok(())
     }
 }
 
@@ -542,6 +685,46 @@ pub async fn conformance(source: &dyn CollectionSource, remote: &dyn Remote) {
     ));
     let fresh = source.changes(&book.id, None).await.unwrap();
     assert_eq!(ids(&fresh.changed), ids(&after));
+}
+
+/// Checks that the watch of `source` keeps the [`CollectionWatch`] contract, changing its server
+/// through `remote`. The server must have at least one address book. Panics on the first
+/// violation.
+pub async fn watch_conformance(source: &dyn CollectionSource, remote: &dyn Remote) {
+    use std::time::Duration;
+    const WAIT: Duration = Duration::from_secs(10);
+    let book = source
+        .collections()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.kind == CollectionKind::Contacts)
+        .expect("an address book");
+    let covers = |changed: &CollectionsChanged| {
+        changed
+            .collections
+            .as_ref()
+            .is_none_or(|ids| ids.iter().any(|id| id == &book.id))
+    };
+    let mut watch = source
+        .watch()
+        .await
+        .expect("watch starts")
+        .expect("the source watches");
+    remote.put(&book.id, "watched.vcf", ADA).await;
+    let changed = tokio::time::timeout(WAIT, watch.next())
+        .await
+        .expect("a new card wakes the watch")
+        .expect("the watch keeps running");
+    assert!(covers(&changed), "the change names the address book");
+    remote.put(&book.id, "watched.vcf", BEA).await;
+    remote.delete(&book.id, "watched.vcf").await;
+    let changed = tokio::time::timeout(WAIT, watch.next())
+        .await
+        .expect("later changes wake the watch again")
+        .expect("the watch keeps running");
+    assert!(covers(&changed));
+    watch.close().await;
 }
 
 #[cfg(test)]

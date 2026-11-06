@@ -8,15 +8,16 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
-testing = []
+testing = ["dep:tokio"]
 
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["sync", "time", "macros"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

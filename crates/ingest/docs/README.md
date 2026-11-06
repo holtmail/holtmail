@@ -1,6 +1,6 @@
 # holtmail-ingest
 
-The one path into the archive. Sync and import both hand raw message bytes to `Ingest::ingest`, which stores them, records metadata and indexes them, always in the same order and with the same rules.
+The one path into the archive. Sync and import both hand raw message bytes to `Ingest::ingest`, which stores them, records metadata and indexes them, always in the same order and with the same rules. Contacts, events and tasks go through `Ingest::ingest_item` the same way.
 
 ## API
 
@@ -23,7 +23,30 @@ ingest.reindex(message).await?; // after folders, flags or labels change
 5. Replaces the message's labels when the placement has `labels: Some(..)`; `None` (imports, servers without labels) leaves them as they are.
 6. Puts an index document built from the parsed message, every folder, flag and label the message currently has, and the text of its attachments.
 
+Between steps 3 and 4, a new message's calendar parts become events (see [Invitations in mail](#invitations-in-mail)).
+
 Ingesting the same bytes again only adds or updates the location and refreshes the index document, so syncs and imports can be repeated safely.
+
+## Contacts and events
+
+```rust
+let done = ingest.ingest_item(IncomingItem { collection, remote_id, kind, format, raw, etag, seen_at }).await?;
+ingest.rebuild_item(item).await?; // the item's PimIndex again: latest raw version (read in its stored format), or every version merged for items from mail; then derive_item
+ingest.derive_item(item).await?;  // its calendar instances and search document from the stored PimIndex
+let index = holtmail_ingest::pim_index(&normalized, version); // what the store lists items by
+```
+
+`ingest_item` reads the raw object in its `format` (`holtmail_pim::Format`: vCard, iCalendar, or the JSON of Graph or JMAP, stored as the version's content type) with [`holtmail-pim`](../../pim/docs/README.md), stores a picture embedded in a vCard as a blob of its own (the same picture in many cards is one blob), stores the raw bytes unchanged, then calls `PimStore::record_version` with the normalized fields. A version is added only when the bytes differ from the item's latest; bytes that cannot be read are archived as an unreadable version. It returns the store's `RecordedVersion`. The item's key is the vCard or iCalendar `UID`.
+
+Whenever an item's normalized fields change (a new version, `rebuild_item`, a new version from mail), `derive_item(item)` rebuilds what is derived from them: its part of the calendar (`holtmail_calendar::series` stored through `CalendarStore::replace_series`: its group of copies by `UID`, rank fields and instances, see [`holtmail-calendar`](../../calendar/docs/README.md)) and its search document (`item_document(summary)`: events and contacts as `ItemDocument`s, `put_items`; tasks, other items and unreadable ones are removed with `remove_items`). Like messages, item documents become searchable after `Ingest::commit`; `holtmail-pim-sync`, the server's import and `reindex` commit after their items. `MAIL_COLLECTION` now lives in `holtmail-calendar` and is re-exported here.
+
+## Invitations in mail
+
+```rust
+let added = ingest.record_invitations(message).await?; // the stored message's calendar parts again
+```
+
+Every `text/calendar` or `application/ics` part of a message (`ParsedMessage::calendars`: iMIP invitations, updates, replies, cancellations, and attached `.ics` files) is cut by `holtmail_pim::split`; each `VEVENT` or `VTODO` with a `UID` becomes a version of an item in the archive's "From mail" calendar (`MAIL_COLLECTION`, one per archive, no account). The item's `remote_id` is the `UID` (`task:<UID>` for tasks), so the series and its changed instances are one item. The version records the part's `METHOD` and is ordered by `SEQUENCE`, `DTSTAMP` and the message's `Date` through `PimStore::record_mail_version`, which also links the message. After a new version the item's `PimIndex` is rebuilt from every version merged by `holtmail_pim::merge`: the latest invitation, every attendee's latest answer, and `CANCELLED` once cancelled. `ingest` does this for new messages only; `record_invitations` reads a stored message again for mail archived before this existed, and is idempotent. `rebuild_item` merges the same way for items from mail.
 
 ## Attachment text
 

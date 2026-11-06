@@ -1,7 +1,11 @@
-//! From raw message bytes to a stored, indexed message.
+//! From raw message bytes to a stored, indexed message, and from raw vCard and iCalendar objects
+//! to stored item versions.
 //!
-//! Sync and import both hand every message to [`Ingest::ingest`], so there is one path into the
-//! archive and one set of rules: bytes first, then metadata, then the index.
+//! Sync and import both hand every message to [`Ingest::ingest`] and every contact, event or task
+//! to [`Ingest::ingest_item`], so there is one path into the archive and one set of rules: bytes
+//! first, then metadata, then the index.
+
+mod pim;
 
 use std::sync::Arc;
 
@@ -12,6 +16,8 @@ use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
 use holtmail_mime::{MimeError, ParsedMessage};
 use holtmail_store::{Attachment, Derived, DerivedKind, NewMessage, Store, StoreError};
+
+pub use pim::{IncomingItem, MAIL_COLLECTION, item_document, pim_index};
 
 /// Plain text indexed per message; the stored bytes are never cut.
 const MAX_INDEXED_TEXT: usize = 1 << 20;
@@ -100,6 +106,9 @@ impl Ingest {
 
     /// Archives `raw` into `archive` at `placement`.
     ///
+    /// A new message's calendar parts (iMIP invitations, updates, replies and cancellations, and
+    /// attached `.ics` files) become versions of events and tasks in the archive's "From mail"
+    /// calendar, keyed by `UID` and linked to the message; see [`Ingest::record_invitations`].
     /// Idempotent: the same bytes again only update where the message was seen. The raw bytes are
     /// durable before any metadata refers to them, so a crash never leaves a message without its
     /// bytes. The index change becomes searchable after [`Ingest::commit`]; callers commit once per
@@ -148,6 +157,15 @@ impl Ingest {
             }
         };
 
+        if inserted.created {
+            self.invitations(
+                archive,
+                inserted.message_id,
+                parsed.sent_at.map(Timestamp::from_secs),
+                &parsed.calendars,
+            )
+            .await?;
+        }
         if let Some(folder) = placement.folder {
             self.store
                 .record_location(
@@ -390,6 +408,7 @@ fn truncate(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use holtmail_blob_fs::FsBlobStore;
+    use holtmail_core::CollectionId;
     use holtmail_index::{Clause, SearchQuery, SortOrder};
     use holtmail_index_tantivy::TantivyIndex;
     use holtmail_store::{AccountKind, NewAccount};
@@ -740,5 +759,241 @@ mod tests {
             find(&f, vec![Clause::Label("done".into())]).await,
             [ingested.message_id]
         );
+    }
+
+    const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    fn card(name: &str) -> Bytes {
+        Bytes::from(format!(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{name}\r\nFN:{name}\r\nEMAIL:{name}@example.com\r\nPHOTO;ENCODING=b;TYPE=PNG:{PNG}\r\nEND:VCARD\r\n"
+        ))
+    }
+
+    fn item(collection: CollectionId, remote: &str, raw: Bytes) -> IncomingItem {
+        IncomingItem {
+            collection,
+            remote_id: remote.into(),
+            kind: holtmail_pim::ItemKind::Contact,
+            format: holtmail_pim::Format::of(holtmail_pim::ItemKind::Contact),
+            raw,
+            etag: None,
+            seen_at: Timestamp::from_secs(1_700_000_000),
+        }
+    }
+
+    #[tokio::test]
+    async fn items_keep_raw_bytes_and_share_pictures() {
+        let f = fixture().await;
+        let book = f
+            .store
+            .upsert_collection(holtmail_store::NewCollection {
+                archive_id: f.archive,
+                account_id: None,
+                kind: holtmail_store::CollectionKind::Contacts,
+                remote_id: "people.vcf".into(),
+                name: "People".into(),
+                color: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let ada = f
+            .ingest
+            .ingest_item(item(book, "ada", card("Ada")))
+            .await
+            .unwrap();
+        let bo = f
+            .ingest
+            .ingest_item(item(book, "bo", card("Bo")))
+            .await
+            .unwrap();
+        let ada_versions = f.store.item_versions(ada.item_id).await.unwrap();
+        let bo_versions = f.store.item_versions(bo.item_id).await.unwrap();
+        let photo = ada_versions[0].photo_blob_id.expect("picture split off");
+        assert_eq!(
+            bo_versions[0].photo_blob_id,
+            Some(photo),
+            "one blob per picture"
+        );
+        assert!(
+            f.blobs
+                .get(&photo)
+                .await
+                .unwrap()
+                .unwrap()
+                .starts_with(b"\x89PNG")
+        );
+        assert_eq!(
+            f.blobs
+                .get(&ada_versions[0].blob_id)
+                .await
+                .unwrap()
+                .unwrap(),
+            card("Ada"),
+            "raw stays whole"
+        );
+        assert_eq!(ada_versions[0].content_type, "text/vcard");
+
+        let again = f
+            .ingest
+            .ingest_item(item(book, "ada", card("Ada")))
+            .await
+            .unwrap();
+        assert!(!again.new_version);
+
+        let summary = f.store.get_item(ada.item_id).await.unwrap().unwrap();
+        let index = summary.index.unwrap();
+        assert_eq!(index.title.as_deref(), Some("Ada"));
+        assert_eq!(index.emails, ["ada@example.com"]);
+        assert_eq!(summary.item.key.as_deref(), Some("Ada"));
+
+        let broken = f
+            .ingest
+            .ingest_item(item(book, "broken", Bytes::from_static(b"garbage")))
+            .await
+            .unwrap();
+        let broken = f.store.get_item(broken.item_id).await.unwrap().unwrap();
+        assert!(!broken.index.unwrap().readable, "unreadable, but archived");
+
+        f.store
+            .set_pim_index(
+                ada.item_id,
+                &pim_index(&holtmail_pim::Normalized::Unreadable, 1),
+            )
+            .await
+            .unwrap();
+        f.ingest.rebuild_item(ada.item_id).await.unwrap();
+        let rebuilt = f.store.get_item(ada.item_id).await.unwrap().unwrap();
+        assert_eq!(rebuilt.index.unwrap().title.as_deref(), Some("Ada"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn events_join_the_calendar_and_items_the_index() {
+        let f = fixture().await;
+        let calendar = |name: &str| holtmail_store::NewCollection {
+            archive_id: f.archive,
+            account_id: None,
+            kind: holtmail_store::CollectionKind::Calendar,
+            remote_id: name.into(),
+            name: name.into(),
+            color: None,
+        };
+        let work = f
+            .store
+            .upsert_collection(calendar("work.ics"))
+            .await
+            .unwrap()
+            .id;
+        let home = f
+            .store
+            .upsert_collection(calendar("home.ics"))
+            .await
+            .unwrap()
+            .id;
+        let event = |seq: u32| {
+            Bytes::from(format!(
+                "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:review@example.com\r\nSEQUENCE:{seq}\r\nSUMMARY:Lamp review\r\nLOCATION:Harbour office\r\nDTSTART;TZID=Europe/Berlin:20250310T090000\r\nDTEND;TZID=Europe/Berlin:20250310T100000\r\nORGANIZER;CN=Ada Quill:mailto:ada@example.com\r\nATTENDEE;CN=Bo Lind;PARTSTAT=ACCEPTED:mailto:bo@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+            ))
+        };
+        let mut incoming = item(work, "review", event(1));
+        incoming.kind = holtmail_pim::ItemKind::Event;
+        incoming.format = holtmail_pim::Format::ICalendar;
+        let first = f.ingest.ingest_item(incoming.clone()).await.unwrap();
+        incoming.collection = home;
+        incoming.raw = event(2);
+        let second = f.ingest.ingest_item(incoming).await.unwrap();
+        let mut card_item = item(work, "ada", card("Ada"));
+        card_item.collection = f
+            .store
+            .upsert_collection(holtmail_store::NewCollection {
+                kind: holtmail_store::CollectionKind::Contacts,
+                ..calendar("people.vcf")
+            })
+            .await
+            .unwrap()
+            .id;
+        let ada = f.ingest.ingest_item(card_item).await.unwrap();
+        f.ingest.commit().await.unwrap();
+
+        let series = f.store.series(first.item_id).await.unwrap().unwrap();
+        assert_eq!(series.window, None);
+        let members = f.store.group_members(series.group_id).await.unwrap();
+        assert_eq!(
+            members.len(),
+            2,
+            "the same UID in two calendars is one group"
+        );
+        assert_eq!(f.store.series(ada.item_id).await.unwrap(), None);
+        let found = f
+            .store
+            .occurrences(&holtmail_store::OccurrenceQuery {
+                archive_id: f.archive,
+                from: Timestamp::from_millis(1_741_593_600_000),
+                to: Timestamp::from_millis(1_741_593_600_001),
+                collections: None,
+                removed: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            holtmail_calendar::fold(found)[0].leading().item_id,
+            second.item_id,
+            "the higher SEQUENCE leads"
+        );
+
+        let items = |clauses: Vec<Clause>| {
+            let index = f.index.clone();
+            let archive = f.archive;
+            async move {
+                let mut ids: Vec<holtmail_core::ItemId> = index
+                    .search_items(archive, &SearchQuery { clauses }, SortOrder::Newest, 0, 10)
+                    .await
+                    .unwrap()
+                    .hits
+                    .into_iter()
+                    .map(|h| h.item_id)
+                    .collect();
+                ids.sort();
+                ids
+            }
+        };
+        let mut both = vec![first.item_id, second.item_id];
+        both.sort();
+        assert_eq!(items(vec![Clause::Text("harbour".into())]).await, both);
+        assert_eq!(items(vec![Clause::With("bo lind".into())]).await, both);
+        assert_eq!(
+            items(vec![Clause::Kind(holtmail_index::DocumentKind::Contact)]).await,
+            [ada.item_id]
+        );
+        assert!(
+            find(&f, vec![Clause::Text("harbour".into())])
+                .await
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn events_index_their_start_and_people() {
+        let raw = b"BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:e1@example.com\nSUMMARY:Review\nDTSTART;TZID=Europe/Berlin:20250310T090000\nDTEND;TZID=Europe/Berlin:20250310T100000\nRRULE:FREQ=DAILY\nSEQUENCE:3\nORGANIZER:mailto:Ada@Example.com\nATTENDEE;PARTSTAT=ACCEPTED:mailto:bo@example.org\nEND:VEVENT\nEND:VCALENDAR\n";
+        let normalized = holtmail_pim::normalize(holtmail_pim::ItemKind::Event, raw);
+        let index = pim_index(&normalized, 2);
+        assert_eq!(index.version, 2);
+        assert_eq!(index.title.as_deref(), Some("Review"));
+        assert_eq!(
+            index.starts_at,
+            Some(Timestamp::from_millis(1_741_593_600_000))
+        );
+        assert_eq!(
+            index.ends_at,
+            Some(Timestamp::from_millis(1_741_597_200_000))
+        );
+        assert_eq!(index.time_zone.as_deref(), Some("Europe/Berlin"));
+        assert!(index.recurring && !index.all_day);
+        assert_eq!(index.sequence, Some(3));
+        assert_eq!(index.uid.as_deref(), Some("e1@example.com"));
+        assert_eq!(index.organizer.as_deref(), Some("ada@example.com"));
+        assert_eq!(index.emails, ["ada@example.com", "bo@example.org"]);
+        assert_eq!(index.data["type"], "calendar");
     }
 }

@@ -1,0 +1,33 @@
+From: Ada Quill <ada@example.com>
+To: Bob Stone <bob@example.org>
+Subject: Invitation: Harbour planning
+Date: Mon, 03 Nov 2025 09:00:00 +0000
+Message-ID: <harbour-request-0@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Ada invites you to Harbour planning on 10 November at 10:00 (Berlin).
+--alt
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+
+BEGIN:VCALENDAR
+PRODID:-//Example Corp//Calendar 1.0//EN
+VERSION:2.0
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:harbour-planning-7f3a@example.com
+SEQUENCE:0
+DTSTAMP:20251103T085900Z
+DTSTART;TZID=Europe/Berlin:20251110T100000
+DTEND;TZID=Europe/Berlin:20251110T110000
+SUMMARY:Harbour planning
+LOCATION:Room 4
+ORGANIZER;CN=Ada Quill:mailto:ada@example.com
+ATTENDEE;CN=Bob Stone;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:bob@example.org
+ATTENDEE;CN=Cleo Marsh;PARTSTAT=NEEDS-ACTION;ROLE=OPT-PARTICIPANT:mailto:cleo@example.org
+END:VEVENT
+END:VCALENDAR
+--alt--

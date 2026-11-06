@@ -1,14 +1,19 @@
-//! Writing archived messages out as one mbox file or as a zip of `.eml` files.
+//! Writing archived messages out as one mbox file or as a zip of `.eml` files, and contacts and
+//! calendar items as one `.vcf` or `.ics` file or as a zip of every version.
 //!
 //! An export streams the original stored bytes of each message unchanged, one message at a time,
 //! so archives far larger than memory export with about one message held at once. Both formats
 //! read back with `holtmail-import` to the same bytes, so importing an export into an archive that
-//! already holds its messages adds nothing.
+//! already holds its messages adds nothing. Contacts and calendar items stored as vCard or
+//! iCalendar are written unchanged too; JSON sources are written as vCard or iCalendar text.
 
 mod mbox;
 mod names;
+mod pim;
 mod time;
 mod zipped;
+
+pub use pim::{PimExport, PimFormat, PimKind, PimSelection, PimTotals};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -97,6 +102,9 @@ pub enum ExportError {
     /// The search cannot run.
     #[error("invalid search: {0}")]
     InvalidSearch(String),
+    /// The selection's parts do not fit together, e.g. a person for a calendar export.
+    #[error("invalid export: {0}")]
+    Invalid(String),
     /// Reading metadata failed.
     #[error(transparent)]
     Store(#[from] StoreError),

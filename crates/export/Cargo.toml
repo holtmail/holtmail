@@ -11,8 +11,10 @@ repository.workspace = true
 holtmail-blob.workspace = true
 holtmail-core.workspace = true
 holtmail-index.workspace = true
+holtmail-pim.workspace = true
 holtmail-store.workspace = true
 bytes.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt"] }
 zip.workspace = true
@@ -21,8 +23,9 @@ zip.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-import.workspace = true
 holtmail-index-tantivy.workspace = true
+holtmail-ingest.workspace = true
+holtmail-people.workspace = true
 holtmail-store-sqlite.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 

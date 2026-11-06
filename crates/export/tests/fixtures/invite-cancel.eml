@@ -1,0 +1,24 @@
+From: Ada Quill <ada@example.com>
+To: Bob Stone <bob@example.org>
+Subject: Cancelled: Harbour planning
+Date: Fri, 07 Nov 2025 16:00:00 +0000
+Message-ID: <harbour-cancel@example.com>
+MIME-Version: 1.0
+Content-Type: text/calendar; charset=utf-8; method=CANCEL
+
+BEGIN:VCALENDAR
+PRODID:-//Example Corp//Calendar 1.0//EN
+VERSION:2.0
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:harbour-planning-7f3a@example.com
+SEQUENCE:2
+DTSTAMP:20251107T155900Z
+DTSTART;TZID=Europe/Berlin:20251110T140000
+SUMMARY:Harbour planning
+STATUS:CANCELLED
+ORGANIZER;CN=Ada Quill:mailto:ada@example.com
+ATTENDEE;CN=Bob Stone:mailto:bob@example.org
+ATTENDEE;CN=Cleo Marsh:mailto:cleo@example.org
+END:VEVENT
+END:VCALENDAR

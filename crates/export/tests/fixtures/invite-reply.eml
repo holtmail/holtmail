@@ -1,0 +1,25 @@
+From: Bob Stone <bob@example.org>
+To: Ada Quill <ada@example.com>
+Subject: Accepted: Harbour planning
+Date: Thu, 06 Nov 2025 08:15:00 +0000
+Message-ID: <harbour-reply-bob@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: text/plain; charset=utf-8
+
+Bob accepted.
+--mix
+Content-Type: application/ics; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+Content-Transfer-Encoding: base64
+
+QkVHSU46VkNBTEVOREFSDQpQUk9ESUQ6LS8vRXhhbXBsZSBPcmcvL01haWwgMi4wLy9FTg0KVkVS
+U0lPTjoyLjANCk1FVEhPRDpSRVBMWQ0KQkVHSU46VkVWRU5UDQpVSUQ6aGFyYm91ci1wbGFubmlu
+Zy03ZjNhQGV4YW1wbGUuY29tDQpTRVFVRU5DRToxDQpEVFNUQU1QOjIwMjUxMTA2VDA4MTQwMFoN
+CkRUU1RBUlQ7VFpJRD1FdXJvcGUvQmVybGluOjIwMjUxMTEwVDE0MDAwMA0KU1VNTUFSWTpIYXJi
+b3VyIHBsYW5uaW5nDQpPUkdBTklaRVI7Q049QWRhIFF1aWxsOm1haWx0bzphZGFAZXhhbXBsZS5j
+b20NCkFUVEVOREVFO0NOPUJvYiBTdG9uZTtQQVJUU1RBVD1BQ0NFUFRFRDptYWlsdG86Ym9iQGV4
+YW1wbGUub3JnDQpFTkQ6VkVWRU5UDQpFTkQ6VkNBTEVOREFSDQo=
+--mix--

@@ -41,6 +41,9 @@ pub struct Options {
     pub trust_stack_ca: bool,
     /// `sync_interval_minutes`; `Some(0)` syncs only on request.
     pub sync_interval_minutes: Option<u64>,
+    /// Watch accounts for changes (`[watch] enabled`). Off by default, so a suite about syncs
+    /// sees only the runs it asks for; on with `IT_WATCH=1` for every suite.
+    pub watch: bool,
     /// More TOML appended to the config file.
     pub extra_config: String,
     /// `RUST_LOG` of the process.
@@ -57,6 +60,7 @@ impl Default for Options {
         Self {
             trust_stack_ca: true,
             sync_interval_minutes: Some(0),
+            watch: std::env::var_os("IT_WATCH").is_some_and(|v| v == "1"),
             extra_config: String::new(),
             log_filter: std::env::var("IT_RUST_LOG").unwrap_or_else(|_| "info".into()),
             env: Vec::new(),
@@ -393,6 +397,10 @@ impl Holtmail {
             .arg(self.config_path())
             .env("RUST_LOG", &self.options.log_filter)
             .env("NO_COLOR", "1")
+            .env(
+                "HOLTMAIL_WATCH",
+                if self.options.watch { "true" } else { "false" },
+            )
             .envs(self.options.env.iter().map(|(k, v)| (k, v)));
         command
     }

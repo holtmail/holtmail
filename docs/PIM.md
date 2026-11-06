@@ -1,6 +1,6 @@
 # Plan: contacts and calendars
 
-Holtmail archives mail. This plan extends it to contacts and calendar events from the same accounts, with their full history: every version a server ever showed, and when an item disappeared. It also covers how these link to mail and to each other. Nothing here is built yet. The checklist at the end becomes WORKPLAN phases once the maintainer agrees.
+Holtmail archives mail. This plan extends it to contacts and calendar events from the same accounts, with their full history: every version a server ever showed, and when an item disappeared. It also covers how these link to mail and to each other. The model, the storage and file import (WORKPLAN Phase 13), events from invitations in mail (Phase 14) and CardDAV and CalDAV sync (Phase 15: [`holtmail-collection`](../crates/collection/docs/README.md), [`collection-dav`](../crates/collection-dav/docs/README.md), [`holtmail-pim-sync`](../crates/pim-sync/docs/README.md)), the contacts page with people (Phase 16: [`holtmail-people`](../crates/people/docs/README.md)) the calendar (Phase 17: [`holtmail-recur`](../crates/recur/docs/README.md), [`holtmail-calendar`](../crates/calendar/docs/README.md)) Microsoft Graph contacts and calendars (Phase 18: [`collection-graph`](../crates/collection-graph/docs/README.md)) JMAP contacts and calendars (Phase 19: [`collection-jmap`](../crates/collection-jmap/docs/README.md)) and people split and joined by hand with `.vcf`, `.ics` and zip exports (Phase 20: [`holtmail-people`](../crates/people/docs/README.md), [`holtmail-export`](../crates/export/docs/README.md#contacts-and-calendars)) are built.
 
 ## Principles carried over from mail
 
@@ -18,8 +18,8 @@ IMAP has no contacts or calendars. Each provider offers one of a few families:
 | --- | --- | --- | --- |
 | Most self-hosted servers (Nextcloud, Radicale, Baïkal, Stalwart, Cyrus), iCloud, Fastmail, Yandex, mailbox.org | CardDAV (RFC 6352, vCard) | CalDAV (RFC 4791, iCalendar) | password or app password |
 | Google | CardDAV, or the People API | CalDAV, or the Calendar API | OAuth: Thunderbird's Google client already lists CardDAV and CalDAV scopes |
-| Microsoft 365, Outlook.com | Graph `/me/contacts` (JSON, delta) | Graph `/me/events` (JSON, delta) | OAuth (Graph source from Phase "Later") |
-| Fastmail, Stalwart | JMAP for Contacts (RFC 9610, JSContact) | JMAP Calendars (draft, JSCalendar) | token or password |
+| Microsoft 365, Outlook.com | Graph `/me/contacts` and contact folders (JSON, delta) | Graph `/me/calendars/{id}/events` (JSON; delta only for the primary calendar's `calendarView`, so listed by change key) | OAuth, Graph accounts (`Contacts.Read`, `Calendars.Read`) |
+| Fastmail, Stalwart | JMAP for Contacts (RFC 9610, JSContact) | JMAP Calendars (draft, JSCalendar) | the JMAP account's token or password |
 
 Despite the different wire formats, every one of them reduces to the same shape:
 
@@ -36,7 +36,7 @@ The IETF already defined JSON models meant to be shared by every protocol:
 - JSContact (RFC 9553) for contacts;
 - JSCalendar (RFC 8984) for events and tasks.
 
-The Rust crate `calcard` (Stalwart Labs, Apache-2.0 OR MIT) parses vCard and iCalendar, tolerates non-conforming data, and converts both ways between vCard and JSContact and between iCalendar and JSCalendar. Holtmail stores the raw object and derives a JSContact or JSCalendar view from it. Graph and Google JSON are mapped into the same models by the source that reads them. The web app and the API only ever see the normalized model and the raw bytes for "view source".
+The Rust crate `calcard` (Stalwart Labs, Apache-2.0 OR MIT) parses vCard and iCalendar, tolerates non-conforming data, and converts both ways between vCard and JSContact and between iCalendar and JSCalendar. Holtmail stores the raw object and derives a JSContact or JSCalendar view from it. Graph JSON is kept as Graph sent it and read into the same model by `holtmail-pim` (Phase 18), next to its vCard and iCalendar readers. The web app and the API only ever see the normalized model and the raw bytes for "view source".
 
 ## Storage
 
@@ -46,7 +46,7 @@ The Rust crate `calcard` (Stalwart Labs, Apache-2.0 OR MIT) parses vCard and iCa
 | `items` | Collection, remote id (href or provider id), kind (contact, event, task), the stable key (see Identity), `first_seen_at`, `removed_at` |
 | `item_versions` | Item, `blob_id` of the raw object, content type, ETag or change key, `seen_at`; a new row only when the bytes change |
 | derived `pim_index` | Normalized fields for listing and joins: names, emails, phones, organization, event start and end in UTC, original time zone, recurrence flag, organizer, attendees, `UID`, `SEQUENCE` |
-| derived `occurrences` | Expanded instances of recurring events for a window (for example two years back and forward from today, grown on demand); rebuilt from the latest version |
+| derived `event_series`, `occurrences` | Each event item's group of copies (by `UID`), rank (`SEQUENCE`, `DTSTAMP`/`LAST-MODIFIED`) and span, and its instances: all of them for events that end within 1 000 instances, else two years back and forward from the last rebuild; spans outside are expanded on the fly, never stored. Rebuilt per item with its normalized fields |
 
 Photos inside vCards are split off into their own blobs, like attachments, so the same avatar in three address books is stored once.
 
@@ -71,7 +71,7 @@ What history can and cannot show:
 
 - **Versions between two syncs are invisible.** A contact edited three times within the sync interval shows one change.
 - **Some fields come with their own history.** iCalendar `SEQUENCE`, `DTSTAMP` and `LAST-MODIFIED`, and vCard `REV`, are kept inside the raw versions and shown on the timeline.
-- **Mail fills gaps for meetings.** Invitations, updates, replies and cancellations (iMIP, RFC 6047: `text/calendar` parts with `METHOD:REQUEST`, `REPLY` or `CANCEL`) are already in the archived mail, often from years before the calendar was connected. They become an event's history too, so the calendar is useful even for an account with mail only.
+- **Mail fills gaps for meetings.** Invitations, updates, replies and cancellations (iMIP, RFC 6047: `text/calendar` parts with `METHOD:REQUEST`, `REPLY` or `CANCEL`) are already in the archived mail, often from years before the calendar was connected. They become an event's history too, so the calendar is useful even for an account with mail only. Built in Phase 14: each archive has one "From mail" calendar; an event's versions there are ordered by `SEQUENCE`, `DTSTAMP` and the message date (so imports in any order give the same history), each linked to the messages it came in; the shown event merges them (the latest invitation, every attendee's latest answer, cancelled once cancelled).
 
 The item page shows a timeline of versions, each with a field-level diff computed between two normalized versions: "time moved from 10:00 to 11:00", "phone added", "removed from server".
 
@@ -92,13 +92,17 @@ The same person or meeting usually exists in several places: a work and a privat
 - groups are shown with the reason ("same email ada@example.com");
 - the owner can split a group or join two by hand. These overrides are the only stored state, and the raw contacts never change.
 
+Built in Phase 17 for events: copies are grouped by `UID` alone (a changed instance is part of its series' item, and instances fold by their `RECURRENCE-ID` across copies); the group id is a hash of the archive and the `UID`; ranking adds "live before removed" and the item id as tie-breakers; differences compare every field `diff` knows (attendees by who they are, answers separately per copy).
+
+Built in Phase 16, with the overrides in Phase 20 (splits and joins name cards and addresses, never person ids; a split always holds, a join never crosses one, later cards that share keys with both sides stay with the side not moved out; see [`holtmail-people`](../crates/people/docs/README.md)): the grouping is transitive and includes removed cards; a person's id is a hash of the archive and the group's smallest key, so it survives rebuilds and a person from mail keeps it when a card with that address appears; addresses of the mail join the person whose card has them; an address without a card is a person from mail when the owner wrote to it or it is in at least two messages and does not look like an automatic sender. The owner's addresses (the accounts' and the senders of Sent mail) are nobody's correspondence. Differences are flagged among current cards only; removed cards still show their values, marked removed.
+
 The merged person page shows every field with its sources. Where the sources agree, the value is shown once with small source marks. Where they disagree, the field shows each value side by side with its account and when it was last seen: "Phone: +1 555 0100 (Work, seen today) · +1 555 0199 (Private, last seen 2024)". A "Differences" filter lists people whose sources disagree.
 
 ## Links between mail, people and events
 
 All links are derived and rebuilt with the rest:
 
-- **Person ↔ mail.** Addresses in From, To, Cc and Reply-To match contact emails. The person page shows the correspondence: the first and last message, counts per year, threads and attachments exchanged. A sender in the reader links to the person.
+- **Person ↔ mail.** Addresses in From, To, Cc and Bcc match contact emails (Reply-To is not stored with messages, so it does not count; the reader still links it). The person page shows the correspondence: the first and last message, counts per year, threads and attachments exchanged. A sender in the reader links to the person.
 - **Event ↔ mail.** Invitations and replies match by `UID`. The event shows its mail thread; the message shows "This invitation is in your calendar (updated twice since)".
 - **Event ↔ person.** The organizer and attendees match contacts by email. The person page lists meetings together.
 - **Mail without contacts.** Frequent correspondents with no contact can be shown as "people from mail" (derived from addresses and display names). The contacts page is useful even before any address book is connected.
@@ -108,23 +112,24 @@ All links are derived and rebuilt with the rest:
 
 | Module | Job |
 | --- | --- |
-| `holtmail-pim` | Types shared by contacts and calendars: the normalized JSContact and JSCalendar views (wrapping `calcard`), field diff, identity keys |
-| `holtmail-collection` | Contract: list collections, `changes(collection, token)`, `fetch(ids)`, `list_versions(collection)` for recovery; own error enum; conformance suite and a fake |
+| `holtmail-pim` | Types shared by contacts and calendars: Holtmail's own normalized contact and event model with JSContact- and JSCalendar-like fields (parsed by `calcard`, whose types stay inside), splitting files into items, field diff, identity keys |
+| `holtmail-collection` | Contract: list collections, `changes(collection, token)`, `fetch(ids)`, `list(collection)` (ids and ETags) for recovery; own credentials and error enum; conformance suite and a fake |
 | `collection-dav` | CardDAV and CalDAV: discovery, `sync-collection`, `multiget`, ETag listing; password, app password and OAuth bearer |
-| `collection-graph` | Graph contacts and events with delta, mapped into JSContact and JSCalendar; raw JSON kept |
-| `collection-jmap` | JMAP Contacts (RFC 9610) and Calendars (once the draft settles) |
+| `collection-graph` | Graph contacts (delta) and calendars (listed by change key, series masters with their exceptions); raw JSON kept and read by `holtmail-pim` (built in Phase 18) |
+| `collection-jmap` | JMAP for Contacts (RFC 9610) and JMAP Calendars (draft) where the session offers them; JSContact and JSCalendar kept and read by `holtmail-pim` through `calcard` (built in Phase 19) |
 | `holtmail-recur` | Recurrence expansion with time zones (`RRULE`, `EXDATE`, `RDATE`, overrides, `VTIMEZONE`) for the derived occurrences |
+| `holtmail-calendar` | The derived calendar over the store: groups of copies by `UID`, stored instances per item, folding copies for a span, differences between copies |
 | store and store-sqlite | The tables above, conformance cases |
 | `holtmail-pim-sync` | The engine: tokens, versions, removals, recovery; one per account, run by the existing scheduler and task list |
 | ingest | iMIP parts in mail become event versions with the message as their source |
 | import | `.vcf` and `.ics` files, Google Takeout contacts and calendars |
-| index | Contacts and events as their own document types; `is:event`, `is:contact` and `with:` (a person) in the query language |
+| index | Contacts and events as their own document types in the same index (`put_items`, `search_items`), `is:event`, `is:contact`, `is:mail` and `with:` (anyone involved) in the query language |
 | api, api-client, web | Contacts page, calendar page, person and event pages, history timelines, links in the reader |
 
 A connected account gets "also archive contacts and calendars", using the same sign-in:
 
 - Google: the CardDAV and CalDAV scopes are added on the next sign-in.
-- Microsoft: Graph `Contacts.Read` and `Calendars.Read`.
+- Microsoft: Graph `Contacts.Read` and `Calendars.Read` for Graph accounts, added on the next sign-in; Microsoft accounts over IMAP are pointed at a Graph account.
 - DAV: the address is discovered from the mail domain, or entered by hand.
 
 ## Interface
@@ -132,7 +137,7 @@ A connected account gets "also archive contacts and calendars", using the same s
 - **Contacts.** A people list (persons, not raw cards), filters by source and "has differences", search. The person page has fields with sources, correspondence, meetings and the timeline of every source card.
 - **Calendar.** Month, week and agenda views built from the derived occurrences. Each source calendar is a toggle with its color, and removed events and removed calendars can be shown on request. Grouped copies show as one event with a "3 copies" mark.
 - **Event page.** Time and recurrence in the original zone and the viewer's zone. It shows attendees with each copy's answers, the differences between copies, the mail thread, and the timeline including iMIP messages.
-- **Everywhere:** "view source" for any version, and export (`.vcf` or `.ics` of the latest versions, or of every version as a zip).
+- **Everywhere:** "view source" for any version, and export (`.vcf` or `.ics` of the latest versions, or of every version as a zip). Built in Phase 20: vCard and iCalendar versions are written byte for byte, Graph and JMAP JSON is converted to vCard or iCalendar text in the `.vcf`/`.ics` and kept as JSON in the zip.
 
 ## Hard parts and their answers
 
@@ -157,6 +162,6 @@ A connected account gets "also archive contacts and calendars", using the same s
 5. Calendar page, event page, recurrence expansion, grouping across calendars.
 6. `collection-graph` for Microsoft.
 7. `collection-jmap` (contacts now, calendars once the draft settles).
-8. Person grouping overrides, the differences filter, export.
+8. Person grouping overrides, the differences filter, export (built in Phase 20).
 
 Each step gets its own WORKPLAN phase with tests, docs and VERIFY.md entries for what only real servers can prove.

@@ -27,6 +27,10 @@
 | `holtmail-extract` | [Contract for text from attachments](../crates/extract/docs/README.md) |
 | `holtmail-extract-basic` | [Text from PDF, office files, HTML and plain text](../crates/extract-basic/docs/README.md) |
 | `holtmail-thumbnail` | [Previews of image attachments](../crates/thumbnail/docs/README.md) |
+| `holtmail-pim` | [Contacts and events: vCard and iCalendar, normalized model, diffs, identity keys, iMIP merge](../crates/pim/docs/README.md) |
+| `holtmail-people` | [People derived from contacts and mail](../crates/people/docs/README.md) |
+| `holtmail-recur` | [Recurrence expansion with time zones](../crates/recur/docs/README.md) |
+| `holtmail-calendar` | [The derived calendar: event groups, stored instances, copy differences](../crates/calendar/docs/README.md) |
 | `holtmail-ingest` | [From raw bytes to an archived message](../crates/ingest/docs/README.md) |
 | `holtmail-import` | [Reading mbox, Maildir, .eml and zip](../crates/import/docs/README.md) |
 | `holtmail-export` | [Writing mbox and zips of .eml files](../crates/export/docs/README.md) |
@@ -41,6 +45,11 @@
 | `holtmail-oauth` | [Gmail and Microsoft sign-in with OAuth, for IMAP and Graph](../crates/oauth/docs/README.md) |
 | `holtmail-oauth-http` | [The OAuth token endpoint over HTTPS](../crates/oauth-http/docs/README.md) |
 | `holtmail-sync` | [Incremental archiving](../crates/sync/docs/README.md) |
+| `holtmail-collection` | [Contract for address books and calendars on a server](../crates/collection/docs/README.md) |
+| `holtmail-collection-dav` | [CardDAV and CalDAV](../crates/collection-dav/docs/README.md) |
+| `holtmail-collection-graph` | [Microsoft Graph contacts and calendars](../crates/collection-graph/docs/README.md) |
+| `holtmail-collection-jmap` | [JMAP contacts and calendars](../crates/collection-jmap/docs/README.md) |
+| `holtmail-pim-sync` | [Archiving contacts and calendars with their history](../crates/pim-sync/docs/README.md) |
 | `holtmail-auth` | [Sign-in, sessions and the setup link](../crates/auth/docs/README.md) |
 | `@holtmail/tokens` | [Design tokens](../packages/tokens/docs/README.md) |
 | `@holtmail/ui` | [Components](../packages/ui/docs/README.md) |

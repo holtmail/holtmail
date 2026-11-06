@@ -10,7 +10,7 @@ mod pim;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use holtmail_blob::{BlobError, BlobStore};
+use holtmail_blob::{BlobError, BlobId, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
 use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
@@ -67,6 +67,9 @@ pub enum IngestError {
     /// Indexing failed.
     #[error(transparent)]
     Index(#[from] IndexError),
+    /// These bytes were deleted from the archive on purpose and are not archived again.
+    #[error("deleted from this archive")]
+    Deleted,
 }
 
 /// The ingest pipeline over the three storage contracts.
@@ -109,7 +112,9 @@ impl Ingest {
     /// A new message's calendar parts (iMIP invitations, updates, replies and cancellations, and
     /// attached `.ics` files) become versions of events and tasks in the archive's "From mail"
     /// calendar, keyed by `UID` and linked to the message; see [`Ingest::record_invitations`].
-    /// Idempotent: the same bytes again only update where the message was seen. The raw bytes are
+    /// Idempotent: the same bytes again only update where the message was seen. Bytes deleted
+    /// from the archive on purpose are not stored again: [`IngestError::Deleted`], and their
+    /// folder and UID are remembered so the source is not asked for them again. The raw bytes are
     /// durable before any metadata refers to them, so a crash never leaves a message without its
     /// bytes. The index change becomes searchable after [`Ingest::commit`]; callers commit once per
     /// batch.
@@ -121,6 +126,12 @@ impl Ingest {
     ) -> Result<Ingested, IngestError> {
         let parsed = holtmail_mime::parse(&raw)?;
         let size = raw.len() as u64;
+        if self.store.is_deleted(archive, &BlobId::of(&raw)).await? {
+            if let (Some(folder), Some(uid)) = (placement.folder, placement.uid) {
+                self.store.record_deleted_location(folder, uid).await?;
+            }
+            return Err(IngestError::Deleted);
+        }
         let blob_id = self.blobs.put(raw).await?;
 
         let inserted = match self.store.find_by_blob(archive, &blob_id).await? {
@@ -199,6 +210,35 @@ impl Ingest {
             .ok_or(StoreError::NotFound("message bytes"))?;
         let parsed = holtmail_mime::parse(&raw)?;
         self.index_parsed(message, &parsed).await
+    }
+
+    /// Reads the text of the attachments of `message` that `which` picks again, ignoring what
+    /// was kept from an earlier reading, deletes kept text nothing else uses, and rebuilds the
+    /// message's index document. Returns how many attachments were picked. Searchable after
+    /// [`Ingest::commit`].
+    pub async fn refresh_attachment_text(
+        &self,
+        message: MessageId,
+        which: &(dyn Fn(&Attachment) -> bool + Send + Sync),
+    ) -> Result<u32, IngestError> {
+        let mut picked = 0;
+        for attachment in self.store.attachments(message).await? {
+            if attachment.inline || !which(&attachment) {
+                continue;
+            }
+            picked += 1;
+            if let Some(orphan) = self
+                .store
+                .forget_derived(&attachment.blob_id, DerivedKind::Text)
+                .await?
+            {
+                self.blobs.delete(&orphan).await?;
+            }
+        }
+        if picked > 0 {
+            self.reindex(message).await?;
+        }
+        Ok(picked)
     }
 
     /// Makes everything ingested so far searchable.
@@ -565,6 +605,77 @@ mod tests {
     }
 
     const FORWARD: &[u8] = b"From: Carol <carol@example.org>\r\nTo: ada@example.com\r\nSubject: Fwd: menu\r\nMessage-ID: <f1@example.org>\r\nDate: Sat, 15 Mar 2025 10:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n--b\r\nContent-Type: application/octet-stream; name=menu.txt\r\nContent-Disposition: attachment; filename=menu.txt\r\n\r\nSoup\r\n--b\r\nContent-Type: application/pdf; name=broken.pdf\r\nContent-Disposition: attachment; filename=broken.pdf\r\n\r\nnot a pdf\r\n--b--\r\n";
+
+    struct Fixed(&'static str);
+
+    #[async_trait::async_trait]
+    impl Extractor for Fixed {
+        async fn extract(&self, file: &File) -> Result<Option<String>, ExtractError> {
+            Ok(Some(format!(
+                "{} {}",
+                self.0,
+                file.filename.as_deref().unwrap_or_default()
+            )))
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reads_picked_attachments_again() {
+        let f = fixture().await;
+        let old = f.ingest.clone().with_extractor(Arc::new(Fixed("oldword")));
+        let forward = old
+            .ingest(
+                f.archive,
+                Bytes::from_static(FORWARD),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap();
+        old.commit().await.unwrap();
+        let menu = f.store.attachments(forward.message_id).await.unwrap()[0].clone();
+        let Some(Derived::Blob(kept)) = f
+            .store
+            .derived(&menu.blob_id, DerivedKind::Text)
+            .await
+            .unwrap()
+        else {
+            panic!("no text kept");
+        };
+
+        let new = f.ingest.clone().with_extractor(Arc::new(Fixed("newword")));
+        let picked = new
+            .refresh_attachment_text(forward.message_id, &|a| {
+                a.filename.as_deref() == Some("menu.txt")
+            })
+            .await
+            .unwrap();
+        new.commit().await.unwrap();
+        assert_eq!(picked, 1);
+        assert!(
+            !f.blobs.contains(&kept).await.unwrap(),
+            "old text left behind"
+        );
+        assert_eq!(
+            find(&f, vec![Clause::Text("newword".into())]).await,
+            [forward.message_id]
+        );
+        let pdf = &f.store.attachments(forward.message_id).await.unwrap()[1];
+        assert!(
+            matches!(
+                f.store
+                    .derived(&pdf.blob_id, DerivedKind::Text)
+                    .await
+                    .unwrap(),
+                Some(Derived::Blob(_))
+            ),
+            "an attachment not picked was forgotten"
+        );
+        assert_eq!(
+            find(&f, vec![Clause::Text("oldword".into())]).await,
+            [forward.message_id],
+            "the attachment not picked lost its text"
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn indexes_attachment_text_once_per_file() {

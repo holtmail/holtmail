@@ -16,7 +16,7 @@ ingest.reindex(message).await?; // after folders, flags or labels change
 
 ## What `ingest` does
 
-1. Parses the bytes with `holtmail-mime`. Bytes that are not a message fail with `IngestError::Mime` before anything is written, so the caller can record the failure and move on.
+1. Parses the bytes with `holtmail-mime`. Bytes that are not a message fail with `IngestError::Mime` before anything is written, so the caller can record the failure and move on. Bytes whose hash is a tombstone of the archive (deleted there on purpose, see [`DeletionStore`](../../store/docs/README.md#deletionstore)) fail with `IngestError::Deleted` before anything is stored; a placement with a folder and UID is recorded as a deleted location, so the source is not asked for it again.
 2. Stores the raw bytes as a blob. They are durable before any metadata refers to them.
 3. If the archive has no message with these bytes: stores every attachment as its own blob and inserts the message, which places it in a thread.
 4. Records the location (`folder`, `uid`, `flags`) when the placement has a folder.
@@ -58,3 +58,5 @@ With `with_extractor`, every attachment that is not inline goes through the [`Ex
 - At most `MAX_ATTACHMENT_TEXT` (4 MiB) of attachment text is indexed per message, all attachments together, each at most the extractor's 1 MiB. Attachments over 25 MiB are not read. Stored attachments are never cut.
 - Extraction runs inline, so a sync waits for each file (bounded by the extractor's timeout).
 - When threads merge, other messages' index documents keep their old thread id until reindexed. Search does not filter by thread, so results are unaffected.
+
+`refresh_attachment_text(message, which)` reads the attachments `which` picks again, ignoring the kept text: it forgets their derived text, deletes text blobs nothing else uses, and rebuilds the index document. The server uses it once to replace raw calendar and vCard lines with their words.

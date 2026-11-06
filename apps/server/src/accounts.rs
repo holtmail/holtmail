@@ -665,6 +665,9 @@ pub async fn configure(
     if let Some(days) = change.min_age_days {
         updated.settings = with_min_age_days(&updated.settings, days);
     }
+    if let Some(dav) = &change.contacts_calendars {
+        crate::dav::configure(store, secrets, oauth, &mut updated, dav).await?;
+    }
     store.update_account(&updated).await.map_err(backend)?;
     Ok(updated)
 }
@@ -860,13 +863,13 @@ pub async fn finish_oauth(services: &Services, answer: &str) -> Result<Account, 
     let (account, settings) = target(services, &pending).await?;
     let token = Credentials::AccessToken(tokens.access_token.clone());
     let signed_in_as = match pending.access {
-        Access::Imap => {
+        Access::Imap | Access::ImapDav => {
             let imap = ImapSettings::from_json(&settings)
                 .map_err(|e| MailboxError::Invalid(e.to_string()))?;
             check_sign_in(&imap, token).await?;
             None
         }
-        Access::Graph => check_graph_sign_in(&settings, token).await?,
+        Access::Graph | Access::GraphPim => check_graph_sign_in(&settings, token).await?,
     };
     if let (Some(account), Some(now)) = (&account, &signed_in_as)
         && let Some(before) = &account.address
@@ -894,8 +897,8 @@ pub async fn finish_oauth(services: &Services, answer: &str) -> Result<Account, 
                 .create_account(NewAccount {
                     archive_id: *archive,
                     kind: match pending.access {
-                        Access::Imap => AccountKind::Imap,
-                        Access::Graph => AccountKind::Graph,
+                        Access::Imap | Access::ImapDav => AccountKind::Imap,
+                        Access::Graph | Access::GraphPim => AccountKind::Graph,
                     },
                     name: name.clone().unwrap_or_else(|| address.clone()),
                     address: Some(address),
@@ -940,6 +943,7 @@ async fn target(
     let oauth = OAuthSettings {
         provider: pending.provider.as_str().to_owned(),
         needs_sign_in: false,
+        access: Some(pending.access.as_str().to_owned()),
     };
     match &pending.purpose {
         Purpose::NewAccount { archive, .. } => {
@@ -949,8 +953,11 @@ async fn target(
                 .await
                 .map_err(backend)?
                 .ok_or_else(|| MailboxError::Invalid("The archive was removed.".into()))?;
-            if pending.access == Access::Graph {
-                let mut settings = serde_json::json!({});
+            if matches!(pending.access, Access::Graph | Access::GraphPim) {
+                let mut settings = match services.oauth.graph_url() {
+                    Some(url) => serde_json::json!({ "api_url": url }),
+                    None => serde_json::json!({}),
+                };
                 oauth.write(&mut settings);
                 return Ok((None, settings));
             }
@@ -972,7 +979,7 @@ async fn target(
                 .map_err(backend)?
                 .ok_or_else(|| MailboxError::Invalid("The account was removed.".into()))?;
             let mut settings = account.settings.clone();
-            if pending.access == Access::Graph {
+            if matches!(pending.access, Access::Graph | Access::GraphPim) {
                 oauth.write(&mut settings);
                 return Ok((Some(account), settings));
             }
@@ -1211,6 +1218,7 @@ mod tests {
         OAuthSettings {
             provider: "google".into(),
             needs_sign_in: true,
+            access: None,
         }
         .write(&mut revoked.settings);
         store.update_account(&revoked).await.unwrap();
@@ -1453,6 +1461,7 @@ mod tests {
         OAuthSettings {
             provider: "google".into(),
             needs_sign_in: false,
+            access: None,
         }
         .write(&mut google.settings);
         store.update_account(&google).await.unwrap();

@@ -21,6 +21,10 @@ pub struct OAuthSettings {
     pub provider: String,
     #[serde(default)]
     pub needs_sign_in: bool,
+    /// What the last sign-in granted, as [`Access::as_str`]; missing on accounts signed in
+    /// before contacts and calendars, which have their kind's access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
 }
 
 impl OAuthSettings {
@@ -78,6 +82,7 @@ pub struct OAuth {
     endpoint: Arc<dyn TokenEndpoint>,
     pending: Mutex<HashMap<String, Pending>>,
     tokens: Mutex<HashMap<AccountId, Cached>>,
+    graph_url: Option<String>,
 }
 
 impl OAuth {
@@ -87,7 +92,19 @@ impl OAuth {
             endpoint,
             pending: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            graph_url: None,
         }
+    }
+
+    /// The same with the Graph address new Graph accounts are given; `None` for Microsoft's.
+    pub fn with_graph_url(mut self, graph_url: Option<String>) -> Self {
+        self.graph_url = graph_url;
+        self
+    }
+
+    /// The Graph address new Graph accounts are given, when not Microsoft's global one.
+    pub fn graph_url(&self) -> Option<&str> {
+        self.graph_url.as_deref()
     }
 
     fn client(&self, provider: Provider, access: Access) -> Result<Client, OAuthError> {
@@ -216,7 +233,7 @@ impl OAuth {
                 .context("the stored sign-in cannot be opened with this secret key")?,
         )
         .context("the stored sign-in is damaged")?;
-        let client = self.client(provider, access_for(account.kind))?;
+        let client = self.client(provider, granted_access(account))?;
         match client.refresh(&*self.endpoint, &refresh).await {
             Ok(tokens) => {
                 if let Some(rotated) = tokens.refresh_token.as_deref().filter(|t| *t != refresh) {
@@ -247,6 +264,14 @@ impl OAuth {
             )),
         }
     }
+}
+
+/// What the account's last OAuth sign-in granted.
+pub fn granted_access(account: &Account) -> Access {
+    OAuthSettings::of(account)
+        .and_then(|o| o.access)
+        .and_then(|a| Access::parse(&a))
+        .unwrap_or_else(|| access_for(account.kind))
 }
 
 /// What an account's OAuth sign-in grants: Graph for Graph accounts, IMAP for the rest.
@@ -294,6 +319,7 @@ mod tests {
         OAuthSettings {
             provider: "google".into(),
             needs_sign_in: false,
+            access: None,
         }
         .write(&mut settings);
         let mut account = store
@@ -398,6 +424,7 @@ mod tests {
         OAuthSettings {
             provider: "microsoft".into(),
             needs_sign_in: false,
+            access: None,
         }
         .write(&mut settings);
         let mut graph = f

@@ -17,6 +17,10 @@ holtmail-auth.workspace = true
 holtmail-blob.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-blob-s3.workspace = true
+holtmail-collection.workspace = true
+holtmail-collection-dav.workspace = true
+holtmail-collection-graph.workspace = true
+holtmail-collection-jmap.workspace = true
 holtmail-core.workspace = true
 holtmail-fetch.workspace = true
 holtmail-fetch-http.workspace = true
@@ -28,6 +32,9 @@ holtmail-index.workspace = true
 holtmail-index-tantivy.workspace = true
 holtmail-oauth.workspace = true
 holtmail-oauth-http.workspace = true
+holtmail-people.workspace = true
+holtmail-pim.workspace = true
+holtmail-pim-sync.workspace = true
 holtmail-query.workspace = true
 holtmail-ingest.workspace = true
 holtmail-remote.workspace = true
@@ -41,6 +48,7 @@ holtmail-store.workspace = true
 holtmail-store-sqlite.workspace = true
 holtmail-sync.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
 base64.workspace = true
 bytes.workspace = true
 async-trait.workspace = true
@@ -61,6 +69,7 @@ uuid.workspace = true
 [dev-dependencies]
 holtmail-fetch = { workspace = true, features = ["testing"] }
 holtmail-oauth = { workspace = true, features = ["testing"] }
+zip.workspace = true
 
 [lints]
 workspace = true

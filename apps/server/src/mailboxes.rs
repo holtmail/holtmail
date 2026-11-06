@@ -5,13 +5,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use holtmail_api::{
-    AccountChange, AccountDetails, AccountStatus, ImageProxy, MailboxError, Mailboxes,
-    NewImapAccount, NewJmapAccount, OAuthFinished, OAuthStart, OAuthStarted, OAuthTarget,
-    RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
+    AccountChange, AccountDetails, AccountStatus, ContactsCalendarsRun, ImageProxy, MailboxError,
+    Mailboxes, NewImapAccount, NewJmapAccount, OAuthFinished, OAuthStart, OAuthStarted,
+    OAuthTarget, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
 };
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
 use holtmail_oauth::{Access, Provider};
+use holtmail_pim_sync::{ChangeMode, PimReport, PimSyncer};
+
+use crate::people::PeopleRefresh;
 use holtmail_remote::{RemoteImages, Saved, Scope};
 use holtmail_source::Credentials;
 use holtmail_source_imap::ImapSettings;
@@ -20,6 +23,7 @@ use holtmail_sync::Syncer;
 
 use crate::accounts;
 use crate::config::Services;
+use crate::dav;
 use crate::import;
 use crate::oauth::{OAuthSettings, Purpose};
 use crate::schedule::{self, Schedule};
@@ -35,6 +39,8 @@ pub struct Runner(Arc<Inner>);
 struct Inner {
     services: Arc<Services>,
     syncer: Syncer,
+    pim: PimSyncer,
+    pim_running: Mutex<HashSet<AccountId>>,
     ingest: Ingest,
     uploads: PathBuf,
     status: Mutex<HashMap<AccountId, AccountStatus>>,
@@ -45,6 +51,30 @@ struct Inner {
     next: Mutex<HashMap<AccountId, Timestamp>>,
     due: Mutex<HashSet<AccountId>>,
     interrupted: Mutex<Vec<TaskRecord>>,
+    people: Arc<PeopleRefresh>,
+}
+
+/// An account's contacts sync marked as running until dropped, also when the sync panics.
+struct PimRunning<'a> {
+    set: &'a Mutex<HashSet<AccountId>>,
+    account: AccountId,
+}
+
+impl<'a> PimRunning<'a> {
+    fn claim(set: &'a Mutex<HashSet<AccountId>>, account: AccountId) -> Option<Self> {
+        set.lock()
+            .expect("pim lock")
+            .insert(account)
+            .then_some(Self { set, account })
+    }
+}
+
+impl Drop for PimRunning<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.set.lock() {
+            set.remove(&self.account);
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -121,6 +151,7 @@ impl Runner {
                         finished_at: Some(run.finished_at),
                         error: run.error,
                         next_sync_at: None,
+                        contacts_calendars: None,
                     },
                 )
             })
@@ -143,9 +174,13 @@ impl Runner {
             services.blobs.clone(),
             services.store.clone(),
         );
+        let pim = PimSyncer::new(services.store.clone(), ingest.clone());
+        let people = PeopleRefresh::new(services.store.clone());
         let runner = Self(Arc::new(Inner {
             services,
             syncer,
+            pim,
+            pim_running: Mutex::new(HashSet::new()),
             ingest,
             uploads,
             status: Mutex::new(status),
@@ -156,6 +191,7 @@ impl Runner {
             next: Mutex::new(HashMap::new()),
             due: Mutex::new(due),
             interrupted: Mutex::new(interrupted),
+            people,
         }));
         runner.clear_uploads().await;
         Ok(runner)
@@ -460,6 +496,7 @@ impl Runner {
                 )
                 .await;
                 if report.new_messages() > 0 {
+                    self.0.people.request(account.archive_id);
                     let _ = self.start_remote(account.archive_id, Job::New).await;
                 }
             }
@@ -471,6 +508,164 @@ impl Runner {
                 self.finish(account.id, Err(error)).await;
             }
         }
+        self.sync_contacts_now(account.id).await;
+    }
+
+    /// Syncs the contacts and calendars of `account` as a task of its own and waits for it, when
+    /// they are on and the account may sign in for them; returns at once when a run is going.
+    pub async fn sync_contacts_now(&self, account: AccountId) {
+        let account = match self.0.services.store.get_account(account).await {
+            Ok(Some(account)) => account,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%account, %error, "account not read");
+                return;
+            }
+        };
+        if !dav::DavSettings::of(&account).is_some_and(|d| d.enabled)
+            || !dav::available(&account)
+            || dav::needs_consent(&account)
+            || OAuthSettings::of(&account).is_some_and(|o| o.needs_sign_in)
+        {
+            return;
+        }
+        let Some(_running) = PimRunning::claim(&self.0.pim_running, account.id) else {
+            return;
+        };
+        let task = self.0.tasks.start(NewTask {
+            kind: TaskKind::ContactsCalendars,
+            archive: Some(account.archive_id),
+            account: Some(account.id),
+            title: account.name.clone(),
+            cancellable: false,
+            job: None,
+        });
+        task.log(
+            TaskLevel::Info,
+            "Connecting to the contacts and calendars server",
+        );
+        let services = &self.0.services;
+        let outcome = match dav::source_for(
+            &account,
+            &*services.store,
+            &*services.secrets,
+            &services.oauth,
+        )
+        .await
+        {
+            Ok(source) => self
+                .0
+                .pim
+                .sync(account.archive_id, account.id, &*source)
+                .await
+                .map_err(|error| match error {
+                    holtmail_pim_sync::PimSyncError::Source(error) => {
+                        if matches!(error, holtmail_collection::CollectionError::Auth(_))
+                            && OAuthSettings::of(&account).is_some()
+                        {
+                            services.oauth.forget(account.id);
+                        }
+                        dav::reason(&error)
+                    }
+                    other => other.to_string(),
+                }),
+            Err(error) => Err(format!("{error:#}")),
+        };
+        match outcome {
+            Ok(report) => {
+                self.log_contacts(&task, &report).await;
+                if report.removed_collections > 0
+                    || report
+                        .collections
+                        .iter()
+                        .any(|c| c.new + c.changed + c.removed > 0)
+                {
+                    self.0.people.request(account.archive_id);
+                }
+                let summary = contacts_summary(&report);
+                task.progress(
+                    report.collections.len() as u64,
+                    Some(report.collections.len() as u64),
+                    summary.clone(),
+                );
+                task.finish(
+                    if report.error().is_some() {
+                        TaskState::Failed
+                    } else {
+                        TaskState::Done
+                    },
+                    summary,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(account = %account.id, "contacts and calendars sync failed");
+                task.log(TaskLevel::Error, error);
+                task.finish(TaskState::Failed, "The contacts and calendars sync failed");
+            }
+        }
+    }
+
+    async fn log_contacts(&self, task: &TaskHandle, report: &PimReport) {
+        for entry in &report.collections {
+            let name = match self.0.services.store.get_collection(entry.collection).await {
+                Ok(Some(c)) => c.name,
+                _ => entry.collection.to_string(),
+            };
+            let how = match entry.mode {
+                ChangeMode::Unchanged => "unchanged",
+                ChangeMode::SinceToken => "changes since the last sync",
+                ChangeMode::Full => "read in full",
+                ChangeMode::TokenExpired => "read in full, the server forgot the last sync",
+                ChangeMode::Listing => "listed in full, the server cannot list changes",
+            };
+            let line = format!(
+                "{}{}: {} new, {} changed, {} unchanged, {} removed, {} failed ({how})",
+                name,
+                if entry.created { " (new)" } else { "" },
+                entry.new,
+                entry.changed,
+                entry.same,
+                entry.removed,
+                entry.failed,
+            );
+            match &entry.error {
+                Some(error) => task.log(TaskLevel::Error, format!("{line}: {error}")),
+                None if entry.failed > 0 => task.log(TaskLevel::Warning, line),
+                None => task.log(TaskLevel::Info, line),
+            }
+        }
+        if report.removed_collections > 0 {
+            task.log(
+                TaskLevel::Info,
+                format!(
+                    "{} address books or calendars are gone from the server and marked removed",
+                    report.removed_collections
+                ),
+            );
+        }
+    }
+
+    fn contacts_run(&self, account: AccountId) -> Option<ContactsCalendarsRun> {
+        let task = self
+            .0
+            .tasks
+            .list()
+            .into_iter()
+            .filter(|t| t.kind == TaskKind::ContactsCalendars && t.account_id == Some(account))
+            .max_by_key(|t| t.started_at)?;
+        let error = (task.state == TaskState::Failed).then(|| {
+            task.log
+                .iter()
+                .rev()
+                .find(|l| l.level == TaskLevel::Error)
+                .map_or_else(|| task.summary.clone(), |l| l.text.clone())
+        });
+        Some(ContactsCalendarsRun {
+            running: task.state == TaskState::Running,
+            finished_at: task.finished_at,
+            summary: task.summary,
+            error,
+        })
     }
 
     async fn import_now(&self, account: Account, file: PathBuf) {
@@ -490,6 +685,7 @@ impl Runner {
             account.archive_id,
             account.id,
             &file,
+            Some(&account.name),
             |totals| {
                 runner.progress(account.id, totals.new);
                 let done = totals.new + totals.known + totals.failed;
@@ -514,6 +710,7 @@ impl Runner {
                 task.log(TaskLevel::Info, format!("Done: {summary}."));
                 task.finish(TaskState::Done, summary);
                 self.finish(account.id, Ok(totals.new)).await;
+                self.0.people.request(account.archive_id);
                 if totals.new > 0 {
                     let _ = self.start_remote(account.archive_id, Job::New).await;
                 }
@@ -565,17 +762,24 @@ impl Runner {
     }
 }
 
-fn import_summary(totals: &import::Totals) -> String {
+fn contacts_summary(report: &PimReport) -> String {
     format!(
-        "{} new, {} already archived, {} failed",
-        totals.new, totals.known, totals.failed
+        "{} new, {} changed, {} removed in {} address books and calendars",
+        report.new_items(),
+        report.changed_items(),
+        report.removed_items(),
+        report.collections.len()
     )
+}
+
+fn import_summary(totals: &import::Totals) -> String {
+    totals.summary()
 }
 
 fn import_error(error: &anyhow::Error) -> String {
     match error.downcast_ref::<holtmail_import::ImportError>() {
         Some(holtmail_import::ImportError::UnknownFormat(_)) => {
-            "The file is not an mbox, .eml or zip file.".to_owned()
+            "The file is not an mbox, .eml, .vcf, .ics or zip file.".to_owned()
         }
         _ => "The file could not be read.".to_owned(),
     }
@@ -661,14 +865,24 @@ impl Mailboxes for Runner {
             ));
         }
         let services = &self.0.services;
-        accounts::configure(
+        let turns_on = change
+            .contacts_calendars
+            .as_ref()
+            .is_some_and(|c| c.enabled);
+        let stored = accounts::configure(
             &*services.store,
             &*services.secrets,
             &services.oauth,
             account,
             change,
         )
-        .await
+        .await?;
+        if turns_on && stored.enabled {
+            let runner = self.clone();
+            let id = stored.id;
+            tokio::spawn(async move { runner.sync_contacts_now(id).await });
+        }
+        Ok(stored)
     }
 
     fn details(&self, account: &Account) -> AccountDetails {
@@ -680,6 +894,7 @@ impl Mailboxes for Runner {
             min_age_days: accounts::min_age_days(account),
             needs_sign_in: oauth.as_ref().is_some_and(|o| o.needs_sign_in),
             oauth_provider: oauth.map(|o| o.provider),
+            contacts_calendars: dav::details(account),
         }
     }
 
@@ -714,6 +929,7 @@ impl Mailboxes for Runner {
         let provider = Provider::parse(&start.provider)
             .ok_or_else(|| MailboxError::Invalid("Choose Google or Microsoft.".into()))?;
         let store = &self.0.services.store;
+        let mut wanted = None;
         let (email, purpose, kind) = match start.target {
             OAuthTarget::NewAccount { archive, name } => {
                 store
@@ -748,12 +964,16 @@ impl Mailboxes for Runner {
                         .filter(|a| a.contains('@'))
                         .ok_or_else(|| MailboxError::Invalid("Enter the email address.".into()))?,
                 };
+                wanted = Some(dav::wanted_access(&account));
                 (email, Purpose::SignInAgain(id), account.kind)
             }
         };
         let access = match kind {
+            AccountKind::Imap if provider == Provider::Google => wanted.unwrap_or(Access::Imap),
             AccountKind::Imap => Access::Imap,
-            AccountKind::Graph if provider == Provider::Microsoft => Access::Graph,
+            AccountKind::Graph if provider == Provider::Microsoft => {
+                wanted.unwrap_or(Access::Graph)
+            }
             AccountKind::Graph => {
                 return Err(MailboxError::Invalid(
                     "Microsoft Graph accounts sign in with Microsoft.".into(),
@@ -846,6 +1066,16 @@ impl Mailboxes for Runner {
         self.0.services.fetcher.set(proxy).await
     }
 
+    async fn rebuild_people(&self, archive: ArchiveId) -> Result<(), MailboxError> {
+        if self.0.people.rebuild_now(archive).await {
+            Ok(())
+        } else {
+            Err(MailboxError::Backend(
+                "The people could not be rebuilt".into(),
+            ))
+        }
+    }
+
     fn upload_dir(&self) -> &Path {
         &self.0.uploads
     }
@@ -868,6 +1098,7 @@ impl Mailboxes for Runner {
                 .get(&account)
                 .copied();
         }
+        status.contacts_calendars = self.contacts_run(account);
         status
     }
 }

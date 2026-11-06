@@ -71,6 +71,17 @@ pub struct OAuthClientConfig {
     /// client, `http://127.0.0.1` for Thunderbird's.
     #[serde(default)]
     pub redirect_url: Option<String>,
+    /// The provider's sign-in page, for a national cloud or a single-tenant authority such as
+    /// `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize`.
+    #[serde(default)]
+    pub authorize_url: Option<String>,
+    /// The provider's token endpoint, to go with `authorize_url`.
+    #[serde(default)]
+    pub token_url: Option<String>,
+    /// Microsoft only: the Graph address new Graph accounts use, for a national cloud such as
+    /// `https://graph.microsoft.us/v1.0`.
+    #[serde(default)]
+    pub graph_url: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -152,6 +163,15 @@ impl Config {
             if let Some(url) = read("REDIRECT_URL") {
                 client.redirect_url = Some(url);
             }
+            if let Some(url) = read("AUTHORIZE_URL") {
+                client.authorize_url = Some(url);
+            }
+            if let Some(url) = read("TOKEN_URL") {
+                client.token_url = Some(url);
+            }
+            if let Some(url) = read("GRAPH_URL") {
+                client.graph_url = Some(url);
+            }
         }
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
@@ -205,7 +225,23 @@ impl Config {
             );
             client.redirect_url = url.clone();
         }
+        if let Some(url) = &own.authorize_url {
+            client.authorize_url = secure_url(url, provider, "authorize_url")?;
+        }
+        if let Some(url) = &own.token_url {
+            client.token_url = secure_url(url, provider, "token_url")?;
+        }
         Ok(client)
+    }
+
+    /// The Graph address new Microsoft Graph accounts are given, when the config names one.
+    pub fn graph_url(&self) -> anyhow::Result<Option<String>> {
+        self.oauth
+            .microsoft
+            .graph_url
+            .as_deref()
+            .map(|url| secure_url(url, Provider::Microsoft, "graph_url"))
+            .transpose()
     }
 
     /// Whether the instance is served over https.
@@ -278,16 +314,37 @@ pub fn open_secrets(config: &Config) -> anyhow::Result<Arc<LocalSecretBox>> {
     )?))
 }
 
+/// An address the config gives for a provider: https, or plain http to a loopback address.
+fn secure_url(raw: &str, provider: Provider, key: &str) -> anyhow::Result<String> {
+    let url = url::Url::parse(raw.trim())
+        .with_context(|| format!("oauth.{}.{key}", provider.as_str()))?;
+    let loopback = match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
+        None => false,
+    };
+    anyhow::ensure!(
+        url.scheme() == "https" || (url.scheme() == "http" && loopback),
+        "oauth.{}.{key} must use https",
+        provider.as_str()
+    );
+    Ok(raw.trim().to_owned())
+}
+
 /// The OAuth clients the config names, with the provider's token endpoint over HTTPS.
 pub fn open_oauth(config: &Config) -> anyhow::Result<Arc<OAuth>> {
     let mut clients = Vec::new();
     for provider in Provider::ALL {
         clients.push(config.oauth_client(provider)?);
     }
-    Ok(Arc::new(OAuth::new(
-        clients,
-        Arc::new(HttpTokenEndpoint::new(std::time::Duration::from_secs(30))?),
-    )))
+    Ok(Arc::new(
+        OAuth::new(
+            clients,
+            Arc::new(HttpTokenEndpoint::new(std::time::Duration::from_secs(30))?),
+        )
+        .with_graph_url(config.graph_url()?),
+    ))
 }
 
 impl Services {

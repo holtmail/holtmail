@@ -3,11 +3,13 @@
 mod accounts;
 mod backup;
 mod config;
+mod dav;
 mod export;
 mod image_proxy;
 mod import;
 mod mailboxes;
 mod oauth;
+mod people;
 mod schedule;
 mod tasks;
 
@@ -39,7 +41,7 @@ struct Cli {
 enum Command {
     /// Run the web interface and the API.
     Serve,
-    /// Import mbox, Maildir, .eml or zip files into an archive.
+    /// Import mbox, Maildir, .eml, .vcf, .ics or zip files (Google Takeout too) into an archive.
     Import {
         /// Archive name; created when missing.
         #[arg(short, long)]
@@ -65,7 +67,8 @@ enum Command {
         #[arg(long)]
         account: Option<String>,
     },
-    /// Rebuild the search index from the stored messages.
+    /// Rebuild the search index from the stored messages, and the listed fields of contacts and
+    /// events from their latest versions.
     Reindex {
         /// Read the text of every attachment again instead of reusing what was read before,
         /// e.g. after an upgrade that reads more file types.
@@ -73,21 +76,48 @@ enum Command {
         refresh_attachments: bool,
     },
     /// Write the messages of an archive, a folder, a label or a search as mbox or as a zip of
-    /// .eml files. Works while `serve` runs, except for --query.
+    /// .eml files; with --contacts or --calendar, its contacts as .vcf or its calendar items as
+    /// .ics (latest versions), or every version as a zip. Works while `serve` runs, except for
+    /// --query.
     Export {
         /// Archive name or id.
         #[arg(short, long)]
         archive: String,
         /// Only this folder: its path, `account name/path`, or its id.
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["contacts", "calendar"])]
         folder: Option<String>,
         /// Only the messages with this label.
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["contacts", "calendar"])]
         label: Option<String>,
         /// Only the messages matching this search, e.g. "from:ada@example.com before:2024-01-01".
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["contacts", "calendar"])]
         query: Option<String>,
-        /// mbox or zip; taken from the output's extension when omitted (zip for .zip, else mbox).
+        /// Export contacts instead of messages.
+        #[arg(long, conflicts_with = "calendar")]
+        contacts: bool,
+        /// Export calendar items instead of messages.
+        #[arg(long)]
+        calendar: bool,
+        /// With --contacts or --calendar: only this address book or calendar, by name or id.
+        #[arg(long)]
+        collection: Option<String>,
+        /// With --contacts: only the cards of this person id.
+        #[arg(long, requires = "contacts", conflicts_with = "collection")]
+        person: Option<String>,
+        /// With --calendar and --to: only events with an instance on or after this day
+        /// (YYYY-MM-DD, UTC).
+        #[arg(long, requires_all = ["calendar", "to"])]
+        from: Option<String>,
+        /// With --calendar and --from: only events with an instance before this day
+        /// (YYYY-MM-DD, UTC).
+        #[arg(long, requires_all = ["calendar", "from"])]
+        to: Option<String>,
+        /// With --contacts or --calendar: put items removed from their source into a .vcf or
+        /// .ics too; a zip has them always.
+        #[arg(long)]
+        include_removed: bool,
+        /// mbox or zip for messages, vcf or zip for contacts, ics or zip for calendars; taken
+        /// from the output's extension when omitted (zip for .zip, else mbox, vcf or ics).
         #[arg(long)]
         format: Option<String>,
         /// The file to write, or - for standard output. An existing file is not overwritten.
@@ -260,6 +290,24 @@ struct EditAccount {
     /// input; checked by signing in.
     #[arg(long)]
     password_stdin: bool,
+    /// Archive the account's contacts and calendars after each mail sync: on or off. Turning
+    /// on signs in first: to the CardDAV and CalDAV server, to Microsoft Graph for a Graph
+    /// account, or to the JMAP session of a JMAP account that offers contacts (without
+    /// --dav-url). A Google or Graph account then has to sign in again (Sign in again in the web
+    /// app) to grant access.
+    #[arg(long, value_parser = ["on", "off"])]
+    contacts_calendars: Option<String>,
+    /// The CardDAV and CalDAV address, for both; detected from the account's address when
+    /// omitted (Fastmail, iCloud, Yandex, else the mail domain's well-known address). For
+    /// Nextcloud: https://host/remote.php/dav.
+    #[arg(long, requires = "contacts_calendars")]
+    dav_url: Option<String>,
+    /// The CardDAV address, when it differs from the CalDAV one.
+    #[arg(long, requires = "contacts_calendars")]
+    carddav_url: Option<String>,
+    /// The CalDAV address, when it differs from the CardDAV one.
+    #[arg(long, requires = "contacts_calendars")]
+    caldav_url: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -302,10 +350,38 @@ async fn main() -> anyhow::Result<()> {
             folder,
             label,
             query,
+            contacts,
+            calendar,
+            collection,
+            person,
+            from,
+            to,
+            include_removed,
             format,
             output,
         } => {
             let config = Config::load(cli.config.as_deref())?;
+            if contacts || calendar {
+                return export::run_pim(
+                    &config,
+                    export::PimArgs {
+                        archive,
+                        calendar,
+                        collection,
+                        person,
+                        from,
+                        to,
+                        include_removed,
+                        format,
+                        output,
+                    },
+                )
+                .await;
+            }
+            anyhow::ensure!(
+                collection.is_none() && !include_removed,
+                "--collection and --include-removed go with --contacts or --calendar"
+            );
             export::run(
                 &config,
                 export::ExportArgs {
@@ -382,11 +458,23 @@ async fn main() -> anyhow::Result<()> {
                 }
                 eprintln!("  {} saved attachment texts dropped", orphans.len());
             }
-            let done = reindex(&*services.store, &services.ingest(), Scope::All, |done| {
+            let ingest = services.ingest();
+            let done = reindex(&*services.store, &ingest, Scope::All, |done| {
                 eprintln!("  {done} messages")
             })
             .await?;
             println!("Reindexed {done} messages.");
+            let (messages, versions) = read_invitations(&*services.store, &ingest).await?;
+            println!("Read calendar parts of {messages} messages: {versions} new event versions.");
+            let rebuilt = holtmail_people::rebuild_all(&*services.store).await?;
+            services
+                .store
+                .set_setting(people::PEOPLE_SETTING, Some("1"))
+                .await?;
+            println!(
+                "Rebuilt {} people: {} with contacts, {} from mail alone.",
+                rebuilt.people, rebuilt.with_cards, rebuilt.from_mail
+            );
             Ok(())
         }
         Command::Account(AccountCommand::Edit(args)) => {
@@ -430,6 +518,8 @@ async fn main() -> anyhow::Result<()> {
                         folder.error.map(|e| format!(" — {e}")).unwrap_or_default()
                     );
                 }
+                sync_contacts(&services, &account).await;
+                people::rebuild(&*services.store, account.archive_id).await;
             }
             Ok(())
         }
@@ -460,22 +550,17 @@ async fn main() -> anyhow::Result<()> {
                     archive_id,
                     account_id,
                     &path,
-                    |t| {
-                        eprintln!(
-                            "  {} new, {} already archived, {} failed",
-                            t.new, t.known, t.failed
-                        )
-                    },
+                    None,
+                    |t| eprintln!("  {}", t.summary()),
                 )
                 .await?;
-                println!(
-                    "{}: {} new, {} already archived, {} failed",
-                    path.display(),
-                    totals.new,
-                    totals.known,
-                    totals.failed
-                );
+                println!("{}: {}", path.display(), totals.summary());
             }
+            let rebuilt = holtmail_people::rebuild(&*services.store, archive_id).await?;
+            println!(
+                "People: {} ({} with contacts, {} from mail alone).",
+                rebuilt.people, rebuilt.with_cards, rebuilt.from_mail
+            );
             Ok(())
         }
     }
@@ -741,6 +826,13 @@ async fn edit_account(config: &Config, args: EditAccount) -> anyhow::Result<()> 
         password,
         sync_interval_minutes,
         min_age_days: args.min_age_days.map(|days| (days > 0).then_some(days)),
+        contacts_calendars: args.contacts_calendars.as_deref().map(|on| {
+            holtmail_api::ContactsCalendarsChange {
+                enabled: on == "on",
+                contacts_url: args.carddav_url.clone().or_else(|| args.dav_url.clone()),
+                calendars_url: args.caldav_url.clone().or_else(|| args.dav_url.clone()),
+            }
+        }),
     };
     anyhow::ensure!(
         change.password.is_some()
@@ -810,8 +902,86 @@ async fn edit_account(config: &Config, args: EditAccount) -> anyhow::Result<()> 
                 .map_or_else(|| "none".to_owned(), |days| format!("{days} days"))
         );
     }
+    if let Some(dav) = dav::details(&account) {
+        println!(
+            "  contacts  {}",
+            match (dav.enabled, dav.needs_consent, dav.protocol) {
+                (false, _, _) => "off".to_owned(),
+                (true, true, _) => "on, waiting for Sign in again".to_owned(),
+                (true, false, holtmail_api::ContactsProtocol::Graph) =>
+                    "on, through Microsoft Graph".to_owned(),
+                (true, false, holtmail_api::ContactsProtocol::Jmap) =>
+                    "on, through the JMAP session".to_owned(),
+                (true, false, holtmail_api::ContactsProtocol::Dav) => format!(
+                    "on, {} and {}",
+                    dav.contacts_url.unwrap_or_default(),
+                    dav.calendars_url.unwrap_or_default()
+                ),
+            }
+        );
+    }
     println!("  {}", if account.enabled { "enabled" } else { "paused" });
     Ok(())
+}
+
+async fn sync_contacts(services: &Services, account: &holtmail_store::Account) {
+    if !dav::DavSettings::of(account).is_some_and(|d| d.enabled) || !dav::available(account) {
+        return;
+    }
+    if dav::needs_consent(account) {
+        println!("  contacts and calendars wait for Sign in again");
+        return;
+    }
+    let source = match dav::source_for(
+        account,
+        &*services.store,
+        &*services.secrets,
+        &services.oauth,
+    )
+    .await
+    {
+        Ok(source) => source,
+        Err(error) => {
+            println!("  contacts and calendars: {error:#}");
+            return;
+        }
+    };
+    let syncer = holtmail_pim_sync::PimSyncer::new(services.store.clone(), services.ingest());
+    match syncer.sync(account.archive_id, account.id, &*source).await {
+        Ok(report) => {
+            for entry in &report.collections {
+                let name = match services.store.get_collection(entry.collection).await {
+                    Ok(Some(c)) => c.name,
+                    _ => entry.collection.to_string(),
+                };
+                println!(
+                    "  {:<40} {} new, {} changed, {} unchanged, {} removed, {} failed ({:?}){}",
+                    name,
+                    entry.new,
+                    entry.changed,
+                    entry.same,
+                    entry.removed,
+                    entry.failed,
+                    entry.mode,
+                    entry
+                        .error
+                        .as_ref()
+                        .map(|e| format!(" — {e}"))
+                        .unwrap_or_default()
+                );
+            }
+            if report.removed_collections > 0 {
+                println!(
+                    "  {} address books or calendars marked removed",
+                    report.removed_collections
+                );
+            }
+        }
+        Err(holtmail_pim_sync::PimSyncError::Source(error)) => {
+            println!("  contacts and calendars: {}", dav::reason(&error));
+        }
+        Err(error) => println!("  contacts and calendars: {error}"),
+    }
 }
 
 fn read_password(variable: &str, whose: &str) -> anyhow::Result<String> {
@@ -905,7 +1075,13 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     });
     tokio::spawn(runner.clone().write_tasks());
     runner.resume().await;
-    tokio::spawn(reindex_if_needed(services.clone()));
+    let services_for_passes = services.clone();
+    tokio::spawn(async {
+        let services = services_for_passes;
+        reindex_if_needed(services.clone()).await;
+        invitations_if_needed(services.clone()).await;
+        people::build_if_needed(&*services.store).await;
+    });
     tokio::spawn(runner.clone().run_schedule());
     if let Some(web) = &config.web_dir {
         let index = web.join("index.html");
@@ -986,6 +1162,20 @@ async fn reindex(
         }
     }
     if scope == Scope::All {
+        let mut after = None;
+        loop {
+            let ids = store.item_ids(after, 500).await?;
+            for id in &ids {
+                if let Err(error) = ingest.rebuild_item(*id).await {
+                    tracing::warn!(item = %id, %error, "contact or event not rebuilt");
+                }
+            }
+            ingest.commit().await?;
+            if ids.len() < 500 {
+                break;
+            }
+            after = ids.last().copied();
+        }
         store.set_setting(REINDEX_SETTING, None).await?;
     }
     store
@@ -1024,6 +1214,83 @@ async fn reindex_if_needed(services: Arc<Services>) {
         ),
         Err(error) => {
             tracing::warn!(%error, "search index not rebuilt; it is tried again at the next start")
+        }
+    }
+}
+
+/// The setting that says the calendar parts of every archived message were read into events.
+/// Archives from before invitations were read lack them, and `serve` reads them once at start.
+pub(crate) const INVITATIONS_SETTING: &str = "invitations_from_mail";
+
+fn is_calendar(content_type: &str) -> bool {
+    matches!(content_type, "text/calendar" | "application/ics")
+}
+
+/// Reads the calendar parts of every message that has one into events again, then sets
+/// [`INVITATIONS_SETTING`]. Idempotent; messages that fail are logged and skipped. Returns how
+/// many messages had calendar parts and how many versions were added.
+pub(crate) async fn read_invitations(
+    store: &dyn Store,
+    ingest: &holtmail_ingest::Ingest,
+) -> anyhow::Result<(u64, u64)> {
+    let mut messages = 0u64;
+    let mut versions = 0u64;
+    for archive in store.list_archives().await? {
+        let mut after = None;
+        loop {
+            let page = store
+                .list_messages(&holtmail_store::MessageQuery {
+                    archive_id: archive.id,
+                    folder_id: None,
+                    label: None,
+                    after,
+                    limit: 500,
+                })
+                .await?;
+            for message in &page.items {
+                let attachments = store.attachments(message.id).await?;
+                if !attachments.iter().any(|a| is_calendar(&a.content_type)) {
+                    continue;
+                }
+                messages += 1;
+                match ingest.record_invitations(message.id).await {
+                    Ok(added) => versions += u64::from(added),
+                    Err(error) => {
+                        tracing::warn!(message = %message.id, %error, "calendar parts not read")
+                    }
+                }
+            }
+            match page.next {
+                Some(next) => after = Some(next),
+                None => break,
+            }
+        }
+    }
+    ingest.commit().await?;
+    store.set_setting(INVITATIONS_SETTING, Some("1")).await?;
+    Ok((messages, versions))
+}
+
+async fn invitations_if_needed(services: Arc<Services>) {
+    match services.store.setting(INVITATIONS_SETTING).await {
+        Ok(Some(_)) => return,
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "could not tell whether invitations were read");
+            return;
+        }
+    }
+    tracing::info!("reading invitations in older mail into events");
+    let started = std::time::Instant::now();
+    match read_invitations(&*services.store, &services.ingest()).await {
+        Ok((messages, versions)) => tracing::info!(
+            messages,
+            versions,
+            seconds = started.elapsed().as_secs(),
+            "invitations read"
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "invitations not read; it is tried again at the next start")
         }
     }
 }

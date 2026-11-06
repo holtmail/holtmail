@@ -61,7 +61,9 @@ pub struct CollectionReport {
     pub same: u64,
     /// Items newly marked removed.
     pub removed: u64,
-    /// Items that could not be stored.
+    /// Items that could not be stored, or that the server listed but did not send; the
+    /// collection's token is then forgotten, so the next run reads it in full and asks for them
+    /// again.
     pub failed: u64,
     /// Why the collection's sync stopped; its token is then kept for the next run.
     pub error: Option<String>,
@@ -143,7 +145,8 @@ impl PimSyncer {
     /// tag differs from the stored one are fetched, and a version is added only when the bytes
     /// changed. Without a token, after an expired one, or on a server that cannot list
     /// changes, every item is listed and stored items missing from the listing are marked
-    /// removed. Nothing is ever deleted. A failure in one collection is reported in its
+    /// removed. Nothing is ever deleted. An item the server lists but does not send counts as
+    /// failed. A failure in one collection is reported in its
     /// [`CollectionReport::error`] and leaves its token for the next run; the others go on.
     /// Running it again without server changes changes nothing.
     pub async fn sync(
@@ -363,6 +366,11 @@ impl PimSyncer {
                     }
                 }
             }
+        }
+        let missing = wanted.iter().filter(|w| !answered.contains(*w)).count() as u64;
+        if missing > 0 {
+            tracing::warn!(collection = %id, missing, "listed items the server did not send");
+            entry.failed += missing;
         }
         let gone: Vec<String> = if read.complete {
             known

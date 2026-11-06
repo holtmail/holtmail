@@ -256,6 +256,78 @@ async fn servers_without_changes_are_listed_each_time() {
     assert_eq!(f.items(RemovedFilter::Only).await.len(), 0);
 }
 
+struct Withholding<'a> {
+    inner: &'a FakeCollections,
+    withheld: std::sync::Mutex<Option<String>>,
+}
+
+#[async_trait::async_trait]
+impl CollectionSource for Withholding<'_> {
+    async fn collections(
+        &self,
+    ) -> Result<Vec<holtmail_collection::RemoteCollection>, CollectionError> {
+        self.inner.collections().await
+    }
+
+    async fn changes(
+        &self,
+        collection: &str,
+        token: Option<&str>,
+    ) -> Result<holtmail_collection::Changes, CollectionError> {
+        self.inner.changes(collection, token).await
+    }
+
+    async fn fetch(
+        &self,
+        collection: &str,
+        ids: &[String],
+    ) -> Result<Vec<holtmail_collection::RemoteItem>, CollectionError> {
+        let withheld = self.withheld.lock().unwrap().clone();
+        Ok(self
+            .inner
+            .fetch(collection, ids)
+            .await?
+            .into_iter()
+            .filter(|i| Some(&i.id) != withheld.as_ref())
+            .collect())
+    }
+
+    async fn list(&self, collection: &str) -> Result<Vec<ItemTag>, CollectionError> {
+        self.inner.list(collection).await
+    }
+}
+
+#[tokio::test]
+async fn items_listed_but_not_sent_fail_and_are_asked_again() {
+    let f = fixture().await;
+    f.server
+        .put_item(BOOK, "ada.vcf", &card("ada", "Ada Example", "+1 555 0100"));
+    let bea = f
+        .server
+        .put_item(BOOK, "bea.vcf", &card("bea", "Bea Example", "+1 555 0101"));
+    let source = Withholding {
+        inner: &f.server,
+        withheld: std::sync::Mutex::new(Some(bea)),
+    };
+    let first = f.syncer.sync(f.archive, f.account, &source).await.unwrap();
+    let book = &first.collections[0];
+    assert_eq!((book.new, book.failed), (1, 1));
+    assert_eq!(book.error, None, "the other items are stored");
+    assert_eq!(
+        f.collection(BOOK).await.sync_token,
+        None,
+        "the token is not kept past an item the server did not send"
+    );
+
+    *source.withheld.lock().unwrap() = None;
+    let second = f.syncer.sync(f.archive, f.account, &source).await.unwrap();
+    let book = &second.collections[0];
+    assert_eq!(book.mode, ChangeMode::Full);
+    assert_eq!((book.new, book.failed), (1, 0));
+    assert!(f.collection(BOOK).await.sync_token.is_some());
+    assert_eq!(f.items(RemovedFilter::Hide).await.len(), 2);
+}
+
 #[tokio::test]
 async fn refused_sign_in_stops_before_anything_changes() {
     let f = fixture().await;

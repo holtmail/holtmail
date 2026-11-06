@@ -4,8 +4,11 @@
 //! Discovery follows RFC 6764 (`/.well-known/carddav`, `/.well-known/caldav`), then the
 //! principal and its home sets. Changes come from `sync-collection` (RFC 6578); bodies from
 //! `addressbook-multiget` and `calendar-multiget` in batches, or one `GET` each on servers without
-//! them. Read-only: only `PROPFIND`, `REPORT` and `GET` are sent.
+//! them. Read-only for address books and calendars: only `PROPFIND`, `REPORT` and `GET` touch
+//! them. Collections that offer WebDAV-Push (the `https://bitfire.at/webdav-push` draft) with
+//! the Web Push transport accept a `POST` registering a subscription, which a `DELETE` ends.
 
+mod date;
 mod http;
 mod path;
 mod xml;
@@ -18,14 +21,14 @@ use async_trait::async_trait;
 use bytes::Bytes;
 pub use holtmail_collection::Credentials;
 use holtmail_collection::{
-    Changes, CollectionError, CollectionKind, CollectionSource, ItemTag, RemoteCollection,
-    RemoteItem,
+    Changes, CollectionError, CollectionKind, CollectionSource, ItemTag, PushRegistration,
+    PushSubscription, RemoteCollection, RemoteItem,
 };
 use reqwest::StatusCode;
 use url::Url;
 
 use crate::http::{Http, MAX_XML, allowed_scheme, status_error};
-use crate::xml::{CALDAV, CARDDAV, DAV, Element};
+use crate::xml::{CALDAV, CARDDAV, DAV, Element, PUSH};
 
 /// Items asked for in one multiget.
 pub const BATCH: usize = 50;
@@ -72,6 +75,7 @@ pub struct DavSource {
     contacts: Option<Url>,
     calendars: Option<Url>,
     found: Mutex<HashMap<String, (Url, CollectionKind)>>,
+    push: Mutex<HashMap<String, String>>,
 }
 
 fn parse_url(raw: &str) -> Result<Url, CollectionError> {
@@ -184,6 +188,7 @@ impl DavSource {
             contacts,
             calendars,
             found: Mutex::new(HashMap::new()),
+            push: Mutex::new(HashMap::new()),
         })
     }
 
@@ -197,7 +202,8 @@ impl DavSource {
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
              <d:propfind xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\" \
              xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" xmlns:cs=\"http://calendarserver.org/ns/\" \
-             xmlns:ical=\"http://apple.com/ns/ical/\"><d:prop>{props}</d:prop></d:propfind>"
+             xmlns:ical=\"http://apple.com/ns/ical/\" xmlns:p=\"https://bitfire.at/webdav-push\">\
+             <d:prop>{props}</d:prop></d:propfind>"
         );
         let answer = self
             .http
@@ -292,7 +298,7 @@ impl DavSource {
         &self,
         kind: CollectionKind,
         configured: &Url,
-    ) -> Result<Vec<(RemoteCollection, Url)>, CollectionError> {
+    ) -> Result<Vec<(RemoteCollection, Url, Option<String>)>, CollectionError> {
         let (urls, depth) = match self.start(kind, configured).await? {
             Start::Homes(homes) => (homes, "1"),
             Start::Collection(url) => (vec![url], "0"),
@@ -305,7 +311,8 @@ impl DavSource {
                     &url,
                     depth,
                     "<d:resourcetype/><d:displayname/><cs:getctag/><d:sync-token/>\
-                     <ical:calendar-color/><cal:supported-calendar-component-set/>",
+                     <ical:calendar-color/><cal:supported-calendar-component-set/>\
+                     <p:transports/><p:supported-triggers/>",
                 )
                 .await?;
             for response in root.children(DAV, "response") {
@@ -343,6 +350,16 @@ impl DavSource {
                     .find_map(|p| p.child_named("calendar-color"))
                     .and_then(Element::trimmed)
                     .map(str::to_owned);
+                let push = prop(&props, PUSH, "transports")
+                    .and_then(|t| t.child(PUSH, "web-push"))
+                    .map(|_| {
+                        prop(&props, PUSH, "supported-triggers")
+                            .and_then(|t| t.child(PUSH, "content-update"))
+                            .and_then(|c| c.child(DAV, "depth"))
+                            .and_then(Element::trimmed)
+                            .unwrap_or("1")
+                            .to_owned()
+                    });
                 out.push((
                     RemoteCollection {
                         id,
@@ -357,6 +374,7 @@ impl DavSource {
                         tag,
                     },
                     at,
+                    push,
                 ));
             }
         }
@@ -427,6 +445,7 @@ impl CollectionSource for DavSource {
         let mut out = Vec::new();
         let mut seen = BTreeSet::new();
         let mut found = HashMap::new();
+        let mut push = HashMap::new();
         for (kind, configured) in [
             (CollectionKind::Contacts, &self.contacts),
             (CollectionKind::Calendar, &self.calendars),
@@ -434,15 +453,23 @@ impl CollectionSource for DavSource {
             let Some(configured) = configured else {
                 continue;
             };
-            for (collection, url) in self.collections_of(kind, configured).await? {
+            for (collection, url, depth) in self.collections_of(kind, configured).await? {
                 if seen.insert(collection.id.clone()) {
                     found.insert(collection.id.clone(), (url, kind));
+                    if let Some(depth) = depth {
+                        push.insert(collection.id.clone(), depth);
+                    }
                     out.push(collection);
                 }
             }
         }
-        tracing::debug!(collections = out.len(), "DAV collections listed");
+        tracing::debug!(
+            collections = out.len(),
+            push = push.len(),
+            "DAV collections listed"
+        );
         *self.found.lock().expect("found lock") = found;
+        *self.push.lock().expect("push lock") = push;
         Ok(out)
     }
 
@@ -659,6 +686,115 @@ impl CollectionSource for DavSource {
             .map(|(id, etag)| ItemTag { id, etag })
             .collect())
     }
+
+    /// Registers `subscription` with a collection that lists the `web-push` transport, for
+    /// content updates at the depth the collection supports (`1` when it does not say).
+    async fn subscribe(
+        &self,
+        collection: &str,
+        subscription: &PushSubscription,
+    ) -> Result<Option<PushRegistration>, CollectionError> {
+        let (url, _) = self.collection(collection).await?;
+        let Some(depth) = self
+            .push
+            .lock()
+            .expect("push lock")
+            .get(collection)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let expires = subscription
+            .expires
+            .map(|at| format!("<expires>{}</expires>", date::imf_fixdate(at)))
+            .unwrap_or_default();
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
+             <push-register xmlns=\"https://bitfire.at/webdav-push\" xmlns:d=\"DAV:\">\
+             <subscription><web-push-subscription>\
+             <push-resource>{}</push-resource>\
+             <content-encoding>aes128gcm</content-encoding>\
+             <subscription-public-key type=\"p256dh\">{}</subscription-public-key>\
+             <auth-secret>{}</auth-secret>\
+             </web-push-subscription></subscription>\
+             <trigger><content-update><d:depth>{}</d:depth></content-update></trigger>\
+             {expires}</push-register>",
+            xml::escape(&subscription.endpoint),
+            base64url(&subscription.public_key),
+            base64url(&subscription.auth_secret),
+            xml::escape(&depth),
+        );
+        let answer = self
+            .http
+            .dav("POST", &url, None, Some(&body), MAX_XML)
+            .await?;
+        match answer.status.as_u16() {
+            200 | 201 | 204 => {}
+            403 | 405 | 501
+                if [
+                    "push-not-available",
+                    "no-supported-trigger",
+                    "no-trigger-supported",
+                ]
+                .iter()
+                .any(|p| String::from_utf8_lossy(&answer.body).contains(p))
+                    || answer.status != StatusCode::FORBIDDEN =>
+            {
+                return Ok(None);
+            }
+            403 => {
+                return Err(CollectionError::Protocol(
+                    "the server refused the push subscription".into(),
+                ));
+            }
+            _ => return Err(status_error(answer.status, &answer.url)),
+        }
+        let location = answer
+            .headers
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|l| answer.url.join(l).ok())
+            .ok_or_else(|| {
+                CollectionError::Protocol("the push registration has no address".into())
+            })?;
+        if !self.http.may_sign_in(&location) {
+            return Err(CollectionError::Protocol(
+                "the push registration is on another server".into(),
+            ));
+        }
+        let expires = answer
+            .headers
+            .get(reqwest::header::EXPIRES)
+            .and_then(|v| v.to_str().ok())
+            .and_then(date::parse_imf_fixdate);
+        Ok(Some(PushRegistration {
+            url: location.to_string(),
+            expires,
+        }))
+    }
+
+    async fn unsubscribe(&self, registration: &PushRegistration) -> Result<(), CollectionError> {
+        let url = Url::parse(&registration.url).map_err(|_| {
+            CollectionError::Protocol("a push registration address is invalid".into())
+        })?;
+        let answer = self.http.dav("DELETE", &url, None, None, MAX_XML).await?;
+        match answer.status.as_u16() {
+            200 | 202 | 204 | 404 | 410 => Ok(()),
+            _ => Err(status_error(answer.status, &answer.url)),
+        }
+    }
+}
+
+fn base64url(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().fold(0u32, |n, b| (n << 8) | u32::from(*b)) << (8 * (3 - chunk.len()));
+        for i in 0..=chunk.len() {
+            out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
+        }
+    }
+    out
 }
 
 #[cfg(test)]

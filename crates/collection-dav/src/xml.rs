@@ -5,6 +5,7 @@ use quick_xml::reader::NsReader;
 pub(crate) const DAV: &str = "DAV:";
 pub(crate) const CARDDAV: &str = "urn:ietf:params:xml:ns:carddav";
 pub(crate) const CALDAV: &str = "urn:ietf:params:xml:ns:caldav";
+pub(crate) const PUSH: &str = "https://bitfire.at/webdav-push";
 
 #[derive(Debug, Default)]
 pub(crate) struct Element {

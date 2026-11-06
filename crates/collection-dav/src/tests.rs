@@ -34,6 +34,20 @@ struct DavState {
     busy: u32,
     redirect_root: Option<String>,
     requests: Vec<(String, String, bool)>,
+    push: bool,
+    refuse_push: Option<&'static str>,
+    registrations: BTreeMap<String, Registration>,
+    registered: u64,
+}
+
+#[derive(Clone, Debug)]
+struct Registration {
+    collection: String,
+    endpoint: String,
+    public_key: Vec<u8>,
+    auth: Vec<u8>,
+    depth: String,
+    expires: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -115,7 +129,8 @@ fn multistatus(inner: String) -> Response {
         format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\" \
              xmlns:C=\"urn:ietf:params:xml:ns:carddav\" xmlns:K=\"urn:ietf:params:xml:ns:caldav\" \
-             xmlns:CS=\"http://calendarserver.org/ns/\" xmlns:A=\"http://apple.com/ns/ical/\">\
+             xmlns:CS=\"http://calendarserver.org/ns/\" xmlns:A=\"http://apple.com/ns/ical/\" \
+             xmlns:P=\"https://bitfire.at/webdav-push\">\
              {inner}</D:multistatus>"
         ),
     )
@@ -167,8 +182,22 @@ fn coll_props(s: &DavState, path: &str, coll: &Coll) -> String {
              <K:comp name=\"vtodo\"/></K:supported-calendar-component-set>",
         );
     }
+    if s.push {
+        props.push_str(
+            "<P:transports><P:web-push><P:vapid-public-key type=\"p256ecdsa\">BA1Hxz\
+             </P:vapid-public-key></P:web-push></P:transports><P:topic>t-1</P:topic>\
+             <P:supported-triggers><P:content-update><D:depth>infinity</D:depth>\
+             </P:content-update></P:supported-triggers>",
+        );
+    }
     let _ = path;
     props
+}
+
+fn b64url(text: &str) -> Vec<u8> {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(text.trim())
+        .unwrap()
 }
 
 async fn handle(
@@ -205,6 +234,64 @@ async fn handle(
         .unwrap_or("infinity")
         .to_owned();
     match (method.as_str(), path.as_str()) {
+        ("POST", p) if s.collections.contains_key(p) => {
+            if let Some(refusal) = s.refuse_push {
+                return (
+                    StatusCode::FORBIDDEN,
+                    format!("<D:error xmlns:D=\"DAV:\" xmlns:P=\"https://bitfire.at/webdav-push\"><P:{refusal}/></D:error>"),
+                )
+                    .into_response();
+            }
+            let request = xml::parse(&body).unwrap();
+            assert!(request.is(xml::PUSH, "push-register"));
+            let sub = request
+                .child(xml::PUSH, "subscription")
+                .and_then(|s| s.child(xml::PUSH, "web-push-subscription"))
+                .unwrap();
+            let text = |e: &Element, name: &str| e.child(xml::PUSH, name).and_then(Element::trimmed).unwrap().to_owned();
+            assert_eq!(text(sub, "content-encoding"), "aes128gcm");
+            assert_eq!(
+                sub.child(xml::PUSH, "subscription-public-key").unwrap().attr("type"),
+                Some("p256dh")
+            );
+            let depth = request
+                .child(xml::PUSH, "trigger")
+                .and_then(|t| t.child(xml::PUSH, "content-update"))
+                .and_then(|c| c.child(DAV, "depth"))
+                .and_then(Element::trimmed)
+                .unwrap()
+                .to_owned();
+            let registration = Registration {
+                collection: p.to_owned(),
+                endpoint: text(sub, "push-resource"),
+                public_key: b64url(&text(sub, "subscription-public-key")),
+                auth: b64url(&text(sub, "auth-secret")),
+                depth,
+                expires: request.child(xml::PUSH, "expires").and_then(Element::trimmed).map(str::to_owned),
+            };
+            let collection = registration.collection.clone();
+            let endpoint = registration.endpoint.clone();
+            s.registrations
+                .retain(|_, r| !(r.collection == collection && r.endpoint == endpoint));
+            s.registered += 1;
+            let location = format!("/dav/push/{}", s.registered);
+            s.registrations.insert(location.clone(), registration);
+            (
+                StatusCode::CREATED,
+                [
+                    ("location", location),
+                    ("expires", "Wed, 09 Jun 2027 10:18:14 GMT".to_owned()),
+                ],
+            )
+                .into_response()
+        }
+        ("DELETE", p) if p.starts_with("/dav/push/") => {
+            if s.registrations.remove(p).is_some() {
+                StatusCode::NO_CONTENT.into_response()
+            } else {
+                StatusCode::NOT_FOUND.into_response()
+            }
+        }
         ("PROPFIND", "/dav/") => {
             if let Some(to) = s.redirect_root.clone() {
                 return (StatusCode::TEMPORARY_REDIRECT, [("location", to)]).into_response();
@@ -643,5 +730,104 @@ async fn trusts_extra_roots_only_when_given() {
     assert!(matches!(
         source().collections().await,
         Err(CollectionError::Connection(_))
+    ));
+}
+
+fn source(base: &str) -> DavSource {
+    DavSource::new(DavConfig::at(base, password())).unwrap()
+}
+
+fn subscription(keys: &holtmail_webpush::Keys) -> PushSubscription {
+    PushSubscription {
+        endpoint: "https://holtmail.example.com/api/push/dav/abc".into(),
+        public_key: keys.public_key().to_vec(),
+        auth_secret: keys.auth_secret().to_vec(),
+        expires: Some(std::time::UNIX_EPOCH + Duration::from_secs(1_800_000_000)),
+    }
+}
+
+#[tokio::test]
+async fn registers_web_push_where_a_collection_offers_it() {
+    let fake = FakeDav::standard();
+    let base = serve(fake.clone()).await;
+    let source = source(&base);
+    let keys = holtmail_webpush::Keys::generate().unwrap();
+    let sub = subscription(&keys);
+    assert_eq!(
+        source.subscribe(BOOK, &sub).await.unwrap(),
+        None,
+        "no push offered"
+    );
+    assert!(fake.0.lock().unwrap().registrations.is_empty());
+
+    fake.0.lock().unwrap().push = true;
+    source.collections().await.unwrap();
+    let registration = source.subscribe(BOOK, &sub).await.unwrap().unwrap();
+    assert!(registration.url.ends_with("/dav/push/1"));
+    assert_eq!(
+        registration.expires,
+        Some(std::time::UNIX_EPOCH + Duration::from_secs(1_812_536_294))
+    );
+    let stored = fake
+        .0
+        .lock()
+        .unwrap()
+        .registrations
+        .values()
+        .next()
+        .cloned()
+        .unwrap();
+    assert_eq!(stored.endpoint, sub.endpoint);
+    assert_eq!(stored.public_key, keys.public_key());
+    assert_eq!(stored.auth, keys.auth_secret());
+    assert_eq!(
+        stored.depth, "infinity",
+        "the depth the collection supports"
+    );
+    assert_eq!(
+        stored.expires.as_deref(),
+        Some("Fri, 15 Jan 2027 08:00:00 GMT")
+    );
+
+    let message = holtmail_webpush::encrypt(
+        &stored.public_key,
+        &stored.auth,
+        b"<push-message xmlns=\"https://bitfire.at/webdav-push\"><topic>t-1</topic></push-message>",
+    )
+    .unwrap();
+    assert!(
+        String::from_utf8(keys.decrypt(&message).unwrap())
+            .unwrap()
+            .contains("t-1")
+    );
+
+    let again = source.subscribe(BOOK, &sub).await.unwrap().unwrap();
+    assert_ne!(again.url, registration.url);
+    assert_eq!(
+        fake.0.lock().unwrap().registrations.len(),
+        1,
+        "replaced, not added"
+    );
+    source.unsubscribe(&again).await.unwrap();
+    source.unsubscribe(&again).await.unwrap();
+    assert!(fake.0.lock().unwrap().registrations.is_empty());
+}
+
+#[tokio::test]
+async fn a_refused_subscription_is_no_push_or_an_error() {
+    let fake = FakeDav::standard();
+    fake.0.lock().unwrap().push = true;
+    let base = serve(fake.clone()).await;
+    let source = source(&base);
+    let keys = holtmail_webpush::Keys::generate().unwrap();
+    fake.0.lock().unwrap().refuse_push = Some("push-not-available");
+    assert_eq!(
+        source.subscribe(CAL, &subscription(&keys)).await.unwrap(),
+        None
+    );
+    fake.0.lock().unwrap().refuse_push = Some("invalid-subscription");
+    assert!(matches!(
+        source.subscribe(CAL, &subscription(&keys)).await,
+        Err(CollectionError::Protocol(_))
     ));
 }

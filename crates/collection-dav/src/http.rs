@@ -60,6 +60,7 @@ pub(crate) struct Answer {
     pub status: StatusCode,
     pub url: Url,
     pub body: Bytes,
+    pub headers: HeaderMap,
 }
 
 pub(crate) struct Http {
@@ -266,8 +267,14 @@ impl Http {
                     host(&url)
                 )));
             }
+            let headers = response.headers().clone();
             let body = read_limited(response, limit, &host(&url)).await?;
-            return Ok(Answer { status, url, body });
+            return Ok(Answer {
+                status,
+                url,
+                body,
+                headers,
+            });
         }
         Err(CollectionError::Protocol(format!(
             "{} redirected too often",

@@ -126,6 +126,13 @@ fn page(answer: &Value) -> Result<Page, CollectionError> {
 }
 
 impl GraphCollections {
+    /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
+    /// not a usable certificate.
+    pub fn with_roots(mut self, roots: &holtmail_core::TlsRoots) -> Result<Self, CollectionError> {
+        self.http = self.http.with_roots(roots)?;
+        Ok(self)
+    }
+
     /// A source for the account behind `credentials`, which must be an OAuth access token, at
     /// `api_url` ([`GRAPH_URL`] when `None`). `Config` for a password or an unusable address: only
     /// `https`, or plain `http` to a loopback address.

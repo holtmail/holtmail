@@ -12,6 +12,8 @@ let source = GraphCollections::new(
 )?;
 ```
 
+`with_roots(&TlsRoots)` trusts the given CA certificates (from Holtmail's `tls_ca_file`, see [`holtmail-core`](../../core/docs/README.md)) besides the system's roots; verification and the host name check stay on. An unusable certificate is a `Config` error.
+
 The address must use https (plain http only to a loopback address); a password is `Config`. The server builds the source with a fresh token before each sync, from a Microsoft sign-in that granted `Access::GraphPim` (mail, `Contacts.Read`, `Calendars.Read`).
 
 ## Collections
@@ -43,4 +45,4 @@ What is stored per version: the body of that item's `GET` exactly as Graph sent 
 
 ## Tests
 
-`src/tests.rs` runs an in-process fake Graph (axum) with the default contacts folder, nested folders and calendars, delta links with generations, paging of two items per page, `410` for an old generation, `429` with `Retry-After`, and bearer checks. It runs the conformance suite; further tests cover folder paths and calendar colors, delta changes and removals in a folder with the raw JSON kept, series masters fetched with their exceptions (and without a listing, plainly first), throttling, links to another host refused with nothing sent there, refused passwords, plain http, stale tokens and unknown collections, and a `@odata.nextLink` that repeats itself, refused for a listing and a delta.
+`src/tests.rs` runs an in-process fake Graph (axum) with the default contacts folder, nested folders and calendars, delta links with generations, paging of two items per page, `410` for an old generation, `429` with `Retry-After`, and bearer checks. It runs the conformance suite; further tests cover folder paths and calendar colors, delta changes and removals in a folder with the raw JSON kept, series masters fetched with their exceptions (and without a listing, plainly first), throttling, links to another host refused with nothing sent there, refused passwords, plain http, stale tokens and unknown collections, and a `@odata.nextLink` that repeats itself, refused for a listing and a delta. A test against a TLS server in the process with a certificate from `holtmail_core::tls::testing::TestCa` checks that its CA is trusted only through `with_roots`.

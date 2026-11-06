@@ -544,3 +544,27 @@ async fn refuses_passwords_plain_http_and_bad_tokens() {
         Err(CollectionError::Gone)
     ));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let server = ca.serve_https(401, "{}").await;
+    let url = format!("https://localhost:{}/v1.0", server.port());
+    let source = || {
+        GraphCollections::new(
+            Some(&url),
+            Credentials::Bearer("token".into()),
+            Duration::from_secs(5),
+        )
+        .unwrap()
+    };
+    let trusted = source().with_roots(&ca.roots()).unwrap();
+    assert!(matches!(
+        trusted.collections().await,
+        Err(CollectionError::Auth(_))
+    ));
+    assert!(matches!(
+        source().collections().await,
+        Err(CollectionError::Connection(_))
+    ));
+}

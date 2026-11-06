@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use holtmail_collection::CollectionError;
+use holtmail_core::TlsRoots;
 use reqwest::header::{ACCEPT, HeaderMap, RETRY_AFTER};
 use reqwest::{RequestBuilder, StatusCode};
 use url::{Host, Url};
@@ -44,6 +45,7 @@ pub(crate) struct Http {
     client: reqwest::Client,
     token: String,
     origin: url::Origin,
+    timeout: Duration,
 }
 
 fn host(url: &Url) -> String {
@@ -86,24 +88,46 @@ async fn read_limited(
     Ok(Bytes::from(body))
 }
 
+fn certificates(roots: &TlsRoots) -> Result<Vec<reqwest::Certificate>, CollectionError> {
+    roots
+        .iter()
+        .map(|der| {
+            reqwest::Certificate::from_der(der)
+                .map_err(|e| CollectionError::Config(format!("an extra trusted certificate: {e}")))
+        })
+        .collect()
+}
+
+fn client(timeout: Duration, roots: &TlsRoots) -> Result<reqwest::Client, CollectionError> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
+        .tls_certs_merge(certificates(roots)?)
+        .build()
+        .map_err(|e| CollectionError::Config(e.to_string()))
+}
+
 impl Http {
     pub(crate) fn new(
         token: String,
         base: &Url,
         timeout: Duration,
     ) -> Result<Self, CollectionError> {
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(30))
-            .timeout(timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("Holtmail/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| CollectionError::Config(e.to_string()))?;
+        let client = client(timeout, &TlsRoots::default())?;
         Ok(Self {
+            timeout,
             client,
             token,
             origin: base.origin(),
         })
+    }
+
+    /// The same client, also trusting `roots` besides the built-in roots.
+    pub(crate) fn with_roots(mut self, roots: &TlsRoots) -> Result<Self, CollectionError> {
+        self.client = client(self.timeout, roots)?;
+        Ok(self)
     }
 
     /// Parses an address and checks it is on the account's Graph host, so the token never goes

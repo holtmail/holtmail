@@ -120,6 +120,18 @@ export type AliasServiceUpdateRequest = Schemas['AliasServiceUpdateRequest']
 export type ManualAliasRequest = Schemas['ManualAliasRequest']
 export type CreateAliasRequest = Schemas['CreateAliasRequest']
 export type AliasUpdateRequest = Schemas['AliasUpdateRequest']
+export type MessageInsights = Schemas['MessageInsightsDto']
+export type InsightStatus = Schemas['InsightStatusDto']
+export type Insight = Schemas['InsightDto']
+export type CodeInsight = Extract<Insight, { type: 'code' }>
+export type UnsubscribeInsight = Extract<Insight, { type: 'unsubscribe' }>
+export type InsightConfidence = Schemas['ConfidenceDto']
+export type Trust = Schemas['TrustDto']
+export type TrustState = Schemas['TrustStateDto']
+export type Unsubscribe = Schemas['UnsubscribeDto']
+export type OneClick = Schemas['OneClickDto']
+export type OneClickReason = Schemas['OneClickReasonDto']
+export type InsightsStatus = Schemas['InsightsStatusDto']
 
 /** What a calendar request shows: a span in Unix milliseconds, the calendars to show (all when
  * absent, none when empty) and whether removed events are shown. */
@@ -709,6 +721,18 @@ export const labelsQuery = (archiveId: string) =>
     queryFn: async ({ signal }) =>
       unwrap(
         await client.GET('/api/archives/{id}/labels', {
+          params: { path: { id: archiveId } },
+          signal,
+        }),
+      ),
+  })
+
+export const insightsStatusQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'insights-status'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/insights/status', {
           params: { path: { id: archiveId } },
           signal,
         }),

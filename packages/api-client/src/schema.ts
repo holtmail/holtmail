@@ -388,6 +388,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/insights/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['insights_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/labels': {
     parameters: {
       query?: never
@@ -1592,6 +1608,11 @@ export interface components {
        */
       synced_at?: number | null
     }
+    /**
+     * @description How sure the extractor is.
+     * @enum {string}
+     */
+    ConfidenceDto: 'possible' | 'likely' | 'certain'
     /** @description A new connection for an IMAP account, checked by signing in before it is stored. */
     ConnectionRequest: {
       /** @description Folder paths not to archive. */
@@ -2025,6 +2046,56 @@ export interface components {
       security: string
       username: string
     }
+    /** @description One item found in a message, tagged by `type`. */
+    InsightDto:
+      | {
+          confidence: components['schemas']['ConfidenceDto']
+          /** @description Found below an inline-forward marker. */
+          forwarded: boolean
+          /** @description The origin of an origin-bound code line (`@example.com #123456`). */
+          origin_bound?: string | null
+          /**
+           * Format: int32
+           * @description Rank among items of the same kind, `0..=1000`.
+           */
+          score: number
+          /** @enum {string} */
+          type: 'code'
+          value: string
+        }
+      | {
+          confidence: components['schemas']['ConfidenceDto']
+          forwarded: boolean
+          http?: string | null
+          https?: string | null
+          list_id?: string | null
+          /** @description A `mailto:` URI. */
+          mailto?: string | null
+          /**
+           * @description RFC 8058 one-click is declared. Whether the server may use it is in
+           *     `MessageInsightsDto.unsubscribe.one_click`.
+           */
+          one_click: boolean
+          /** Format: int32 */
+          score: number
+          /** @enum {string} */
+          type: 'unsubscribe'
+        }
+    /**
+     * @description How current a message's insights are.
+     * @enum {string}
+     */
+    InsightStatusDto: 'ready' | 'pending' | 'outdated' | 'partial' | 'unparsable' | 'unreadable'
+    /** @description Progress of computing insights in an archive. */
+    InsightsStatusDto: {
+      /**
+       * Format: int64
+       * @description Messages with no insights or with insights from older extractors.
+       */
+      pending: number
+      /** @description The server is computing insights now. */
+      running: boolean
+    }
     /** @description An event or task a message's calendar part is a version of, as the archive knows it now. */
     InvitationDto: {
       all_day: boolean
@@ -2418,6 +2489,7 @@ export interface components {
       id: string
       /** @description `In-Reply-To` ids without angle brackets. */
       in_reply_to: string[]
+      insights?: components['schemas']['MessageInsightsDto'] | null
       /**
        * @description The events its calendar parts (invitations, updates, replies, cancellations) belong to,
        *     as the archive knows them now; empty when it has none.
@@ -2449,6 +2521,16 @@ export interface components {
       thread_id: string
       to: components['schemas']['AddressDto'][]
     }
+    /** @description What was found in a message. */
+    MessageInsightsDto: {
+      /** @description `Likely` and `Certain` items, and `Possible` ones the server is set to show. */
+      items: components['schemas']['InsightDto'][]
+      /** @description The `From` is one of the archive's own addresses: an account's or an alias's. */
+      own: boolean
+      status: components['schemas']['InsightStatusDto']
+      trust: components['schemas']['TrustDto']
+      unsubscribe?: components['schemas']['UnsubscribeDto'] | null
+    }
     /** @description One page of a message list. */
     MessagePage: {
       items: components['schemas']['MessageSummary'][]
@@ -2478,6 +2560,11 @@ export interface components {
       folder_ids: string[]
       from: components['schemas']['AddressDto'][]
       id: string
+      /**
+       * @description The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`
+       *     is left out for members and on the archive's own mail.
+       */
+      insight_kinds: string[]
       /** @description Its labels, sorted. */
       labels: string[]
       preview: string
@@ -2575,6 +2662,25 @@ export interface components {
       /** @description A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing. */
       return_to?: string | null
     }
+    /** @description Whether the server can unsubscribe with one click. */
+    OneClickDto: {
+      available: boolean
+      reason?: components['schemas']['OneClickReasonDto'] | null
+    }
+    /**
+     * @description Why one-click unsubscribe is not offered.
+     * @enum {string}
+     */
+    OneClickReasonDto:
+      | 'no_post_header'
+      | 'not_https'
+      | 'multiple_fields'
+      | 'not_covered'
+      | 'not_aligned'
+      | 'no_trusted_authserv'
+      | 'disabled'
+      | 'recently_requested'
+      | 'members'
     /** @description An organizer or attendee. */
     ParticipantDto: {
       /** @description Lowercased address. */
@@ -3014,7 +3120,7 @@ export interface components {
       /** Format: int64 */
       finished_at?: number | null
       id: string
-      /** @description `sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`. */
+      /** @description `sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`, `delete_messages` or `analyse`. */
       kind: string
       log: components['schemas']['TaskLineDto'][]
       /**
@@ -3050,6 +3156,27 @@ export interface components {
     ThreadDto: {
       id: string
       messages: components['schemas']['MessageDetail'][]
+    }
+    /** @description The sender trust of a message. Always `unknown` for now. */
+    TrustDto: {
+      /** @description The aligned domain, for `aligned`. */
+      domain?: string | null
+      /** @description The alias service, for `relayed`. */
+      provider?: string | null
+      state: components['schemas']['TrustStateDto']
+    }
+    /**
+     * @description Whether the sender is who the message says.
+     * @enum {string}
+     */
+    TrustStateDto: 'aligned' | 'relayed' | 'unverified' | 'unknown'
+    /** @description How to leave the list a message came from. */
+    UnsubscribeDto: {
+      http?: string | null
+      https?: string | null
+      /** @description A `mailto:` URI, opened by the reader's own mail program. */
+      mailto?: string | null
+      one_click: components['schemas']['OneClickDto']
     }
     /** @description A user who can sign in. */
     UserDto: {
@@ -5203,6 +5330,64 @@ export interface operations {
         }
       }
       /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  insights_status: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['InsightsStatusDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive, or the server computes no insights */
       404: {
         headers: {
           [name: string]: unknown

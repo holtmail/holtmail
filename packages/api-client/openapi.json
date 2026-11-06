@@ -2612,6 +2612,74 @@
         }
       }
     },
+    "/api/archives/{id}/insights/status": {
+      "get": {
+        "tags": ["insights"],
+        "operationId": "insights_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsStatusDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/labels": {
       "get": {
         "tags": ["routes"],
@@ -7179,6 +7247,11 @@
           }
         }
       },
+      "ConfidenceDto": {
+        "type": "string",
+        "description": "How sure the extractor is.",
+        "enum": ["possible", "likely", "certain"]
+      },
       "ConnectionRequest": {
         "type": "object",
         "description": "A new connection for an IMAP account, checked by signing in before it is stored.",
@@ -8047,6 +8120,103 @@
           }
         }
       },
+      "InsightDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A one-time code to copy.",
+            "required": ["value", "confidence", "score", "forwarded", "type"],
+            "properties": {
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "forwarded": {
+                "type": "boolean",
+                "description": "Found below an inline-forward marker."
+              },
+              "origin_bound": {
+                "type": ["string", "null"],
+                "description": "The origin of an origin-bound code line (`@example.com #123456`)."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Rank among items of the same kind, `0..=1000`.",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": ["code"]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The unsubscribe options the message declares.",
+            "required": ["one_click", "confidence", "score", "forwarded", "type"],
+            "properties": {
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "http": {
+                "type": ["string", "null"]
+              },
+              "https": {
+                "type": ["string", "null"]
+              },
+              "list_id": {
+                "type": ["string", "null"]
+              },
+              "mailto": {
+                "type": ["string", "null"],
+                "description": "A `mailto:` URI."
+              },
+              "one_click": {
+                "type": "boolean",
+                "description": "RFC 8058 one-click is declared. Whether the server may use it is in\n`MessageInsightsDto.unsubscribe.one_click`."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": ["unsubscribe"]
+              }
+            }
+          }
+        ],
+        "description": "One item found in a message, tagged by `type`."
+      },
+      "InsightStatusDto": {
+        "type": "string",
+        "description": "How current a message's insights are.",
+        "enum": ["ready", "pending", "outdated", "partial", "unparsable", "unreadable"]
+      },
+      "InsightsStatusDto": {
+        "type": "object",
+        "description": "Progress of computing insights in an archive.",
+        "required": ["pending", "running"],
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages with no insights or with insights from older extractors.",
+            "minimum": 0
+          },
+          "running": {
+            "type": "boolean",
+            "description": "The server is computing insights now."
+          }
+        }
+      },
       "InvitationDto": {
         "type": "object",
         "description": "An event or task a message's calendar part is a version of, as the archive knows it now.",
@@ -8889,6 +9059,17 @@
             },
             "description": "`In-Reply-To` ids without angle brackets."
           },
+          "insights": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MessageInsightsDto",
+                "description": "Codes and unsubscribe links found in it; absent when the server computes no insights."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "invitations": {
             "type": "array",
             "items": {
@@ -8967,6 +9148,41 @@
           }
         }
       },
+      "MessageInsightsDto": {
+        "type": "object",
+        "description": "What was found in a message.",
+        "required": ["status", "trust", "own", "items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightDto"
+            },
+            "description": "`Likely` and `Certain` items, and `Possible` ones the server is set to show."
+          },
+          "own": {
+            "type": "boolean",
+            "description": "The `From` is one of the archive's own addresses: an account's or an alias's."
+          },
+          "status": {
+            "$ref": "#/components/schemas/InsightStatusDto"
+          },
+          "trust": {
+            "$ref": "#/components/schemas/TrustDto"
+          },
+          "unsubscribe": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UnsubscribeDto",
+                "description": "Present when the message declares a way to unsubscribe."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "MessagePage": {
         "type": "object",
         "description": "One page of a message list.",
@@ -9000,7 +9216,8 @@
           "thread_count",
           "folder_ids",
           "labels",
-          "attachment_match"
+          "attachment_match",
+          "insight_kinds"
         ],
         "properties": {
           "attachment_count": {
@@ -9039,6 +9256,13 @@
           },
           "id": {
             "type": "string"
+          },
+          "insight_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`\nis left out for members and on the archive's own mail."
           },
           "labels": {
             "type": "array",
@@ -9237,6 +9461,42 @@
             "description": "A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing."
           }
         }
+      },
+      "OneClickDto": {
+        "type": "object",
+        "description": "Whether the server can unsubscribe with one click.",
+        "required": ["available"],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OneClickReasonDto",
+                "description": "Why not, when not available."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "OneClickReasonDto": {
+        "type": "string",
+        "description": "Why one-click unsubscribe is not offered.",
+        "enum": [
+          "no_post_header",
+          "not_https",
+          "multiple_fields",
+          "not_covered",
+          "not_aligned",
+          "no_trusted_authserv",
+          "disabled",
+          "recently_requested",
+          "members"
+        ]
       },
       "ParticipantDto": {
         "type": "object",
@@ -10183,7 +10443,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "`sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`."
+            "description": "`sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`, `delete_messages` or `analyse`."
           },
           "log": {
             "type": "array",
@@ -10246,6 +10506,49 @@
             "items": {
               "$ref": "#/components/schemas/MessageDetail"
             }
+          }
+        }
+      },
+      "TrustDto": {
+        "type": "object",
+        "description": "The sender trust of a message. Always `unknown` for now.",
+        "required": ["state"],
+        "properties": {
+          "domain": {
+            "type": ["string", "null"],
+            "description": "The aligned domain, for `aligned`."
+          },
+          "provider": {
+            "type": ["string", "null"],
+            "description": "The alias service, for `relayed`."
+          },
+          "state": {
+            "$ref": "#/components/schemas/TrustStateDto"
+          }
+        }
+      },
+      "TrustStateDto": {
+        "type": "string",
+        "description": "Whether the sender is who the message says.",
+        "enum": ["aligned", "relayed", "unverified", "unknown"]
+      },
+      "UnsubscribeDto": {
+        "type": "object",
+        "description": "How to leave the list a message came from.",
+        "required": ["one_click"],
+        "properties": {
+          "http": {
+            "type": ["string", "null"]
+          },
+          "https": {
+            "type": ["string", "null"]
+          },
+          "mailto": {
+            "type": ["string", "null"],
+            "description": "A `mailto:` URI, opened by the reader's own mail program."
+          },
+          "one_click": {
+            "$ref": "#/components/schemas/OneClickDto"
           }
         }
       },

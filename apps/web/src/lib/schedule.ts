@@ -2,6 +2,7 @@ export const intervalChoices = [5, 15, 30, 60, 180, 360, 720, 1440, 0] as const
 
 export function formatInterval(minutes: number): string {
   if (minutes === 0) return 'Only when you press Sync now'
+  if (minutes === 1) return 'Every minute'
   if (minutes < 60) return `Every ${minutes} minutes`
   if (minutes === 60) return 'Every hour'
   if (minutes === 1440) return 'Once a day'

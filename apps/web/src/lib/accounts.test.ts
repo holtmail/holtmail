@@ -17,7 +17,13 @@ function account(
     enabled: true,
     needs_sign_in: false,
     ...overrides,
-    status: { running: false, new_messages: 0, ...status },
+    status: {
+      running: false,
+      new_messages: 0,
+      watch: { state: 'off' },
+      contacts_watch: { state: 'off' },
+      ...status,
+    },
   }
 }
 

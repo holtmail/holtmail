@@ -13,7 +13,13 @@ import { type FormEvent, useId, useState } from 'react'
 
 import { Field, FormError, SubmitButton } from '../auth/field.tsx'
 import { authErrorMessage } from '../lib/auth.ts'
-import { asksConsent, contactsSupport, davPreset, davRequest } from '../lib/contacts-calendars.ts'
+import {
+  asksConsent,
+  contactsSupport,
+  davPreset,
+  davRequest,
+  mixedProtocols,
+} from '../lib/contacts-calendars.ts'
 import { domainOf } from '../lib/providers.ts'
 import { strings } from '../strings.ts'
 
@@ -73,13 +79,21 @@ function ContactsCalendarsForm({
     Boolean(settings?.calendars_url && settings.calendars_url !== settings.contacts_url) ||
       Boolean(preset),
   )
+  const [davPassword, setDavPassword] = useState('')
+  const [forgetDavPassword, setForgetDavPassword] = useState(false)
   const switchId = useId()
   const separateId = useId()
+  const forgetId = useId()
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (override?: { contacts: string; calendars: string }) =>
       updateAccount(account.id, {
-        contacts_calendars: davRequest(enabled, contacts, separate ? calendars : ''),
+        contacts_calendars: davRequest(
+          enabled,
+          override?.contacts ?? contacts,
+          override?.calendars ?? (separate ? calendars : ''),
+          forgetDavPassword ? '' : davPassword || null,
+        ),
       }),
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ['archives'] })
@@ -94,8 +108,9 @@ function ContactsCalendarsForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    mutation.mutate()
+    mutation.mutate(undefined)
   }
+  const offer = support === 'jmap' && !mixedProtocols(account) ? settings?.caldav_offer : null
   const wasOn = settings?.enabled ?? false
   const label = !enabled
     ? t.turnOff
@@ -119,7 +134,24 @@ function ContactsCalendarsForm({
       {enabled && support === 'google' && <p className="text-sm text-fg-muted">{t.google}</p>}
       {enabled && support === 'graph' && <p className="text-sm text-fg-muted">{t.graph}</p>}
       {enabled && support === 'jmap' && settings?.protocol === 'jmap' && wasOn && (
-        <p className="text-sm text-fg-muted">{t.jmapInUse}</p>
+        <p className="text-sm text-fg-muted">
+          {mixedProtocols(account) && settings.calendars_url
+            ? t.mixed(settings.calendars_url)
+            : t.jmapInUse}
+        </p>
+      )}
+      {enabled && offer && (
+        <div className="grid gap-3 border border-border p-4">
+          <p className="text-sm text-fg-muted">{t.caldavOffer(offer)}</p>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate({ contacts: '', calendars: offer })}
+          >
+            {t.useCaldav}
+          </Button>
+        </div>
       )}
       {enabled && (support === 'dav' || support === 'jmap') && (
         <>
@@ -127,7 +159,7 @@ function ContactsCalendarsForm({
             label={t.contactsUrl}
             hint={
               support === 'jmap'
-                ? t.jmap
+                ? `${t.jmap} ${t.jmapCalendars}`
                 : preset
                   ? t.preset(preset.name)
                   : t.contactsHint(domainOf(address))
@@ -156,6 +188,25 @@ function ContactsCalendarsForm({
             />
           )}
           <p className="text-xs text-fg-subtle">{t.signIn}</p>
+          <Field
+            label={t.davPassword}
+            hint={settings?.has_dav_password ? t.davPasswordStored : t.davPasswordHint}
+            value={davPassword}
+            type="password"
+            autoComplete="new-password"
+            disabled={forgetDavPassword}
+            onChange={(event) => setDavPassword(event.target.value)}
+          />
+          {settings?.has_dav_password && (
+            <label htmlFor={forgetId} className="flex items-center gap-3 text-xs text-fg-muted">
+              <Switch
+                id={forgetId}
+                checked={forgetDavPassword}
+                onCheckedChange={setForgetDavPassword}
+              />
+              {t.useAccountPassword}
+            </label>
+          )}
         </>
       )}
       {!enabled && wasOn && <p className="text-xs text-fg-subtle">{t.turnOffLead}</p>}

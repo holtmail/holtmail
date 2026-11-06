@@ -66,7 +66,12 @@ describe('groupFolders', () => {
       folder('INBOX', 'inbox', 'a'),
       folder('x', undefined, 'z'),
     ]
-    const idle = { running: false, new_messages: 0 }
+    const idle = {
+      running: false,
+      new_messages: 0,
+      watch: { state: 'off' },
+      contacts_watch: { state: 'off' },
+    }
     const groups = groupFolders(folders, [
       { id: 'a', name: 'Alpha', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
       { id: 'b', name: 'Beta', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },

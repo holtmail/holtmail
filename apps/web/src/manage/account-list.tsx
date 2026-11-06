@@ -37,6 +37,7 @@ import {
   PauseIcon,
   PencilIcon,
   PlayIcon,
+  RadioTowerIcon,
   RefreshCwIcon,
   Trash2Icon,
 } from 'lucide-react'
@@ -55,6 +56,14 @@ import {
   intervalChoices,
   minAgeOptions,
 } from '../lib/schedule.ts'
+import {
+  gmailLike,
+  type WatchBadge,
+  type WatchTone,
+  watchBadge,
+  watchMode,
+  watchRequest,
+} from '../lib/watch.ts'
 import { strings } from '../strings.ts'
 import { ConfirmDialog, TextDialog } from './confirm-dialog.tsx'
 import { ContactsCalendarsDialog } from './contacts-calendars.tsx'
@@ -69,6 +78,24 @@ const toneClass: Record<AccountTone, string> = {
   paused: 'bg-fg-subtle',
   done: 'bg-success',
   waiting: 'bg-border-strong',
+}
+
+const watchToneClass: Record<WatchTone, string> = {
+  live: 'text-success',
+  warn: 'text-warning',
+  muted: 'text-fg-subtle',
+}
+
+function WatchMark({ badge }: { badge: WatchBadge | undefined }) {
+  if (!badge) return null
+  return (
+    <span
+      title={badge.title}
+      className={cn('hidden shrink-0 sm:inline', watchToneClass[badge.tone])}
+    >
+      · {badge.label}
+    </span>
+  )
 }
 
 export function StatusDot({ tone }: { tone: AccountTone }) {
@@ -129,7 +156,15 @@ function AccountRow({
   const now = useNow(30_000)
   const queryClient = useQueryClient()
   const [dialog, setDialog] = useState<
-    'rename' | 'password' | 'edit' | 'remove' | 'sign-in' | 'contacts' | 'consent' | null
+    | 'rename'
+    | 'password'
+    | 'edit'
+    | 'remove'
+    | 'sign-in'
+    | 'contacts'
+    | 'consent'
+    | 'watch-folders'
+    | null
   >(null)
   const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
   const state = accountState(account, now)
@@ -158,6 +193,21 @@ function AccountRow({
     mutationFn: (days: number | null) => updateAccount(account.id, { min_age_days: days }),
     onSettled: refresh,
   })
+  const watch = useMutation({
+    mutationFn: (mode: 'off' | 'inbox') =>
+      updateAccount(account.id, { watch: watchRequest(mode, '') }),
+    onSettled: refresh,
+  })
+  const contactsEvery = useMutation({
+    mutationFn: (minutes: number | null) =>
+      updateAccount(account.id, { contacts_interval_minutes: minutes }),
+    onSettled: refresh,
+  })
+  const mailWatch = account.enabled ? watchBadge(account.status.watch, 'mail') : undefined
+  const contactsWatch = account.enabled
+    ? watchBadge(account.status.contacts_watch, 'contacts')
+    : undefined
+  const mailEvery = account.sync_interval_minutes ?? schedule.data?.minutes ?? 15
   const next =
     !imported && account.enabled && !account.status.running && account.status.next_sync_at
       ? formatNextSync(account.status.next_sync_at, now)
@@ -196,6 +246,7 @@ function AccountRow({
           >
             {state.label}
           </span>
+          <WatchMark badge={mailWatch} />
           {next && <span className="hidden shrink-0 text-fg-subtle sm:inline">· {next}</span>}
         </span>
         {contacts && (
@@ -219,6 +270,7 @@ function AccountRow({
                 {contacts.label}
               </span>
             )}
+            <WatchMark badge={contactsWatch} />
           </span>
         )}
       </div>
@@ -319,6 +371,65 @@ function AccountRow({
                   </DropdownMenuSub>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
+                      <RadioTowerIcon />
+                      {t.watch}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-64">
+                      <DropdownMenuRadioGroup
+                        value={watchMode(account)}
+                        onValueChange={(value) => {
+                          if (value === 'folders') setDialog('watch-folders')
+                          else if (value === 'off' || value === 'inbox') watch.mutate(value)
+                        }}
+                      >
+                        <DropdownMenuRadioItem value="inbox">
+                          {gmailLike(account) ? t.watchAllMail : t.watchInbox}
+                        </DropdownMenuRadioItem>
+                        {account.kind === 'imap' && (
+                          <DropdownMenuRadioItem value="folders">
+                            {t.watchFolders}
+                          </DropdownMenuRadioItem>
+                        )}
+                        <DropdownMenuRadioItem value="off">{t.watchOff}</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="h-auto py-2 leading-4">
+                        {t.watchHint}
+                      </DropdownMenuLabel>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  {account.contacts_calendars?.enabled && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <ContactRoundIcon />
+                        {t.contactsSchedule}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-64">
+                        <DropdownMenuRadioGroup
+                          value={
+                            account.contacts_calendars.interval_minutes == null
+                              ? 'mail'
+                              : String(account.contacts_calendars.interval_minutes)
+                          }
+                          onValueChange={(value) =>
+                            contactsEvery.mutate(value === 'mail' ? null : Number(value))
+                          }
+                        >
+                          <DropdownMenuRadioItem value="mail">
+                            {t.likeMail(formatInterval(mailEvery))}
+                          </DropdownMenuRadioItem>
+                          <DropdownMenuSeparator />
+                          {[1, ...intervalChoices].map((minutes) => (
+                            <DropdownMenuRadioItem key={minutes} value={String(minutes)}>
+                              {formatInterval(minutes)}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
                       <ArchiveIcon />
                       {t.minAge}
                     </DropdownMenuSubTrigger>
@@ -379,6 +490,18 @@ function AccountRow({
         password
         onSave={async (password) => {
           await updateAccount(account.id, { password })
+          await refresh()
+        }}
+      />
+      <TextDialog
+        open={dialog === 'watch-folders'}
+        onOpenChange={(open) => setDialog(open ? 'watch-folders' : null)}
+        title={t.watchFoldersTitle}
+        description={t.watchFoldersLead}
+        label={t.watchFoldersLabel}
+        initial={(account.watch?.folders?.length ? account.watch.folders : ['INBOX']).join(', ')}
+        onSave={async (folders) => {
+          await updateAccount(account.id, { watch: watchRequest('folders', folders) })
           await refresh()
         }}
       />

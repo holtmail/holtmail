@@ -20,7 +20,12 @@ function account(overrides: Partial<Account> = {}): Account {
     kind: 'imap',
     enabled: true,
     needs_sign_in: false,
-    status: { running: false, new_messages: 0 },
+    status: {
+      running: false,
+      new_messages: 0,
+      watch: { state: 'off' },
+      contacts_watch: { state: 'off' },
+    },
     ...overrides,
   }
 }

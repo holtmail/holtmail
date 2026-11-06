@@ -58,8 +58,20 @@ export function davRequest(
   enabled: boolean,
   contacts: string,
   calendars: string,
+  davPassword?: string | null,
 ): ContactsCalendarsRequest {
-  return { enabled, contacts_url: clean(contacts), calendars_url: clean(calendars) }
+  const request: ContactsCalendarsRequest = {
+    enabled,
+    contacts_url: clean(contacts),
+    calendars_url: clean(calendars),
+  }
+  if (davPassword !== undefined && davPassword !== null) request.dav_password = davPassword
+  return request
+}
+
+export function mixedProtocols(account: Account): boolean {
+  const settings = account.contacts_calendars
+  return Boolean(settings && settings.protocol !== settings.calendars_protocol)
 }
 
 export interface ContactsState {

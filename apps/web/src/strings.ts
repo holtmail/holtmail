@@ -359,11 +359,24 @@ export const strings = {
     minAge: 'What to archive',
     minAgeHint:
       'Younger mail stays on the server and is archived by a later sync once it is old enough.',
+    watch: 'Watch for changes',
+    watchOff: 'Only on schedule',
+    watchInbox: 'Inbox',
+    watchAllMail: 'All mail',
+    watchFolders: 'Chosen folders…',
+    watchHint:
+      'Servers that can push (IMAP IDLE, JMAP) report new mail at once; the schedule still runs as a safety net.',
+    watchFoldersTitle: 'Folders to watch',
+    watchFoldersLead:
+      'Folder paths separated by commas, e.g. INBOX, Work. Servers without NOTIFY watch the first three.',
+    watchFoldersLabel: 'Folders',
+    contactsSchedule: 'Check contacts and calendars',
+    likeMail: (label: string) => `Like mail (${label.toLowerCase()})`,
   },
   contacts: {
     menu: 'Archive contacts and calendars…',
     title: 'Contacts and calendars',
-    lead: 'After each mail sync Holtmail also archives the address books and calendars of this account, with every change and removal. It only reads; nothing on the server changes.',
+    lead: 'Holtmail also archives the address books and calendars of this account, with every change and removal, on their own schedule and at once where the server reports changes. It only reads; nothing on the server changes.',
     on: 'On',
     off: 'Off',
     contactsUrl: 'Address',
@@ -387,6 +400,18 @@ export const strings = {
       'Holtmail reads Outlook contacts and calendars through Microsoft Graph with your Microsoft sign-in. Microsoft asks you once to allow it: turn this on, then sign in again.',
     jmap: 'Leave the address empty to read them through this account’s JMAP server, when it offers contacts. Otherwise enter the CardDAV and CalDAV address.',
     jmapInUse: 'Read through this account’s JMAP server.',
+    mixed: (url: string) =>
+      `Contacts are read through this account’s JMAP server, calendars over CalDAV at ${url}.`,
+    jmapCalendars:
+      'If the JMAP server offers no calendars, enter a calendars address alone: contacts stay on JMAP.',
+    caldavOffer: (url: string) =>
+      `This JMAP server offers no calendars, but CalDAV at ${url} answers with this account’s sign-in.`,
+    useCaldav: 'Read calendars over CalDAV',
+    davPassword: 'CardDAV and CalDAV password',
+    davPasswordHint:
+      'Only when the server does not take this account’s password, e.g. an app password.',
+    davPasswordStored: 'A separate password is stored. Enter a new one to replace it.',
+    useAccountPassword: 'Sign in with the account’s own password again',
     microsoftImap:
       'Contacts and calendars of Microsoft accounts are read through Microsoft Graph. Add this mailbox as a Microsoft Graph account to archive them.',
     consentTitle: 'Allow contacts and calendars',

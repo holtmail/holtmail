@@ -8,6 +8,7 @@ import {
   contactsSupport,
   davPreset,
   davRequest,
+  mixedProtocols,
 } from './contacts-calendars.ts'
 
 const now = Date.UTC(2026, 10, 5, 12)
@@ -19,7 +20,13 @@ function account(overrides: Partial<Account> = {}, status: Partial<Account['stat
     kind: 'imap',
     enabled: true,
     needs_sign_in: false,
-    contacts_calendars: { enabled: false, needs_consent: false, protocol: 'dav' },
+    contacts_calendars: {
+      enabled: false,
+      needs_consent: false,
+      protocol: 'dav',
+      calendars_protocol: 'dav',
+      has_dav_password: false,
+    },
     ...overrides,
     status: { running: false, new_messages: 0, ...status },
   } as Account
@@ -69,14 +76,28 @@ describe('davRequest', () => {
 })
 
 describe('contactsState', () => {
-  const on = { enabled: true, needs_consent: false, protocol: 'dav' }
+  const on = {
+    enabled: true,
+    needs_consent: false,
+    protocol: 'dav',
+    calendars_protocol: 'dav',
+    has_dav_password: false,
+  }
   test('nothing when off', () => {
     expect(contactsState(account(), now)).toBeUndefined()
   })
   test('asks for consent first', () => {
     expect(
       contactsState(
-        account({ contacts_calendars: { enabled: true, needs_consent: true, protocol: 'dav' } }),
+        account({
+          contacts_calendars: {
+            enabled: true,
+            needs_consent: true,
+            protocol: 'dav',
+            calendars_protocol: 'dav',
+            has_dav_password: false,
+          },
+        }),
         now,
       )?.tone,
     ).toBe('error')
@@ -113,5 +134,38 @@ describe('contactsState', () => {
         now,
       )?.label,
     ).toBe('Contacts and calendars synced 5 minutes ago')
+  })
+})
+
+describe('davRequest with a DAV password', () => {
+  test('sends it only when given, empty to forget it', () => {
+    expect(davRequest(true, '', 'https://caldav.example.com')).toEqual({
+      enabled: true,
+      contacts_url: null,
+      calendars_url: 'https://caldav.example.com',
+    })
+    expect(davRequest(true, '', '', 'app-secret').dav_password).toBe('app-secret')
+    expect(davRequest(true, '', '', '').dav_password).toBe('')
+    expect('dav_password' in davRequest(true, '', '', null)).toBe(false)
+  })
+})
+
+describe('mixedProtocols', () => {
+  test('JMAP contacts with CalDAV calendars', () => {
+    expect(
+      mixedProtocols(
+        account({
+          kind: 'jmap',
+          contacts_calendars: {
+            enabled: true,
+            needs_consent: false,
+            protocol: 'jmap',
+            calendars_protocol: 'dav',
+            has_dav_password: false,
+          },
+        }),
+      ),
+    ).toBe(true)
+    expect(mixedProtocols(account())).toBe(false)
   })
 })

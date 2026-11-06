@@ -8,12 +8,14 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+holtmail-core.workspace = true
 holtmail-blob.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 object_store.workspace = true
 
 [dev-dependencies]
+holtmail-core = { workspace = true, features = ["testing"] }
 holtmail-blob = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 

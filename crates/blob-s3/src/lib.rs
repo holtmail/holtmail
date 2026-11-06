@@ -5,8 +5,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use holtmail_blob::{BlobError, BlobId, BlobStore};
+use holtmail_core::TlsRoots;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path;
+use object_store::{Certificate, ClientOptions};
 use object_store::{ObjectStore, ObjectStoreExt};
 
 /// Where and how to reach the bucket.
@@ -28,6 +30,8 @@ pub struct S3Config {
     pub path_style: bool,
     /// Allow a plain `http://` endpoint.
     pub allow_http: bool,
+    /// Certificates trusted for an https endpoint besides the system's roots.
+    pub roots: TlsRoots,
 }
 
 impl std::fmt::Debug for S3Config {
@@ -39,6 +43,7 @@ impl std::fmt::Debug for S3Config {
             .field("prefix", &self.prefix)
             .field("path_style", &self.path_style)
             .field("allow_http", &self.allow_http)
+            .field("roots", &self.roots)
             .finish_non_exhaustive()
     }
 }
@@ -63,6 +68,14 @@ impl S3BlobStore {
             .with_allow_http(config.allow_http);
         if let Some(endpoint) = config.endpoint {
             builder = builder.with_endpoint(endpoint);
+        }
+        if !config.roots.is_empty() {
+            let mut options = ClientOptions::new();
+            for der in config.roots.iter() {
+                options =
+                    options.with_root_certificate(Certificate::from_der(der).map_err(backend)?);
+            }
+            builder = builder.with_client_options(options);
         }
         let store = builder.build().map_err(backend)?;
         Ok(Self::from_object_store(
@@ -178,6 +191,37 @@ mod tests {
         assert!(matches!(store.get(&id).await, Err(BlobError::Corrupt(bad)) if bad == id));
     }
 
+    fn config(endpoint: String, roots: TlsRoots) -> S3Config {
+        S3Config {
+            bucket: "mail".into(),
+            region: "us-east-1".into(),
+            endpoint: Some(endpoint),
+            access_key_id: "AKIDEXAMPLE".into(),
+            secret_access_key: "wJalrXUtnFEMIEXAMPLEKEY".into(),
+            prefix: None,
+            path_style: true,
+            allow_http: false,
+            roots,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn trusts_extra_roots_for_the_endpoint() {
+        let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+        let server = ca.serve_https(404, "").await;
+        let endpoint = format!("https://localhost:{}", server.port());
+        let store = S3BlobStore::new(config(endpoint, ca.roots())).unwrap();
+        let id = BlobId::of(b"Subject: Hi\r\n\r\n");
+        assert_eq!(store.get(&id).await.unwrap(), None);
+        assert!(
+            S3BlobStore::new(config(
+                "https://localhost".into(),
+                TlsRoots::from_der(vec![vec![1, 2, 3]])
+            ))
+            .is_err()
+        );
+    }
+
     #[test]
     fn debug_hides_credentials() {
         let config = S3Config {
@@ -189,6 +233,7 @@ mod tests {
             prefix: None,
             path_style: false,
             allow_http: false,
+            roots: TlsRoots::default(),
         };
         let debug = format!("{config:?}");
         assert!(!debug.contains("AKIDEXAMPLE") && !debug.contains("EXAMPLEKEY"));

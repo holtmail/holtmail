@@ -14,12 +14,15 @@ let store = S3BlobStore::new(S3Config {
     prefix: Some("archive".into()),
     path_style: true,
     allow_http: false,
+    roots: TlsRoots::default(),
 })?;
 ```
 
+`roots` are CA certificates trusted for an https endpoint besides the system's roots (Holtmail's `tls_ca_file`), for a self-hosted service with a private CA; verification stays on. An unusable certificate fails `new`.
+
 `new` does not touch the network; the first request reports a wrong endpoint or credentials. `S3Config`'s `Debug` leaves the keys out.
 
-`S3BlobStore::from_object_store(store, prefix)` takes any `object_store` backend, which is how the tests run against `InMemory`.
+`S3BlobStore::from_object_store(store, prefix)` takes any `object_store` backend, which is how the tests run against `InMemory`. One test reads from a TLS server in the process whose test CA is trusted through `roots`.
 
 ## In the bucket
 

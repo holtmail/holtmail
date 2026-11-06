@@ -261,6 +261,26 @@ impl Http {
         Self::json(response, &host).await
     }
 
+    /// An open `text/event-stream` answer from `url`, read as it arrives; the client's overall
+    /// timeout does not apply, so the caller watches for silence itself.
+    pub(crate) async fn stream(&self, url: &str) -> Result<reqwest::Response, SourceError> {
+        let (builder, host) = self.request(reqwest::Method::GET, url)?;
+        let response = Self::send(
+            builder
+                .header(ACCEPT, "text/event-stream")
+                .timeout(Duration::from_secs(30 * 24 * 60 * 60)),
+            &host,
+        )
+        .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(SourceError::Protocol(format!(
+                "{host} has no event source at the address its session names"
+            )));
+        }
+        Self::check(response.status(), &host)?;
+        Ok(response)
+    }
+
     /// The body, or `None` when the server no longer has it.
     pub(crate) async fn get_bytes(&self, url: &str) -> Result<Option<Bytes>, SourceError> {
         let (builder, host) = self.request(reqwest::Method::GET, url)?;

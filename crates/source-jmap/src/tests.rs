@@ -7,6 +7,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use holtmail_source::testing::{MailRemote, watch_conformance};
 
 use super::*;
 
@@ -33,6 +34,20 @@ struct Fake {
     requests: Vec<Vec<(String, usize)>>,
     downloads: usize,
     lose_blob: Option<String>,
+    push: Option<tokio::sync::broadcast::Sender<String>>,
+    no_events: bool,
+    silent: bool,
+    event_queries: Vec<String>,
+}
+
+impl Fake {
+    fn state(&self) -> String {
+        let mut text = String::new();
+        for e in &self.emails {
+            text.push_str(&format!("{}|{:?}|{:?};", e.id, e.mailboxes, e.keywords));
+        }
+        format!("s{:x}", fnv(&text))
+    }
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -55,7 +70,7 @@ async fn session(State(fake): State<Shared>, headers: HeaderMap) -> Response {
     }
     let fake = fake.lock().unwrap();
     let base = format!("http://127.0.0.1:{}", fake.port);
-    axum::Json(json!({
+    let mut session = json!({
         "capabilities": {
             CORE: { "maxObjectsInGet": fake.max_objects, "maxCallsInRequest": fake.max_calls },
             MAIL: {},
@@ -66,10 +81,56 @@ async fn session(State(fake): State<Shared>, headers: HeaderMap) -> Response {
         "apiUrl": format!("{base}/jmap/api/"),
         "downloadUrl": format!("{base}/jmap/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}"),
         "uploadUrl": format!("{base}/jmap/upload/{{accountId}}/"),
-        "eventSourceUrl": format!("{base}/jmap/events/"),
         "state": "1",
-    }))
-    .into_response()
+    });
+    if !fake.no_events {
+        session["eventSourceUrl"] = json!(format!(
+            "{base}/jmap/events/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}"
+        ));
+    }
+    axum::Json(session).into_response()
+}
+
+async fn events(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    axum::extract::RawQuery(query): axum::extract::RawQuery,
+) -> Response {
+    if !authorized(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let query = query.unwrap_or_default();
+    let ping: u64 = query
+        .split('&')
+        .find_map(|p| p.strip_prefix("ping="))
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(60);
+    let (receiver, silent) = {
+        let mut fake = fake.lock().unwrap();
+        fake.event_queries.push(query);
+        (fake.push.as_ref().unwrap().subscribe(), fake.silent)
+    };
+    let stream = futures::stream::unfold(receiver, move |mut receiver| async move {
+        let text = tokio::select! {
+            message = receiver.recv() => message.ok()?,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(ping)), if !silent => {
+                format!("event: ping\ndata: {{\"interval\":{ping}}}\n\n")
+            }
+        };
+        Some((Ok::<_, std::io::Error>(text), receiver))
+    });
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response()
+}
+
+fn state_change(account: &str, kind: &str, state: &str) -> String {
+    format!(
+        "event: state\r\ndata: {}\r\n\r\n",
+        json!({ "@type": "StateChange", "changed": { account: { kind: state } } })
+    )
 }
 
 fn email_json(email: &Email, properties: &[String]) -> Value {
@@ -173,7 +234,7 @@ async fn api(State(fake): State<Shared>, headers: HeaderMap, body: String) -> Re
                         .filter_map(|id| fake.emails.iter().find(|e| &e.id == id))
                         .map(|e| email_json(e, &properties))
                         .collect();
-                    json!(["Email/get", { "accountId": "u1", "state": "1", "list": list, "notFound": [] }, id])
+                    json!(["Email/get", { "accountId": "u1", "state": fake.state(), "list": list, "notFound": [] }, id])
                 }
             }
             _ => json!(["error", { "type": "unknownMethod" }, id]),
@@ -258,6 +319,7 @@ async fn serve(max_objects: usize, max_calls: usize) -> (Shared, String) {
             email(5, &["mb-in"], &[], "2025-03-04T09:00:00Z"),
             email(6, &["mb-sent"], &["$seen"], "2025-03-05T09:00:00Z"),
         ],
+        push: Some(tokio::sync::broadcast::channel(16).0),
         ..Fake::default()
     }));
     let app = Router::new()
@@ -268,6 +330,7 @@ async fn serve(max_objects: usize, max_calls: usize) -> (Shared, String) {
         .route("/jmap/session", get(session))
         .route("/jmap/api/", post(api))
         .route("/jmap/download/{account}/{blob}/{name}", get(download))
+        .route("/jmap/events/", get(events))
         .with_state(fake.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -594,4 +657,128 @@ async fn does_not_follow_a_session_redirect_with_credentials() {
         [("/jmap/session".to_owned(), true)]
     );
     assert!(target_asked.lock().unwrap().is_empty());
+}
+
+struct Remote(Shared);
+
+#[async_trait]
+impl MailRemote for Remote {
+    async fn deliver(&self, path: &str) {
+        let mut fake = self.0.lock().unwrap();
+        let mailbox = fake
+            .mailboxes
+            .iter()
+            .find(|m| m.1 == path)
+            .map(|m| m.0.clone())
+            .unwrap();
+        let n = 100 + fake.emails.len() as u32;
+        fake.emails
+            .push(email(n, &[&mailbox], &[], "2025-04-01T09:00:00Z"));
+        let state = fake.state();
+        let _ = fake
+            .push
+            .as_ref()
+            .unwrap()
+            .send(state_change("u1", "Email", &state));
+    }
+}
+
+#[tokio::test]
+async fn the_event_source_keeps_the_watch_contract() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    watch_conformance(&source, &Remote(fake.clone()), "Inbox", "Archive").await;
+    let query = fake.lock().unwrap().event_queries[0].clone();
+    assert_eq!(query, "types=Email%2CMailbox&closeafter=no&ping=60");
+}
+
+#[tokio::test]
+async fn the_watch_ignores_other_accounts_and_types() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    let mut watch = source.watch(&[]).await.unwrap().unwrap();
+    let push = fake.lock().unwrap().push.clone().unwrap();
+    push.send(state_change("u2", "Email", "x")).unwrap();
+    push.send(state_change("u1", "Thread", "x")).unwrap();
+    push.send("event: state\ndata: not json\n\n".into())
+        .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(300), watch.next())
+            .await
+            .is_err(),
+        "nothing relevant changed"
+    );
+    push.send(state_change("u1", "Mailbox", "m2")).unwrap();
+    let changed = tokio::time::timeout(std::time::Duration::from_secs(5), watch.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(changed, holtmail_source::Changed::all());
+}
+
+#[tokio::test]
+async fn a_silent_event_source_ends_the_watch() {
+    let (fake, url) = serve(50, 4).await;
+    fake.lock().unwrap().silent = true;
+    let source = password_source(&url).with_push_ping(std::time::Duration::from_secs(1));
+    let mut watch = source.watch(&[]).await.unwrap().unwrap();
+    let ended = tokio::time::timeout(std::time::Duration::from_secs(10), watch.next())
+        .await
+        .expect("silence ends the watch");
+    assert!(matches!(ended, Err(SourceError::Connection(_))));
+
+    fake.lock().unwrap().silent = false;
+    let mut watch = source.watch(&[]).await.unwrap().unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(3500), watch.next())
+            .await
+            .is_err(),
+        "pings keep a quiet watch alive"
+    );
+}
+
+#[tokio::test]
+async fn a_session_without_an_event_source_is_not_watched() {
+    let (fake, url) = serve(50, 4).await;
+    fake.lock().unwrap().no_events = true;
+    assert!(password_source(&url).watch(&[]).await.unwrap().is_none());
+    let wrong = JmapSource::new(
+        JmapSettings {
+            url: url.clone(),
+            username: "ada@example.com".into(),
+            auth: JmapAuth::Password,
+        },
+        Credentials::Password("wrong".into()),
+    )
+    .unwrap();
+    assert!(matches!(wrong.watch(&[]).await, Err(SourceError::Auth(_))));
+}
+
+#[tokio::test]
+async fn an_unchanged_account_is_told_by_its_email_state() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    let mut session = source.connect().await.unwrap();
+    session.select("Inbox").await.unwrap();
+    assert_eq!(session.state(), None, "no state before a listing");
+    session.uids().await.unwrap();
+    let state = session.state().expect("a state after the listing");
+
+    let mut later = source.connect().await.unwrap();
+    later.select("Sent Items").await.unwrap();
+    assert_eq!(
+        later.unchanged_since(&state).await.unwrap(),
+        Some(state.clone())
+    );
+
+    fake.lock().unwrap().emails[0]
+        .keywords
+        .push("$flagged".into());
+    let mut after = source.connect().await.unwrap();
+    after.select("Inbox").await.unwrap();
+    assert_eq!(
+        after.unchanged_since(&state).await.unwrap(),
+        None,
+        "a flag moves the state"
+    );
 }

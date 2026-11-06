@@ -6,9 +6,14 @@
 //! received it, but not with the time it entered a mailbox, so folders report
 //! [`FolderStatus::uids_ascend`] `false`. Each message's original bytes are downloaded through
 //! the session's `downloadUrl`; keywords become flags.
+//!
+//! A folder's state is the account's `Email` state, which moves with every email added,
+//! removed, moved or re-flagged in any mailbox; an account where it did not move costs one call
+//! per sync. Push comes from the session's `eventSourceUrl` (RFC 8620 §7.3).
 
 mod http;
 mod time;
+mod watch;
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
@@ -19,7 +24,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use holtmail_source::{
     Credentials, FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError,
-    SourceSession,
+    SourceSession, SourceWatch,
 };
 use holtmail_store::FolderRole;
 use serde::{Deserialize, Serialize};
@@ -102,6 +107,7 @@ pub fn session_url(input: &str) -> Result<String, SourceError> {
 pub struct JmapSource {
     settings: JmapSettings,
     http: Http,
+    ping: Duration,
 }
 
 impl JmapSource {
@@ -131,24 +137,50 @@ impl JmapSource {
         Ok(Self {
             http: Http::new(auth, Duration::from_secs(300))?,
             settings,
+            ping: watch::PING,
         })
     }
-}
 
-#[async_trait]
-impl Source for JmapSource {
-    async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
+    /// Asks the event source for a ping every `ping` instead of every minute; a watch that hears
+    /// nothing for two and a half pings ends.
+    pub fn with_push_ping(mut self, ping: Duration) -> Self {
+        self.ping = ping.max(Duration::from_secs(1));
+        self
+    }
+
+    async fn open(&self) -> Result<JmapSession, SourceError> {
         let url = session_url(&self.settings.url)?;
         let mut base = Url::parse(&url).map_err(|e| SourceError::Config(e.to_string()))?;
         if base.path().starts_with("/.well-known/") {
             base = self.http.resolve(base).await?;
         }
         let session = self.http.session(&base).await?;
-        Ok(Box::new(JmapSession::from_session(
-            self.http.clone(),
-            &base,
-            &session,
-        )?))
+        JmapSession::from_session(self.http.clone(), &base, &session)
+    }
+}
+
+#[async_trait]
+impl Source for JmapSource {
+    async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
+        Ok(Box::new(self.open().await?))
+    }
+
+    /// Listens to the session's event source for `Email` and `Mailbox` state changes of the
+    /// account, reported as every folder; `None` when the session names no event source.
+    async fn watch(&self, folders: &[String]) -> Result<Option<Box<dyn SourceWatch>>, SourceError> {
+        let _ = folders;
+        let session = self.open().await?;
+        let Some(template) = session.event_source_url.clone() else {
+            return Ok(None);
+        };
+        let url = watch::event_url(&template, &["Email", "Mailbox"], self.ping);
+        let response = self.http.stream(&url).await?;
+        Ok(Some(Box::new(watch::JmapWatch::new(
+            response,
+            session.account.clone(),
+            &["Email", "Mailbox"],
+            self.ping,
+        ))))
     }
 }
 
@@ -164,6 +196,12 @@ struct Selected {
     uids: Option<BTreeMap<u64, String>>,
 }
 
+impl Selected {
+    fn listed(&self) -> bool {
+        self.uids.is_some()
+    }
+}
+
 struct JmapSession {
     http: Http,
     api_url: String,
@@ -173,6 +211,8 @@ struct JmapSession {
     max_calls: usize,
     mailboxes: Option<Vec<Mailbox>>,
     selected: Option<Selected>,
+    event_source_url: Option<String>,
+    email_state: Option<String>,
 }
 
 fn protocol(what: &str) -> SourceError {
@@ -221,9 +261,16 @@ impl JmapSession {
                 .map(|u| u.to_string())
                 .map_err(|_| protocol(&format!("the JMAP session's {key} is not an address")))
         };
+        let event_source_url = session
+            .get("eventSourceUrl")
+            .and_then(Value::as_str)
+            .map(|_| resolve("eventSourceUrl"))
+            .transpose()?;
         Ok(Self {
             api_url: resolve("apiUrl")?,
             download_url: resolve("downloadUrl")?,
+            event_source_url,
+            email_state: None,
             http,
             account,
             max_objects: limit(&core, "maxObjectsInGet", MAX_OBJECTS, MAX_OBJECTS),
@@ -351,8 +398,31 @@ impl JmapSession {
             .ok_or_else(|| protocol("no folder selected"))
     }
 
+    /// The account's `Email` state, asked once per session before anything is listed, so a
+    /// listing is never older than the state it is kept with.
+    async fn email_state(&mut self) -> Result<String, SourceError> {
+        if let Some(state) = &self.email_state {
+            return Ok(state.clone());
+        }
+        let answer = self
+            .call(vec![(
+                "Email/get",
+                json!({ "accountId": self.account, "ids": [], "properties": ["id"] }),
+            )])
+            .await?;
+        let state = answer
+            .first()
+            .and_then(|a| a.get("state"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| protocol("the JMAP server gave no Email state"))?
+            .to_owned();
+        self.email_state = Some(state.clone());
+        Ok(state)
+    }
+
     async fn uid_map(&mut self) -> Result<&BTreeMap<u64, String>, SourceError> {
         if self.selected()?.uids.is_none() {
+            self.email_state().await?;
             let mailbox = self.selected()?.mailbox.clone();
             let map = self.list_mailbox(&mailbox).await?;
             if let Some(selected) = self.selected.as_mut() {
@@ -615,6 +685,17 @@ impl SourceSession for JmapSession {
             selected.uids = None;
         }
         Ok(self.uid_map().await?.keys().copied().collect())
+    }
+
+    fn state(&self) -> Option<String> {
+        self.selected
+            .as_ref()
+            .filter(|s| s.listed())
+            .and(self.email_state.clone())
+    }
+
+    async fn unchanged_since(&mut self, state: &str) -> Result<Option<String>, SourceError> {
+        Ok((self.email_state().await? == state).then(|| state.to_owned()))
     }
 
     async fn fetch(&mut self, uids: &[u64]) -> Result<Vec<RemoteMessage>, SourceError> {

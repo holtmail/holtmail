@@ -22,6 +22,7 @@ pub struct ProxiedFetcher {
 fn fetcher(proxy: Option<&str>) -> Result<HttpFetcher, FetchError> {
     HttpFetcher::new(Options {
         proxy: proxy.map(str::to_owned),
+        roots: crate::config::tls_roots(),
         ..Options::default()
     })
 }

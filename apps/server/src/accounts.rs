@@ -6,7 +6,7 @@ use holtmail_source::{Credentials, Source, SourceError};
 use holtmail_source_graph::{GraphSettings, GraphSource};
 use holtmail_source_imap::{ImapSettings, ImapSource, Security};
 use holtmail_source_jmap::{JmapAuth, JmapSettings, JmapSource};
-use holtmail_store::{Account, AccountKind, NewAccount, Store};
+use holtmail_store::{Account, AccountKind, FolderCursor, NewAccount, Store};
 use holtmail_sync::{SyncError, SyncOptions, SyncReport, Syncer};
 use serde::Deserialize;
 
@@ -15,7 +15,7 @@ use holtmail_api::{
     MailboxError,
 };
 
-use crate::config::Services;
+use crate::config::{self, Services};
 use crate::oauth::{OAuth, OAuthSettings, Pending, Purpose};
 
 pub struct NewImapAccount {
@@ -229,6 +229,7 @@ pub async fn check_jmap_sign_in(settings: &JmapSettings, secret: &str) -> Result
         settings.clone(),
         jmap_credentials(settings.auth, secret.to_owned()),
     )
+    .and_then(|source| source.with_roots(&config::tls_roots()))
     .map_err(|e| jmap_sign_in_error(e, settings))?;
     let mut session = source
         .connect()
@@ -485,17 +486,23 @@ pub async fn source_for(
         AccountKind::Imap => {
             let settings = ImapSettings::from_json(&account.settings)?;
             let credentials = credentials(account, store, secrets, oauth).await?;
-            Ok(Box::new(ImapSource::new(settings, credentials)))
+            Ok(Box::new(
+                ImapSource::new(settings, credentials).with_roots(&config::tls_roots())?,
+            ))
         }
         AccountKind::Jmap => {
             let settings = JmapSettings::from_json(&account.settings)?;
             let credentials = credentials(account, store, secrets, oauth).await?;
-            Ok(Box::new(JmapSource::new(settings, credentials)?))
+            Ok(Box::new(
+                JmapSource::new(settings, credentials)?.with_roots(&config::tls_roots())?,
+            ))
         }
         AccountKind::Graph => {
             let settings = GraphSettings::from_json(&account.settings)?;
             let credentials = credentials(account, store, secrets, oauth).await?;
-            Ok(Box::new(GraphSource::new(&settings, credentials)?))
+            Ok(Box::new(
+                GraphSource::new(&settings, credentials)?.with_roots(&config::tls_roots())?,
+            ))
         }
         AccountKind::Import => bail!("import accounts have no server"),
     }
@@ -577,8 +584,9 @@ pub async fn configure(
         )));
     }
     let mut updated = account.clone();
+    let mut renumbers = false;
     if connects && jmap {
-        configure_jmap(secrets, account, &change, &mut updated).await?;
+        renumbers = configure_jmap(secrets, account, &change, &mut updated).await?;
     } else if connects {
         let (settings, imap) = match &change.connection {
             Some(connection) => with_connection(&account.settings, connection)
@@ -641,6 +649,9 @@ pub async fn configure(
             Credentials::AccessToken(_) => None,
         };
         check_sign_in(&imap, credentials).await?;
+        renumbers = stored.as_ref().is_none_or(|old| {
+            imap_moves(old, &imap) || old.username.trim() != imap.username.trim()
+        });
         if let Some(connection) = &change.connection
             && let Some(old) = self::connection(account)
             && connection.username.trim() != old.username
@@ -668,8 +679,36 @@ pub async fn configure(
     if let Some(dav) = &change.contacts_calendars {
         crate::dav::configure(store, secrets, oauth, &mut updated, dav).await?;
     }
+    if renumbers {
+        forget_positions(store, account).await?;
+    }
     store.update_account(&updated).await.map_err(backend)?;
     Ok(updated)
+}
+
+/// Forgets the UIDs and cursors of every folder of `account`, for a connection to another server
+/// or mailbox: its UIDs, `UIDVALIDITY` and mod-sequences may match the old ones by chance and
+/// mean other messages. The next sync looks at every message again; ones already archived are
+/// recognised by their bytes.
+async fn forget_positions(store: &dyn Store, account: &Account) -> Result<(), MailboxError> {
+    let folders = store
+        .list_folders(account.archive_id)
+        .await
+        .map_err(backend)?;
+    for summary in folders
+        .into_iter()
+        .filter(|f| f.folder.account_id == account.id)
+    {
+        store
+            .forget_uids(summary.folder.id)
+            .await
+            .map_err(backend)?;
+        store
+            .set_cursor(summary.folder.id, &FolderCursor::default())
+            .await
+            .map_err(backend)?;
+    }
+    Ok(())
 }
 
 async fn configure_jmap(
@@ -677,7 +716,7 @@ async fn configure_jmap(
     account: &Account,
     change: &AccountChange,
     updated: &mut Account,
-) -> Result<(), MailboxError> {
+) -> Result<bool, MailboxError> {
     let old = JmapSettings::from_json(&account.settings).ok();
     let (settings, jmap) = match &change.jmap {
         Some(connection) => with_jmap_connection(&account.settings, connection)
@@ -705,6 +744,9 @@ async fn configure_jmap(
         }
     };
     check_jmap_sign_in(&jmap, &secret).await?;
+    let renumbers = old
+        .as_ref()
+        .is_none_or(|old| jmap_moves(old, &jmap) || old.username != jmap.username);
     if let Some(old) = &old
         && jmap.username != old.username
         && (account.address.is_none() || account.address.as_deref() == Some(&old.username))
@@ -719,7 +761,7 @@ async fn configure_jmap(
                 .map_err(backend)?,
         );
     }
-    Ok(())
+    Ok(renumbers)
 }
 
 fn place(settings: &ImapSettings) -> String {
@@ -755,7 +797,9 @@ pub async fn check_sign_in(
     credentials: Credentials,
 ) -> Result<(), MailboxError> {
     let oauth = matches!(credentials, Credentials::AccessToken(_));
-    let source = ImapSource::new(settings.clone(), credentials);
+    let source = ImapSource::new(settings.clone(), credentials)
+        .with_roots(&config::tls_roots())
+        .map_err(|e| sign_in_error(e, settings, oauth))?;
     let mut session = source
         .connect()
         .await
@@ -786,7 +830,9 @@ pub async fn check_graph_sign_in(
 ) -> Result<Option<String>, MailboxError> {
     let graph =
         GraphSettings::from_json(settings).map_err(|e| MailboxError::Invalid(e.to_string()))?;
-    let source = GraphSource::new(&graph, credentials).map_err(graph_sign_in_error)?;
+    let source = GraphSource::new(&graph, credentials)
+        .and_then(|source| source.with_roots(&config::tls_roots()))
+        .map_err(graph_sign_in_error)?;
     let mut session = source.connect().await.map_err(graph_sign_in_error)?;
     session.folders().await.map_err(graph_sign_in_error)?;
     let _ = session.logout().await;
@@ -939,7 +985,7 @@ async fn target(
     services: &Services,
     pending: &Pending,
 ) -> Result<(Option<Account>, serde_json::Value), MailboxError> {
-    let (host, port) = pending.provider.imap();
+    let (host, port) = services.oauth.imap(pending.provider);
     let oauth = OAuthSettings {
         provider: pending.provider.as_str().to_owned(),
         needs_sign_in: false,
@@ -962,7 +1008,7 @@ async fn target(
                 return Ok((None, settings));
             }
             let mut settings = serde_json::to_value(ImapSettings {
-                host: host.to_owned(),
+                host: host.clone(),
                 port: Some(port),
                 security: Security::Tls,
                 username: pending.email.clone(),
@@ -989,7 +1035,7 @@ async fn target(
                 let (settings_with, _) = with_connection(
                     &settings,
                     &ConnectionChange {
-                        host: host.to_owned(),
+                        host: host.clone(),
                         port: Some(port),
                         security: "tls".into(),
                         username: pending.email.clone(),
@@ -1108,7 +1154,7 @@ mod tests {
     }
 
     use holtmail_secret_local::LocalSecretBox;
-    use holtmail_store::ArchiveStore;
+    use holtmail_store::{ArchiveStore, SyncStore};
     use holtmail_store_sqlite::SqliteStore;
 
     use super::*;
@@ -1233,6 +1279,58 @@ mod tests {
         );
         assert_eq!(oauth_email(&revoked).as_deref(), Some("ada@example.com"));
         assert_eq!(oauth_email(&stored), None);
+    }
+
+    #[tokio::test]
+    async fn forgets_folder_positions_of_one_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(dir.path().join("db")).await.unwrap();
+        let secrets = LocalSecretBox::from_key([6; 32]);
+        let archive = crate::import::find_or_create_archive(&store, "Personal")
+            .await
+            .unwrap();
+        let mut accounts = Vec::new();
+        for user in ["ada@example.com", "bob@example.org"] {
+            accounts.push(
+                add_imap(
+                    &store,
+                    &secrets,
+                    NewImapAccount {
+                        archive,
+                        name: None,
+                        host: "imap.example.com".into(),
+                        port: None,
+                        security: Security::Tls,
+                        username: user.into(),
+                        password: "correct horse".into(),
+                        exclude: Vec::new(),
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let synced = FolderCursor {
+            uid_validity: Some(7),
+            last_uid: Some(42),
+            highest_modseq: Some(9),
+            ..FolderCursor::default()
+        };
+        let mut folders = Vec::new();
+        for account in &accounts {
+            let folder = store
+                .upsert_folder(account.id, "INBOX", None)
+                .await
+                .unwrap();
+            store.set_cursor(folder.id, &synced).await.unwrap();
+            folders.push(folder.id);
+        }
+        forget_positions(&store, &accounts[0]).await.unwrap();
+        assert_eq!(
+            store.cursor(folders[0]).await.unwrap(),
+            FolderCursor::default()
+        );
+        assert_eq!(store.cursor(folders[1]).await.unwrap(), synced);
     }
 
     #[tokio::test]

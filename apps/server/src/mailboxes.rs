@@ -727,7 +727,8 @@ impl Runner {
 
     /// Checks every 30 seconds which enabled accounts are due, by their own interval or the
     /// server's, and syncs those one after another. An account is due by its last stored run; one
-    /// that never ran, or whose sync a restart interrupted, is due at once.
+    /// that never ran is due at once, and so is one whose sync a restart interrupted, also when it
+    /// syncs only on request.
     pub async fn run_schedule(self) {
         loop {
             match accounts::syncable_accounts(&*self.0.services.store).await {
@@ -738,12 +739,10 @@ impl Runner {
                     let every = self.0.schedule.get().minutes;
                     for account in list {
                         let minutes = accounts::sync_interval(&account).unwrap_or(every);
-                        let last = if self.0.due.lock().expect("due lock").contains(&account.id) {
-                            None
-                        } else {
-                            self.status(account.id).finished_at
-                        };
-                        if let Some(at) = schedule::next_sync(last, minutes, now) {
+                        let interrupted =
+                            self.0.due.lock().expect("due lock").contains(&account.id);
+                        let last = self.status(account.id).finished_at;
+                        if let Some(at) = schedule::due_at(last, minutes, interrupted, now) {
                             next.insert(account.id, at);
                             if at <= now {
                                 due.push(account);

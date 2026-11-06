@@ -238,7 +238,8 @@ fn graph_source(
 ) -> Result<GraphCollections, CollectionError> {
     let settings = GraphSettings::from_json(&account.settings)
         .map_err(|e| CollectionError::Config(e.to_string()))?;
-    GraphCollections::new(settings.api_url.as_deref(), credentials, timeout)
+    GraphCollections::new(settings.api_url.as_deref(), credentials, timeout)?
+        .with_roots(&crate::config::tls_roots())
 }
 
 fn jmap_source(
@@ -250,7 +251,7 @@ fn jmap_source(
         .map_err(|e| CollectionError::Config(e.to_string()))?;
     let url = holtmail_source_jmap::session_url(&settings.url)
         .map_err(|e| CollectionError::Config(e.to_string()))?;
-    JmapCollections::new(&url, credentials, timeout)
+    JmapCollections::new(&url, credentials, timeout)?.with_roots(&crate::config::tls_roots())
 }
 
 /// The source `settings` describe for `account`.
@@ -261,7 +262,10 @@ fn build(
     timeout: Duration,
 ) -> Result<Box<dyn CollectionSource>, CollectionError> {
     Ok(match settings.protocol {
-        Protocol::Dav => Box::new(DavSource::new(config(settings, credentials, timeout))?),
+        Protocol::Dav => Box::new(
+            DavSource::new(config(settings, credentials, timeout))?
+                .with_roots(&crate::config::tls_roots())?,
+        ),
         Protocol::Graph => Box::new(graph_source(account, credentials, timeout)?),
         Protocol::Jmap => Box::new(jmap_source(account, credentials, timeout)?),
     })

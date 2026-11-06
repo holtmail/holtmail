@@ -83,6 +83,7 @@ pub struct OAuth {
     pending: Mutex<HashMap<String, Pending>>,
     tokens: Mutex<HashMap<AccountId, Cached>>,
     graph_url: Option<String>,
+    imap: HashMap<Provider, (String, u16)>,
 }
 
 impl OAuth {
@@ -93,7 +94,23 @@ impl OAuth {
             pending: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
             graph_url: None,
+            imap: HashMap::new(),
         }
+    }
+
+    /// The same with the IMAP server new OAuth accounts of `provider` connect to over TLS.
+    pub fn with_imap(mut self, provider: Provider, host: String, port: u16) -> Self {
+        self.imap.insert(provider, (host, port));
+        self
+    }
+
+    /// The IMAP server and TLS port new OAuth accounts of `provider` connect to: the
+    /// configured one, else the provider's.
+    pub fn imap(&self, provider: Provider) -> (String, u16) {
+        self.imap.get(&provider).cloned().unwrap_or_else(|| {
+            let (host, port) = provider.imap();
+            (host.to_owned(), port)
+        })
     }
 
     /// The same with the Graph address new Graph accounts are given; `None` for Microsoft's.
@@ -553,5 +570,22 @@ mod tests {
             )
             .unwrap();
         assert!(!started.needs_paste && !started.thunderbird);
+    }
+
+    #[test]
+    fn imap_servers_default_to_the_providers() {
+        let oauth = OAuth::new(
+            Provider::ALL.into_iter().map(Client::thunderbird).collect(),
+            Arc::new(FakeTokenEndpoint::default()),
+        )
+        .with_imap(Provider::Microsoft, "outlook.office365.us".into(), 993);
+        assert_eq!(
+            oauth.imap(Provider::Google),
+            ("imap.gmail.com".to_owned(), 993)
+        );
+        assert_eq!(
+            oauth.imap(Provider::Microsoft),
+            ("outlook.office365.us".to_owned(), 993)
+        );
     }
 }

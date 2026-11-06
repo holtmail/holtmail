@@ -82,6 +82,20 @@ pub fn next_sync(last: Option<Timestamp>, minutes: u64, now: Timestamp) -> Optio
     })
 }
 
+/// When an account is due next: at once when a restart interrupted its sync, also when it syncs
+/// only on request, so the interrupted sync finishes once; otherwise as [`next_sync`] says.
+pub fn due_at(
+    last: Option<Timestamp>,
+    minutes: u64,
+    interrupted: bool,
+    now: Timestamp,
+) -> Option<Timestamp> {
+    if interrupted {
+        return Some(now);
+    }
+    next_sync(last, minutes, now)
+}
+
 #[cfg(test)]
 mod tests {
     use holtmail_store_sqlite::SqliteStore;
@@ -97,6 +111,20 @@ mod tests {
             Some(Timestamp::from_secs(1_900))
         );
         assert_eq!(next_sync(Some(Timestamp::from_secs(1_000)), 0, now), None);
+    }
+
+    #[test]
+    fn an_interrupted_sync_is_due_at_once_also_on_request_only() {
+        let now = Timestamp::from_secs(10_000);
+        let last = Some(Timestamp::from_secs(9_000));
+        assert_eq!(due_at(last, 0, true, now), Some(now));
+        assert_eq!(due_at(last, 60, true, now), Some(now));
+        assert_eq!(due_at(None, 0, false, now), None);
+        assert_eq!(due_at(last, 0, false, now), None);
+        assert_eq!(
+            due_at(last, 60, false, now),
+            Some(Timestamp::from_secs(12_600))
+        );
     }
 
     #[tokio::test]

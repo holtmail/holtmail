@@ -1,11 +1,12 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, RwLock};
 
 use anyhow::{Context, bail};
 use holtmail_blob::BlobStore;
 use holtmail_blob_fs::FsBlobStore;
 use holtmail_blob_s3::{S3BlobStore, S3Config};
+use holtmail_core::TlsRoots;
 use holtmail_extract::Extractor;
 use holtmail_extract_basic::BasicExtractor;
 use holtmail_index::SearchIndex;
@@ -48,6 +49,19 @@ pub struct Config {
     /// OAuth clients for Gmail and Microsoft sign-in; Thunderbird's public clients by default.
     #[serde(default)]
     pub oauth: OAuthConfig,
+    /// A PEM file of CA certificates trusted for outbound TLS besides the built-in roots, for
+    /// mail, contacts, OAuth, S3 and image servers with a private CA.
+    #[serde(default)]
+    pub tls_ca_file: Option<PathBuf>,
+    #[serde(skip)]
+    pub tls_roots: TlsRoots,
+}
+
+static TLS_ROOTS: LazyLock<RwLock<TlsRoots>> = LazyLock::new(Default::default);
+
+/// The extra TLS roots of the config this process loaded last; none before any was loaded.
+pub fn tls_roots() -> TlsRoots {
+    TLS_ROOTS.read().expect("TLS roots lock").clone()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -82,6 +96,13 @@ pub struct OAuthClientConfig {
     /// `https://graph.microsoft.us/v1.0`.
     #[serde(default)]
     pub graph_url: Option<String>,
+    /// The IMAP server new OAuth accounts of this provider connect to over TLS, for a national
+    /// cloud such as `outlook.office365.us`; the provider's own server by default.
+    #[serde(default)]
+    pub imap_host: Option<String>,
+    /// Its port, 993 by default.
+    #[serde(default)]
+    pub imap_port: Option<u16>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -172,7 +193,24 @@ impl Config {
             if let Some(url) = read("GRAPH_URL") {
                 client.graph_url = Some(url);
             }
+            if let Some(host) = read("IMAP_HOST") {
+                client.imap_host = Some(host);
+            }
+            if let Some(port) = read("IMAP_PORT") {
+                client.imap_port = Some(
+                    port.trim()
+                        .parse()
+                        .with_context(|| format!("HOLTMAIL_OAUTH_{name}_IMAP_PORT"))?,
+                );
+            }
         }
+        if let Some(path) = std::env::var_os("HOLTMAIL_TLS_CA_FILE").filter(|p| !p.is_empty()) {
+            config.tls_ca_file = Some(path.into());
+        }
+        if let Some(path) = &config.tls_ca_file {
+            config.tls_roots = read_roots(path)?;
+        }
+        *TLS_ROOTS.write().expect("TLS roots lock") = config.tls_roots.clone();
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
                 url.starts_with("http://") || url.starts_with("https://"),
@@ -232,6 +270,31 @@ impl Config {
             client.token_url = secure_url(url, provider, "token_url")?;
         }
         Ok(client)
+    }
+
+    /// The IMAP server and port new OAuth accounts of `provider` connect to over TLS.
+    pub fn oauth_imap(&self, provider: Provider) -> anyhow::Result<(String, u16)> {
+        let own = match provider {
+            Provider::Google => &self.oauth.google,
+            Provider::Microsoft => &self.oauth.microsoft,
+        };
+        let (default_host, default_port) = provider.imap();
+        let host = match own.imap_host.as_deref().map(str::trim) {
+            Some(host) => {
+                anyhow::ensure!(
+                    !host.is_empty()
+                        && !host.contains(['/', ':', '@', ' '])
+                        && url::Host::parse(host).is_ok(),
+                    "oauth.{}.imap_host is a host name, like outlook.office365.us",
+                    provider.as_str()
+                );
+                host.to_owned()
+            }
+            None => default_host.to_owned(),
+        };
+        let port = own.imap_port.unwrap_or(default_port);
+        anyhow::ensure!(port != 0, "oauth.{}.imap_port is 0", provider.as_str());
+        Ok((host, port))
     }
 
     /// The Graph address new Microsoft Graph accounts are given, when the config names one.
@@ -299,6 +362,7 @@ pub async fn open_blobs(config: &Config) -> anyhow::Result<Arc<dyn BlobStore>> {
                 prefix: prefix.clone(),
                 path_style: *path_style,
                 allow_http: *allow_http,
+                roots: config.tls_roots.clone(),
             })?)
         }
     };
@@ -312,6 +376,11 @@ pub fn open_secrets(config: &Config) -> anyhow::Result<Arc<LocalSecretBox>> {
     Ok(Arc::new(LocalSecretBox::open_or_create(
         config.data_dir.join("secret.key"),
     )?))
+}
+
+fn read_roots(path: &Path) -> anyhow::Result<TlsRoots> {
+    let pem = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    TlsRoots::from_pem(&pem).with_context(|| format!("tls_ca_file {}", path.display()))
 }
 
 /// An address the config gives for a provider: https, or plain http to a loopback address.
@@ -338,13 +407,19 @@ pub fn open_oauth(config: &Config) -> anyhow::Result<Arc<OAuth>> {
     for provider in Provider::ALL {
         clients.push(config.oauth_client(provider)?);
     }
-    Ok(Arc::new(
-        OAuth::new(
-            clients,
-            Arc::new(HttpTokenEndpoint::new(std::time::Duration::from_secs(30))?),
-        )
-        .with_graph_url(config.graph_url()?),
-    ))
+    let mut oauth = OAuth::new(
+        clients,
+        Arc::new(
+            HttpTokenEndpoint::new(std::time::Duration::from_secs(30))?
+                .with_roots(&config.tls_roots)?,
+        ),
+    )
+    .with_graph_url(config.graph_url()?);
+    for provider in Provider::ALL {
+        let (host, port) = config.oauth_imap(provider)?;
+        oauth = oauth.with_imap(provider, host, port);
+    }
+    Ok(Arc::new(oauth))
 }
 
 impl Services {
@@ -460,9 +535,54 @@ mod tests {
             google.redirect_url,
             "http://127.0.0.1:8080/api/oauth/callback"
         );
+        assert_eq!(
+            config.oauth_imap(Provider::Google).unwrap(),
+            ("imap.gmail.com".to_owned(), 993)
+        );
+        let config: Config = toml::from_str(
+            "[oauth.microsoft]\nimap_host = \"outlook.office365.us\"\n[oauth.google]\nimap_host = \"localhost\"\nimap_port = 41993",
+        )
+        .unwrap();
+        assert_eq!(
+            config.oauth_imap(Provider::Microsoft).unwrap(),
+            ("outlook.office365.us".to_owned(), 993)
+        );
+        assert_eq!(
+            config.oauth_imap(Provider::Google).unwrap(),
+            ("localhost".to_owned(), 41993)
+        );
+        for bad in [
+            "imaps://imap.example.com",
+            "imap.example.com:993",
+            " ",
+            "a b",
+        ] {
+            let config: Config =
+                toml::from_str(&format!("[oauth.google]\nimap_host = {bad:?}")).unwrap();
+            assert!(config.oauth_imap(Provider::Google).is_err(), "{bad}");
+        }
         let config: Config = toml::from_str("[oauth.google]\nclient_secret = \"x\"").unwrap();
         assert!(config.oauth_client(Provider::Google).is_err());
         assert!(toml::from_str::<Config>("[oauth.yahoo]\nclient_id = \"x\"").is_err());
+    }
+
+    #[test]
+    fn reads_extra_tls_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(
+            &ca,
+            "-----BEGIN CERTIFICATE-----\nAAEC\n-----END CERTIFICATE-----\n",
+        )
+        .unwrap();
+        let config: Config =
+            toml::from_str(&format!("tls_ca_file = {:?}", ca.display().to_string())).unwrap();
+        assert_eq!(config.tls_ca_file.as_deref(), Some(ca.as_path()));
+        assert_eq!(read_roots(&ca).unwrap().len(), 1);
+        std::fs::write(&ca, "no certificate here").unwrap();
+        assert!(read_roots(&ca).is_err());
+        assert!(read_roots(&dir.path().join("missing.pem")).is_err());
+        assert!(toml::from_str::<Config>("").unwrap().tls_roots.is_empty());
     }
 
     #[test]

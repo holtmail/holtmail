@@ -2,6 +2,7 @@ use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use holtmail_source::SourceError;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
@@ -12,6 +13,14 @@ use tokio_rustls::rustls::ClientConfig;
 use tokio_rustls::rustls::pki_types::ServerName;
 
 use crate::Security;
+
+/// How long a plain or STARTTLS connection waits for the server to speak first. A TLS port says
+/// nothing until the client starts TLS, so a longer silence most likely means one.
+pub(crate) const GREETING_WAIT: Duration = Duration::from_secs(15);
+
+const TLS_HINT: &str = "the port may expect TLS from the start (security = tls, usually port 993)";
+const PLAIN_HINT: &str =
+    "the server answered in plain text; the port may be plain or STARTTLS (usually port 143)";
 
 #[derive(Debug)]
 pub(crate) enum ImapStream {
@@ -27,10 +36,14 @@ impl ImapStream {
         port: u16,
         security: Security,
         tls: Arc<ClientConfig>,
+        greeting_wait: Duration,
     ) -> Result<(Self, bool), SourceError> {
         let tcp = TcpStream::connect((host, port))
             .await
             .map_err(|e| SourceError::Connection(format!("{host}:{port}: {e}")))?;
+        if security != Security::Tls {
+            await_greeting(&tcp, host, port, greeting_wait).await?;
+        }
         match security {
             Security::Plain => Ok((Self::Plain(tcp), true)),
             Security::Tls => Ok((Self::Tls(Box::new(handshake(tcp, host, tls).await?)), true)),
@@ -40,6 +53,29 @@ impl ImapStream {
                 Ok((Self::Tls(Box::new(tls)), false))
             }
         }
+    }
+}
+
+async fn await_greeting(
+    tcp: &TcpStream,
+    host: &str,
+    port: u16,
+    wait: Duration,
+) -> Result<(), SourceError> {
+    let mut first = [0u8; 1];
+    match tokio::time::timeout(wait, tcp.peek(&mut first)).await {
+        Err(_) => Err(SourceError::Connection(format!(
+            "{host}:{port} sent no greeting within {} s; {TLS_HINT}",
+            wait.as_secs_f32()
+        ))),
+        Ok(Err(e)) => Err(SourceError::Connection(format!("{host}:{port}: {e}"))),
+        Ok(Ok(0)) => Err(SourceError::Connection(format!(
+            "{host}:{port} closed the connection before the greeting"
+        ))),
+        Ok(Ok(_)) if matches!(first[0], 0x15 | 0x16) => Err(SourceError::Connection(format!(
+            "{host}:{port} answered with TLS; {TLS_HINT}"
+        ))),
+        Ok(Ok(_)) => Ok(()),
     }
 }
 
@@ -53,7 +89,17 @@ async fn handshake(
     TlsConnector::from(tls)
         .connect(name, tcp)
         .await
-        .map_err(|e| SourceError::Connection(format!("TLS with {host}: {e}")))
+        .map_err(|e| {
+            let plain = e
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<tokio_rustls::rustls::Error>())
+                .is_some_and(|tls| matches!(tls, tokio_rustls::rustls::Error::InvalidMessage(_)));
+            if plain {
+                SourceError::Connection(format!("TLS with {host}: {e}; {PLAIN_HINT}"))
+            } else {
+                SourceError::Connection(format!("TLS with {host}: {e}"))
+            }
+        })
 }
 
 async fn starttls(tcp: TcpStream) -> Result<TcpStream, SourceError> {

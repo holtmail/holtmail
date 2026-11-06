@@ -125,13 +125,15 @@ fn tls_config(extra: &TlsRoots) -> Result<tokio_rustls::rustls::ClientConfig, So
 #[async_trait]
 impl Source for ImapSource {
     async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
+        let greeting_wait = self.timeout.min(stream::GREETING_WAIT);
         let (stream, greeting) = timed(
-            self.timeout,
+            self.timeout + greeting_wait,
             ImapStream::connect(
                 &self.settings.host,
                 self.settings.port(),
                 self.settings.security,
                 self.tls.clone(),
+                greeting_wait,
             ),
         )
         .await??;

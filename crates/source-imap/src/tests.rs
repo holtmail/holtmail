@@ -648,8 +648,71 @@ async fn gives_up_on_a_server_that_stops_answering() {
         .err()
         .unwrap();
     assert!(
-        matches!(&error, SourceError::Connection(reason) if reason.contains("in time")),
+        matches!(&error, SourceError::Connection(reason) if reason.contains("no greeting within 0.3 s")),
         "{error}"
     );
     assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+async fn listen_and(answer: &'static [u8]) -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                if !answer.is_empty() {
+                    let _ = socket.write_all(answer).await;
+                }
+                let mut sink = [0u8; 1024];
+                while matches!(socket.read(&mut sink).await, Ok(n) if n > 0) {}
+            });
+        }
+    });
+    port
+}
+
+fn connecting(port: u16, security: Security) -> ImapSource {
+    ImapSource::new(
+        ImapSettings {
+            host: "127.0.0.1".into(),
+            port: Some(port),
+            security,
+            username: "ada@example.com".into(),
+        },
+        Credentials::Password("secret".into()),
+    )
+    .with_timeout(Duration::from_secs(1))
+}
+
+async fn connect_error(source: ImapSource) -> String {
+    let started = std::time::Instant::now();
+    let error = match source.connect().await {
+        Ok(_) => panic!("connected"),
+        Err(error) => error.to_string(),
+    };
+    assert!(started.elapsed() < Duration::from_secs(5), "{error}");
+    error
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn names_a_tls_port_reached_without_tls() {
+    let silent = listen_and(b"").await;
+    for security in [Security::Plain, Security::Starttls] {
+        let error = connect_error(connecting(silent, security)).await;
+        assert!(
+            error.contains("no greeting") && error.contains("security = tls"),
+            "{error}"
+        );
+    }
+    let tls = listen_and(&[0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x32]).await;
+    let error = connect_error(connecting(tls, Security::Plain)).await;
+    assert!(error.contains("answered with TLS"), "{error}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn names_a_plain_port_reached_with_tls() {
+    let plain = listen_and(b"* OK IMAP4rev1 ready\r\n").await;
+    let error = connect_error(connecting(plain, Security::Tls)).await;
+    assert!(error.contains("plain or STARTTLS"), "{error}");
 }

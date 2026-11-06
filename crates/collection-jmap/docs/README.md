@@ -11,7 +11,10 @@ let source = JmapCollections::new(
     Duration::from_secs(120),
 )?;
 let offered = source.offers_contacts().await?; // the session has a primary contacts account
+let calendars = source.offers_calendars().await?; // and one for calendars
 ```
+
+`with_push_ping(Duration)` asks the event source to ping every that often (at least a second) instead of every minute.
 
 `with_roots(&TlsRoots)` trusts the given CA certificates (from Holtmail's `tls_ca_file`, see [`holtmail-core`](../../core/docs/README.md)) besides the system's roots; verification and the host name check stay on. An unusable certificate is a `Config` error.
 
@@ -31,6 +34,8 @@ The collection tag is the account's `ContactCard` (or `CalendarEvent`) state fro
 - `fetch`: `/get` of the ids in batches of the session's `maxObjectsInGet` (500 at most), leaving out ids not in the collection.
 - `list`: the ids of the query, sorted, without tags.
 
+- `watch`: the session's `eventSourceUrl` (RFC 8620 §7.3) with the types the session offers (`ContactCard,AddressBook` for contacts, `CalendarEvent,Calendar` for calendars), `closeafter=no`, `ping=60`; each `StateChange` naming one of the session's contacts or calendars accounts with one of those types reports every collection. No answer for two and a half pings, or a closed stream, ends it with `Connection`. `None` when the session names no event source or offers neither kind. A relative event source address is resolved against the session's origin; one without https is refused with `Protocol`.
+
 Method errors: `cannotCalculateChanges` → `TokenExpired`; `forbidden`, `accountNotFound`, `accountNotSupportedByMethod` → `Auth`; others `Protocol` with the error type.
 
 ## Limits and safety
@@ -43,4 +48,4 @@ Method errors: `cannotCalculateChanges` → `TokenExpired`; `forbidden`, `accoun
 
 ## Tests
 
-`src/tests.rs` runs an in-process fake JMAP server (axum) with a well-known redirect, a session with or without calendars, `AddressBook`/`Calendar` `/get`, `ContactCard`/`CalendarEvent` `/get`, `/query` and `/changes` with generations and optional one-item pages, and bearer checks. It runs the conformance suite (the fake wraps the suite's vCards and iCalendar objects in a JSON object and answers `Remote::stored` with it), again with one-item pages; further tests cover a server without calendars, names, colors and the JSON kept with its keys sorted (the same object in another key order reads the same), a card moved to another address book, the well-known address asked without credentials, an API address on another host used with the credentials, an API address without https refused with nothing sent there, waiting on `503`, a refused password, plain http and an unknown collection, and a server that ignores `position` and does not move its state on, refused after its first repeat. Against Stalwart 0.16 through the real binary: [`tests/integration/tests/jmap_pim.rs`](../../../tests/integration/tests/jmap_pim.rs) (first sync, changes, removals, a removed address book, a state Stalwart cannot calculate changes from, a session served from another host whose `apiUrl` names Stalwart). A test against a TLS server in the process with a certificate from `holtmail_core::tls::testing::TestCa` checks that its CA is trusted only through `with_roots`.
+`src/tests.rs` runs an in-process fake JMAP server (axum) with a well-known redirect, a session with or without calendars, `AddressBook`/`Calendar` `/get`, `ContactCard`/`CalendarEvent` `/get`, `/query` and `/changes` with generations and optional one-item pages, and bearer checks. It serves an event source with `StateChange`s on every change, and runs the watch conformance suite and a check that a session without calendars asks only for contact types and that silence ends a watch. It runs the conformance suite (the fake wraps the suite's vCards and iCalendar objects in a JSON object and answers `Remote::stored` with it), again with one-item pages; further tests cover a server without calendars, names, colors and the JSON kept with its keys sorted (the same object in another key order reads the same), a card moved to another address book, the well-known address asked without credentials, an API address on another host used with the credentials, an API address without https refused with nothing sent there, waiting on `503`, a refused password, plain http and an unknown collection, and a server that ignores `position` and does not move its state on, refused after its first repeat. Against Stalwart 0.16 through the real binary: [`tests/integration/tests/jmap_pim.rs`](../../../tests/integration/tests/jmap_pim.rs) (first sync, changes, removals, a removed address book, a state Stalwart cannot calculate changes from, a session served from another host whose `apiUrl` names Stalwart). A test against a TLS server in the process with a certificate from `holtmail_core::tls::testing::TestCa` checks that its CA is trusted only through `with_roots`.

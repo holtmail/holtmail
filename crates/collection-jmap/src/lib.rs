@@ -7,7 +7,8 @@
 //! as the JSContact object (`application/jscontact+json`) and each event as the JSCalendar object
 //! (`application/jscalendar+json`) exactly as they appear in the server's `/get` answer.
 //! Changes come from `ContactCard/changes` and `CalendarEvent/changes`. Read-only: only `/get`,
-//! `/query` and `/changes` methods are called.
+//! `/query` and `/changes` methods are called. Push comes from the session's `eventSourceUrl`
+//! (RFC 8620 §7.3).
 
 mod http;
 
@@ -18,8 +19,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 pub use holtmail_collection::Credentials;
 use holtmail_collection::{
-    Changes, CollectionError, CollectionKind, CollectionSource, ItemTag, RemoteCollection,
-    RemoteItem, media,
+    Changes, CollectionError, CollectionKind, CollectionSource, CollectionWatch,
+    CollectionsChanged, ItemTag, RemoteCollection, RemoteItem, media,
 };
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -97,6 +98,7 @@ struct Session {
     contacts: Option<String>,
     calendars: Option<String>,
     max_objects: usize,
+    events: Option<String>,
 }
 
 impl Session {
@@ -135,7 +137,12 @@ pub struct JmapCollections {
     url: Url,
     http: Http,
     session: tokio::sync::Mutex<Option<Session>>,
+    ping: Duration,
 }
+
+/// How often the event source is asked to ping, unless [`JmapCollections::with_push_ping`]
+/// says otherwise.
+const PING: Duration = Duration::from_secs(60);
 
 impl JmapCollections {
     /// Also trusts `roots` for TLS, besides the built-in roots. `Config` when one of them is
@@ -168,12 +175,25 @@ impl JmapCollections {
             url,
             http: Http::new(credentials, timeout)?,
             session: tokio::sync::Mutex::new(None),
+            ping: PING,
         })
+    }
+
+    /// Asks the event source for a ping every `ping` instead of every minute; a watch that hears
+    /// nothing for two and a half pings ends.
+    pub fn with_push_ping(mut self, ping: Duration) -> Self {
+        self.ping = ping.max(Duration::from_secs(1));
+        self
     }
 
     /// Whether the session offers contacts (`urn:ietf:params:jmap:contacts`) for this user.
     pub async fn offers_contacts(&self) -> Result<bool, CollectionError> {
         Ok(self.session().await?.contacts.is_some())
+    }
+
+    /// Whether the session offers calendars (`urn:ietf:params:jmap:calendars`) for this user.
+    pub async fn offers_calendars(&self) -> Result<bool, CollectionError> {
+        Ok(self.session().await?.calendars.is_some())
     }
 
     async fn session(&self) -> Result<Session, CollectionError> {
@@ -217,11 +237,17 @@ impl JmapCollections {
             .and_then(Value::as_u64)
             .map_or(MAX_OBJECTS, |n| usize::try_from(n).unwrap_or(MAX_OBJECTS))
             .clamp(1, MAX_OBJECTS);
+        let events = match session.get("eventSourceUrl").and_then(Value::as_str) {
+            Some(raw) if raw.contains("://") => Some(raw.to_owned()),
+            Some(raw) => Some(format!("{}{raw}", url.origin().ascii_serialization())),
+            None => None,
+        };
         let found = Session {
             api,
             contacts: primary(CONTACTS),
             calendars: primary(CALENDARS),
             max_objects,
+            events,
         };
         *cached = Some(found.clone());
         Ok(found)
@@ -420,6 +446,78 @@ impl JmapCollections {
     }
 }
 
+/// The event source address for `types` from the session's template (RFC 8620 §7.3); a plain
+/// address gets the parameters as a query.
+fn event_url(template: &str, types: &[&str], ping: Duration) -> String {
+    let types = types.join(",");
+    let ping = ping.as_secs().to_string();
+    if template.contains("{types}") {
+        template
+            .replace("{types}", &types.replace(',', "%2C"))
+            .replace("{closeafter}", "no")
+            .replace("{ping}", &ping)
+    } else {
+        let joiner = if template.contains('?') { '&' } else { '?' };
+        format!(
+            "{template}{joiner}types={}&closeafter=no&ping={ping}",
+            types.replace(',', "%2C")
+        )
+    }
+}
+
+struct JmapWatch {
+    response: reqwest::Response,
+    parser: holtmail_sse::Parser,
+    accounts: Vec<String>,
+    types: Vec<&'static str>,
+    silence: Duration,
+}
+
+impl JmapWatch {
+    fn relevant(&self, data: &str) -> bool {
+        let Ok(value) = serde_json::from_str::<Value>(data) else {
+            return false;
+        };
+        if value.get("@type").and_then(Value::as_str) != Some("StateChange") {
+            return false;
+        }
+        let Some(changed) = value.get("changed").and_then(Value::as_object) else {
+            return false;
+        };
+        self.accounts.iter().any(|account| {
+            changed
+                .get(account)
+                .and_then(Value::as_object)
+                .is_some_and(|kinds| self.types.iter().any(|t| kinds.contains_key(*t)))
+        })
+    }
+}
+
+#[async_trait]
+impl CollectionWatch for JmapWatch {
+    async fn next(&mut self) -> Result<CollectionsChanged, CollectionError> {
+        loop {
+            let chunk = tokio::time::timeout(self.silence, self.response.chunk())
+                .await
+                .map_err(|_| CollectionError::Connection("the event source fell silent".into()))?
+                .map_err(|_| CollectionError::Connection("the event source broke off".into()))?
+                .ok_or_else(|| CollectionError::Connection("the event source closed".into()))?;
+            let events = self
+                .parser
+                .push(&chunk)
+                .map_err(|e| CollectionError::Protocol(e.to_string()))?;
+            if events
+                .iter()
+                .any(|e| (e.event == "state" || e.event == "message") && self.relevant(&e.data))
+            {
+                return Ok(CollectionsChanged { collections: None });
+            }
+        }
+    }
+
+    async fn close(self: Box<Self>) {}
+}
+
 fn canonical(value: Value) -> Value {
     match value {
         Value::Object(map) => {
@@ -443,6 +541,44 @@ fn parse<'a, T: Deserialize<'a>>(raw: &'a RawValue) -> Result<T, CollectionError
 
 #[async_trait]
 impl CollectionSource for JmapCollections {
+    /// Listens to the session's event source for changes to cards, address books, events and
+    /// calendars of the session's accounts, reported as every collection; `None` when the session
+    /// names no event source or offers neither contacts nor calendars.
+    async fn watch(&self) -> Result<Option<Box<dyn CollectionWatch>>, CollectionError> {
+        let session = self.session().await?;
+        let Some(template) = session.events.clone() else {
+            return Ok(None);
+        };
+        let mut types = Vec::new();
+        let mut accounts = Vec::new();
+        if let Some(account) = &session.contacts {
+            types.extend(["ContactCard", "AddressBook"]);
+            accounts.push(account.clone());
+        }
+        if let Some(account) = &session.calendars {
+            types.extend(["CalendarEvent", "Calendar"]);
+            accounts.push(account.clone());
+        }
+        if types.is_empty() {
+            return Ok(None);
+        }
+        let url = Url::parse(&event_url(&template, &types, self.ping))
+            .map_err(|_| protocol("the JMAP session names an invalid event source"))?;
+        if !http::allowed(&url) {
+            return Err(protocol(
+                "the JMAP session names an event source without https",
+            ));
+        }
+        let response = self.http.stream(&url).await?;
+        Ok(Some(Box::new(JmapWatch {
+            response,
+            parser: holtmail_sse::Parser::default(),
+            accounts,
+            types,
+            silence: self.ping * 5 / 2,
+        })))
+    }
+
     async fn collections(&self) -> Result<Vec<RemoteCollection>, CollectionError> {
         let session = self.session().await?;
         let mut out = Vec::new();

@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 holtmail-core.workspace = true
 holtmail-collection.workspace = true
+holtmail-sse.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 reqwest.workspace = true
@@ -20,10 +21,11 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+futures.workspace = true
 holtmail-core = { workspace = true, features = ["testing"] }
 holtmail-collection = { workspace = true, features = ["testing"] }
 axum.workspace = true
-tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "time", "sync"] }
 
 [lints]
 workspace = true

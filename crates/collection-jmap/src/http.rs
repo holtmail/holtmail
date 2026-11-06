@@ -213,6 +213,35 @@ impl Http {
         }
     }
 
+    /// An open `text/event-stream` answer from `url`, read as it arrives, without the client's
+    /// overall timeout.
+    pub(crate) async fn stream(&self, url: &Url) -> Result<reqwest::Response, CollectionError> {
+        let h = host(url);
+        let response = self
+            .authorized(
+                self.client
+                    .get(url.clone())
+                    .header(ACCEPT, "text/event-stream")
+                    .timeout(Duration::from_secs(30 * 24 * 60 * 60)),
+            )
+            .send()
+            .await
+            .map_err(|e| connection(&h, &e))?;
+        match response.status() {
+            s if s.is_success() => Ok(response),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(CollectionError::Auth(
+                format!("{h} refused the credentials"),
+            )),
+            s if s.is_server_error() || s == StatusCode::TOO_MANY_REQUESTS => Err(
+                CollectionError::Connection(format!("{h} answered {}", s.as_u16())),
+            ),
+            s => Err(CollectionError::Protocol(format!(
+                "{h} answered {} for its event source",
+                s.as_u16()
+            ))),
+        }
+    }
+
     /// A GET (`body` `None`) or POST with the credentials, to an address the caller checked.
     pub(crate) async fn request(
         &self,

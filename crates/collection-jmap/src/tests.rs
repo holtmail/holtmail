@@ -7,7 +7,7 @@ use axum::body::Bytes as Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use holtmail_collection::testing::{Remote, conformance};
+use holtmail_collection::testing::{Remote, conformance, watch_conformance};
 
 use super::*;
 
@@ -42,6 +42,26 @@ struct Fake {
     requests: Vec<(String, bool)>,
     calls: Vec<String>,
     port: u16,
+    push: Option<tokio::sync::broadcast::Sender<String>>,
+    event_queries: Vec<String>,
+}
+
+fn state_change(kind: &str) -> String {
+    format!(
+        "event: state\ndata: {}\n\n",
+        json!({ "@type": "StateChange", "changed": { ACCOUNT: { kind: "n" } } })
+    )
+}
+
+impl Fake {
+    fn announce(&self, kind: CollectionKind) {
+        if let Some(push) = &self.push {
+            let _ = push.send(state_change(match kind {
+                CollectionKind::Contacts => "ContactCard",
+                CollectionKind::Calendar => "CalendarEvent",
+            }));
+        }
+    }
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -270,8 +290,24 @@ async fn handle(
             axum::Json(json!({
                 "capabilities": capabilities, "primaryAccounts": primary, "apiUrl": api,
                 "accounts": { ACCOUNT: { "name": "ada@example.com" } }, "state": "s1",
+                "eventSourceUrl": "/jmap/events?types={types}&closeafter={closeafter}&ping={ping}",
             }))
             .into_response()
+        }
+        (Method::GET, "/jmap/events") => {
+            f.event_queries
+                .push(uri.query().unwrap_or_default().to_owned());
+            let receiver = f.push.as_ref().unwrap().subscribe();
+            drop(f);
+            let stream = futures::stream::unfold(receiver, |mut receiver| async move {
+                let text = receiver.recv().await.ok()?;
+                Some((Ok::<_, std::io::Error>(text), receiver))
+            });
+            (
+                [("content-type", "text/event-stream")],
+                axum::body::Body::from_stream(stream),
+            )
+                .into_response()
         }
         (Method::POST, "/jmap/api") => {
             let request: Value = serde_json::from_slice(&body).unwrap();
@@ -307,6 +343,7 @@ impl FakeJmap {
     async fn start(calendars: bool) -> Self {
         let shared: Shared = Arc::new(Mutex::new(Fake {
             calendars,
+            push: Some(tokio::sync::broadcast::channel(16).0),
             ..Fake::default()
         }));
         let app = Router::new().fallback(handle).with_state(shared.clone());
@@ -358,7 +395,9 @@ impl FakeJmap {
 impl Remote for FakeJmap {
     async fn put(&self, collection: &str, name: &str, raw: &[u8]) {
         let json = wrap(kind_of(collection), collection, name, raw);
-        self.0.lock().unwrap().put(collection, name, json);
+        let mut f = self.0.lock().unwrap();
+        f.put(collection, name, json);
+        f.announce(kind_of(collection));
     }
 
     async fn delete(&self, collection: &str, name: &str) {
@@ -369,6 +408,7 @@ impl Remote for FakeJmap {
         let id = item_id(name);
         f.items.remove(&(kind, id.clone()));
         f.log.push((seq, kind, id));
+        f.announce(kind);
     }
 
     async fn expire_tokens(&self) {
@@ -384,6 +424,36 @@ impl Remote for FakeJmap {
 async fn keeps_the_contract() {
     let fake = FakeJmap::start(true).await;
     conformance(&fake.source(), &fake).await;
+}
+
+#[tokio::test]
+async fn the_event_source_keeps_the_watch_contract() {
+    let fake = FakeJmap::start(true).await;
+    let source = fake.source();
+    assert!(source.offers_calendars().await.unwrap());
+    watch_conformance(&source, &fake).await;
+    assert_eq!(
+        fake.0.lock().unwrap().event_queries,
+        vec!["types=ContactCard%2CAddressBook%2CCalendarEvent%2CCalendar&closeafter=no&ping=60"]
+    );
+}
+
+#[tokio::test]
+async fn the_watch_asks_only_for_what_the_session_offers_and_ends_when_silent() {
+    let fake = FakeJmap::start(false).await;
+    let source = fake.source().with_push_ping(Duration::from_secs(1));
+    assert!(!source.offers_calendars().await.unwrap());
+    let mut watch = source.watch().await.unwrap().unwrap();
+    let push = fake.0.lock().unwrap().push.clone().unwrap();
+    push.send(state_change("CalendarEvent")).unwrap();
+    let ended = tokio::time::timeout(Duration::from_secs(10), watch.next())
+        .await
+        .expect("silence ends the watch");
+    assert!(matches!(ended, Err(CollectionError::Connection(_))));
+    assert_eq!(
+        fake.0.lock().unwrap().event_queries,
+        vec!["types=ContactCard%2CAddressBook&closeafter=no&ping=1"]
+    );
 }
 
 #[tokio::test]

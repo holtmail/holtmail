@@ -383,6 +383,8 @@ pub struct MessageExtras {
     pub folder_ids: Vec<FolderId>,
     /// Its labels, sorted.
     pub labels: Vec<String>,
+    /// Bits of the insight kinds found in it; 0 when it has no insights.
+    pub insight_kinds: u64,
 }
 
 /// A label of an archive with how many messages carry it.
@@ -597,6 +599,8 @@ pub enum TaskKind {
     LedgerVerify,
     /// Deleting messages after a review.
     DeleteMessages,
+    /// Reading stored messages again for what newer code derives from them, such as insights.
+    Analyse,
 }
 
 impl TaskKind {
@@ -609,6 +613,7 @@ impl TaskKind {
             Self::ContactsCalendars => "contacts_calendars",
             Self::LedgerVerify => "ledger_verify",
             Self::DeleteMessages => "delete_messages",
+            Self::Analyse => "analyse",
         }
     }
 
@@ -621,6 +626,7 @@ impl TaskKind {
             Self::ContactsCalendars,
             Self::LedgerVerify,
             Self::DeleteMessages,
+            Self::Analyse,
         ]
         .into_iter()
         .find(|kind| kind.as_str() == name)

@@ -3,6 +3,7 @@
 mod aliases;
 mod calendar;
 mod deletion;
+mod insights;
 mod ledger;
 mod people;
 mod pim;
@@ -227,6 +228,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM labels WHERE archive_id = ?1",
             "DELETE FROM message_remote_images WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM remote_scans WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
+            "DELETE FROM message_insights WHERE archive_id = ?1",
             "DELETE FROM messages WHERE archive_id = ?1",
         ] {
             sqlx::query(statement)
@@ -802,6 +804,19 @@ impl MessageStore for SqliteStore {
                 let message: MessageId = parse(&get::<String>(&row, "message_id")?)?;
                 if let Some(extras) = out.get_mut(&message) {
                     extras.labels.push(get(&row, "name")?);
+                }
+            }
+            let kinds = format!(
+                "SELECT message_id, kinds FROM message_insights WHERE message_id IN ({marks})"
+            );
+            let mut query = sqlx::query(AssertSqlSafe(kinds));
+            for id in chunk {
+                query = query.bind(id.to_string());
+            }
+            for row in query.fetch_all(&self.pool).await.map_err(backend)? {
+                let message: MessageId = parse(&get::<String>(&row, "message_id")?)?;
+                if let Some(extras) = out.get_mut(&message) {
+                    extras.insight_kinds = get::<i64>(&row, "kinds")? as u64;
                 }
             }
         }

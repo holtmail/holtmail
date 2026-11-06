@@ -7,11 +7,14 @@ The one path into the archive. Sync and import both hand raw message bytes to `I
 ```rust
 let ingest = Ingest::new(blobs, store, index) // Arc<dyn BlobStore>, Arc<dyn Store>, Arc<dyn SearchIndex>
     .with_extractor(extractor) // Arc<dyn Extractor>, optional
-    .with_alias_detectors(detectors); // Vec<Arc<dyn AliasDetector>>, optional
+    .with_alias_detectors(detectors) // Vec<Arc<dyn AliasDetector>>, optional
+    .with_insights(runner); // Arc<holtmail_insights::Runner>, optional
 let done = ingest.ingest(archive, raw, &Placement { folder, uid, flags, labels, received_at }).await?;
 ingest.commit().await?; // once per batch
 ingest.reindex(message).await?; // after folders, flags or labels change
 ingest.refresh_alias(message).await?; // detect the alias again; true when it changed
+ingest.reindex_parsed(message, &parsed).await?; // the index document from bytes already parsed
+ingest.refresh_insights(message).await?; // compute insights again; true when the row changed
 ```
 
 `Ingested { message_id, thread_id, created }`; `created` is `false` when the archive already had these bytes.
@@ -25,7 +28,7 @@ ingest.refresh_alias(message).await?; // detect the alias again; true when it ch
 5. Replaces the message's labels when the placement has `labels: Some(..)`; `None` (imports, servers without labels) leaves them as they are.
 6. Puts an index document built from the parsed message, every folder, flag and label the message currently has, and the text of its attachments.
 
-Between steps 3 and 4, a new message's alias is recorded (see [Aliases](#aliases)) and its calendar parts become events (see [Invitations in mail](#invitations-in-mail)).
+Between steps 3 and 4, a new message's alias is recorded (see [Aliases](#aliases)), its calendar parts become events (see [Invitations in mail](#invitations-in-mail)) and its insights are computed (see [Insights](#insights)).
 
 Ingesting the same bytes again only adds or updates the location and refreshes the index document, so syncs and imports can be repeated safely.
 
@@ -53,6 +56,17 @@ Every `text/calendar` or `application/ics` part of a message (`ParsedMessage::ca
 ## Aliases
 
 With `with_alias_detectors`, the first detector (in the given order) that recognises a new message decides its alias, recorded with `AliasStore::set_message_alias` (see [holtmail-alias](../../alias/docs/README.md) and [ALIASES.md](../../../docs/ALIASES.md)); a message no detector recognises is recorded as having none. The sender a service hid is added to the index document's `from`, so `from:` finds the message by either address; `reindex` keeps it. `detect_alias(&parsed)` is the detection alone. `refresh_alias(message)` reads the stored bytes, detects again, records the answer and reindexes the message only when the answer changed; the server runs it over every message when the detectors' versions change.
+
+## Insights
+
+With `with_insights`, message insights (stage A of [INSIGHTS.md](../../../docs/INSIGHTS.md), run by [`holtmail-insights`](../../insights/docs/README.md)) are computed from the parsed message and stored with `InsightStore::set_message_insights` under `runner.extract_fp()`. The runner runs inside `holtmail_insights::with_message`, so a panicking extractor's report names the message id.
+
+- `ingest` computes them for a new message, and for known bytes whose message has no `message_insights` row, so a repeated sync repairs a lost write. Known bytes that already have a row write nothing. Failing to read or store the row is logged with the message id only and never fails ingest.
+- `reindex` computes and stores them before building the document when the row is missing or its fingerprint is not the current one.
+- `refresh_insights(message)` reads the stored bytes and writes only when the row changed in anything but `computed_at` (items, signals, kinds, auth facts, sender address, outcome, `truncated`, fingerprint). It returns whether it wrote. No indexed field depends on insights yet, so it does not reindex.
+- For the server's walk, which reads and parses each blob itself: `insights_for(message, &raw, &parsed)` computes and stores like `refresh_insights` and returns whether it wrote; `mark_insights_unreadable(message)` and `mark_insights_unparsable(message)` write a row with that outcome, no items, no signals or kinds and the current fingerprint, so the message is not listed as needing insights again until the fingerprint changes. Both fail with `StoreError::NotFound` for an unknown message.
+
+Without a runner nothing about insights is read or written, `refresh_insights` and `insights_for` return `false`, and the marks do nothing. Stage B (categories) is not run here yet.
 
 ## Attachment text
 

@@ -8,7 +8,7 @@ What Holtmail tells webhooks: the events, the JSON body of each delivery, its si
 
 | Event | `data` |
 | --- | --- |
-| `task.finished` | `task_id`, `kind` (`sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`, `delete_messages`), `state` (`done`, `failed`, `cancelled`), `archive_id`, `account_id`, `done`, `total` |
+| `task.finished` | `task_id`, `kind` (`sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`, `delete_messages`, `analyse`), `state` (`done`, `failed`, `cancelled`), `archive_id`, `account_id`, `done`, `total` |
 | `account.needs_sign_in` | `account_id`, `archive_id`, `provider` (`google`, `microsoft`) |
 | `messages.deleted` | `archive_id`, `messages`, `by` (user id, `null` from the CLI), `ledger_seq`, `ledger_hash` |
 | `ledger.verified` | `ok`, `entries`, `problems`, `ledger_seq`, `ledger_hash` |

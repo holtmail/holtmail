@@ -4,7 +4,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 
 ## Traits
 
-`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
+`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore + DeletionStore + WebhookStore + AliasStore + InsightStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
 
 ### ArchiveStore
 
@@ -13,7 +13,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
 | `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives). Turning it on records `save_remote_images_since` unless it was already on; turning it off clears it. `NotFound` for a missing archive |
-| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, insights, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
@@ -32,7 +32,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `find_by_blob(archive, blob)` | The message with these bytes in the archive |
 | `attachments(message)` | By ordinal; inline parts included |
 | `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed) and label filter (exact name); both may be given |
-| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id) and its labels (sorted). Missing ids are left out |
+| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id), its labels (sorted) and `insight_kinds`, the kind bits of its insights (0 without insights). Missing ids are left out |
 | `thread_messages(thread)` | Oldest first |
 | `record_location(message, folder, uid, flags, seen_at)` | One location per `(folder, message)`; updates UID, flags and `last_seen_at`, clears `removed_at`; a UID held by another message moves to this one |
 | `locations`, `folder_uids`, `message_at_uid` | `folder_uids` lists only locations not removed, ascending |
@@ -128,7 +128,7 @@ Background tasks (syncs, imports, remote image work) kept across restarts, so th
 | `interrupt_tasks(at)` | Every `Running` task becomes `Interrupted` with `finished_at = at`; returns them. Meant for a process start, before any task of its own runs |
 | `prune_tasks(keep)` | Removes the tasks that are not running, with their logs, except the `keep` most recently started; returns how many went |
 
-`TaskRecord` holds `id`, `kind` (`TaskKind::{Sync, Import, RemoteImages, ContactsCalendars}`), `archive_id`, `account_id`, `title`, `state` (`TaskState::{Running, Done, Failed, Cancelled, Interrupted}`), `started_at`, `finished_at`, `done`, `total`, `summary`, `cancellable` and `job`, an opaque string the caller uses to start interrupted work again. `TaskLine` is `{ at, level: TaskLevel::{Info, Warning, Error}, text }`; lines carry counts, names and reasons, never message content or secrets. The kinds, states and levels have stable names (`as_str`, `parse`). Task records name archives and accounts without referencing them: a task outlives a removed archive.
+`TaskRecord` holds `id`, `kind` (`TaskKind::{Sync, Import, RemoteImages, ContactsCalendars, LedgerVerify, DeleteMessages, Analyse}`; `Analyse` is reading stored mail again for derived data such as insights), `archive_id`, `account_id`, `title`, `state` (`TaskState::{Running, Done, Failed, Cancelled, Interrupted}`), `started_at`, `finished_at`, `done`, `total`, `summary`, `cancellable` and `job`, an opaque string the caller uses to start interrupted work again. `TaskLine` is `{ at, level: TaskLevel::{Info, Warning, Error}, text }`; lines carry counts, names and reasons, never message content or secrets. The kinds, states and levels have stable names (`as_str`, `parse`). Task records name archives and accounts without referencing them: a task outlives a removed archive.
 
 ### PimStore
 
@@ -204,7 +204,7 @@ Deleting messages on purpose. The archive otherwise never forgets; a deleted mes
 
 | Method | Guarantees |
 | --- | --- |
-| `delete_messages(archive, ids, actor)` | In one transaction removes the archive's messages among `ids` with their locations, attachments, labels (labels left without messages go), addresses, thread links, remote image links and calendar version links; calendar versions read only from them go too, and an item left without versions is removed with its calendar instances. Records the tombstones and enters each message in the ledger as `deleted` by `actor`. Returns `DeletedMessages { messages, orphans, changed_items, removed_items }`: blobs nothing references any more (the caller deletes them), items to rebuild and items gone. Idempotent; ids not in the archive are skipped |
+| `delete_messages(archive, ids, actor)` | In one transaction removes the archive's messages among `ids` with their locations, attachments, labels (labels left without messages go), addresses, thread links, remote image links, insights and calendar version links; calendar versions read only from them go too, and an item left without versions is removed with its calendar instances. Records the tombstones and enters each message in the ledger as `deleted` by `actor`. Returns `DeletedMessages { messages, orphans, changed_items, removed_items }`: blobs nothing references any more (the caller deletes them), items to rebuild and items gone. Idempotent; ids not in the archive are skipped |
 | `is_deleted(archive, blob)` | Whether those bytes were deleted from the archive |
 | `record_deleted_location(folder, uid)` | Remembers a UID that holds a deleted message; idempotent |
 
@@ -243,6 +243,22 @@ What alias detection found per message, the alias services connected to archives
 | `own_alias_addresses(archive)` | Every alias of the archive, known or seen in mail, lowercase, sorted |
 
 Deleting a message removes its record; deleting an archive removes its records, services and aliases.
+
+### InsightStore
+
+Insights derived from messages (see [INSIGHTS.md](../../../docs/INSIGHTS.md)): one `InsightRow` per message, replaced whole and rebuilt when the extraction fingerprint changes. The store treats `items` and `auth` as opaque JSON text and returns them byte for byte; `signals` and `kinds` keep all 64 bits.
+
+`InsightRow { message, archive, fingerprint, outcome, truncated, from_address, signals, kinds, auth, items, computed_at }`; `InsightOutcome` is `Ok`, `Partial`, `Unparsable` or `Unreadable`, named `ok`, `partial`, `unparsable`, `unreadable` by `as_str` and `parse`. `InsightView { insights }` is everything known about one message's insights and gains the categories later; `InsightSummary { kinds }` is what a list row shows.
+
+| Method | Guarantees |
+| --- | --- |
+| `set_message_insights(message, row)` | Replaces the message's row whole; idempotent. `NotFound` for an unknown message, `Invalid` when `row.message` is another message or `row.archive` is not its archive |
+| `insight_view(message)` | The view, or `None` when nothing was stored (the API's `pending`) |
+| `insight_views_among(ids)`, `insights_among(ids)` | Views or summaries of the ids that have a row, any number of ids; others are left out |
+| `messages_needing_insights(archive, fingerprint, after, limit)` | Up to `limit` (at most 10,000) messages of the archive without a row or with a row of another fingerprint, ascending by id, strictly after `after`. A row with the current fingerprint is never listed, whatever its outcome, so `unreadable` and `unparsable` messages wait for the next fingerprint. Paging with the last id visits each such message once |
+| `count_needing_insights(archive, fingerprint)` | How many messages the walk would list from the start; 0 for an unknown archive |
+
+Row states: no row is pending; a row with an empty item list is ready; a row with another fingerprint is outdated and still served until rewritten; `partial`, `unparsable` and `unreadable` are what the outcome says. Deleting a message removes its row; deleting an archive removes its rows.
 
 ### LedgerStore
 

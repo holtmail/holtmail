@@ -48,6 +48,7 @@ pub async fn conformance(store: Arc<dyn Store>) {
     deletions(&*store).await;
     webhooks(&*store).await;
     aliases(&*store).await;
+    insights(&*store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -1715,6 +1716,7 @@ async fn extras_and_unread(store: &dyn Store) {
             thread_count: 2,
             folder_ids: both,
             labels: Vec::new(),
+            insight_kinds: 0,
         }
     );
     assert_eq!(all[&reply].thread_count, 2);
@@ -1726,6 +1728,7 @@ async fn extras_and_unread(store: &dyn Store) {
             thread_count: 1,
             folder_ids: vec![inbox.id],
             labels: Vec::new(),
+            insight_kinds: 0,
         },
         "a removed location counted"
     );
@@ -4073,4 +4076,250 @@ async fn aliases(store: &dyn Store) {
     );
     store.delete_archive(archive).await.unwrap();
     assert!(store.aliases(archive).await.unwrap().is_empty());
+}
+
+fn insight_row(
+    message: MessageId,
+    archive: ArchiveId,
+    fingerprint: &str,
+    outcome: InsightOutcome,
+) -> InsightRow {
+    InsightRow {
+        message,
+        archive,
+        fingerprint: fingerprint.into(),
+        outcome,
+        truncated: false,
+        from_address: None,
+        signals: 0,
+        kinds: 0,
+        auth: "{}".into(),
+        items: r#"{"v":1,"items":[]}"#.into(),
+        computed_at: Timestamp::from_secs(100),
+    }
+}
+
+async fn insights(store: &dyn Store) {
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let fp = "x1";
+    let unknown = MessageId::new();
+    assert!(matches!(
+        store
+            .set_message_insights(
+                unknown,
+                &insight_row(unknown, archive, fp, InsightOutcome::Ok)
+            )
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(
+        store
+            .messages_needing_insights(archive, fp, None, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.count_needing_insights(archive, fp).await.unwrap(), 0);
+
+    let mut ids = Vec::new();
+    for n in 0..6 {
+        ids.push(
+            store
+                .insert_message(message(archive, 9601 + n, 1_700_000_000 + i64::from(n)))
+                .await
+                .unwrap()
+                .message_id,
+        );
+    }
+    let foreign = store
+        .insert_message(message(other, 9611, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(
+        store
+            .messages_needing_insights(archive, fp, None, 100)
+            .await
+            .unwrap(),
+        sorted,
+        "every message lacking a row is listed, ascending, from its archive only"
+    );
+    assert_eq!(store.count_needing_insights(archive, fp).await.unwrap(), 6);
+    assert!(store.insight_view(ids[0]).await.unwrap().is_none());
+
+    assert!(matches!(
+        store
+            .set_message_insights(
+                ids[0],
+                &insight_row(ids[1], archive, fp, InsightOutcome::Ok)
+            )
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .set_message_insights(ids[0], &insight_row(ids[0], other, fp, InsightOutcome::Ok))
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+
+    let full = InsightRow {
+        truncated: true,
+        from_address: Some("news@shop.example.com".into()),
+        signals: u64::MAX,
+        kinds: 0b101 | 1 << 63,
+        auth: r#"{"spf":"pass"}"#.into(),
+        items: r#"{"v":1,"items":[{"type":"code","value":"123456"}]}"#.into(),
+        ..insight_row(ids[0], archive, fp, InsightOutcome::Ok)
+    };
+    store.set_message_insights(ids[0], &full).await.unwrap();
+    store.set_message_insights(ids[0], &full).await.unwrap();
+    assert_eq!(
+        store.insight_view(ids[0]).await.unwrap().unwrap().insights,
+        full,
+        "a row comes back as written, every bit of signals and kinds included"
+    );
+    let rows = [
+        (ids[1], InsightOutcome::Ok),
+        (ids[2], InsightOutcome::Partial),
+        (ids[3], InsightOutcome::Unparsable),
+        (ids[4], InsightOutcome::Unreadable),
+    ];
+    for (id, outcome) in rows {
+        let row = InsightRow {
+            kinds: 2,
+            ..insight_row(id, archive, fp, outcome)
+        };
+        store.set_message_insights(id, &row).await.unwrap();
+        assert_eq!(
+            store.insight_view(id).await.unwrap().unwrap().insights,
+            row,
+            "outcome {}",
+            outcome.as_str()
+        );
+    }
+    for name in ["ok", "partial", "unparsable", "unreadable"] {
+        assert_eq!(InsightOutcome::parse(name).unwrap().as_str(), name);
+    }
+    assert_eq!(
+        store
+            .messages_needing_insights(archive, fp, None, 100)
+            .await
+            .unwrap(),
+        [ids[5]],
+        "rows with the current fingerprint, unreadable and unparsable too, are not listed"
+    );
+    assert_eq!(store.count_needing_insights(archive, fp).await.unwrap(), 1);
+
+    let replaced = insight_row(ids[0], archive, "x0", InsightOutcome::Partial);
+    store.set_message_insights(ids[0], &replaced).await.unwrap();
+    assert_eq!(
+        store.insight_view(ids[0]).await.unwrap().unwrap().insights,
+        replaced,
+        "a write replaces the row whole"
+    );
+    let mut stale = vec![ids[0], ids[5]];
+    stale.sort();
+    assert_eq!(
+        store
+            .messages_needing_insights(archive, fp, None, 100)
+            .await
+            .unwrap(),
+        stale,
+        "a stale fingerprint is listed"
+    );
+    assert_eq!(store.count_needing_insights(archive, fp).await.unwrap(), 2);
+    assert_eq!(
+        store
+            .messages_needing_insights(archive, "x2", None, 100)
+            .await
+            .unwrap(),
+        sorted,
+        "a new fingerprint lists every message, unreadable and unparsable too"
+    );
+    assert_eq!(
+        store.count_needing_insights(archive, "x2").await.unwrap(),
+        6
+    );
+
+    let mut paged = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store
+            .messages_needing_insights(archive, "x2", after, 4)
+            .await
+            .unwrap();
+        assert!(page.len() <= 4);
+        let Some(last) = page.last().copied() else {
+            break;
+        };
+        paged.extend(page);
+        after = Some(last);
+    }
+    assert_eq!(paged, sorted, "keyset paging visits each message once");
+    assert!(
+        store
+            .messages_needing_insights(archive, "x2", None, 0)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let mut many: Vec<MessageId> = (0..450).map(|_| MessageId::new()).collect();
+    many.insert(0, ids[1]);
+    many.insert(230, ids[2]);
+    many.push(ids[4]);
+    many.push(ids[5]);
+    many.push(foreign);
+    let views = store.insight_views_among(&many).await.unwrap();
+    assert_eq!(views.len(), 3, "views across batches, without missing rows");
+    assert_eq!(views[&ids[2]].insights.outcome, InsightOutcome::Partial);
+    assert_eq!(views[&ids[4]].insights.outcome, InsightOutcome::Unreadable);
+    let summaries = store.insights_among(&many).await.unwrap();
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[&ids[1]], InsightSummary { kinds: 2 });
+    assert!(store.insights_among(&[]).await.unwrap().is_empty());
+    assert!(store.insight_views_among(&[]).await.unwrap().is_empty());
+
+    store.set_message_insights(ids[0], &full).await.unwrap();
+    let extras = store
+        .message_extras(&[ids[0], ids[1], ids[5]], None)
+        .await
+        .unwrap();
+    assert_eq!(extras[&ids[0]].insight_kinds, full.kinds);
+    assert_eq!(extras[&ids[1]].insight_kinds, 2);
+    assert_eq!(extras[&ids[5]].insight_kinds, 0);
+
+    store
+        .delete_messages(archive, &[ids[0]], None)
+        .await
+        .unwrap();
+    assert!(store.insight_view(ids[0]).await.unwrap().is_none());
+    assert!(
+        !store
+            .messages_needing_insights(archive, "x2", None, 100)
+            .await
+            .unwrap()
+            .contains(&ids[0])
+    );
+    assert_eq!(
+        store.count_needing_insights(archive, "x2").await.unwrap(),
+        5
+    );
+    store
+        .set_message_insights(
+            foreign,
+            &insight_row(foreign, other, fp, InsightOutcome::Ok),
+        )
+        .await
+        .unwrap();
+    store.delete_archive(archive).await.unwrap();
+    assert!(store.insight_views_among(&ids).await.unwrap().is_empty());
+    assert_eq!(store.count_needing_insights(archive, fp).await.unwrap(), 0);
+    assert!(store.insight_view(foreign).await.unwrap().is_some());
+    store.delete_archive(other).await.unwrap();
+    assert!(store.insight_view(foreign).await.unwrap().is_none());
 }

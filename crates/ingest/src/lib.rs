@@ -15,9 +15,11 @@ use holtmail_blob::{BlobError, BlobId, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
 use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
+use holtmail_insights::Runner;
 use holtmail_mime::{MimeError, ParsedMessage};
 use holtmail_store::{
-    Attachment, Derived, DerivedKind, MessageAlias, NewMessage, Store, StoreError,
+    Attachment, Derived, DerivedKind, InsightOutcome, InsightRow, MessageAlias, NewMessage, Store,
+    StoreError,
 };
 
 pub use pim::{IncomingItem, MAIL_COLLECTION, item_document, pim_index};
@@ -83,6 +85,7 @@ pub struct Ingest {
     index: Arc<dyn SearchIndex>,
     extractor: Option<Arc<dyn Extractor>>,
     detectors: Vec<Arc<dyn AliasDetector>>,
+    insights: Option<Arc<Runner>>,
 }
 
 impl Ingest {
@@ -98,7 +101,78 @@ impl Ingest {
             index,
             extractor: None,
             detectors: Vec::new(),
+            insights: None,
         }
+    }
+
+    /// The same pipeline, also computing message insights with `runner` and recording them with
+    /// `InsightStore::set_message_insights` under `runner.extract_fp()`.
+    ///
+    /// [`Ingest::ingest`] computes them for a new message, and for a known one that has no
+    /// insights row yet, so a repeated sync repairs a lost write. Failing to store them never
+    /// fails ingest. [`Ingest::reindex`] fills a missing or stale row. Without a runner no
+    /// insights are read or written anywhere.
+    pub fn with_insights(mut self, runner: Arc<Runner>) -> Self {
+        self.insights = Some(runner);
+        self
+    }
+
+    /// Computes the insights of `message` from its stored bytes `raw`, already parsed into
+    /// `parsed`, and records them under the current fingerprint. A row equal to the stored one in
+    /// everything but `computed_at` is not written. Returns whether it wrote; always `false`
+    /// without [`Ingest::with_insights`]. Fails with `StoreError::NotFound` for an unknown
+    /// message.
+    pub async fn insights_for(
+        &self,
+        message: MessageId,
+        _raw: &[u8],
+        parsed: &ParsedMessage,
+    ) -> Result<bool, IngestError> {
+        let Some(runner) = &self.insights else {
+            return Ok(false);
+        };
+        let archive = self.archive_of(message).await?;
+        let row = compute_insights(runner, message, archive, parsed);
+        self.write_insights_if_changed(row).await
+    }
+
+    /// Records that the stored bytes of `message` could not be read: outcome `unreadable`, no
+    /// items, under the current fingerprint, so it is not listed as needing insights again until
+    /// the fingerprint changes. Replaces any earlier row. Does nothing without
+    /// [`Ingest::with_insights`].
+    pub async fn mark_insights_unreadable(&self, message: MessageId) -> Result<(), IngestError> {
+        self.mark_insights(message, InsightOutcome::Unreadable)
+            .await
+    }
+
+    /// Records that the stored bytes of `message` no longer parse as a message: outcome
+    /// `unparsable`, otherwise as [`Ingest::mark_insights_unreadable`].
+    pub async fn mark_insights_unparsable(&self, message: MessageId) -> Result<(), IngestError> {
+        self.mark_insights(message, InsightOutcome::Unparsable)
+            .await
+    }
+
+    /// Computes the insights of a stored message again from its bytes and records them only when
+    /// they changed: items, signals, kinds, auth facts, sender address, outcome, `truncated` or
+    /// the fingerprint. Returns whether it wrote; always `false` without
+    /// [`Ingest::with_insights`]. No indexed field depends on insights yet, so it never
+    /// reindexes.
+    pub async fn refresh_insights(&self, message: MessageId) -> Result<bool, IngestError> {
+        if self.insights.is_none() {
+            return Ok(false);
+        }
+        let stored = self
+            .store
+            .get_message(message)
+            .await?
+            .ok_or(StoreError::NotFound("message"))?;
+        let raw = self
+            .blobs
+            .get(&stored.blob_id)
+            .await?
+            .ok_or(StoreError::NotFound("message bytes"))?;
+        let parsed = holtmail_mime::parse(&raw)?;
+        self.insights_for(message, &raw, &parsed).await
     }
 
     /// The same pipeline, also recording which alias each new message was forwarded to, by the
@@ -247,6 +321,7 @@ impl Ingest {
             )
             .await?;
         }
+        self.insights_on_ingest(archive, inserted, &parsed).await;
         if let Some(folder) = placement.folder {
             self.store
                 .record_location(
@@ -272,7 +347,9 @@ impl Ingest {
     }
 
     /// Rebuilds the index document of a message from its stored bytes, e.g. after its folders,
-    /// flags or labels changed. Searchable after [`Ingest::commit`].
+    /// flags or labels changed. With [`Ingest::with_insights`], a missing insights row, or one
+    /// with another fingerprint, is computed and stored first. Searchable after
+    /// [`Ingest::commit`].
     pub async fn reindex(&self, message: MessageId) -> Result<(), IngestError> {
         let stored = self
             .store
@@ -285,8 +362,31 @@ impl Ingest {
             .await?
             .ok_or(StoreError::NotFound("message bytes"))?;
         let parsed = holtmail_mime::parse(&raw)?;
+        if let Some(runner) = &self.insights {
+            let current = runner.extract_fp();
+            let stale = self
+                .store
+                .insight_view(message)
+                .await?
+                .is_none_or(|view| view.insights.fingerprint != current);
+            if stale {
+                let row = compute_insights(runner, message, stored.archive_id, &parsed);
+                self.store.set_message_insights(message, &row).await?;
+            }
+        }
+        self.reindex_parsed(message, &parsed).await
+    }
+
+    /// Rebuilds the index document of `message` from `parsed`, its stored bytes already parsed,
+    /// with its current alias, folders, flags and labels. Reads no blob and writes no insights.
+    /// Searchable after [`Ingest::commit`].
+    pub async fn reindex_parsed(
+        &self,
+        message: MessageId,
+        parsed: &ParsedMessage,
+    ) -> Result<(), IngestError> {
         let alias = self.store.message_alias(message).await?;
-        self.index_parsed(message, &parsed, alias.as_ref()).await
+        self.index_parsed(message, parsed, alias.as_ref()).await
     }
 
     /// Reads the text of the attachments of `message` that `which` picks again, ignoring what
@@ -408,6 +508,83 @@ impl Ingest {
 }
 
 impl Ingest {
+    async fn archive_of(&self, message: MessageId) -> Result<ArchiveId, IngestError> {
+        Ok(self
+            .store
+            .get_message(message)
+            .await?
+            .ok_or(StoreError::NotFound("message"))?
+            .archive_id)
+    }
+
+    async fn insights_on_ingest(
+        &self,
+        archive: ArchiveId,
+        inserted: Ingested,
+        parsed: &ParsedMessage,
+    ) {
+        let Some(runner) = &self.insights else {
+            return;
+        };
+        let message = inserted.message_id;
+        if !inserted.created {
+            match self.store.insight_view(message).await {
+                Ok(Some(_)) => return,
+                Ok(None) => {}
+                Err(_) => {
+                    tracing::warn!(%message, "reading message insights failed");
+                    return;
+                }
+            }
+        }
+        let row = compute_insights(runner, message, archive, parsed);
+        if self
+            .store
+            .set_message_insights(message, &row)
+            .await
+            .is_err()
+        {
+            tracing::warn!(%message, "storing message insights failed");
+        }
+    }
+
+    async fn write_insights_if_changed(&self, row: InsightRow) -> Result<bool, IngestError> {
+        let message = row.message;
+        if let Some(view) = self.store.insight_view(message).await?
+            && (InsightRow {
+                computed_at: row.computed_at,
+                ..view.insights
+            }) == row
+        {
+            return Ok(false);
+        }
+        self.store.set_message_insights(message, &row).await?;
+        Ok(true)
+    }
+
+    async fn mark_insights(
+        &self,
+        message: MessageId,
+        outcome: InsightOutcome,
+    ) -> Result<(), IngestError> {
+        let Some(runner) = &self.insights else {
+            return Ok(());
+        };
+        let archive = self.archive_of(message).await?;
+        let mut empty = runner.extract_input(&Default::default(), false);
+        empty.items.items.clear();
+        let row = InsightRow {
+            outcome,
+            truncated: false,
+            from_address: None,
+            signals: 0,
+            kinds: 0,
+            ..empty.into_row(message, archive, runner.extract_fp(), Timestamp::now())
+        };
+        self.store.set_message_insights(message, &row).await?;
+        Ok(())
+    }
+
     async fn attachment_text(
         &self,
         message: MessageId,
@@ -515,6 +692,20 @@ fn new_message(
         preview: parsed.preview.clone(),
         attachments,
     }
+}
+
+fn compute_insights(
+    runner: &Runner,
+    message: MessageId,
+    archive: ArchiveId,
+    parsed: &ParsedMessage,
+) -> InsightRow {
+    holtmail_insights::with_message(message, || runner.extract(parsed)).into_row(
+        message,
+        archive,
+        runner.extract_fp(),
+        Timestamp::now(),
+    )
 }
 
 fn truncate(text: &str) -> String {
@@ -1011,6 +1202,205 @@ mod tests {
             find(&f, vec![Clause::Label("done".into())]).await,
             [ingested.message_id]
         );
+    }
+
+    struct Quiet(&'static str);
+
+    impl holtmail_insight::InsightExtractor for Quiet {
+        fn id(&self) -> &str {
+            "quiet"
+        }
+
+        fn version(&self) -> String {
+            self.0.into()
+        }
+
+        fn extract(
+            &self,
+            _input: &holtmail_insight::InsightInput,
+        ) -> Vec<holtmail_insight::Insight> {
+            Vec::new()
+        }
+    }
+
+    fn runner(version: &'static str) -> Arc<Runner> {
+        Arc::new(Runner::new(vec![Arc::new(Quiet(version))]))
+    }
+
+    async fn insights(f: &Fixture, message: MessageId) -> Option<InsightRow> {
+        f.store
+            .insight_view(message)
+            .await
+            .unwrap()
+            .map(|view| view.insights)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn new_messages_get_insights_and_known_ones_are_repaired() {
+        let f = fixture().await;
+        let runner = runner("1");
+        let with = f.ingest.clone().with_insights(runner.clone());
+        let created = with
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        let row = insights(&f, created.message_id).await.expect("no row");
+        assert_eq!(row.fingerprint, runner.extract_fp());
+        assert_eq!(row.outcome, InsightOutcome::Ok);
+        assert_eq!(row.archive, f.archive);
+
+        let plain = f
+            .ingest
+            .ingest(f.archive, Bytes::from_static(REPLY), &in_inbox(&f, 2, &[]))
+            .await
+            .unwrap();
+        assert_eq!(insights(&f, plain.message_id).await, None);
+        let again = with
+            .ingest(f.archive, Bytes::from_static(REPLY), &in_inbox(&f, 2, &[]))
+            .await
+            .unwrap();
+        assert!(!again.created);
+        assert!(
+            insights(&f, plain.message_id).await.is_some(),
+            "known bytes without a row were not repaired"
+        );
+
+        let mut marked = row.clone();
+        marked.computed_at = Timestamp::from_secs(1);
+        f.store
+            .set_message_insights(created.message_id, &marked)
+            .await
+            .unwrap();
+        with.ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        assert_eq!(
+            insights(&f, created.message_id).await,
+            Some(marked),
+            "known bytes with a row were written again"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn refresh_insights_writes_only_on_change() {
+        let f = fixture().await;
+        assert!(!f.ingest.refresh_insights(MessageId::new()).await.unwrap());
+        let old = f.ingest.clone().with_insights(runner("1"));
+        let ingested = old
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        assert!(!old.refresh_insights(ingested.message_id).await.unwrap());
+
+        let next = runner("2");
+        let new = f.ingest.clone().with_insights(next.clone());
+        assert!(new.refresh_insights(ingested.message_id).await.unwrap());
+        assert_eq!(
+            insights(&f, ingested.message_id).await.unwrap().fingerprint,
+            next.extract_fp()
+        );
+        assert!(!new.refresh_insights(ingested.message_id).await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reindex_fills_missing_and_stale_insights() {
+        let f = fixture().await;
+        let ingested = f
+            .ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        f.ingest.reindex(ingested.message_id).await.unwrap();
+        assert_eq!(insights(&f, ingested.message_id).await, None);
+
+        let runner = runner("1");
+        let with = f.ingest.clone().with_insights(runner.clone());
+        with.reindex(ingested.message_id).await.unwrap();
+        let mut row = insights(&f, ingested.message_id).await.expect("no row");
+        assert_eq!(row.fingerprint, runner.extract_fp());
+
+        row.computed_at = Timestamp::from_secs(1);
+        f.store
+            .set_message_insights(ingested.message_id, &row)
+            .await
+            .unwrap();
+        with.reindex(ingested.message_id).await.unwrap();
+        assert_eq!(
+            insights(&f, ingested.message_id).await.as_ref(),
+            Some(&row),
+            "a current row was rewritten"
+        );
+
+        row.fingerprint = "old".into();
+        f.store
+            .set_message_insights(ingested.message_id, &row)
+            .await
+            .unwrap();
+        with.reindex(ingested.message_id).await.unwrap();
+        with.commit().await.unwrap();
+        assert_eq!(
+            insights(&f, ingested.message_id).await.unwrap().fingerprint,
+            runner.extract_fp()
+        );
+        assert_eq!(
+            find(&f, vec![Clause::Text("shall".into())]).await,
+            [ingested.message_id]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn marks_unreadable_and_unparsable_messages() {
+        let f = fixture().await;
+        let ingested = f
+            .ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        f.ingest
+            .mark_insights_unreadable(ingested.message_id)
+            .await
+            .unwrap();
+        assert_eq!(insights(&f, ingested.message_id).await, None);
+
+        let runner = runner("1");
+        let with = f.ingest.clone().with_insights(runner.clone());
+        let fp = runner.extract_fp();
+        for (outcome, mark) in [
+            (InsightOutcome::Unreadable, true),
+            (InsightOutcome::Unparsable, false),
+        ] {
+            if mark {
+                with.mark_insights_unreadable(ingested.message_id)
+                    .await
+                    .unwrap();
+            } else {
+                with.mark_insights_unparsable(ingested.message_id)
+                    .await
+                    .unwrap();
+            }
+            let row = insights(&f, ingested.message_id).await.unwrap();
+            assert_eq!(row.outcome, outcome);
+            assert_eq!(row.fingerprint, fp);
+            assert_eq!(row.kinds, 0);
+            assert!(
+                holtmail_insight::Items::from_json(&row.items)
+                    .unwrap()
+                    .items
+                    .items
+                    .is_empty()
+            );
+            assert!(
+                f.store
+                    .messages_needing_insights(f.archive, &fp, None, 10)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert!(matches!(
+            with.mark_insights_unparsable(MessageId::new()).await,
+            Err(IngestError::Store(StoreError::NotFound(_)))
+        ));
     }
 
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";

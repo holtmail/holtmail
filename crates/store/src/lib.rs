@@ -9,6 +9,7 @@
 mod aliases;
 mod calendar;
 mod deletion;
+mod insights;
 mod ledger;
 mod people;
 mod pim;
@@ -30,6 +31,7 @@ use holtmail_core::{
 pub use aliases::*;
 pub use calendar::*;
 pub use deletion::*;
+pub use insights::*;
 pub use ledger::*;
 pub use people::*;
 pub use pim::*;
@@ -71,7 +73,7 @@ pub trait ArchiveStore: Send + Sync {
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
 
     /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state,
-    /// grants, people and their splits and joins, collections with their items and versions, the remote copies no remaining message
+    /// grants, people and their splits and joins, the insights of its messages, collections with their items and versions, the remote copies no remaining message
     /// links to, and what was derived from blobs that are no longer used. Returns the blobs that no
     /// message, attachment, item version, remote copy or derived record references any more, so
     /// the caller can delete them. Enters the deletion in the ledger as one `archive_deleted`
@@ -718,6 +720,7 @@ pub trait Store:
     + DeletionStore
     + WebhookStore
     + AliasStore
+    + InsightStore
 {
 }
 
@@ -739,5 +742,6 @@ impl<T> Store for T where
         + DeletionStore
         + WebhookStore
         + AliasStore
+        + InsightStore
 {
 }

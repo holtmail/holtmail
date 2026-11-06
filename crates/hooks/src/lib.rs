@@ -64,8 +64,8 @@ pub enum Event {
     TaskFinished {
         /// The task.
         task_id: String,
-        /// `sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify` or
-        /// `delete_messages`.
+        /// `sync`, `import`, `remote_images`, `contacts_calendars`, `ledger_verify`,
+        /// `delete_messages` or `analyse` (reading stored mail again; ids and counts only).
         kind: String,
         /// `done`, `failed` or `cancelled`.
         state: String,

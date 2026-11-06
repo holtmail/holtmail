@@ -29,8 +29,8 @@ pub struct DeletedMessages {
 pub trait DeletionStore: Send + Sync {
     /// Removes the messages of `archive` among `ids` in one transaction, with their locations,
     /// attachments, labels (a label left without messages goes too), addresses, thread links,
-    /// remote image links, the links of calendar versions to them, and calendar versions read
-    /// only from them. Records tombstones for their bytes and for every folder and UID they had,
+    /// remote image links, insights, the links of calendar versions to them, and calendar
+    /// versions read only from them. Records tombstones for their bytes and for every folder and UID they had,
     /// and enters each message in the ledger as `deleted` by `actor`. Idempotent: ids already
     /// gone or in another archive are skipped.
     async fn delete_messages(

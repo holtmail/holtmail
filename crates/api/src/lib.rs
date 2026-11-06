@@ -8,11 +8,14 @@
 
 mod access;
 mod calendar;
+mod deletion;
 mod dto;
 mod export;
+mod ledger;
 mod mailboxes;
 mod manage;
 mod oauth;
+mod operations;
 mod overrides;
 mod people;
 mod persons;
@@ -20,7 +23,9 @@ mod pim;
 mod remote;
 mod routes;
 mod session;
+mod smtp;
 mod tasks;
+mod webhooks;
 
 use std::sync::Arc;
 
@@ -43,8 +48,12 @@ pub use mailboxes::{
     AccountChange, AccountDetails, AccountStatus, ConnectionChange, ContactsCalendars,
     ContactsCalendarsChange, ContactsCalendarsRun, ContactsProtocol, ImageProxy, ImapConnection,
     JmapConnection, JmapConnectionChange, MailboxError, Mailboxes, NewImapAccount, NewJmapAccount,
-    OAuthFinished, OAuthStart, OAuthStarted, OAuthTarget, RemoteImageJob, SyncSchedule, Task,
-    TaskKind, TaskLevel, TaskLine, TaskState,
+    OAuthFinished, OAuthProvider, OAuthStart, OAuthStarted, OAuthTarget, RemoteImageJob,
+    SyncSchedule, Task, TaskKind, TaskLevel, TaskLine, TaskState,
+};
+pub use operations::{
+    DeletionReview, DeletionSelection, LedgerStatus, LedgerVerification, MAX_DELETION, Operations,
+    SmtpRoute, SmtpStatus, VerifyLedger,
 };
 pub use session::{CurrentUser, SESSION_COOKIE};
 
@@ -61,6 +70,8 @@ pub struct ApiState {
     pub auth: Arc<Auth>,
     /// Adding, syncing and importing mail.
     pub mailboxes: Arc<dyn Mailboxes>,
+    /// The archive ledger.
+    pub operations: Arc<dyn Operations>,
     /// Remote images for the reader's proxy.
     pub fetcher: Arc<dyn Fetcher>,
     /// Mark the session cookie `Secure` on every response, for instances served over https.
@@ -104,6 +115,7 @@ pub fn router(state: ApiState) -> Router {
             post(manage::add_jmap_account),
         )
         .route("/api/accounts/{id}/sync", post(manage::sync_account))
+        .route("/api/oauth/providers", get(oauth::providers))
         .route("/api/oauth/start", post(oauth::start))
         .route("/api/oauth/finish", post(oauth::finish))
         .route(
@@ -132,6 +144,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/messages/{id}", get(routes::get_message))
         .route("/api/messages/{id}/body", get(routes::get_body))
         .route("/api/messages/{id}/raw", get(routes::get_raw))
+        .route("/api/messages/{id}/pdf", get(routes::get_pdf))
         .route(
             "/api/messages/{id}/attachments/{ordinal}",
             get(routes::get_attachment),
@@ -147,6 +160,19 @@ pub fn router(state: ApiState) -> Router {
             post(manage::start_remote_images),
         )
         .route("/api/tasks", get(tasks::list_tasks))
+        .route("/api/ledger", get(ledger::get_ledger))
+        .route("/api/archives/{id}/deletions", post(deletion::review))
+        .route("/api/deletions/{id}/confirm", post(deletion::confirm))
+        .route("/api/smtp", get(smtp::status))
+        .route("/api/webhooks", get(webhooks::list).post(webhooks::create))
+        .route(
+            "/api/webhooks/{id}",
+            patch(webhooks::update).delete(webhooks::remove),
+        )
+        .route("/api/webhooks/{id}/secret", post(webhooks::rotate))
+        .route("/api/webhooks/{id}/test", post(webhooks::test))
+        .route("/api/webhooks/{id}/deliveries", get(webhooks::deliveries))
+        .route("/api/ledger/verify", post(ledger::verify_ledger))
         .route(
             "/api/sync-schedule",
             get(tasks::get_sync_schedule).put(tasks::set_sync_schedule),
@@ -227,6 +253,7 @@ pub fn openapi_json() -> String {
         manage::add_jmap_account,
         manage::import_file,
         manage::sync_account,
+        oauth::providers,
         oauth::start,
         oauth::finish,
         oauth::callback,
@@ -250,6 +277,7 @@ pub fn openapi_json() -> String {
         routes::get_message,
         routes::get_body,
         routes::get_raw,
+        routes::get_pdf,
         routes::get_attachment,
         routes::get_thumbnail,
         remote::get_remote,
@@ -257,6 +285,18 @@ pub fn openapi_json() -> String {
         manage::start_remote_images,
         tasks::list_tasks,
         tasks::cancel_task,
+        ledger::get_ledger,
+        ledger::verify_ledger,
+        deletion::review,
+        deletion::confirm,
+        smtp::status,
+        webhooks::list,
+        webhooks::create,
+        webhooks::update,
+        webhooks::remove,
+        webhooks::rotate,
+        webhooks::test,
+        webhooks::deliveries,
         tasks::get_image_proxy,
         tasks::set_image_proxy,
         tasks::get_sync_schedule,
@@ -309,7 +349,25 @@ pub fn openapi_json() -> String {
         SyncScheduleDto,
         SyncScheduleRequest,
         OAuthStartRequest,
+        OAuthProviderDto,
         OAuthStartDto,
+        ledger::LedgerDto,
+        ledger::LedgerEntryDto,
+        ledger::LedgerVerificationDto,
+        ledger::VerifyLedgerRequest,
+        deletion::DeletionRequest,
+        deletion::DeletionReviewDto,
+        deletion::DeletionSampleDto,
+        deletion::DeletionConfirmRequest,
+        smtp::SmtpDto,
+        smtp::SmtpRouteDto,
+        webhooks::WebhookDto,
+        webhooks::DeliveryDto,
+        webhooks::WebhookListDto,
+        webhooks::NewWebhookRequest,
+        webhooks::WebhookCreatedDto,
+        webhooks::WebhookUpdateRequest,
+        webhooks::WebhookSecretDto,
         OAuthFinishRequest,
         FolderDto,
         LabelDto,

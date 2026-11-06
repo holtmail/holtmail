@@ -99,6 +99,10 @@ pub trait Mailboxes: Send + Sync {
     /// used up.
     fn oauth_return_to(&self, answer: &str) -> Option<String>;
 
+    /// The providers this server signs in with, Google first; one turned off in the config is
+    /// left out.
+    fn oauth_providers(&self) -> Vec<OAuthProvider>;
+
     /// The outbound proxy remote images are fetched through.
     fn image_proxy(&self) -> ImageProxy;
 
@@ -207,6 +211,15 @@ pub enum OAuthTarget {
     },
     /// Sign in again to this account, or move it from a password to OAuth.
     Account(AccountId),
+}
+
+/// A provider this server signs in with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OAuthProvider {
+    /// `google` or `microsoft`.
+    pub provider: String,
+    /// The client is Thunderbird's, so the consent screen names Thunderbird.
+    pub thunderbird_client: bool,
 }
 
 /// A sign-in to start.

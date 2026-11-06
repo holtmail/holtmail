@@ -463,6 +463,32 @@ pub(crate) async fn get_raw(
 
 #[utoipa::path(
     get,
+    path = "/api/messages/{id}/pdf",
+    params(("id" = String, Path, description = "Message id")),
+    responses((status = 200, description = "The message as a PDF with the original message attached inside it", content_type = "application/pdf"), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such message", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn get_pdf(
+    State(state): AppState,
+    Path(raw): Path<String>,
+) -> ApiResult<Response> {
+    let (message, bytes) = load(&state, &raw).await?;
+    let pdf = holtmail_export::message_pdf(&*state.store, &message, bytes.into())
+        .await
+        .map_err(|e| ApiError(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let name = format!(
+        "{}.pdf",
+        message
+            .subject
+            .as_deref()
+            .map(file_safe)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| message.id.to_string())
+    );
+    Ok(download(pdf, "application/pdf", &name, false))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/messages/{id}/attachments/{ordinal}",
     params(("id" = String, Path, description = "Message id"), ("ordinal" = u32, Path, description = "The attachment's position, from 0")),
     responses((status = 200, description = "The attachment's content", content_type = "application/octet-stream"), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such message or attachment", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),

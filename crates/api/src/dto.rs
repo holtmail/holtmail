@@ -48,7 +48,7 @@ pub struct RemoteImagesRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TaskDto {
     pub id: String,
-    /// `sync`, `import` or `remote_images`.
+    /// `sync`, `import`, `remote_images`, `contacts_calendars` or `ledger_verify`.
     pub kind: String,
     /// `running`, `done`, `failed`, `cancelled`, or `interrupted` when the server stopped while it
     /// ran.
@@ -324,6 +324,15 @@ pub struct OAuthStartRequest {
     pub kind: Option<String>,
     /// A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing.
     pub return_to: Option<String>,
+}
+
+/// A provider this server signs in with.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OAuthProviderDto {
+    /// `google` or `microsoft`.
+    pub provider: String,
+    /// Thunderbird's public client is used, so the consent screen names Thunderbird.
+    pub thunderbird_client: bool,
 }
 
 /// A started sign-in.

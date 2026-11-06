@@ -57,7 +57,8 @@ pub(crate) async fn check(
     let archive = match parts.as_slice() {
         ["me", ..] => return next.run(request).await,
         [
-            "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth",
+            "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth" | "ledger"
+            | "deletions" | "webhooks" | "smtp",
             ..,
         ] => return forbidden(),
         _ if !read => return forbidden(),

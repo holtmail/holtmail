@@ -268,7 +268,7 @@ pub(crate) async fn guard_writes(request: Request, next: Next) -> Response {
         if !same_origin(&request) {
             return error(StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
         }
-        if !accepted_media(request.headers()) {
+        if *request.method() == Method::POST && !accepted_media(request.headers()) {
             return error(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 "expected Content-Type: application/json or application/octet-stream",

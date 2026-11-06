@@ -34,7 +34,7 @@ pub(crate) async fn export(
 ) -> ApiResult<Response> {
     let archive: ArchiveId = raw.parse().map_err(|_| ApiError::not_found("archive"))?;
     let format = Format::parse(&params.format)
-        .ok_or_else(|| ApiError::bad_request("format is mbox or zip"))?;
+        .ok_or_else(|| ApiError::bad_request("format is mbox, zip or pdf"))?;
     let selection = match (
         nonempty(&params.folder),
         nonempty(&params.label),

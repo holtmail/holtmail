@@ -41,6 +41,104 @@ struct FakeMailboxes {
     schedule: std::sync::Mutex<SyncSchedule>,
     cancelled: std::sync::Mutex<Vec<String>>,
     oauth: std::sync::Mutex<std::collections::HashMap<String, OAuthStart>>,
+    verifications: std::sync::Mutex<Vec<VerifyLedger>>,
+    deletions: std::sync::Mutex<Vec<(holtmail_core::ArchiveId, DeletionSelection)>>,
+    tested: std::sync::Mutex<Vec<holtmail_core::WebhookId>>,
+}
+
+#[async_trait::async_trait]
+impl Operations for FakeMailboxes {
+    async fn ledger(&self) -> Result<LedgerStatus, MailboxError> {
+        let store = self.store.get().unwrap();
+        Ok(LedgerStatus {
+            head: store.ledger_head().await.unwrap(),
+            last: None,
+        })
+    }
+
+    async fn verify_ledger(&self, request: VerifyLedger) -> Result<Task, MailboxError> {
+        self.verifications.lock().unwrap().push(request);
+        let mut task = fake_task(holtmail_core::ArchiveId::new());
+        task.kind = TaskKind::LedgerVerify;
+        task.archive_id = None;
+        Ok(task)
+    }
+
+    async fn review_deletion(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        selection: DeletionSelection,
+        _actor: holtmail_core::UserId,
+    ) -> Result<DeletionReview, MailboxError> {
+        if selection == DeletionSelection::Query("nothing".into()) {
+            return Err(MailboxError::Invalid("Nothing to delete.".into()));
+        }
+        self.deletions.lock().unwrap().push((archive, selection));
+        Ok(DeletionReview {
+            id: "r1".into(),
+            archive_id: archive,
+            query: None,
+            count: 2,
+            bytes: 300,
+            oldest: Some(holtmail_core::Timestamp::from_secs(1)),
+            newest: Some(holtmail_core::Timestamp::from_secs(2)),
+            sample: Vec::new(),
+            expires_at: holtmail_core::Timestamp::from_secs(3),
+        })
+    }
+
+    async fn confirm_deletion(
+        &self,
+        review: &str,
+        count: u64,
+        _actor: holtmail_core::UserId,
+    ) -> Result<Task, MailboxError> {
+        if review != "r1" || count != 2 {
+            return Err(MailboxError::Invalid("stale".into()));
+        }
+        let mut task = fake_task(holtmail_core::ArchiveId::new());
+        task.kind = TaskKind::DeleteMessages;
+        Ok(task)
+    }
+
+    async fn create_webhook(
+        &self,
+        url: &str,
+        events: &[String],
+    ) -> Result<(holtmail_store::Webhook, String), MailboxError> {
+        let (url, events) = holtmail_hooks::check(url, events).map_err(MailboxError::Invalid)?;
+        let hook = holtmail_store::Webhook {
+            id: holtmail_core::WebhookId::new(),
+            url,
+            events,
+            sealed_secret: b"sealed".to_vec(),
+            enabled: true,
+            created_at: holtmail_core::Timestamp::from_secs(5),
+        };
+        self.store
+            .get()
+            .unwrap()
+            .create_webhook(&hook)
+            .await
+            .unwrap();
+        Ok((hook, "whsec_first".into()))
+    }
+
+    async fn rotate_webhook_secret(
+        &self,
+        _id: holtmail_core::WebhookId,
+    ) -> Result<String, MailboxError> {
+        Ok("whsec_second".into())
+    }
+
+    async fn test_webhook(&self, id: holtmail_core::WebhookId) -> Result<(), MailboxError> {
+        self.tested.lock().unwrap().push(id);
+        Ok(())
+    }
+
+    fn smtp(&self) -> Option<SmtpStatus> {
+        None
+    }
 }
 
 fn answer_pairs(answer: &str) -> std::collections::HashMap<String, String> {
@@ -385,6 +483,13 @@ impl Mailboxes for FakeMailboxes {
         })
     }
 
+    fn oauth_providers(&self) -> Vec<OAuthProvider> {
+        vec![OAuthProvider {
+            provider: "google".into(),
+            thunderbird_client: true,
+        }]
+    }
+
     fn oauth_return_to(&self, answer: &str) -> Option<String> {
         let state = answer_pairs(answer).remove("state")?;
         self.oauth
@@ -542,6 +647,7 @@ async fn empty_fixture() -> Fixture {
             index,
             auth: auth.clone(),
             mailboxes: mailboxes.clone(),
+            operations: mailboxes.clone(),
             fetcher: fetcher.clone(),
             secure_cookies: false,
         }),
@@ -1137,6 +1243,18 @@ async fn refuses_cross_origin_writes() {
     assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     let (status, _, _) = f.get("/api/session").await;
     assert_eq!(status, StatusCode::OK, "a refused logout signed out");
+
+    let gone = format!("/api/accounts/{}", holtmail_core::AccountId::new());
+    let (status, _, _) = f
+        .send(Request::delete(&gone).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "a delete needs no body type");
+    let mut request = Request::delete(&gone).body(Body::empty()).unwrap();
+    request
+        .headers_mut()
+        .insert(header::ORIGIN, "https://evil.example.org".parse().unwrap());
+    let (status, _, _) = f.send(request).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1326,6 +1444,19 @@ async fn members_read_only_granted_archives() {
     assert_eq!(grace["user"]["email"], "Grace@example.org");
     let grace_id = grace["user"]["id"].as_str().unwrap().to_owned();
     let member = f.sign_in("grace@example.org", "compiler 1952").await;
+
+    for uri in [
+        "/api/webhooks",
+        "/api/smtp",
+        "/api/ledger",
+        "/api/oauth/providers",
+        "/api/tasks",
+    ] {
+        let (status, _, _) = f
+            .send_as(&member, Request::get(uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+    }
 
     let (_, _, body) = f
         .send_as(
@@ -2228,7 +2359,7 @@ async fn exports_mbox_and_zip() {
     assert!(body_text(&body).contains("Re: Weekly news"));
 
     for (uri, expected) in [
-        (format!("{base}?format=pdf"), StatusCode::BAD_REQUEST),
+        (format!("{base}?format=rar"), StatusCode::BAD_REQUEST),
         (
             format!("{base}?format=zip&label=A&q=b"),
             StatusCode::BAD_REQUEST,
@@ -3281,4 +3412,212 @@ async fn exports_contacts_and_calendars() {
         StatusCode::NOT_FOUND,
         "members read granted archives only"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shows_and_verifies_the_ledger() {
+    let f = fixture().await;
+    let (status, _, body) = f.get("/api/ledger").await;
+    assert_eq!(status, StatusCode::OK);
+    let ledger: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(ledger["head"]["seq"], 2);
+    assert_eq!(ledger["head"]["event"], "archived");
+    assert_eq!(ledger["head"]["hash"].as_str().unwrap().len(), 64);
+    assert!(ledger["last_verification"].is_null());
+
+    let hash = ledger["head"]["hash"].as_str().unwrap().to_owned();
+    for bad in ["2", "0:abc", &format!("x:{hash}"), &format!("0:{hash}")] {
+        let (status, _, _) = f
+            .send(post_json("/api/ledger/verify", json!({ "anchor": bad })))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/ledger/verify",
+            json!({ "blobs": true, "anchor": format!("2:{hash}") }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let task: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(task["kind"], "ledger_verify");
+    let asked = f.mailboxes.verifications.lock().unwrap().clone();
+    assert_eq!(asked.len(), 1);
+    assert!(asked[0].blobs);
+    assert_eq!(
+        asked[0].anchor.map(|(seq, h)| (seq, h.to_string())),
+        Some((2, hash))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reviews_and_confirms_deletions() {
+    let f = fixture().await;
+    let url = format!("/api/archives/{}/deletions", f.archive);
+    for bad in [
+        json!({}),
+        json!({ "query": "a", "message_ids": [] }),
+        json!({ "message_ids": ["not-an-id"] }),
+        json!({ "query": "nothing" }),
+    ] {
+        let (status, _, _) = f.send(post_json(&url, bad.clone())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let (status, _, body) = f
+        .send(post_json(&url, json!({ "query": "from:news@example.com" })))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let review: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        (review["id"].as_str(), review["count"].as_u64()),
+        (Some("r1"), Some(2))
+    );
+    assert_eq!(
+        f.mailboxes.deletions.lock().unwrap()[0].1,
+        DeletionSelection::Query("from:news@example.com".into())
+    );
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/deletions/r1/confirm",
+            json!({ "count": 3 }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/deletions/r1/confirm",
+            json!({ "count": 2 }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let task: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(task["kind"], "delete_messages");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn manages_webhooks() {
+    let f = fixture().await;
+    let (status, _, _) = f
+        .send(post_json(
+            "/api/webhooks",
+            json!({ "url": "ftp://hooks.example.com", "events": [] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, body) = f
+        .send(post_json(
+            "/api/webhooks",
+            json!({ "url": "https://hooks.example.com/in", "events": ["task.finished"] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let created: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(created["secret"], "whsec_first");
+    let id = created["webhook"]["id"].as_str().unwrap().to_owned();
+    assert!(created["webhook"].get("sealed_secret").is_none());
+
+    let (status, _, body) = f.get("/api/webhooks").await;
+    assert_eq!(status, StatusCode::OK);
+    let list: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        list["events"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("ledger.verified"))
+    );
+    assert_eq!(list["webhooks"][0]["url"], "https://hooks.example.com/in");
+    assert!(list["webhooks"][0]["last_delivery"].is_null());
+    assert!(
+        !String::from_utf8_lossy(&body).contains("whsec"),
+        "the secret was listed"
+    );
+
+    let (status, _, body) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/webhooks/{id}"),
+            json!({ "enabled": false, "events": ["messages.deleted", "task.finished"] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let changed: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(changed["enabled"], false);
+    assert_eq!(
+        changed["events"],
+        json!(["messages.deleted", "task.finished"])
+    );
+    let (status, _, _) = f
+        .send(request(
+            "PATCH",
+            &format!("/api/webhooks/{id}"),
+            json!({ "events": ["mail.read"] }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _, body) = f
+        .send(post_json(&format!("/api/webhooks/{id}/secret"), json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["secret"],
+        "whsec_second"
+    );
+    let (status, _, _) = f
+        .send(post_json(&format!("/api/webhooks/{id}/test"), json!({})))
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(f.mailboxes.tested.lock().unwrap().len(), 1);
+    let (status, _, body) = f.get(&format!("/api/webhooks/{id}/deliveries")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), json!([]));
+
+    for path in [
+        format!("/api/webhooks/{}", holtmail_core::WebhookId::new()),
+        "/api/webhooks/not-an-id".to_owned(),
+    ] {
+        let (status, _, _) = f.send(request("DELETE", &path, json!({}))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+    }
+    let (status, _, _) = f
+        .send(request("DELETE", &format!("/api/webhooks/{id}"), json!({})))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn says_when_smtp_is_off() {
+    let f = fixture().await;
+    let (status, _, body) = f.get("/api/smtp").await;
+    assert_eq!(status, StatusCode::OK);
+    let smtp: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(smtp["enabled"], false);
+    assert_eq!(smtp["routes"], json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_a_message_as_pdf() {
+    let f = fixture().await;
+    let (_, _, body) = f
+        .get(&format!("/api/archives/{}/messages", f.archive))
+        .await;
+    let page: Value = serde_json::from_slice(&body).unwrap();
+    let id = page["items"][0]["id"].as_str().unwrap().to_owned();
+    let (status, headers, body) = f.get(&format!("/api/messages/{id}/pdf")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/pdf");
+    assert!(
+        headers[header::CONTENT_DISPOSITION]
+            .to_str()
+            .unwrap()
+            .starts_with("attachment")
+    );
+    assert!(body.starts_with(b"%PDF-"));
+    let (status, _, _) = f
+        .get(&format!(
+            "/api/messages/{}/pdf",
+            holtmail_core::MessageId::new()
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

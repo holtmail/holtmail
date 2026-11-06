@@ -33,6 +33,25 @@ fn return_path(raw: Option<&str>) -> ApiResult<String> {
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/oauth/providers",
+    responses((status = 200, body = [OAuthProviderDto]), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn providers(State(state): AppState) -> Json<Vec<OAuthProviderDto>> {
+    Json(
+        state
+            .mailboxes
+            .oauth_providers()
+            .into_iter()
+            .map(|p| OAuthProviderDto {
+                provider: p.provider,
+                thunderbird_client: p.thunderbird_client,
+            })
+            .collect(),
+    )
+}
+
+#[utoipa::path(
     post,
     path = "/api/oauth/start",
     request_body = OAuthStartRequest,

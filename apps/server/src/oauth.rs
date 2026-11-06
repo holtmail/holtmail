@@ -82,6 +82,7 @@ pub struct OAuth {
     endpoint: Arc<dyn TokenEndpoint>,
     pending: Mutex<HashMap<String, Pending>>,
     tokens: Mutex<HashMap<AccountId, Cached>>,
+    refreshing: Mutex<HashMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
     graph_url: Option<String>,
     imap: HashMap<Provider, (String, u16)>,
     hooks: std::sync::OnceLock<Arc<crate::webhooks::Hooks>>,
@@ -94,6 +95,7 @@ impl OAuth {
             endpoint,
             pending: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            refreshing: Mutex::new(HashMap::new()),
             graph_url: None,
             imap: HashMap::new(),
             hooks: std::sync::OnceLock::new(),
@@ -257,6 +259,27 @@ impl OAuth {
         {
             return Ok(cached.token.clone());
         }
+        let gate = self
+            .refreshing
+            .lock()
+            .expect("refreshing lock")
+            .entry(account.id)
+            .or_default()
+            .clone();
+        let _one_at_a_time = gate.lock().await;
+        if let Some(cached) = self.tokens.lock().expect("tokens lock").get(&account.id)
+            && cached.until > Instant::now() + REFRESH_BEFORE
+        {
+            return Ok(cached.token.clone());
+        }
+        let current = store
+            .get_account(account.id)
+            .await?
+            .context("the account was removed")?;
+        if OAuthSettings::of(&current).is_some_and(|s| s.needs_sign_in) {
+            bail!(sign_in_again(provider));
+        }
+        let account = &current;
         let context = account.id.to_string();
         let sealed = account
             .sealed_secret

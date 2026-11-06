@@ -13,9 +13,11 @@ mod mailboxes;
 mod oauth;
 mod operations;
 mod people;
+mod push;
 mod schedule;
 mod smtp;
 mod tasks;
+mod watch;
 mod webhooks;
 
 use std::net::SocketAddr;
@@ -246,7 +248,7 @@ enum AccountCommand {
     /// Change an account: its name, connection, sync interval, minimum age, or pause it. A new
     /// connection or password is checked by signing in before anything is stored. Works while
     /// `serve` runs, which picks the change up at its next check.
-    Edit(EditAccount),
+    Edit(Box<EditAccount>),
     /// Add a Gmail or Microsoft account that signs in with OAuth. Prints the sign-in page, then
     /// reads the address the browser lands on from stdin.
     AddOauth {
@@ -343,9 +345,28 @@ struct EditAccount {
     /// The CardDAV address, when it differs from the CalDAV one.
     #[arg(long, requires = "contacts_calendars")]
     carddav_url: Option<String>,
-    /// The CalDAV address, when it differs from the CardDAV one.
+    /// The CalDAV address, when it differs from the CardDAV one. For a JMAP account whose
+    /// session offers contacts but no calendars, this alone reads calendars over CalDAV while
+    /// contacts stay on JMAP.
     #[arg(long, requires = "contacts_calendars")]
     caldav_url: Option<String>,
+    /// Read a password for CardDAV and CalDAV from the first line of standard input, for
+    /// servers that do not take the account's own (an app password); an empty line removes a
+    /// stored one. Cannot be combined with --password-stdin.
+    #[arg(
+        long,
+        requires = "contacts_calendars",
+        conflicts_with = "password_stdin"
+    )]
+    dav_password_stdin: bool,
+    /// Minutes between contacts and calendars syncs, 0 for only on request, or `default` to
+    /// follow the mail interval.
+    #[arg(long)]
+    pim_interval: Option<String>,
+    /// Watch for changes on the server: `off`, `inbox` (the default; the all-mail folder on
+    /// Gmail), or folder paths separated by commas, e.g. `INBOX,Work`.
+    #[arg(long)]
+    watch: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -645,7 +666,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Account(AccountCommand::Edit(args)) => {
             let config = Config::load(cli.config.as_deref())?;
-            edit_account(&config, args).await
+            edit_account(&config, *args).await
         }
         Command::Account(AccountCommand::List) => {
             let config = Config::load(cli.config.as_deref())?;
@@ -670,7 +691,7 @@ async fn main() -> anyhow::Result<()> {
                 anyhow::ensure!(!list.is_empty(), "no enabled account {id}");
             }
             for account in list {
-                let report = accounts::sync_one(&services, &syncer, &account).await?;
+                let report = accounts::sync_one(&services, &syncer, &account, None).await?;
                 println!("{} ({})", account.name, account.id);
                 for folder in report.folders {
                     println!(
@@ -986,6 +1007,43 @@ async fn edit_account(config: &Config, args: EditAccount) -> anyhow::Result<()> 
     } else {
         None
     };
+    let dav_password = if args.dav_password_stdin {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        Some(line.trim_end_matches(['\r', '\n']).to_owned())
+    } else {
+        None
+    };
+    let contacts_interval_minutes = match args.pim_interval.as_deref().map(str::trim) {
+        None => None,
+        Some("default") => Some(None),
+        Some(raw) => Some(Some(raw.parse::<u64>().map_err(|_| {
+            anyhow::anyhow!("--pim-interval takes minutes, 0 or default, not {raw:?}")
+        })?)),
+    };
+    let watch = match args.watch.as_deref().map(str::trim) {
+        None => None,
+        Some("off") => Some(holtmail_api::WatchSettings {
+            mode: holtmail_api::WatchMode::Off,
+            folders: Vec::new(),
+        }),
+        Some("inbox") => Some(holtmail_api::WatchSettings::default()),
+        Some(list) => {
+            let folders: Vec<String> = list
+                .split(',')
+                .map(|f| f.trim().to_owned())
+                .filter(|f| !f.is_empty())
+                .collect();
+            anyhow::ensure!(
+                !folders.is_empty(),
+                "--watch takes off, inbox or folder paths"
+            );
+            Some(holtmail_api::WatchSettings {
+                mode: holtmail_api::WatchMode::Folders,
+                folders,
+            })
+        }
+    };
     let change = holtmail_api::AccountChange {
         connection,
         jmap,
@@ -997,8 +1055,11 @@ async fn edit_account(config: &Config, args: EditAccount) -> anyhow::Result<()> 
                 enabled: on == "on",
                 contacts_url: args.carddav_url.clone().or_else(|| args.dav_url.clone()),
                 calendars_url: args.caldav_url.clone().or_else(|| args.dav_url.clone()),
+                dav_password: dav_password.clone(),
             }
         }),
+        contacts_interval_minutes,
+        watch,
     };
     anyhow::ensure!(
         change.password.is_some()
@@ -1257,6 +1318,9 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         people::build_if_needed(&*services.store).await;
     });
     tokio::spawn(runner.clone().run_schedule());
+    tokio::spawn(watch::run(runner.clone()));
+    tokio::spawn(push::run(runner.clone()));
+    tokio::spawn(runner.clone().find_caldav_offers(None));
     if let Some(web) = &config.web_dir {
         let index = web.join("index.html");
         app = app.fallback_service(ServeDir::new(web).fallback(ServeFile::new(index)));

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use holtmail_api::{
     AccountChange, ConnectionChange, ImapConnection, JmapConnection, JmapConnectionChange,
-    MailboxError,
+    MailboxError, WatchMode, WatchSettings,
 };
 
 use crate::config::{self, Services};
@@ -309,6 +309,43 @@ pub fn with_min_age_days(settings: &serde_json::Value, days: Option<u32>) -> ser
     json
 }
 
+/// Which folders of `account` are watched, as stored; the inbox when nothing is stored.
+pub fn watch_settings(account: &Account) -> WatchSettings {
+    let Some(stored) = account.settings.get("watch") else {
+        return WatchSettings::default();
+    };
+    WatchSettings {
+        mode: stored
+            .get("mode")
+            .and_then(serde_json::Value::as_str)
+            .and_then(WatchMode::parse)
+            .unwrap_or_default(),
+        folders: stored
+            .get("folders")
+            .and_then(serde_json::Value::as_array)
+            .map(|folders| {
+                folders
+                    .iter()
+                    .filter_map(|f| f.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
+/// The account's settings with `watch` stored.
+pub fn with_watch(settings: &serde_json::Value, watch: &WatchSettings) -> serde_json::Value {
+    let mut json = match settings {
+        serde_json::Value::Object(_) => settings.clone(),
+        _ => serde_json::json!({}),
+    };
+    json["watch"] = serde_json::json!({
+        "mode": watch.mode.as_str(),
+        "folders": watch.folders,
+    });
+    json
+}
+
 /// The account's own sync interval in minutes, when it has one.
 pub fn sync_interval(account: &Account) -> Option<u64> {
     account
@@ -508,10 +545,12 @@ pub async fn source_for(
     }
 }
 
+/// Syncs `account`'s mail: every folder, or only the paths in `only`.
 pub async fn sync_one(
     services: &Services,
     syncer: &Syncer,
     account: &Account,
+    only: Option<Vec<String>>,
 ) -> anyhow::Result<SyncReport> {
     let source = source_for(
         account,
@@ -520,10 +559,11 @@ pub async fn sync_one(
         &services.oauth,
     )
     .await?;
-    match syncer
-        .sync_account(account, &*source, &options(account))
-        .await
-    {
+    let options = SyncOptions {
+        only,
+        ..options(account)
+    };
+    match syncer.sync_account(account, &*source, &options).await {
         Ok(report) => Ok(report),
         Err(SyncError::Source(SourceError::Auth(reason)))
             if OAuthSettings::of(account).is_some() =>
@@ -567,13 +607,20 @@ pub async fn configure(
         ));
     }
     if account.kind == AccountKind::Import
-        && (connects || change.sync_interval_minutes.is_some() || change.min_age_days.is_some())
+        && (connects
+            || change.sync_interval_minutes.is_some()
+            || change.min_age_days.is_some()
+            || change.watch.is_some()
+            || change.contacts_interval_minutes.is_some())
     {
         return Err(MailboxError::Invalid(
             "An import account has no server.".into(),
         ));
     }
     if let Some(Some(minutes)) = change.sync_interval_minutes {
+        crate::schedule::check_minutes(minutes)?;
+    }
+    if let Some(Some(minutes)) = change.contacts_interval_minutes {
         crate::schedule::check_minutes(minutes)?;
     }
     if let Some(Some(days)) = change.min_age_days
@@ -676,8 +723,21 @@ pub async fn configure(
     if let Some(days) = change.min_age_days {
         updated.settings = with_min_age_days(&updated.settings, days);
     }
+    if let Some(watch) = &change.watch {
+        updated.settings = with_watch(&updated.settings, watch);
+    }
     if let Some(dav) = &change.contacts_calendars {
         crate::dav::configure(store, secrets, oauth, &mut updated, dav).await?;
+    }
+    if let Some(minutes) = change.contacts_interval_minutes {
+        if !crate::dav::available(&updated) {
+            return Err(MailboxError::Invalid(
+                "This account has no contacts and calendars.".into(),
+            ));
+        }
+        let mut dav = crate::dav::DavSettings::of(&updated).unwrap_or_default();
+        dav.interval_minutes = minutes;
+        dav.write(&mut updated.settings);
     }
     if renumbers {
         forget_positions(store, account).await?;

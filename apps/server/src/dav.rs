@@ -2,10 +2,12 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use holtmail_api::{ContactsCalendars, ContactsCalendarsChange, ContactsProtocol, MailboxError};
+use holtmail_collection::CollectionKind;
 use holtmail_collection::{CollectionError, CollectionSource, Credentials};
 use holtmail_collection_dav::{DavConfig, DavSource};
 use holtmail_collection_graph::GraphCollections;
 use holtmail_collection_jmap::JmapCollections;
+use holtmail_collection_merge::MergedCollections;
 use holtmail_oauth::{Access, Provider};
 use holtmail_secret::SecretBox;
 use holtmail_source_graph::GraphSettings;
@@ -57,9 +59,27 @@ pub struct DavSettings {
     pub contacts_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendars_url: Option<String>,
+    /// How calendars are read when not as `protocol`: CalDAV for a JMAP account whose session
+    /// offers no calendars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendars_protocol: Option<Protocol>,
+    /// Minutes between syncs; `None` follows the account's mail interval, 0 only on request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interval_minutes: Option<u64>,
+    /// A CardDAV and CalDAV password of its own, sealed and base64-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dav_secret: Option<String>,
 }
 
 impl DavSettings {
+    pub fn calendars(&self) -> Protocol {
+        self.calendars_protocol.unwrap_or(self.protocol)
+    }
+
+    fn uses_dav(&self) -> bool {
+        self.protocol == Protocol::Dav || self.calendars() == Protocol::Dav
+    }
+
     pub fn of(account: &Account) -> Option<Self> {
         serde_json::from_value(account.settings.get("dav")?.clone()).ok()
     }
@@ -177,11 +197,30 @@ pub fn details(account: &Account) -> Option<ContactsCalendars> {
     let settings = DavSettings::of(account).unwrap_or_default();
     Some(ContactsCalendars {
         enabled: settings.enabled,
-        contacts_url: settings.contacts_url,
-        calendars_url: settings.calendars_url,
         needs_consent: needs_consent(account),
         protocol: settings.protocol.api(),
+        calendars_protocol: settings.calendars().api(),
+        interval_minutes: settings.interval_minutes,
+        has_dav_password: settings.dav_secret.is_some(),
+        caldav_offer: None,
+        contacts_url: settings.contacts_url,
+        calendars_url: settings.calendars_url,
     })
+}
+
+/// Minutes between contacts and calendars syncs, as set for them; `None` follows the mail
+/// interval.
+pub fn interval(account: &Account) -> Option<u64> {
+    DavSettings::of(account).and_then(|d| d.interval_minutes)
+}
+
+/// Whether `account` reads anything over CardDAV or CalDAV, where WebDAV-Push may apply.
+pub fn uses_dav(account: &Account) -> bool {
+    DavSettings::of(account).is_some_and(|d| d.enabled && d.uses_dav())
+}
+
+fn dav_context(account: &Account) -> String {
+    format!("{}:dav", account.id)
 }
 
 fn open_secret(account: &Account, secrets: &dyn SecretBox) -> anyhow::Result<String> {
@@ -222,10 +261,51 @@ async fn credentials(
     })
 }
 
-fn config(settings: &DavSettings, credentials: Credentials, timeout: Duration) -> DavConfig {
+/// How the account signs in to CardDAV and CalDAV: with its own DAV password when one is
+/// stored, else as [`credentials`] says.
+async fn dav_credentials(
+    account: &Account,
+    settings: &DavSettings,
+    store: &dyn Store,
+    secrets: &dyn SecretBox,
+    oauth: &OAuth,
+) -> anyhow::Result<Credentials> {
+    let Some(sealed) = &settings.dav_secret else {
+        return credentials(account, store, secrets, oauth).await;
+    };
+    use base64::Engine;
+    let sealed = base64::engine::general_purpose::STANDARD
+        .decode(sealed)
+        .context("the stored DAV password is unreadable")?;
+    let password = String::from_utf8(
+        secrets
+            .open(&dav_context(account), &sealed)
+            .context("the stored DAV password cannot be opened with this secret key")?,
+    )
+    .context("the stored DAV password is not UTF-8")?;
+    Ok(Credentials::Password {
+        username: user_name(account)
+            .or_else(|| mail_address(account))
+            .context("the account has no user name")?,
+        password,
+    })
+}
+
+fn config(
+    settings: &DavSettings,
+    only: Option<CollectionKind>,
+    credentials: Credentials,
+    timeout: Duration,
+) -> DavConfig {
     DavConfig {
-        contacts: settings.contacts_url.clone(),
-        calendars: settings.calendars_url.clone(),
+        contacts: settings
+            .contacts_url
+            .clone()
+            .filter(|_| only != Some(CollectionKind::Calendar)),
+        calendars: settings
+            .calendars_url
+            .clone()
+            .filter(|_| only != Some(CollectionKind::Contacts)),
         credentials,
         timeout,
     }
@@ -254,21 +334,50 @@ fn jmap_source(
     JmapCollections::new(&url, credentials, timeout)?.with_roots(&crate::config::tls_roots())
 }
 
-/// The source `settings` describe for `account`.
+/// The source `settings` describe for `account`: one protocol, or address books from one and
+/// calendars from another. `dav` signs in to CardDAV and CalDAV, `own` to the others.
 fn build(
     account: &Account,
     settings: &DavSettings,
-    credentials: Credentials,
+    own: Credentials,
+    dav: Credentials,
     timeout: Duration,
 ) -> Result<Box<dyn CollectionSource>, CollectionError> {
-    Ok(match settings.protocol {
-        Protocol::Dav => Box::new(
-            DavSource::new(config(settings, credentials, timeout))?
-                .with_roots(&crate::config::tls_roots())?,
-        ),
-        Protocol::Graph => Box::new(graph_source(account, credentials, timeout)?),
-        Protocol::Jmap => Box::new(jmap_source(account, credentials, timeout)?),
-    })
+    let one = |protocol: Protocol,
+               only: Option<CollectionKind>|
+     -> Result<Box<dyn CollectionSource>, CollectionError> {
+        Ok(match protocol {
+            Protocol::Dav => Box::new(
+                DavSource::new(config(settings, only, dav.clone(), timeout))?
+                    .with_roots(&crate::config::tls_roots())?,
+            ),
+            Protocol::Graph => Box::new(graph_source(account, own.clone(), timeout)?),
+            Protocol::Jmap => Box::new(jmap_source(account, own.clone(), timeout)?),
+        })
+    };
+    if settings.protocol == settings.calendars() {
+        return one(settings.protocol, None);
+    }
+    Ok(Box::new(MergedCollections::new(
+        one(settings.protocol, Some(CollectionKind::Contacts))?,
+        one(settings.calendars(), Some(CollectionKind::Calendar))?,
+    )))
+}
+
+async fn both_credentials(
+    account: &Account,
+    settings: &DavSettings,
+    store: &dyn Store,
+    secrets: &dyn SecretBox,
+    oauth: &OAuth,
+) -> anyhow::Result<(Credentials, Credentials)> {
+    let own = credentials(account, store, secrets, oauth).await?;
+    let dav = if settings.dav_secret.is_some() && settings.uses_dav() {
+        dav_credentials(account, settings, store, secrets, oauth).await?
+    } else {
+        own.clone()
+    };
+    Ok((own, dav))
 }
 
 /// The contacts and calendars source of an account that has them on.
@@ -291,8 +400,83 @@ pub async fn source_for(
             }
         );
     }
-    let credentials = credentials(account, store, secrets, oauth).await?;
-    Ok(build(account, &settings, credentials, SYNC_TIMEOUT)?)
+    let (own, dav) = both_credentials(account, &settings, store, secrets, oauth).await?;
+    Ok(build(account, &settings, own, dav, SYNC_TIMEOUT)?)
+}
+
+/// Where a JMAP account without calendars may have them over CalDAV, best first: its
+/// provider's address, then the well-known addresses of its JMAP host and its mail domain.
+fn caldav_candidates(account: &Account) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some((_, calendars)) = mail_address(account).as_deref().and_then(preset) {
+        out.push(calendars.to_owned());
+    }
+    if let Ok(settings) = JmapSettings::from_json(&account.settings)
+        && let Ok(url) = holtmail_source_jmap::session_url(&settings.url)
+        && let Ok(url) = url::Url::parse(&url)
+        && let Some(host) = url.host_str()
+    {
+        out.push(match url.port() {
+            Some(port) => format!("{}://{host}:{port}/.well-known/caldav", url.scheme()),
+            None => format!("{}://{host}/.well-known/caldav", url.scheme()),
+        });
+    }
+    if let Some(domain) = mail_address(account)
+        .as_deref()
+        .and_then(|a| a.rsplit_once('@'))
+        .map(|(_, d)| d.trim().to_ascii_lowercase())
+    {
+        out.push(format!("https://{domain}/.well-known/caldav"));
+    }
+    out.dedup();
+    out
+}
+
+/// The first of `candidates` where CalDAV answers with `credentials` and lists a calendar.
+async fn find_caldav(candidates: &[String], credentials: &Credentials) -> Option<String> {
+    for url in candidates {
+        let source = DavSource::new(DavConfig {
+            contacts: None,
+            calendars: Some(url.clone()),
+            credentials: credentials.clone(),
+            timeout: CHECK_TIMEOUT,
+        })
+        .and_then(|s| s.with_roots(&crate::config::tls_roots()));
+        let Ok(source) = source else { continue };
+        if let Ok(found) = source.collections().await
+            && found.iter().any(|c| c.kind == CollectionKind::Calendar)
+        {
+            return Some(url.clone());
+        }
+    }
+    None
+}
+
+/// For a JMAP account that reads contacts over JMAP and has no calendars: a CalDAV address
+/// that lists calendars with the account's sign-in, to offer. `None` for every other account,
+/// and when none answers.
+pub async fn caldav_offer(
+    account: &Account,
+    store: &dyn Store,
+    secrets: &dyn SecretBox,
+    oauth: &OAuth,
+) -> Option<String> {
+    let settings = DavSettings::of(account).filter(|d| d.enabled)?;
+    if account.kind != AccountKind::Jmap
+        || settings.protocol != Protocol::Jmap
+        || settings.calendars() != Protocol::Jmap
+    {
+        return None;
+    }
+    let own = credentials(account, store, secrets, oauth).await.ok()?;
+    let jmap = jmap_source(account, own, CHECK_TIMEOUT).ok()?;
+    if jmap.offers_calendars().await.unwrap_or(true) {
+        return None;
+    }
+    let dav = dav_credentials(account, &settings, store, secrets, oauth)
+        .await
+        .ok()?;
+    find_caldav(&caldav_candidates(account), &dav).await
 }
 
 /// A failure to reach contacts and calendars, in words for people; never holds a secret.
@@ -373,32 +557,74 @@ pub async fn configure(
         return Ok(());
     }
     let invalid = |e: anyhow::Error| MailboxError::Invalid(format!("{e:#}"));
-    let given = [&change.contacts_url, &change.calendars_url]
-        .iter()
-        .any(|u| u.as_deref().is_some_and(|u| !u.trim().is_empty()));
+    fn given(u: &Option<String>) -> Option<String> {
+        u.as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(str::to_owned)
+    }
+    let (given_contacts, given_calendars) =
+        (given(&change.contacts_url), given(&change.calendars_url));
+    let stored = DavSettings::of(account).unwrap_or_default();
     let mut candidate = account.clone();
     let mut next = DavSettings {
         enabled: true,
+        interval_minutes: stored.interval_minutes,
+        dav_secret: stored.dav_secret.clone(),
         ..DavSettings::default()
     };
+    match change.dav_password.as_deref() {
+        Some("") => next.dav_secret = None,
+        Some(password) => {
+            use base64::Engine;
+            let sealed = secrets
+                .seal(&dav_context(account), password.as_bytes())
+                .map_err(|e| MailboxError::Backend(e.to_string()))?;
+            next.dav_secret = Some(base64::engine::general_purpose::STANDARD.encode(sealed));
+        }
+        None => {}
+    }
+    let mut detected = false;
+    let mut probe_calendars = false;
     if account.kind == AccountKind::Graph {
         next.protocol = Protocol::Graph;
-    } else if account.kind == AccountKind::Jmap && !given {
+    } else if account.kind == AccountKind::Jmap && given_contacts.is_none() {
         next.protocol = Protocol::Jmap;
         next.write(&mut candidate.settings);
         let credentials = credentials(&candidate, store, secrets, oauth)
             .await
             .map_err(invalid)?;
-        let offered = jmap_source(&candidate, credentials, CHECK_TIMEOUT)
-            .map_err(|e| MailboxError::Invalid(reason(&e)))?
+        let jmap = jmap_source(&candidate, credentials, CHECK_TIMEOUT)
+            .map_err(|e| MailboxError::Invalid(reason(&e)))?;
+        let contacts = jmap
             .offers_contacts()
             .await
             .map_err(|e| MailboxError::Invalid(reason(&e)))?;
-        if !offered {
+        let calendars = jmap
+            .offers_calendars()
+            .await
+            .map_err(|e| MailboxError::Invalid(reason(&e)))?;
+        if !contacts {
             next.protocol = Protocol::Dav;
+        } else if given_calendars.is_some() || !calendars {
+            next.calendars_protocol = Some(Protocol::Dav);
+            match &given_calendars {
+                Some(url) => next.calendars_url = Some(url.clone()),
+                None => probe_calendars = true,
+            }
+        }
+    } else if account.kind != AccountKind::Graph {
+        next.protocol = Protocol::Dav;
+    }
+    if probe_calendars {
+        let dav = dav_credentials(&candidate, &next, store, secrets, oauth)
+            .await
+            .map_err(invalid)?;
+        match find_caldav(&caldav_candidates(account), &dav).await {
+            Some(url) => next.calendars_url = Some(url),
+            None => next.calendars_protocol = None,
         }
     }
-    let mut detected = false;
     if next.protocol == Protocol::Dav {
         let (contacts, calendars, found) = addresses(account, change)?;
         next.contacts_url = Some(contacts);
@@ -407,10 +633,10 @@ pub async fn configure(
     }
     next.write(&mut candidate.settings);
     if !needs_consent(&candidate) {
-        let credentials = credentials(&candidate, store, secrets, oauth)
+        let (own, dav) = both_credentials(&candidate, &next, store, secrets, oauth)
             .await
             .map_err(invalid)?;
-        let source = build(&candidate, &next, credentials, CHECK_TIMEOUT)
+        let source = build(&candidate, &next, own, dav, CHECK_TIMEOUT)
             .map_err(|e| MailboxError::Invalid(reason(&e)))?;
         match source.collections().await {
             Ok(found) => {
@@ -489,6 +715,7 @@ mod tests {
             enabled: true,
             contacts_url: Some("https://elsewhere.example.com".into()),
             calendars_url: None,
+            dav_password: None,
         };
         let (contacts, calendars, _) = addresses(&google, &change).unwrap();
         assert_eq!(
@@ -556,6 +783,7 @@ mod tests {
             enabled: true,
             contacts_url: c.map(Into::into),
             calendars_url: k.map(Into::into),
+            dav_password: None,
         };
         assert_eq!(
             addresses(&imap, &change(None, None)).unwrap(),

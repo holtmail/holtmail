@@ -8,11 +8,13 @@ use holtmail_api::{
     AccountChange, AccountDetails, AccountStatus, ContactsCalendarsRun, ImageProxy, MailboxError,
     Mailboxes, NewImapAccount, NewJmapAccount, OAuthFinished, OAuthProvider, OAuthStart,
     OAuthStarted, OAuthTarget, RemoteImageJob, SyncSchedule, Task, TaskKind, TaskLevel, TaskState,
+    WatchState,
 };
 use holtmail_core::{AccountId, ArchiveId, Timestamp};
 use holtmail_ingest::Ingest;
 use holtmail_oauth::{Access, Provider};
 use holtmail_pim_sync::{ChangeMode, PimReport, PimSyncer};
+use holtmail_source::Changed;
 
 use crate::people::PeopleRefresh;
 use holtmail_remote::{RemoteImages, Saved, Scope};
@@ -53,6 +55,32 @@ struct Inner {
     interrupted: Mutex<Vec<TaskRecord>>,
     people: Arc<PeopleRefresh>,
     reviews: crate::deletion::Reviews,
+    limit: Arc<tokio::sync::Semaphore>,
+    mail_queue: Mutex<HashMap<AccountId, Option<Changed>>>,
+    pim_queue: Mutex<HashMap<AccountId, bool>>,
+    pim_last: Mutex<HashMap<AccountId, Timestamp>>,
+    watch_states: Mutex<HashMap<AccountId, WatchState>>,
+    contacts_watch_states: Mutex<HashMap<AccountId, WatchState>>,
+    offers: Mutex<HashMap<AccountId, String>>,
+    push: crate::push::Registry,
+    watch_wake: tokio::sync::Notify,
+}
+
+/// Runs a closure when dropped, also when the work around it panics, unless disarmed.
+struct OnDrop<F: FnOnce()>(Option<F>);
+
+impl<F: FnOnce()> OnDrop<F> {
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl<F: FnOnce()> Drop for OnDrop<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f();
+        }
+    }
 }
 
 /// An account's contacts sync marked as running until dropped, also when the sync panics.
@@ -174,6 +202,8 @@ impl Runner {
                         error: run.error,
                         next_sync_at: None,
                         contacts_calendars: None,
+                        watch: WatchState::Off,
+                        contacts_watch: WatchState::Off,
                     },
                 )
             })
@@ -198,6 +228,16 @@ impl Runner {
         );
         let pim = PimSyncer::new(services.store.clone(), ingest.clone());
         let people = PeopleRefresh::new(services.store.clone());
+        let mut pim_last: HashMap<AccountId, Timestamp> = HashMap::new();
+        for task in tasks.list() {
+            if let (TaskKind::ContactsCalendars, Some(account), Some(at)) =
+                (task.kind, task.account_id, task.finished_at)
+            {
+                let last = pim_last.entry(account).or_insert(at);
+                *last = (*last).max(at);
+            }
+        }
+        let limit = Arc::new(tokio::sync::Semaphore::new(services.watch.parallel_syncs));
         let runner = Self(Arc::new(Inner {
             services,
             syncer,
@@ -215,6 +255,15 @@ impl Runner {
             interrupted: Mutex::new(interrupted),
             people,
             reviews: Default::default(),
+            limit,
+            mail_queue: Mutex::new(HashMap::new()),
+            pim_queue: Mutex::new(HashMap::new()),
+            pim_last: Mutex::new(pim_last),
+            watch_states: Mutex::new(HashMap::new()),
+            contacts_watch_states: Mutex::new(HashMap::new()),
+            offers: Mutex::new(HashMap::new()),
+            push: crate::push::Registry::default(),
+            watch_wake: tokio::sync::Notify::new(),
         }));
         runner.clear_uploads().await;
         Ok(runner)
@@ -451,8 +500,157 @@ impl Runner {
         }
     }
 
-    /// Syncs `account` and waits for it; returns at once when a run of it is already going.
-    pub async fn sync_now(&self, account: &Account) {
+    /// Queues a mail sync of `account`, of the folders in `only` or of every folder, and returns
+    /// at once. Runs share [`crate::config::WatchConfig::parallel_syncs`] slots with contacts
+    /// syncs, and an account has at most one run at a time: a request while one is queued or
+    /// going makes another run follow it, covering every folder asked for meanwhile.
+    pub fn request_mail(&self, account: AccountId, only: Option<Vec<String>>) {
+        let mut queue = self.0.mail_queue.lock().expect("mail queue lock");
+        if let Some(pending) = queue.get_mut(&account) {
+            let wanted = Changed { folders: only };
+            *pending = Some(match pending.take() {
+                Some(earlier) => earlier.merge(wanted),
+                None => wanted,
+            });
+            return;
+        }
+        queue.insert(account, None);
+        drop(queue);
+        let runner = self.clone();
+        tokio::spawn(async move { runner.mail_runs(account, only).await });
+    }
+
+    /// Records when the scheduler syncs `account` next, counted from the run that just ended, so
+    /// the status shows it before the scheduler's next look; nothing for an account that is
+    /// paused or has to sign in again now.
+    async fn schedule_next(&self, id: AccountId) {
+        let account = match self.0.services.store.get_account(id).await {
+            Ok(Some(account)) => account,
+            _ => return,
+        };
+        let waits =
+            !account.enabled || OAuthSettings::of(&account).is_some_and(|o| o.needs_sign_in);
+        let minutes = accounts::sync_interval(&account).unwrap_or(self.0.schedule.get().minutes);
+        let last = self.status(id).finished_at;
+        let mut next = self.0.next.lock().expect("next lock");
+        match schedule::due_at(last, minutes, false, Timestamp::now()).filter(|_| !waits) {
+            Some(at) => next.insert(id, at),
+            None => next.remove(&id),
+        };
+    }
+
+    fn mail_queued(&self, account: AccountId) -> bool {
+        self.0
+            .mail_queue
+            .lock()
+            .expect("mail queue lock")
+            .contains_key(&account)
+    }
+
+    async fn mail_runs(self, id: AccountId, mut only: Option<Vec<String>>) {
+        let inner = self.0.clone();
+        let claim = OnDrop(Some(move || {
+            if let Ok(mut queue) = inner.mail_queue.lock() {
+                queue.remove(&id);
+            }
+        }));
+        loop {
+            let permit = self
+                .0
+                .limit
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("the sync limit is never closed");
+            match self.0.services.store.get_account(id).await {
+                Ok(Some(account))
+                    if account.enabled
+                        && account.kind != AccountKind::Import
+                        && !OAuthSettings::of(&account).is_some_and(|o| o.needs_sign_in) =>
+                {
+                    self.sync_mail(&account, only.take()).await;
+                    self.schedule_next(id).await;
+                }
+                Ok(_) => return,
+                Err(error) => {
+                    tracing::warn!(account = %id, %error, "account not read");
+                    return;
+                }
+            }
+            drop(permit);
+            let mut queue = self.0.mail_queue.lock().expect("mail queue lock");
+            match queue.get_mut(&id).and_then(Option::take) {
+                Some(next) => only = next.folders,
+                None => {
+                    queue.remove(&id);
+                    drop(queue);
+                    claim.disarm();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Queues a contacts and calendars sync of `account` and returns at once, as
+    /// [`Runner::request_mail`] does for mail.
+    pub fn request_contacts(&self, account: AccountId) {
+        let mut queue = self.0.pim_queue.lock().expect("pim queue lock");
+        if let Some(again) = queue.get_mut(&account) {
+            *again = true;
+            return;
+        }
+        queue.insert(account, false);
+        drop(queue);
+        let runner = self.clone();
+        tokio::spawn(async move { runner.contacts_runs(account).await });
+    }
+
+    fn contacts_queued(&self, account: AccountId) -> bool {
+        self.0
+            .pim_queue
+            .lock()
+            .expect("pim queue lock")
+            .contains_key(&account)
+    }
+
+    async fn contacts_runs(self, id: AccountId) {
+        let inner = self.0.clone();
+        let claim = OnDrop(Some(move || {
+            if let Ok(mut queue) = inner.pim_queue.lock() {
+                queue.remove(&id);
+            }
+        }));
+        loop {
+            let permit = self
+                .0
+                .limit
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("the sync limit is never closed");
+            self.sync_contacts_now(id).await;
+            self.0
+                .pim_last
+                .lock()
+                .expect("pim last lock")
+                .insert(id, Timestamp::now());
+            drop(permit);
+            let mut queue = self.0.pim_queue.lock().expect("pim queue lock");
+            match queue.get_mut(&id) {
+                Some(again) if *again => *again = false,
+                _ => {
+                    queue.remove(&id);
+                    drop(queue);
+                    claim.disarm();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Syncs the mail of `account`, every folder or the paths in `only`, as a task, and waits
+    /// for it; returns at once when an import of it is running.
+    async fn sync_mail(&self, account: &Account, only: Option<Vec<String>>) {
         if !self.begin(account.id) {
             return;
         }
@@ -464,8 +662,22 @@ impl Runner {
             cancellable: false,
             job: None,
         });
-        task.log(TaskLevel::Info, "Connecting to the server");
-        let outcome = accounts::sync_one(&self.0.services, &self.0.syncer, account).await;
+        task.log(
+            TaskLevel::Info,
+            match &only {
+                Some(folders) => format!(
+                    "The server reported changes in {} {}; connecting",
+                    folders.len(),
+                    if folders.len() == 1 {
+                        "folder"
+                    } else {
+                        "folders"
+                    }
+                ),
+                None => "Connecting to the server".to_owned(),
+            },
+        );
+        let outcome = accounts::sync_one(&self.0.services, &self.0.syncer, account, only).await;
         match &outcome {
             Ok(report) => {
                 let failed = report.folders.iter().find_map(|f| f.error.clone());
@@ -536,7 +748,82 @@ impl Runner {
                 self.finish(account.id, Err(error)).await;
             }
         }
-        self.sync_contacts_now(account.id).await;
+    }
+
+    /// Whether `account` archives contacts and calendars and may sign in for them now.
+    pub fn contacts_on(account: &Account) -> bool {
+        dav::DavSettings::of(account).is_some_and(|d| d.enabled)
+            && dav::available(account)
+            && !dav::needs_consent(account)
+            && !OAuthSettings::of(account).is_some_and(|o| o.needs_sign_in)
+    }
+
+    /// Records what an account's mail watch does now.
+    pub fn set_watch_state(&self, account: AccountId, state: WatchState) {
+        let mut states = self.0.watch_states.lock().expect("watch lock");
+        if state == WatchState::Off {
+            states.remove(&account);
+        } else {
+            states.insert(account, state);
+        }
+    }
+
+    /// Records what an account's contacts and calendars watch does now.
+    pub fn set_contacts_watch_state(&self, account: AccountId, state: WatchState) {
+        let mut states = self.0.contacts_watch_states.lock().expect("watch lock");
+        if state == WatchState::Off {
+            states.remove(&account);
+        } else {
+            states.insert(account, state);
+        }
+    }
+
+    /// Wakes the watch manager, so a changed account is watched as its settings say now.
+    pub fn wake_watches(&self) {
+        self.0.watch_wake.notify_one();
+    }
+
+    pub(crate) async fn watch_settings_changed(&self) {
+        self.0.watch_wake.notified().await;
+    }
+
+    pub(crate) fn push_registry(&self) -> &crate::push::Registry {
+        &self.0.push
+    }
+
+    /// Looks once for CalDAV calendars of every JMAP account whose session has none, to offer
+    /// them; `account` limits it to one account.
+    pub async fn find_caldav_offers(self, account: Option<AccountId>) {
+        let accounts = match accounts::syncable_accounts(&*self.0.services.store).await {
+            Ok(accounts) => accounts,
+            Err(error) => {
+                tracing::warn!(%error, "listing accounts failed");
+                return;
+            }
+        };
+        for account in accounts
+            .into_iter()
+            .filter(|a| a.kind == AccountKind::Jmap && account.is_none_or(|id| id == a.id))
+        {
+            let services = &self.0.services;
+            let offer = dav::caldav_offer(
+                &account,
+                &*services.store,
+                &*services.secrets,
+                &services.oauth,
+            )
+            .await;
+            let mut offers = self.0.offers.lock().expect("offers lock");
+            match offer {
+                Some(url) => {
+                    tracing::info!(account = %account.id, "calendars found over CalDAV for a JMAP account");
+                    offers.insert(account.id, url);
+                }
+                None => {
+                    offers.remove(&account.id);
+                }
+            }
+        }
     }
 
     /// Syncs the contacts and calendars of `account` as a task of its own and waits for it, when
@@ -550,11 +837,7 @@ impl Runner {
                 return;
             }
         };
-        if !dav::DavSettings::of(&account).is_some_and(|d| d.enabled)
-            || !dav::available(&account)
-            || dav::needs_consent(&account)
-            || OAuthSettings::of(&account).is_some_and(|o| o.needs_sign_in)
-        {
+        if !Self::contacts_on(&account) {
             return;
         }
         let Some(_running) = PimRunning::claim(&self.0.pim_running, account.id) else {
@@ -754,15 +1037,17 @@ impl Runner {
     }
 
     /// Checks every 30 seconds which enabled accounts are due, by their own interval or the
-    /// server's, and syncs those one after another. An account is due by its last stored run; one
-    /// that never ran is due at once, and so is one whose sync a restart interrupted, also when it
-    /// syncs only on request.
+    /// server's, and queues their syncs. An account is due by its last stored run; one that never
+    /// ran is due at once, and so is one whose sync a restart interrupted, also when it syncs only
+    /// on request. Contacts and calendars are due by their own interval, else the mail one, from
+    /// their last run in this process or in the kept tasks.
     pub async fn run_schedule(self) {
         loop {
             match accounts::syncable_accounts(&*self.0.services.store).await {
                 Ok(list) => {
                     let mut next = HashMap::new();
                     let mut due = Vec::new();
+                    let mut contacts_due = Vec::new();
                     let now = Timestamp::now();
                     let every = self.0.schedule.get().minutes;
                     for account in list {
@@ -772,14 +1057,33 @@ impl Runner {
                         let last = self.status(account.id).finished_at;
                         if let Some(at) = schedule::due_at(last, minutes, interrupted, now) {
                             next.insert(account.id, at);
-                            if at <= now {
-                                due.push(account);
+                            if at <= now && !self.mail_queued(account.id) {
+                                due.push(account.id);
+                            }
+                        }
+                        if Self::contacts_on(&account) {
+                            let minutes = dav::interval(&account).unwrap_or(minutes);
+                            let last = self
+                                .0
+                                .pim_last
+                                .lock()
+                                .expect("pim last lock")
+                                .get(&account.id)
+                                .copied();
+                            if schedule::due_at(last, minutes, false, now)
+                                .is_some_and(|at| at <= now)
+                                && !self.contacts_queued(account.id)
+                            {
+                                contacts_due.push(account.id);
                             }
                         }
                     }
                     *self.0.next.lock().expect("next lock") = next;
                     for account in due {
-                        self.sync_now(&account).await;
+                        self.request_mail(account, None);
+                    }
+                    for account in contacts_due {
+                        self.request_contacts(account);
                     }
                 }
                 Err(error) => tracing::warn!(%error, "listing accounts failed"),
@@ -905,10 +1209,12 @@ impl Mailboxes for Runner {
         )
         .await?;
         if turns_on && stored.enabled {
-            let runner = self.clone();
-            let id = stored.id;
-            tokio::spawn(async move { runner.sync_contacts_now(id).await });
+            self.request_contacts(stored.id);
         }
+        if stored.kind == AccountKind::Jmap {
+            tokio::spawn(self.clone().find_caldav_offers(Some(stored.id)));
+        }
+        self.wake_watches();
         Ok(stored)
     }
 
@@ -921,7 +1227,17 @@ impl Mailboxes for Runner {
             min_age_days: accounts::min_age_days(account),
             needs_sign_in: oauth.as_ref().is_some_and(|o| o.needs_sign_in),
             oauth_provider: oauth.map(|o| o.provider),
-            contacts_calendars: dav::details(account),
+            contacts_calendars: dav::details(account).map(|mut c| {
+                c.caldav_offer = self
+                    .0
+                    .offers
+                    .lock()
+                    .expect("offers lock")
+                    .get(&account.id)
+                    .cloned();
+                c
+            }),
+            watch: (account.kind != AccountKind::Import).then(|| accounts::watch_settings(account)),
         }
     }
 
@@ -946,9 +1262,11 @@ impl Mailboxes for Runner {
                 oauth.provider().unwrap_or(Provider::Google),
             )));
         }
-        let runner = self.clone();
-        let account = account.clone();
-        tokio::spawn(async move { runner.sync_now(&account).await });
+        self.request_mail(account.id, None);
+        if Self::contacts_on(account) {
+            self.request_contacts(account.id);
+        }
+        self.wake_watches();
         Ok(())
     }
 
@@ -1139,6 +1457,36 @@ impl Mailboxes for Runner {
                 .copied();
         }
         status.contacts_calendars = self.contacts_run(account);
+        status.watch = self
+            .0
+            .watch_states
+            .lock()
+            .expect("watch lock")
+            .get(&account)
+            .cloned()
+            .unwrap_or_default();
+        status.contacts_watch = if self.0.push.watches(account) {
+            WatchState::Live
+        } else {
+            self.0
+                .contacts_watch_states
+                .lock()
+                .expect("watch lock")
+                .get(&account)
+                .cloned()
+                .unwrap_or_default()
+        };
         status
+    }
+
+    async fn receive_push(&self, id: &str, body: &[u8]) -> bool {
+        match self.0.push.receive(id, body) {
+            Some(account) => {
+                tracing::debug!(%account, "push message for contacts and calendars");
+                self.request_contacts(account);
+                true
+            }
+            None => false,
+        }
     }
 }

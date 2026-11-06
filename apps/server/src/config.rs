@@ -56,8 +56,41 @@ pub struct Config {
     /// An SMTP listener that archives mail sent or journaled to it; off when missing.
     #[serde(default)]
     pub smtp: Option<crate::smtp::SmtpConfig>,
+    /// Watching accounts for changes (IMAP IDLE, JMAP push, WebDAV-Push) and how many accounts
+    /// sync at once.
+    #[serde(default)]
+    pub watch: WatchConfig,
     #[serde(skip)]
     pub tls_roots: TlsRoots,
+}
+
+/// `[watch]`: push from mail, contacts and calendars servers.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WatchConfig {
+    /// Watch accounts whose servers can push; `false` leaves only the sync intervals.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Accounts syncing at the same time, mail and contacts runs counted alike.
+    #[serde(default = "default_parallel_syncs")]
+    pub parallel_syncs: usize,
+}
+
+impl Default for WatchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            parallel_syncs: default_parallel_syncs(),
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_parallel_syncs() -> usize {
+    4
 }
 
 static TLS_ROOTS: LazyLock<RwLock<TlsRoots>> = LazyLock::new(Default::default);
@@ -176,6 +209,16 @@ impl Config {
         {
             smtp.password = Some(password).filter(|p| !p.is_empty());
         }
+        if let Ok(on) = std::env::var("HOLTMAIL_WATCH") {
+            config.watch.enabled = on
+                .trim()
+                .parse()
+                .context("HOLTMAIL_WATCH is true or false")?;
+        }
+        anyhow::ensure!(
+            (1..=64).contains(&config.watch.parallel_syncs),
+            "watch.parallel_syncs is between 1 and 64"
+        );
         if let Ok(proxy) = std::env::var("HOLTMAIL_IMAGE_PROXY") {
             config.image_proxy = Some(proxy).filter(|p| !p.trim().is_empty());
         }
@@ -348,6 +391,10 @@ pub struct Services {
     pub oauth: Arc<OAuth>,
     pub hooks: Arc<crate::webhooks::Hooks>,
     pub smtp: std::sync::OnceLock<Arc<crate::smtp::Listener>>,
+    pub watch: WatchConfig,
+    /// Where contacts and calendars servers post WebDAV-Push messages: the https `public_url`
+    /// without a trailing slash; `None` when the instance has no public https address.
+    pub push_base: Option<String>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -489,6 +536,8 @@ impl Services {
             oauth,
             hooks,
             smtp: Default::default(),
+            watch: config.watch.clone(),
+            push_base: config.https().then(|| config.base_url()),
         })
     }
 

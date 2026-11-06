@@ -61,7 +61,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         let mut lines = Vec::new();
         loop {
             let mut line = String::new();
-            if self.io.read_line(&mut line).await.unwrap() == 0 {
+            if !matches!(self.io.read_line(&mut line).await, Ok(n) if n > 0) {
                 return lines;
             }
             let line = line.trim_end().to_owned();
@@ -74,7 +74,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     }
 
     async fn send(&mut self, raw: &[u8]) {
-        self.io.get_mut().write_all(raw).await.unwrap();
+        let _ = self.io.get_mut().write_all(raw).await;
     }
 
     async fn say(&mut self, command: &str) -> Vec<String> {

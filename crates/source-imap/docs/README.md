@@ -15,7 +15,10 @@ Stored as JSON in `Account.settings`; the password or refresh token is sealed se
 ```rust
 let source = ImapSource::new(ImapSettings::from_json(&account.settings)?, Credentials::Password(password));
 let gmail = ImapSource::new(settings, Credentials::AccessToken(access_token));
+let private = ImapSource::new(settings, credentials).with_roots(&roots)?; // a server with a private CA
 ```
+
+`with_roots(&TlsRoots)` trusts the given CA certificates for TLS and STARTTLS besides the Mozilla roots (see [`holtmail-core`](../../core/docs/README.md)); verification and the host name check stay on. A root that rustls cannot use is a `Config` error.
 
 Unknown keys in the JSON (folder rules, the sync interval, the server's `oauth` block) are ignored.
 
@@ -28,13 +31,13 @@ Unknown keys in the JSON (folder rules, the sync interval, the server's `oauth` 
 - **Fetching** asks for `UID FLAGS INTERNALDATE BODY.PEEK[]` with compressed UID sets (`1:3,7,9`), plus `X-GM-MSGID X-GM-LABELS` on Gmail. `\Recent` is dropped from flags; keywords are kept as they are.
 - **Flags** without content: `UID FETCH a:b (UID FLAGS)` (with `X-GM-LABELS` on Gmail), and `(CHANGEDSINCE <modseq>)` when asked for changes. Asking for changes in a folder that reported no `HIGHESTMODSEQ` is a `Protocol` error before anything is sent.
 - **Gmail labels**: every selectable folder except the one with `\All` and the Trash and Spam folders (`\Trash`, `\Junk`) is reported with `label: true`, since Gmail shows labels as folders and All Mail holds every message except trash and spam. `X-GM-LABELS` values are unescaped (Gmail quotes system labels as `"\\Important"`) and decoded from modified UTF-7 (`Projects/&BBIEMAQ2BD0EPgQ1-` → `Projects/Важное`); system labels read as Gmail shows them: `\Inbox` → `Inbox`, `\Sent` → `Sent`, `\Important` → `Important`, `\Starred` → `Starred`, `\Draft` → `Drafts`, `\Trash` → `Trash`, `\Spam` → `Spam`, any other `\Name` → `Name`. Labels come sorted without duplicates. `async-imap` parses `X-GM-LABELS` given as atoms or quoted strings; a label sent as a literal would fail the fetch (Gmail is not known to do that).
-- **Timeouts**: every command has two minutes; a server that does not answer is a `Connection` error.
+- **Timeouts**: connecting, signing in and every command have two minutes each (`with_timeout(Duration)` sets another limit); a server that does not answer in time is a `Connection` error.
 - **Sign-in**: `Credentials::Password` uses `LOGIN`. `Credentials::AccessToken` uses `AUTHENTICATE XOAUTH2` with `user=<username>\x01auth=Bearer <token>\x01\x01`, base64-encoded, for Gmail and Microsoft 365. A server that refuses the token answers with a continuation carrying a base64 JSON error instead of `NO`; the source answers it with an empty line, as the protocol asks, and the server's `NO` that follows becomes `Auth`.
 - **Errors**: `NO`/`BAD` to `LOGIN` or `AUTHENTICATE` is `Auth`; I/O errors and lost connections are `Connection`; other refusals are `Protocol`.
 
 ## Tests
 
-`src/tests.rs` runs a small IMAP server in the test process (plain TCP on a random port) that answers `CAPABILITY`, `ENABLE CONDSTORE`, `LOGIN`, `AUTHENTICATE XOAUTH2` (accepting one token, and sending the error continuation for any other and checking it is answered with an empty line), `LIST`, `EXAMINE` (with `HIGHESTMODSEQ` once enabled), `UID SEARCH` and `UID FETCH` (with `X-GM-*` items and `CHANGEDSINCE`), and fails the test if a fetch would mark mail as read, if Gmail items go to another server or if `CHANGEDSINCE` comes before `ENABLE`. It runs as a plain server or as Gmail with labels in modified UTF-7 and quoted strings. `src/labels.rs` has unit tests for label names.
+`src/tests.rs` runs a small IMAP server in the test process (plain TCP on a random port) that answers `CAPABILITY`, `ENABLE CONDSTORE`, `LOGIN`, `AUTHENTICATE XOAUTH2` (accepting one token, and sending the error continuation for any other and checking it is answered with an empty line), `LIST`, `EXAMINE` (with `HIGHESTMODSEQ` once enabled), `UID SEARCH` and `UID FETCH` (with `X-GM-*` items and `CHANGEDSINCE`), and fails the test if a fetch would mark mail as read, if Gmail items go to another server or if `CHANGEDSINCE` comes before `ENABLE`. It runs as a plain server or as Gmail with labels in modified UTF-7 and quoted strings. A TLS variant with a certificate from `holtmail_core::tls::testing::TestCa` checks that the CA is trusted only through `with_roots`, that another CA and another host name are refused, and that an unusable root is a `Config` error. `src/labels.rs` has unit tests for label names.
 
 ## Not yet
 

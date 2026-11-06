@@ -13,7 +13,7 @@ use async_imap::types::{Flag, NameAttribute};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::TryStreamExt;
-use holtmail_core::Timestamp;
+use holtmail_core::{Timestamp, TlsRoots};
 use holtmail_source::{
     Credentials, FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError,
     SourceSession,
@@ -72,59 +72,95 @@ pub struct ImapSource {
     settings: ImapSettings,
     credentials: Credentials,
     tls: Arc<tokio_rustls::rustls::ClientConfig>,
+    timeout: Duration,
 }
 
 impl ImapSource {
     /// A source for the server in `settings`. A password signs in with `LOGIN`, an access token
     /// with `AUTHENTICATE XOAUTH2` for the user name in `settings`.
     pub fn new(settings: ImapSettings, credentials: Credentials) -> Self {
-        let roots = tokio_rustls::rustls::RootCertStore::from_iter(
-            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-        );
-        let tls = tokio_rustls::rustls::ClientConfig::builder_with_provider(Arc::new(
+        Self {
+            settings,
+            credentials,
+            tls: Arc::new(tls_config(&TlsRoots::default()).expect("the built-in roots are usable")),
+            timeout: COMMAND_TIMEOUT,
+        }
+    }
+
+    /// Gives every command, the connection and the sign-in `timeout` instead of two minutes; a
+    /// server that does not answer within it is a `Connection` error.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Also trusts `roots` for TLS and STARTTLS, besides the built-in roots. `Config` when one of
+    /// them is not a usable CA certificate.
+    pub fn with_roots(mut self, roots: &TlsRoots) -> Result<Self, SourceError> {
+        self.tls = Arc::new(tls_config(roots)?);
+        Ok(self)
+    }
+}
+
+fn tls_config(extra: &TlsRoots) -> Result<tokio_rustls::rustls::ClientConfig, SourceError> {
+    let mut roots = tokio_rustls::rustls::RootCertStore::from_iter(
+        webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+    );
+    for der in extra.iter() {
+        roots
+            .add(der.to_vec().into())
+            .map_err(|e| SourceError::Config(format!("an extra trusted certificate: {e}")))?;
+    }
+    Ok(
+        tokio_rustls::rustls::ClientConfig::builder_with_provider(Arc::new(
             tokio_rustls::rustls::crypto::ring::default_provider(),
         ))
         .with_safe_default_protocol_versions()
         .expect("ring supports the default TLS versions")
         .with_root_certificates(roots)
-        .with_no_client_auth();
-        Self {
-            settings,
-            credentials,
-            tls: Arc::new(tls),
-        }
-    }
+        .with_no_client_auth(),
+    )
 }
 
 #[async_trait]
 impl Source for ImapSource {
     async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
-        let (stream, greeting) = timed(ImapStream::connect(
-            &self.settings.host,
-            self.settings.port(),
-            self.settings.security,
-            self.tls.clone(),
-        ))
+        let (stream, greeting) = timed(
+            self.timeout,
+            ImapStream::connect(
+                &self.settings.host,
+                self.settings.port(),
+                self.settings.security,
+                self.tls.clone(),
+            ),
+        )
         .await??;
         let mut client = async_imap::Client::new(stream);
         if greeting {
-            timed(client.read_response())
+            timed(self.timeout, client.read_response())
                 .await?
                 .map_err(|e| SourceError::Connection(e.to_string()))?
                 .ok_or_else(|| SourceError::Connection("closed before the greeting".into()))?;
         }
         let signed_in = match &self.credentials {
             Credentials::Password(password) => {
-                timed(client.login(&self.settings.username, password)).await?
+                timed(
+                    self.timeout,
+                    client.login(&self.settings.username, password),
+                )
+                .await?
             }
             Credentials::AccessToken(token) => {
-                timed(client.authenticate(
-                    "XOAUTH2",
-                    Xoauth2 {
-                        response: xoauth2(&self.settings.username, token),
-                        sent: false,
-                    },
-                ))
+                timed(
+                    self.timeout,
+                    client.authenticate(
+                        "XOAUTH2",
+                        Xoauth2 {
+                            response: xoauth2(&self.settings.username, token),
+                            sent: false,
+                        },
+                    ),
+                )
                 .await?
             }
         };
@@ -134,11 +170,18 @@ impl Source for ImapSource {
             }
             other => convert(other),
         })?;
-        let capabilities = timed(session.capabilities()).await?.map_err(convert)?;
+        let capabilities = timed(self.timeout, session.capabilities())
+            .await?
+            .map_err(convert)?;
         let gmail = capabilities.has_str("X-GM-EXT-1");
         let condstore = capabilities.has_str("CONDSTORE") || capabilities.has_str("QRESYNC");
         if condstore && capabilities.has_str("ENABLE") {
-            match timed(session.run_command_and_check_ok("ENABLE CONDSTORE")).await? {
+            match timed(
+                self.timeout,
+                session.run_command_and_check_ok("ENABLE CONDSTORE"),
+            )
+            .await?
+            {
                 Ok(())
                 | Err(async_imap::error::Error::No(_) | async_imap::error::Error::Bad(_)) => {}
                 Err(other) => return Err(convert(other)),
@@ -149,6 +192,7 @@ impl Source for ImapSource {
             names: HashMap::new(),
             gmail,
             modseq: false,
+            timeout: self.timeout,
         }))
     }
 }
@@ -183,12 +227,13 @@ struct ImapSession {
     names: HashMap<String, String>,
     gmail: bool,
     modseq: bool,
+    timeout: Duration,
 }
 
 #[async_trait]
 impl SourceSession for ImapSession {
     async fn folders(&mut self) -> Result<Vec<RemoteFolder>, SourceError> {
-        let names: Vec<_> = timed(async {
+        let names: Vec<_> = timed(self.timeout, async {
             self.session
                 .list(Some(""), Some("*"))
                 .await?
@@ -254,7 +299,9 @@ impl SourceSession for ImapSession {
             .get(path)
             .cloned()
             .unwrap_or_else(|| path.to_owned());
-        let mailbox = timed(self.session.examine(&name)).await?.map_err(convert)?;
+        let mailbox = timed(self.timeout, self.session.examine(&name))
+            .await?
+            .map_err(convert)?;
         let uid_validity = mailbox
             .uid_validity
             .ok_or_else(|| SourceError::Protocol(format!("{path} has no UIDVALIDITY")))?;
@@ -269,7 +316,7 @@ impl SourceSession for ImapSession {
     }
 
     async fn uids(&mut self) -> Result<Vec<u64>, SourceError> {
-        let found = timed(self.session.uid_search("ALL"))
+        let found = timed(self.timeout, self.session.uid_search("ALL"))
             .await?
             .map_err(convert)?;
         let mut uids: Vec<u64> = found.into_iter().map(u64::from).collect();
@@ -287,7 +334,7 @@ impl SourceSession for ImapSession {
         } else {
             "(UID FLAGS INTERNALDATE BODY.PEEK[])"
         };
-        let fetches: Vec<_> = timed(async {
+        let fetches: Vec<_> = timed(self.timeout, async {
             self.session
                 .uid_fetch(&set, items)
                 .await?
@@ -338,7 +385,7 @@ impl SourceSession for ImapSession {
         if let Some(since) = changed_since {
             items.push_str(&format!(" (CHANGEDSINCE {since})"));
         }
-        let fetches: Vec<_> = timed(async {
+        let fetches: Vec<_> = timed(self.timeout, async {
             self.session
                 .uid_fetch(&set, &items)
                 .await?
@@ -364,7 +411,9 @@ impl SourceSession for ImapSession {
     }
 
     async fn logout(&mut self) -> Result<(), SourceError> {
-        timed(self.session.logout()).await?.map_err(convert)
+        timed(self.timeout, self.session.logout())
+            .await?
+            .map_err(convert)
     }
 }
 
@@ -415,8 +464,11 @@ fn uid_set(uids: &[u64]) -> String {
     parts.join(",")
 }
 
-async fn timed<T>(work: impl std::future::Future<Output = T>) -> Result<T, SourceError> {
-    tokio::time::timeout(COMMAND_TIMEOUT, work)
+async fn timed<T>(
+    timeout: Duration,
+    work: impl std::future::Future<Output = T>,
+) -> Result<T, SourceError> {
+    tokio::time::timeout(timeout, work)
         .await
         .map_err(|_| SourceError::Connection("the server did not answer in time".into()))
 }

@@ -553,3 +553,103 @@ async fn reads_gmail_labels_and_changes_since_a_modseq() {
     assert_eq!(session.flags(1..=9, Some(205)).await.unwrap(), []);
     session.logout().await.unwrap();
 }
+
+async fn serve_tls(ca: &holtmail_core::tls::testing::TestCa) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let acceptor = ca.acceptor();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let Ok(stream) = acceptor.accept(stream).await else {
+                continue;
+            };
+            let (read, mut write) = tokio::io::split(stream);
+            let mut lines = BufReader::new(read).lines();
+            if write.write_all(b"* OK test server\r\n").await.is_err() {
+                continue;
+            }
+            while let Ok(Some(line)) = lines.next_line().await {
+                let tag = line.split(' ').next().unwrap_or("*").to_owned();
+                let answer = format!("{tag} NO [AUTHENTICATIONFAILED] refused\r\n");
+                if write.write_all(answer.as_bytes()).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+    port
+}
+
+fn tls_source(port: u16) -> ImapSource {
+    ImapSource::new(
+        ImapSettings {
+            host: "localhost".into(),
+            port: Some(port),
+            security: Security::Tls,
+            username: "ada@example.com".into(),
+        },
+        Credentials::Password("secret".into()),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusts_extra_roots_only_when_given() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let port = serve_tls(&ca).await;
+    let trusted = tls_source(port).with_roots(&ca.roots()).unwrap();
+    assert!(matches!(trusted.connect().await, Err(SourceError::Auth(_))));
+    assert!(matches!(
+        tls_source(port).connect().await,
+        Err(SourceError::Connection(_))
+    ));
+    let other = holtmail_core::tls::testing::TestCa::new(&["localhost"]);
+    let wrong = tls_source(port).with_roots(&other.roots()).unwrap();
+    assert!(matches!(
+        wrong.connect().await,
+        Err(SourceError::Connection(_))
+    ));
+}
+
+#[test]
+fn refuses_unusable_extra_roots() {
+    let garbage = holtmail_core::TlsRoots::from_der(vec![vec![1, 2, 3]]);
+    assert!(matches!(
+        tls_source(993).with_roots(&garbage),
+        Err(SourceError::Config(_))
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn refuses_a_certificate_for_another_name() {
+    let ca = holtmail_core::tls::testing::TestCa::new(&["imap.example.com"]);
+    let port = serve_tls(&ca).await;
+    let source = tls_source(port).with_roots(&ca.roots()).unwrap();
+    assert!(matches!(
+        source.connect().await,
+        Err(SourceError::Connection(_))
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn gives_up_on_a_server_that_stops_answering() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let mut open = Vec::new();
+        while let Ok((socket, _)) = listener.accept().await {
+            open.push(socket);
+        }
+    });
+    let started = std::time::Instant::now();
+    let error = source(port, "secret")
+        .with_timeout(Duration::from_millis(300))
+        .connect()
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(&error, SourceError::Connection(reason) if reason.contains("in time")),
+        "{error}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+}

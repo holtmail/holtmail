@@ -608,3 +608,63 @@ async fn skips_unchanged_folders_until_something_is_left_behind() {
     assert!(f.folder(&f.sync().await, "Sent").unchanged);
     assert_eq!(f.count().await, 3);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn never_brings_back_a_deleted_message() {
+    for unordered in [false, true] {
+        let f = fixture().await;
+        if unordered {
+            f.server.mark_unordered("INBOX");
+        }
+        for n in 0..3 {
+            f.server.deliver("INBOX", &mail(n), &[]);
+        }
+        f.sync().await;
+        let page = f
+            .store
+            .list_messages(&MessageQuery {
+                archive_id: f.account.archive_id,
+                folder_id: None,
+                label: None,
+                after: None,
+                limit: 10,
+            })
+            .await
+            .unwrap();
+        let gone = page.items[0].id;
+        f.store
+            .delete_messages(f.account.archive_id, &[gone], None)
+            .await
+            .unwrap();
+        let fetched_before = f.server.fetches().len();
+        let report = f.sync().await;
+        let inbox = f.folder(&report, "INBOX");
+        assert_eq!(
+            (inbox.new, inbox.known, inbox.deleted),
+            (0, 0, 0),
+            "{unordered}"
+        );
+        assert_eq!(
+            f.server.fetches().len(),
+            fetched_before,
+            "asked for the deleted message"
+        );
+        assert_eq!(f.count().await, 2);
+
+        f.server.renumber("INBOX");
+        let report = f.sync().await;
+        let inbox = f.folder(&report, "INBOX");
+        assert_eq!((inbox.new, inbox.deleted), (0, 1), "{unordered}");
+        assert_eq!(f.count().await, 2, "the deleted message came back");
+        let fetched_before = f.server.fetches().len();
+        let again = f.sync().await;
+        assert_eq!(f.folder(&again, "INBOX").deleted, 0);
+        if unordered {
+            assert_eq!(
+                f.server.fetches().len(),
+                fetched_before,
+                "asked again after renumbering"
+            );
+        }
+    }
+}

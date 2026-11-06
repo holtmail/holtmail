@@ -82,6 +82,8 @@ pub struct FolderReport {
     pub flags_changed: u64,
     /// Messages that could not be archived this time.
     pub failed: u64,
+    /// Messages left out because they were deleted from the archive on purpose.
+    pub deleted: u64,
     /// New messages left for a later sync because the first of them is younger than
     /// [`SyncOptions::min_age`].
     pub deferred: u64,
@@ -324,6 +326,12 @@ impl Syncer {
                         } else {
                             report.known += 1;
                         }
+                        if retry.contains(&message.uid) {
+                            self.store.clear_failure(folder, message.uid).await?;
+                        }
+                    }
+                    Err(IngestError::Deleted) => {
+                        report.deleted += 1;
                         if retry.contains(&message.uid) {
                             self.store.clear_failure(folder, message.uid).await?;
                         }

@@ -9,7 +9,7 @@ let syncer = Syncer::new(store, ingest);
 let report = syncer.sync_account(&account, &*source, &SyncOptions::default()).await?;
 ```
 
-`SyncOptions { include, exclude, batch: 50, max_attempts: 5, flag_scan_interval: 24 h, flag_batch: 1000, min_age: None }`. `SyncReport` has one `FolderReport { path, new, known, removed, flags_changed, failed, deferred, renumbered, unchanged, error }` per folder; `unchanged` says the folder was skipped because its source state said nothing changed.
+`SyncOptions { include, exclude, batch: 50, max_attempts: 5, flag_scan_interval: 24 h, flag_batch: 1000, min_age: None }`. `SyncReport` has one `FolderReport { path, new, known, removed, flags_changed, failed, deleted, deferred, renumbered, unchanged, error }` per folder; `unchanged` says the folder was skipped because its source state said nothing changed.
 
 ## Only mail older than N days
 
@@ -50,3 +50,5 @@ Holtmail never re-downloads mail it already has in a folder whose `UIDVALIDITY` 
 
 - `QRESYNC` `VANISHED` to notice removals without listing every UID.
 - Recognising known messages after renumbering by `Message-ID` and size before downloading them.
+
+Messages deleted from the archive on purpose stay deleted: `folder_uids` lists the UIDs that held them, so neither an IMAP folder nor a JMAP or Graph folder (which fetch every UID without a live location) asks for them again. After a renumbering they are fetched once more, refused by ingest (`IngestError::Deleted`, counted in `deleted`) and their new UIDs remembered. Test: `never_brings_back_a_deleted_message`, with ordered and unordered UIDs.

@@ -17,14 +17,16 @@ bytes.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["net", "time"] }
+tokio = { workspace = true, features = ["net", "time", "sync", "macros", "rt"] }
 tokio-rustls.workspace = true
+tracing.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
 holtmail-core = { workspace = true, features = ["testing"] }
+holtmail-source = { workspace = true, features = ["testing"] }
 base64.workspace = true
-tokio = { workspace = true, features = ["net", "io-util", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["net", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 
 [lints]
 workspace = true

@@ -35,10 +35,22 @@ Unknown keys in the JSON (folder rules, the sync interval, the server's `oauth` 
 - **Sign-in**: `Credentials::Password` uses `LOGIN`. `Credentials::AccessToken` uses `AUTHENTICATE XOAUTH2` with `user=<username>\x01auth=Bearer <token>\x01\x01`, base64-encoded, for Gmail and Microsoft 365. A server that refuses the token answers with a continuation carrying a base64 JSON error instead of `NO`; the source answers it with an empty line, as the protocol asks, and the server's `NO` that follows becomes `Auth`.
 - **Errors**: `NO`/`BAD` to `LOGIN` or `AUTHENTICATE` is `Auth`; I/O errors and lost connections are `Connection`; other refusals are `Protocol`.
 
+## Watching
+
+`watch(folders)` needs `IDLE` in the capabilities; without it the probe connection signs out and the answer is `None`. Folders that do not exist or cannot be selected are left out, and with none left (or none named) `INBOX` is watched.
+
+- **`NOTIFY`** (RFC 5465): with more than one folder and `NOTIFY` offered, one connection sends `NOTIFY SET (mailboxes (<names>) (MessageNew MessageExpunge FlagChange))` and idles; the `STATUS` answers name the folder. A server that refuses the command (`NO` or `BAD`) gets one connection per folder instead.
+- **One connection per folder** otherwise, each with `EXAMINE` and `IDLE`, for the first `MAX_WATCH_CONNECTIONS` (3) folders: servers limit connections per user (Dovecot 10, Gmail 15) and syncs need theirs. A connection that cannot sign in stops adding more, and the watch keeps the ones it has.
+- **What counts**: `EXISTS`, `EXPUNGE`, `FETCH` (flag changes) and `VANISHED` for the selected folder, `STATUS` for a watched one; `RECENT` and `OK Still here` do not. Answers that arrive while `IDLE` ends are read too.
+- **Renewal**: each `IDLE` ends with `DONE` and starts again after ten minutes without news (`with_idle_renew(Duration)` sets another time). RFC 2177 allows 29 minutes; NAT gateways often forget a silent connection sooner, and a renewal on a dead connection fails and ends the watch.
+- **Ending**: a lost connection, a timeout or a refused command ends the watch with `Connection` or `Protocol`; `close` sends `DONE` and `LOGOUT` on every connection; dropping the watch closes them without.
+
 ## Tests
 
 `src/tests.rs` runs a small IMAP server in the test process (plain TCP on a random port) that answers `CAPABILITY`, `ENABLE CONDSTORE`, `LOGIN`, `AUTHENTICATE XOAUTH2` (accepting one token, and sending the error continuation for any other and checking it is answered with an empty line), `LIST`, `EXAMINE` (with `HIGHESTMODSEQ` once enabled), `UID SEARCH` and `UID FETCH` (with `X-GM-*` items and `CHANGEDSINCE`), and fails the test if a fetch would mark mail as read, if Gmail items go to another server or if `CHANGEDSINCE` comes before `ENABLE`. It runs as a plain server or as Gmail with labels in modified UTF-7 and quoted strings. A TLS variant with a certificate from `holtmail_core::tls::testing::TestCa` checks that the CA is trusted only through `with_roots`, that another CA and another host name are refused, and that an unusable root is a `Config` error. `src/labels.rs` has unit tests for label names.
 
+`src/tests_watch.rs` runs a second server in the process that speaks `IDLE` and, when asked, `NOTIFY`, announces deliveries to idling connections (`EXISTS` for the selected folder, `STATUS` for notified ones, queued while a connection is between two `IDLE`s) and checks that only `DONE` ends `IDLE`. It runs the watch conformance suite, and checks a server without `IDLE`, `NOTIFY` for several folders on one connection (an unwatched folder never wakes it), one connection per folder up to three without `NOTIFY`, renewal, a connection the server drops, `DONE` and `LOGOUT` on `close`, and a refused sign-in.
+
 ## Not yet
 
-`QRESYNC` (`VANISHED`), `COMPRESS=DEFLATE`, `IDLE` for push. Checked only against the in-process server; real Gmail is part of Phase 12.
+`QRESYNC` (`VANISHED` in syncs), `COMPRESS=DEFLATE`. Checked only against the in-process server; real Gmail is part of Phase 12.

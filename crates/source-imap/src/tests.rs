@@ -131,6 +131,10 @@ fn gmail_labels() -> Vec<FakeLabels> {
     ]
 }
 
+pub(super) async fn serve_port() -> u16 {
+    serve().await
+}
+
 async fn serve() -> u16 {
     serve_as(false).await
 }

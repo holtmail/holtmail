@@ -3,6 +3,7 @@
 mod labels;
 mod stream;
 mod utf7;
+mod watch;
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -16,13 +17,20 @@ use futures::TryStreamExt;
 use holtmail_core::{Timestamp, TlsRoots};
 use holtmail_source::{
     Credentials, FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError,
-    SourceSession,
+    SourceSession, SourceWatch,
 };
 use holtmail_store::FolderRole;
 use serde::{Deserialize, Serialize};
 use stream::ImapStream;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long one `IDLE` lasts before it is renewed. RFC 2177 allows 29 minutes; NAT gateways and
+/// firewalls often forget a silent connection sooner, and a renewal on a dead connection fails
+/// and starts a new watch.
+const IDLE_RENEW: Duration = Duration::from_secs(10 * 60);
+/// Connections one watch opens at most when the server has no `NOTIFY`, one per folder: servers
+/// limit connections per user (Dovecot 10, Gmail 15) and syncs need theirs.
+pub const MAX_WATCH_CONNECTIONS: usize = 3;
 
 /// How to reach the server.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +81,7 @@ pub struct ImapSource {
     credentials: Credentials,
     tls: Arc<tokio_rustls::rustls::ClientConfig>,
     timeout: Duration,
+    idle_renew: Duration,
 }
 
 impl ImapSource {
@@ -84,7 +93,14 @@ impl ImapSource {
             credentials,
             tls: Arc::new(tls_config(&TlsRoots::default()).expect("the built-in roots are usable")),
             timeout: COMMAND_TIMEOUT,
+            idle_renew: IDLE_RENEW,
         }
+    }
+
+    /// Renews a watch's `IDLE` after `renew` instead of ten minutes.
+    pub fn with_idle_renew(mut self, renew: Duration) -> Self {
+        self.idle_renew = renew;
+        self
     }
 
     /// Gives every command, the connection and the sign-in `timeout` instead of two minutes; a
@@ -122,9 +138,15 @@ fn tls_config(extra: &TlsRoots) -> Result<tokio_rustls::rustls::ClientConfig, So
     )
 }
 
-#[async_trait]
-impl Source for ImapSource {
-    async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
+struct SignedIn {
+    session: async_imap::Session<ImapStream>,
+    gmail: bool,
+    idle: bool,
+    notify: bool,
+}
+
+impl ImapSource {
+    async fn sign_in(&self) -> Result<SignedIn, SourceError> {
         let greeting_wait = self.timeout.min(stream::GREETING_WAIT);
         let (stream, greeting) = timed(
             self.timeout + greeting_wait,
@@ -189,14 +211,166 @@ impl Source for ImapSource {
                 Err(other) => return Err(convert(other)),
             }
         }
-        Ok(Box::new(ImapSession {
+        Ok(SignedIn {
             session,
-            names: HashMap::new(),
             gmail,
+            idle: capabilities.has_str("IDLE"),
+            notify: capabilities.has_str("NOTIFY"),
+        })
+    }
+}
+
+#[async_trait]
+impl Source for ImapSource {
+    async fn connect(&self) -> Result<Box<dyn SourceSession>, SourceError> {
+        let signed_in = self.sign_in().await?;
+        Ok(Box::new(ImapSession {
+            session: signed_in.session,
+            names: HashMap::new(),
+            gmail: signed_in.gmail,
             modseq: false,
             timeout: self.timeout,
         }))
     }
+
+    /// Watches with `IDLE` when the server has it: with `NOTIFY` (RFC 5465) on one connection
+    /// for every folder, otherwise one connection per folder for the first
+    /// [`MAX_WATCH_CONNECTIONS`] of them. Folders that do not exist are left out; with none left,
+    /// or none named, `INBOX` is watched.
+    async fn watch(&self, folders: &[String]) -> Result<Option<Box<dyn SourceWatch>>, SourceError> {
+        let SignedIn {
+            mut session,
+            gmail,
+            idle,
+            notify,
+        } = self.sign_in().await?;
+        if !idle {
+            let _ = timed(self.timeout, session.logout()).await;
+            return Ok(None);
+        }
+        let listed = list_folders(&mut session, gmail, self.timeout).await?;
+        let mut wanted: Vec<(String, String)> = Vec::new();
+        for path in folders {
+            if let Some((folder, raw)) = listed.iter().find(|(f, _)| &f.path == path)
+                && folder.selectable
+                && !wanted.iter().any(|(p, _)| p == path)
+            {
+                wanted.push((folder.path.clone(), raw.clone()));
+            }
+        }
+        if wanted.is_empty() {
+            let inbox = listed
+                .iter()
+                .find(|(_, raw)| raw.eq_ignore_ascii_case("INBOX"))
+                .map_or_else(
+                    || ("INBOX".to_owned(), "INBOX".to_owned()),
+                    |(f, raw)| (f.path.clone(), raw.clone()),
+                );
+            wanted.push(inbox);
+        }
+        if wanted.len() > 1 && notify {
+            let command = watch::notify_command(wanted.iter().map(|(_, raw)| raw.as_str()));
+            match timed(self.timeout, session.run_command_and_check_ok(&command)).await? {
+                Ok(()) => {
+                    let paths = wanted.into_iter().map(|(path, raw)| (raw, path)).collect();
+                    return Ok(Some(Box::new(watch::ImapWatch::start(
+                        vec![(session, watch::Target::Notify { paths })],
+                        self.timeout,
+                        self.idle_renew,
+                    ))));
+                }
+                Err(async_imap::error::Error::No(_) | async_imap::error::Error::Bad(_)) => {}
+                Err(other) => return Err(convert(other)),
+            }
+        }
+        let mut connections = Vec::new();
+        let mut first = Some(session);
+        for (path, raw) in wanted.into_iter().take(MAX_WATCH_CONNECTIONS) {
+            let session = match first.take() {
+                Some(session) => session,
+                None => match self.sign_in().await {
+                    Ok(more) => more.session,
+                    Err(error) => {
+                        tracing::warn!(%error, watched = connections.len(), "no further watch connection");
+                        break;
+                    }
+                },
+            };
+            connections.push((session, watch::Target::Folder { path, raw }));
+        }
+        Ok(Some(Box::new(watch::ImapWatch::start(
+            connections,
+            self.timeout,
+            self.idle_renew,
+        ))))
+    }
+}
+
+/// Every folder with the server's own name for it.
+async fn list_folders(
+    session: &mut async_imap::Session<ImapStream>,
+    gmail: bool,
+    timeout: Duration,
+) -> Result<Vec<(RemoteFolder, String)>, SourceError> {
+    let names: Vec<_> = timed(timeout, async {
+        session
+            .list(Some(""), Some("*"))
+            .await?
+            .try_collect::<Vec<_>>()
+            .await
+    })
+    .await?
+    .map_err(convert)?;
+    let mut out = Vec::with_capacity(names.len());
+    for name in &names {
+        let raw = name.name().to_owned();
+        let decoded = utf7::decode(&raw);
+        let path = match name.delimiter() {
+            Some(delimiter) if delimiter != "/" => decoded.replace(delimiter, "/"),
+            _ => decoded,
+        };
+        let mut role = None;
+        let mut selectable = true;
+        for attribute in name.attributes() {
+            match attribute {
+                NameAttribute::NoSelect => selectable = false,
+                NameAttribute::All => role = Some(FolderRole::All),
+                NameAttribute::Archive => role = Some(FolderRole::Archive),
+                NameAttribute::Drafts => role = Some(FolderRole::Drafts),
+                NameAttribute::Flagged => role = Some(FolderRole::Flagged),
+                NameAttribute::Junk => role = Some(FolderRole::Junk),
+                NameAttribute::Sent => role = Some(FolderRole::Sent),
+                NameAttribute::Trash => role = Some(FolderRole::Trash),
+                NameAttribute::Extension(ext) if ext.eq_ignore_ascii_case("\\Important") => {
+                    role = Some(FolderRole::Important)
+                }
+                NameAttribute::Extension(ext) if ext.eq_ignore_ascii_case("\\NonExistent") => {
+                    selectable = false
+                }
+                _ => {}
+            }
+        }
+        if raw.eq_ignore_ascii_case("INBOX") {
+            role = Some(FolderRole::Inbox);
+        }
+        let role = role.or_else(|| FolderRole::guess(&path));
+        let label = gmail
+            && selectable
+            && !matches!(
+                role,
+                Some(FolderRole::All | FolderRole::Trash | FolderRole::Junk)
+            );
+        out.push((
+            RemoteFolder {
+                path,
+                role,
+                selectable,
+                label,
+            },
+            raw,
+        ));
+    }
+    Ok(out)
 }
 
 /// The SASL XOAUTH2 initial response for `user` and an access token.
@@ -235,62 +409,12 @@ struct ImapSession {
 #[async_trait]
 impl SourceSession for ImapSession {
     async fn folders(&mut self) -> Result<Vec<RemoteFolder>, SourceError> {
-        let names: Vec<_> = timed(self.timeout, async {
-            self.session
-                .list(Some(""), Some("*"))
-                .await?
-                .try_collect::<Vec<_>>()
-                .await
-        })
-        .await?
-        .map_err(convert)?;
-        let mut out = Vec::with_capacity(names.len());
+        let listed = list_folders(&mut self.session, self.gmail, self.timeout).await?;
         self.names.clear();
-        for name in &names {
-            let raw = name.name().to_owned();
-            let decoded = utf7::decode(&raw);
-            let path = match name.delimiter() {
-                Some(delimiter) if delimiter != "/" => decoded.replace(delimiter, "/"),
-                _ => decoded,
-            };
-            let mut role = None;
-            let mut selectable = true;
-            for attribute in name.attributes() {
-                match attribute {
-                    NameAttribute::NoSelect => selectable = false,
-                    NameAttribute::All => role = Some(FolderRole::All),
-                    NameAttribute::Archive => role = Some(FolderRole::Archive),
-                    NameAttribute::Drafts => role = Some(FolderRole::Drafts),
-                    NameAttribute::Flagged => role = Some(FolderRole::Flagged),
-                    NameAttribute::Junk => role = Some(FolderRole::Junk),
-                    NameAttribute::Sent => role = Some(FolderRole::Sent),
-                    NameAttribute::Trash => role = Some(FolderRole::Trash),
-                    NameAttribute::Extension(ext) if ext.eq_ignore_ascii_case("\\Important") => {
-                        role = Some(FolderRole::Important)
-                    }
-                    NameAttribute::Extension(ext) if ext.eq_ignore_ascii_case("\\NonExistent") => {
-                        selectable = false
-                    }
-                    _ => {}
-                }
-            }
-            if raw.eq_ignore_ascii_case("INBOX") {
-                role = Some(FolderRole::Inbox);
-            }
-            let role = role.or_else(|| FolderRole::guess(&path));
-            let label = self.gmail
-                && selectable
-                && !matches!(
-                    role,
-                    Some(FolderRole::All | FolderRole::Trash | FolderRole::Junk)
-                );
-            self.names.insert(path.clone(), raw);
-            out.push(RemoteFolder {
-                path,
-                role,
-                selectable,
-                label,
-            });
+        let mut out = Vec::with_capacity(listed.len());
+        for (folder, raw) in listed {
+            self.names.insert(folder.path.clone(), raw);
+            out.push(folder);
         }
         Ok(out)
     }
@@ -486,3 +610,5 @@ fn convert(error: async_imap::error::Error) -> SourceError {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_watch;

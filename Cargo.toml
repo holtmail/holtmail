@@ -28,12 +28,15 @@ holtmail-fetch = { path = "crates/fetch" }
 holtmail-fetch-http = { path = "crates/fetch-http" }
 holtmail-import = { path = "crates/import" }
 holtmail-index = { path = "crates/index" }
+holtmail-ledger = { path = "crates/ledger" }
 holtmail-index-tantivy = { path = "crates/index-tantivy" }
+holtmail-hooks = { path = "crates/hooks" }
 holtmail-ingest = { path = "crates/ingest" }
 holtmail-mime = { path = "crates/mime" }
 holtmail-oauth = { path = "crates/oauth" }
 holtmail-oauth-http = { path = "crates/oauth-http" }
 holtmail-pim = { path = "crates/pim" }
+holtmail-pdf = { path = "crates/pdf" }
 holtmail-people = { path = "crates/people" }
 holtmail-pim-sync = { path = "crates/pim-sync" }
 holtmail-query = { path = "crates/query" }
@@ -42,6 +45,7 @@ holtmail-remote = { path = "crates/remote" }
 holtmail-sanitize = { path = "crates/sanitize" }
 holtmail-secret = { path = "crates/secret" }
 holtmail-secret-local = { path = "crates/secret-local" }
+holtmail-smtp = { path = "crates/smtp" }
 holtmail-source = { path = "crates/source" }
 holtmail-source-graph = { path = "crates/source-graph" }
 holtmail-source-imap = { path = "crates/source-imap" }
@@ -50,6 +54,8 @@ holtmail-store = { path = "crates/store" }
 holtmail-store-sqlite = { path = "crates/store-sqlite" }
 holtmail-sync = { path = "crates/sync" }
 holtmail-thumbnail = { path = "crates/thumbnail" }
+holtmail-webhook = { path = "crates/webhook" }
+holtmail-webhook-http = { path = "crates/webhook-http" }
 
 ammonia = "4"
 anyhow = "1"
@@ -78,6 +84,10 @@ object_store = { version = "0.14", features = ["aws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
+hmac = "0.13"
+krilla = { version = "0.8", default-features = false, features = ["simple-text"] }
+skrifa = "0.42"
+dejavu = "2.37"
 subtle = "2"
 sqlx = { version = "0.9", default-features = false, features = [
   "runtime-tokio",

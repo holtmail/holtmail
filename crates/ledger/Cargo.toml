@@ -1,0 +1,18 @@
+[package]
+name = "holtmail-ledger"
+description = "The archive ledger: hash-chained entries for every archived and deleted message"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+blake3.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

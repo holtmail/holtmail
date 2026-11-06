@@ -1,7 +1,9 @@
 import {
   type MessageDetail,
   messageQuery,
+  sessionQuery,
   rawQuery,
+  pdfUrl,
   rawUrl,
   threadQuery,
 } from '@holtmail/api-client'
@@ -29,10 +31,12 @@ import {
   CircleAlertIcon,
   CodeIcon,
   DownloadIcon,
+  FileTypeIcon,
   LinkIcon,
   MailIcon,
   ReplyIcon,
   TagIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
@@ -40,6 +44,8 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useNow } from '../hooks/use-now.ts'
 import { replyMailto, senderLabel } from '../lib/address.ts'
 import { readerLabels } from '../lib/labels.ts'
+import { manages } from '../lib/roles.ts'
+import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
 import { ids } from './context.ts'
 import { EmptyState } from './empty-state.tsx'
@@ -199,6 +205,8 @@ function ToolButton({
 function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => void }) {
   const [copied, setCopied] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const user = useQuery(sessionQuery).data
   const reply = message
     ? replyMailto(
         message,
@@ -258,6 +266,16 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
             </TooltipTrigger>
             <TooltipContent>{strings.reader.download}</TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" asChild>
+                <a href={pdfUrl(message.id)} download aria-label={strings.reader.downloadPdf}>
+                  <FileTypeIcon />
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{strings.reader.downloadPdf}</TooltipContent>
+          </Tooltip>
           <ToolButton label={strings.reader.source} onClick={() => setSourceOpen(true)}>
             <CodeIcon />
           </ToolButton>
@@ -271,6 +289,20 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
             {copied ? strings.reader.copied : ''}
           </span>
           <SourceDialog messageId={message.id} open={sourceOpen} onOpenChange={setSourceOpen} />
+          {manages(user?.role) && (
+            <>
+              <ToolButton label={strings.reader.delete} onClick={() => setDeleting(true)}>
+                <Trash2Icon />
+              </ToolButton>
+              <DeletionDialog
+                archiveId={message.archive_id}
+                request={{ message_ids: [message.id] }}
+                open={deleting}
+                onOpenChange={setDeleting}
+                onDeleted={onBack}
+              />
+            </>
+          )}
         </>
       )}
     </div>

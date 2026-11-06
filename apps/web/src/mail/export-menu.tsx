@@ -11,7 +11,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@holtmail/ui'
-import { DownloadIcon, FileArchiveIcon, FileTextIcon } from 'lucide-react'
+import { DownloadIcon, FileArchiveIcon, FileTextIcon, FileTypeIcon } from 'lucide-react'
 
 import { exportFormats, exportHref } from '../lib/export.ts'
 import { strings } from '../strings.ts'
@@ -23,7 +23,7 @@ function FormatItems({ archiveId, source }: { archiveId: string; source: ListSou
   return exportFormats.map((format: ExportFormat) => {
     const href = exportHref(archiveId, source, format)
     if (!href) return null
-    const Icon = format === 'zip' ? FileArchiveIcon : FileTextIcon
+    const Icon = format === 'zip' ? FileArchiveIcon : format === 'pdf' ? FileTypeIcon : FileTextIcon
     return (
       <DropdownMenuItem key={format} asChild>
         <a href={href} download>

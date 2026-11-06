@@ -12,7 +12,7 @@ const hosts: Record<OAuthProvider, readonly string[]> = {
   microsoft: ['outlook.office365.com', 'imap-mail.outlook.com', 'outlook.live.com'],
 }
 
-const providerIds: readonly OAuthProvider[] = ['google', 'microsoft']
+export const providerIds: readonly OAuthProvider[] = ['google', 'microsoft']
 
 export const oauthProviderNames: Record<OAuthProvider, string> = {
   google: 'Google',
@@ -22,10 +22,13 @@ export const oauthProviderNames: Record<OAuthProvider, string> = {
 export const isOAuthProvider = (value: unknown): value is OAuthProvider =>
   value === 'google' || value === 'microsoft'
 
-export function oauthProviderFor(email: string): OAuthProvider | undefined {
+export function oauthProviderFor(
+  email: string,
+  offered: readonly OAuthProvider[] = providerIds,
+): OAuthProvider | undefined {
   const domain = domainOf(email)
   if (!domain) return undefined
-  return providerIds.find((id) => domains[id].includes(domain))
+  return offered.find((id) => domains[id].includes(domain))
 }
 
 export function oauthProviderForHost(host: string): OAuthProvider | undefined {
@@ -33,9 +36,20 @@ export function oauthProviderForHost(host: string): OAuthProvider | undefined {
   return providerIds.find((id) => hosts[id].includes(name))
 }
 
-export function switchableProvider(account: Account): OAuthProvider | undefined {
+export function switchableProvider(
+  account: Account,
+  offered: readonly OAuthProvider[] = providerIds,
+): OAuthProvider | undefined {
   if (account.kind !== 'imap' || account.oauth_provider || !account.connection) return undefined
-  return oauthProviderForHost(account.connection.host)
+  const provider = oauthProviderForHost(account.connection.host)
+  return provider && offered.includes(provider) ? provider : undefined
+}
+
+export function offeredProviders(
+  listed: readonly { provider: string }[] | undefined,
+): readonly OAuthProvider[] {
+  if (listed === undefined) return providerIds
+  return providerIds.filter((id) => listed.some((p) => p.provider === id))
 }
 
 export function graphSignIn(

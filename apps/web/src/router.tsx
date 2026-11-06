@@ -150,6 +150,27 @@ const networkSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/network-page.tsx'), 'NetworkPage'),
 })
 
+const integritySettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'integrity',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/integrity-page.tsx'), 'IntegrityPage'),
+})
+
+const webhooksSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'webhooks',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/webhooks-page.tsx'), 'WebhooksPage'),
+})
+
+const smtpSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'smtp',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/smtp-page.tsx'), 'SmtpPage'),
+})
+
 const profileSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'profile',
@@ -240,6 +261,9 @@ const routeTree = rootRoute.addChildren([
     peopleSettingsRoute,
     tasksSettingsRoute,
     networkSettingsRoute,
+    integritySettingsRoute,
+    webhooksSettingsRoute,
+    smtpSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,
   ]),

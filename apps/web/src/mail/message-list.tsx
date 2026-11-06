@@ -6,12 +6,20 @@ import {
   messagesInfiniteQuery,
   type MessageSummary,
   searchInfiniteQuery,
+  sessionQuery,
 } from '@holtmail/api-client'
 import { transition } from '@holtmail/tokens'
 import { Button, cn, Skeleton } from '@holtmail/ui'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/react-virtual'
-import { CircleAlertIcon, MailOpenIcon, PaperclipIcon, SearchXIcon, StarIcon } from 'lucide-react'
+import {
+  CircleAlertIcon,
+  MailOpenIcon,
+  PaperclipIcon,
+  SearchXIcon,
+  StarIcon,
+  Trash2Icon,
+} from 'lucide-react'
 import { m } from 'motion/react'
 import {
   type KeyboardEvent,
@@ -29,6 +37,8 @@ import { isFlagged, isUnread } from '../lib/flags.ts'
 import { formatCount, formatListDate } from '../lib/format.ts'
 import { groupByDay, type ListRow } from '../lib/group.ts'
 import { listChips } from '../lib/labels.ts'
+import { manages } from '../lib/roles.ts'
+import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
 import { EmptyArchive, EmptyState } from './empty-state.tsx'
@@ -106,6 +116,9 @@ export function MessageListPane({ source }: { source: ListSource }) {
     total = search.data?.pages[0]?.total
   }
 
+  const user = useQuery(sessionQuery).data
+  const [deleting, setDeleting] = useState(false)
+  const canDelete = isSearch && q.trim() !== '' && manages(user?.role) && items.length > 0
   const pending = isSearch ? q !== '' && search.isPending : listing.isPending
   const failed = active.isError && !searchError
 
@@ -120,9 +133,28 @@ export function MessageListPane({ source }: { source: ListSource }) {
             </span>
           )}
           {items.length > 0 && (
-            <span className={cn('-mr-2 shrink-0', total === undefined && 'ml-auto')}>
+            <span className={cn('-mr-2 flex shrink-0', total === undefined && 'ml-auto')}>
               <ExportMenu archiveId={archiveId} source={source} />
+              {canDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={strings.deletion.searchAction}
+                  title={strings.deletion.searchAction}
+                  onClick={() => setDeleting(true)}
+                >
+                  <Trash2Icon />
+                </Button>
+              )}
             </span>
+          )}
+          {canDelete && (
+            <DeletionDialog
+              archiveId={archiveId}
+              request={{ query: q }}
+              open={deleting}
+              onOpenChange={setDeleting}
+            />
           )}
         </div>
         <SearchField query={q} error={searchError} />

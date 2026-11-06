@@ -9,7 +9,9 @@ import {
   ImageIcon,
   type LucideIcon,
   RefreshCwIcon,
+  ShieldCheckIcon,
   SquareIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
@@ -28,6 +30,8 @@ const icons: Record<string, LucideIcon | undefined> = {
   import: FileArchiveIcon,
   remote_images: ImageIcon,
   contacts_calendars: ContactRoundIcon,
+  ledger_verify: ShieldCheckIcon,
+  delete_messages: Trash2Icon,
 }
 
 const stateBadge: Record<string, BadgeProps['variant'] | undefined> = {

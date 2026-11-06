@@ -5,6 +5,7 @@ import type { Account } from '@holtmail/api-client'
 import {
   graphSignIn,
   looksLikeSignInAnswer,
+  offeredProviders,
   oauthProviderFor,
   oauthProviderForHost,
   parseOAuthReturn,
@@ -136,4 +137,16 @@ test('builds a Graph sign-in for any Microsoft address', () => {
   expect(graphSignIn('arc', 'ada@example.com', ' Work ')?.name).toBe('Work')
   expect(graphSignIn('arc', 'ada', '')).toBeUndefined()
   expect(graphSignIn('arc', 'ada @example.com', '')).toBeUndefined()
+})
+
+describe('offered providers', () => {
+  test('a provider the server leaves out is not offered', () => {
+    expect(offeredProviders(undefined)).toEqual(['google', 'microsoft'])
+    expect(offeredProviders([{ provider: 'microsoft' }])).toEqual(['microsoft'])
+    expect(oauthProviderFor('ada@gmail.com', ['microsoft'])).toBeUndefined()
+    expect(oauthProviderFor('ada@outlook.com', ['microsoft'])).toBe('microsoft')
+    const gmail = account({ connection: connection('imap.gmail.com') })
+    expect(switchableProvider(gmail, ['microsoft'])).toBeUndefined()
+    expect(switchableProvider(gmail)).toBe('google')
+  })
 })

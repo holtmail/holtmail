@@ -8,10 +8,13 @@ import {
   ArrowLeftIcon,
   BookOpenIcon,
   GlobeIcon,
+  InboxIcon,
   ListChecksIcon,
   type LucideIcon,
+  ShieldCheckIcon,
   UserIcon,
   UsersIcon,
+  WebhookIcon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
@@ -29,6 +32,9 @@ interface Section {
     | '/settings/people'
     | '/settings/tasks'
     | '/settings/network'
+    | '/settings/integrity'
+    | '/settings/webhooks'
+    | '/settings/smtp'
     | '/settings/reading'
     | '/settings/profile'
   label: string
@@ -41,6 +47,9 @@ const sections: Section[] = [
   { to: '/settings/people', label: t.people, icon: UsersIcon, managers: true },
   { to: '/settings/tasks', label: t.tasks, icon: ListChecksIcon, managers: true },
   { to: '/settings/network', label: t.network, icon: GlobeIcon, managers: true },
+  { to: '/settings/integrity', label: t.integrity, icon: ShieldCheckIcon, managers: true },
+  { to: '/settings/webhooks', label: t.webhooks, icon: WebhookIcon, managers: true },
+  { to: '/settings/smtp', label: t.smtp, icon: InboxIcon, managers: true },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
 ]

@@ -7,6 +7,7 @@ import { AnimatePresence, m } from 'motion/react'
 import { type FormEvent, useId, useRef, useState } from 'react'
 
 import { Field, FormError, PasswordField, SubmitButton } from '../auth/field.tsx'
+import { useOAuthProviders } from '../hooks/use-oauth-providers.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { oauthProviderFor, oauthProviderNames } from '../lib/oauth.ts'
 import {
@@ -54,7 +55,8 @@ export function ConnectImapForm({
   const [usePassword, setUsePassword] = useState(false)
 
   const provider = providerFor(address)
-  const oauthProvider = oauthProviderFor(address)
+  const offered = useOAuthProviders()
+  const oauthProvider = oauthProviderFor(address, offered)
   const oauth = oauthProvider !== undefined && !usePassword
   const oauthName = oauthProvider ? oauthProviderNames[oauthProvider] : ''
   const flow = useOAuthSignIn(onConnected)
@@ -343,7 +345,9 @@ export function ConnectImapForm({
         )}
       </div>
       {oauthProvider && switchMode}
-      {onUseGraph && <SwitchLink label={t.useGraph} onClick={onUseGraph} />}
+      {onUseGraph && offered.includes('microsoft') && (
+        <SwitchLink label={t.useGraph} onClick={onUseGraph} />
+      )}
       {onUseJmap && <SwitchLink label={t.useJmap} onClick={onUseJmap} />}
     </form>
   )

@@ -44,6 +44,7 @@ import { AnimatePresence, m } from 'motion/react'
 import { useState } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
+import { useOAuthProviders } from '../hooks/use-oauth-providers.ts'
 import { type AccountTone, accountState } from '../lib/accounts.ts'
 import { contactsState, contactsSupport } from '../lib/contacts-calendars.ts'
 import { isOAuthProvider, oauthProviderNames, switchableProvider } from '../lib/oauth.ts'
@@ -137,7 +138,8 @@ function AccountRow({
   const imported = account.kind === 'import'
   const Icon = imported ? FileArchiveIcon : MailIcon
   const oauth = isOAuthProvider(account.oauth_provider) ? account.oauth_provider : undefined
-  const switchTo = switchableProvider(account)
+  const offered = useOAuthProviders()
+  const switchTo = switchableProvider(account, offered)
   const signInWith = oauth ?? switchTo
   const token = account.jmap?.auth === 'token'
 

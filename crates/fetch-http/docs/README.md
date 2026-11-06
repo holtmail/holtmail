@@ -9,7 +9,7 @@ let fetcher = HttpFetcher::new(Options::default())?;
 let image = fetcher.image("https://example.com/logo.png").await?;
 ```
 
-`Options { max_bytes, timeout, max_redirects, proxy }`, by default 10 MiB, 15 seconds for the whole request with redirects (5 seconds to connect), 5 redirects and no proxy. `is_public(ip)` tells whether an address is on the public internet. `proxy_address(url)` checks a proxy URL and returns `ProxyAddress { scheme, host, port }`, which prints as `scheme://host:port` without credentials.
+`Options { max_bytes, timeout, max_redirects, proxy, roots }`, by default 10 MiB, 15 seconds for the whole request with redirects (5 seconds to connect), 5 redirects, no proxy and no extra roots. `roots` are CA certificates trusted for https besides the system's roots (Holtmail's `tls_ca_file`); verification stays on, and an unusable certificate fails `new`. `is_public(ip)` tells whether an address is on the public internet. `proxy_address(url)` checks a proxy URL and returns `ProxyAddress { scheme, host, port }`, which prints as `scheme://host:port` without credentials.
 
 ## Outbound proxy
 
@@ -33,4 +33,4 @@ Not public: unspecified, loopback, private (RFC 1918), carrier-grade NAT (`100.6
 
 ## Tests
 
-The fetcher contract's conformance suite runs without network: every refused URL fails before any connection. Unit tests cover the address ranges and content sniffing.
+The fetcher contract's conformance suite runs without network: every refused URL fails before any connection. Unit tests cover the address ranges and content sniffing. One test fetches through a SOCKS5 proxy in the process (`socks5h`, so the name is never resolved locally) from a TLS server whose test CA is trusted only through `roots`; it also proves the proxy is used at all.

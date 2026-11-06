@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
+use holtmail_core::TlsRoots;
 use holtmail_fetch::{FetchError, Fetcher, RemoteImage};
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
@@ -30,6 +31,8 @@ pub struct Options {
     /// optional `user:password@`. With `socks5h` host names are resolved by the proxy and never
     /// looked up locally.
     pub proxy: Option<String>,
+    /// Certificates trusted for https besides the built-in roots.
+    pub roots: TlsRoots,
 }
 
 impl Default for Options {
@@ -39,6 +42,7 @@ impl Default for Options {
             timeout: Duration::from_secs(15),
             max_redirects: 5,
             proxy: None,
+            roots: TlsRoots::default(),
         }
     }
 }
@@ -109,7 +113,13 @@ impl HttpFetcher {
         let remote_dns = proxy
             .as_ref()
             .is_some_and(|(address, _)| address.scheme == "socks5h");
-        let mut builder = reqwest::Client::builder();
+        let certificates = options
+            .roots
+            .iter()
+            .map(reqwest::Certificate::from_der)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| FetchError::Unavailable(format!("an extra trusted certificate: {e}")))?;
+        let mut builder = reqwest::Client::builder().no_proxy();
         if let Some((_, proxy)) = proxy {
             builder = builder.proxy(proxy);
         }
@@ -118,7 +128,7 @@ impl HttpFetcher {
             .timeout(options.timeout)
             .connect_timeout(options.timeout.min(Duration::from_secs(5)))
             .referer(false)
-            .no_proxy()
+            .tls_certs_merge(certificates)
             .dns_resolver(Arc::new(PublicResolver))
             .redirect(redirect::Policy::custom(move |attempt| {
                 if attempt.previous().len() >= max_redirects {
@@ -347,6 +357,72 @@ mod tests {
             .unwrap();
             holtmail_fetch::testing::conformance(&fetcher).await;
         }
+    }
+
+    async fn socks5_to(target: SocketAddr) -> SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut client, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut head = [0u8; 2];
+                    client.read_exact(&mut head).await.ok()?;
+                    let mut methods = vec![0u8; head[1] as usize];
+                    client.read_exact(&mut methods).await.ok()?;
+                    client.write_all(&[5, 0]).await.ok()?;
+                    let mut request = [0u8; 4];
+                    client.read_exact(&mut request).await.ok()?;
+                    let skip = match request[3] {
+                        1 => 4,
+                        4 => 16,
+                        _ => client.read_u8().await.ok()? as usize,
+                    };
+                    let mut rest = vec![0u8; skip + 2];
+                    client.read_exact(&mut rest).await.ok()?;
+                    client
+                        .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+                        .await
+                        .ok()?;
+                    let mut server = tokio::net::TcpStream::connect(target).await.ok()?;
+                    tokio::io::copy_bidirectional(&mut client, &mut server)
+                        .await
+                        .ok()
+                });
+            }
+        });
+        address
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn trusts_extra_roots_through_a_proxy() {
+        let ca = holtmail_core::tls::testing::TestCa::new(&["images.example.com"]);
+        let server = ca.serve_https(200, "{}").await;
+        let proxy = format!("socks5h://{}", socks5_to(server).await);
+        let fetcher = |roots: TlsRoots| {
+            HttpFetcher::new(Options {
+                proxy: Some(proxy.clone()),
+                roots,
+                ..Options::default()
+            })
+            .unwrap()
+        };
+        let url = "https://images.example.com/a.png";
+        assert!(matches!(
+            fetcher(ca.roots()).image(url).await,
+            Err(FetchError::Refused(reason)) if reason == "not an image"
+        ));
+        assert!(matches!(
+            fetcher(TlsRoots::default()).image(url).await,
+            Err(FetchError::Unavailable(_))
+        ));
+        assert!(
+            HttpFetcher::new(Options {
+                roots: TlsRoots::from_der(vec![vec![1, 2, 3]]),
+                ..Options::default()
+            })
+            .is_err()
+        );
     }
 
     #[test]

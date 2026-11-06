@@ -19,6 +19,8 @@ from:ada@example.com has:attachment before:2024-01-01 "quarterly report" -in:tra
 | `is:read` / `is:seen` | `Flag("\Seen")` |
 | `is:unread` / `is:unseen` | `Not(Flag("\Seen"))` |
 | `is:flagged` / `is:starred` | `Flag("\Flagged")` |
+| `is:event` (`is:events`, `is:meeting`), `is:contact` (`is:contacts`), `is:mail` (`is:message`) | `Kind`: only documents of that kind; the API asks for mail and for contacts and events separately with the same query |
+| `with:ada` / `with:"Bob Stone"` / `with:bob@example.org` | `With`: mail from or to them, events they organize or attend, their contact cards |
 | `before:` / `after:` with `YYYY`, `YYYY-MM` or `YYYY-MM-DD` | `Before` / `After` at the start of that day, month or year in UTC |
 | `-term` | `Not(term)` |
 

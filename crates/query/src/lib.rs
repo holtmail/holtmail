@@ -5,7 +5,7 @@
 //! ```
 
 use holtmail_core::Timestamp;
-use holtmail_index::{Clause, SearchQuery};
+use holtmail_index::{Clause, DocumentKind, SearchQuery};
 
 /// Why a search could not be parsed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -24,6 +24,9 @@ pub enum QueryError {
 /// - `from:`, `to:`, `subject:`, `body:`, `filename:`, `attachment:`, `in:`, `label:` take a word
 ///   or a quoted value; `label:"Muy importante"` matches the whole label name.
 /// - `has:attachment`; `is:read`, `is:unread`, `is:flagged` (also `is:starred`).
+/// - `is:event`, `is:contact` and `is:mail` find only documents of that kind.
+/// - `with:` takes a name or an address and finds mail from or to them, events they organize
+///   or attend, and their contact cards.
 /// - `before:` and `after:` take `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in UTC; `before:2024` means
 ///   before 1 January 2024, `after:2024-03` means from 1 March 2024 on.
 /// - `-` before any term negates it.
@@ -108,6 +111,7 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
             | "attachment"
             | "in"
             | "label"
+            | "with"
             | "has"
             | "is"
             | "before"
@@ -129,11 +133,15 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
         "attachment" => Clause::Attachment(value),
         "in" => Clause::In(value),
         "label" => Clause::Label(value),
+        "with" => Clause::With(value),
         "has" if value.eq_ignore_ascii_case("attachment") => Clause::HasAttachment,
         "is" => match value.to_ascii_lowercase().as_str() {
             "read" | "seen" => Clause::Flag("\\Seen".into()),
             "unread" | "unseen" => Clause::Not(Box::new(Clause::Flag("\\Seen".into()))),
             "flagged" | "starred" => Clause::Flag("\\Flagged".into()),
+            "event" | "events" | "meeting" => Clause::Kind(DocumentKind::Event),
+            "contact" | "contacts" => Clause::Kind(DocumentKind::Contact),
+            "mail" | "message" | "messages" => Clause::Kind(DocumentKind::Mail),
             _ => free(text, quoted),
         },
         "before" => Clause::Before(date(&value)?),
@@ -254,6 +262,21 @@ mod tests {
                 Clause::Flag("\\Flagged".into()),
             ]
         );
+    }
+
+    #[test]
+    fn parses_kinds_and_people() {
+        assert_eq!(
+            clauses(r#"is:event IS:Contact -is:mail with:ada with:"Bob Stone""#),
+            vec![
+                Clause::Kind(DocumentKind::Event),
+                Clause::Kind(DocumentKind::Contact),
+                Clause::Not(Box::new(Clause::Kind(DocumentKind::Mail))),
+                Clause::With("ada".into()),
+                Clause::With("Bob Stone".into()),
+            ]
+        );
+        assert_eq!(parse("with:"), Err(QueryError::MissingValue("with".into())));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # holtmail-import
 
-Reads messages out of mailbox files so they can be ingested. Not a contract: each format has one right reading, built on the mbox and Maildir readers of [`mail-parser`](https://docs.rs/mail-parser).
+Reads messages out of mailbox files, and address books and calendars out of `.vcf` and `.ics` files, so they can be ingested. Not a contract: each format has one right reading, built on the mbox and Maildir readers of [`mail-parser`](https://docs.rs/mail-parser).
 
 ## API
 
@@ -23,6 +23,17 @@ Messages are read one at a time, in file order. An error for one message does no
 | `Eml` | `.eml` | `None` | — | — |
 | `Zip` | `.zip` | The entry's directory (`Inbox/one.eml` → `Inbox`) | — | — |
 | `Tree` | Any other directory | Subdirectory path; `.mbox` files add their name | — | mbox only |
+| `VCard`, `ICalendar` | `.vcf`/`.vcard`, `.ics`/`.ical`/`.ifb` | No messages; see below | — | — |
+
+## Address books and calendars
+
+```rust
+for file in holtmail_import::collections(path)? {
+    let CollectionFile { path, name, format, bytes } = file; // format: CollectionFormat::{VCard, ICalendar}
+}
+```
+
+`collections` returns every `.vcf`/`.vcard` and `.ics`/`.ical`/`.ifb` file in `path`, read whole and sorted by path: the file itself (`Format::VCard`, `Format::ICalendar`, which `open` reads as no messages), every such file in a directory tree, or every such entry of a zip, for example Google Takeout's `Takeout/Contacts/My Contacts/My Contacts.vcf` and `Takeout/Calendar/ada@example.com.ics`. `path` is the file's path inside what was opened with `/` between levels (the file name for a single file), `name` the file name without extension. Zip entries escaping the archive are skipped, as for mail. A file over `MAX_COLLECTION_FILE` (256 MiB) fails with `ImportError::TooLarge`. Mailbox formats give no files, and a zip or tree gives both its messages through `open` and its files through `collections`. Cutting the files into contacts and events is [`holtmail-pim`](../../pim/docs/README.md)'s job.
 
 ## Details
 

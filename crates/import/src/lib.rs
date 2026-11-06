@@ -1,8 +1,10 @@
-//! Reading messages out of mailbox files: mbox, Maildir, `.eml` files and zip archives of them.
+//! Reading messages out of mailbox files: mbox, Maildir, `.eml` files and zip archives of them;
+//! and address books and calendars out of `.vcf` and `.ics` files, alone, in directories or in
+//! zips such as Google Takeout.
 //!
 //! [`open`] detects the format and returns an iterator of [`ImportedMessage`]s, each with the
 //! folder it belongs to. Files are read one message at a time, so large archives do not need to fit
-//! in memory.
+//! in memory. [`collections`] returns the `.vcf` and `.ics` files of the same path, whole.
 
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
@@ -38,6 +40,10 @@ pub enum Format {
     Zip,
     /// A directory tree of `.eml` and `.mbox` files; subdirectories are folders.
     Tree,
+    /// One vCard file (`.vcf`, `.vcard`): an address book, no messages.
+    VCard,
+    /// One iCalendar file (`.ics`, `.ical`, `.ifb`): a calendar, no messages.
+    ICalendar,
 }
 
 /// Why reading failed.
@@ -62,8 +68,37 @@ pub enum ImportError {
         source: zip::result::ZipError,
     },
     /// The path is not a format Holtmail reads.
-    #[error("{0}: not an mbox, Maildir, .eml or zip")]
+    #[error("{0}: not an mbox, Maildir, .eml, .vcf, .ics or zip")]
     UnknownFormat(PathBuf),
+    /// An address book or calendar file is larger than [`MAX_COLLECTION_FILE`].
+    #[error("{0}: larger than {MAX_COLLECTION_FILE} bytes")]
+    TooLarge(PathBuf),
+}
+
+/// The largest `.vcf` or `.ics` file [`collections`] reads; each is read whole.
+pub const MAX_COLLECTION_FILE: u64 = 256 << 20;
+
+/// What a [`CollectionFile`] holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectionFormat {
+    /// vCard: an address book.
+    VCard,
+    /// iCalendar: a calendar.
+    ICalendar,
+}
+
+/// One address book or calendar file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectionFile {
+    /// The file's path inside what was opened, with `/` between levels, such as
+    /// `Takeout/Contacts/My Contacts/My Contacts.vcf`; the file name for a single file.
+    pub path: String,
+    /// The file name without its extension.
+    pub name: String,
+    /// vCard or iCalendar.
+    pub format: CollectionFormat,
+    /// The whole file.
+    pub bytes: Vec<u8>,
 }
 
 /// Messages read from one source, in file order.
@@ -83,8 +118,123 @@ pub fn detect(path: &Path) -> Option<Format> {
         "mbox" | "mbx" => Some(Format::Mbox),
         "eml" => Some(Format::Eml),
         "zip" => Some(Format::Zip),
-        _ => sniff_mbox(path).then_some(Format::Mbox),
+        _ => match collection_format(path) {
+            Some(CollectionFormat::VCard) => Some(Format::VCard),
+            Some(CollectionFormat::ICalendar) => Some(Format::ICalendar),
+            None => sniff_mbox(path).then_some(Format::Mbox),
+        },
     }
+}
+
+fn collection_format(path: &Path) -> Option<CollectionFormat> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "vcf" | "vcard" => Some(CollectionFormat::VCard),
+        "ics" | "ical" | "ifb" => Some(CollectionFormat::ICalendar),
+        _ => None,
+    }
+}
+
+/// Every `.vcf` and `.ics` file in `path`: the file itself, the files of a directory tree, or the
+/// entries of a zip (Google Takeout puts them under `Contacts/<group>/` and `Calendar/`), sorted
+/// by path. Other files are skipped; an mbox or `.eml` gives none. Each file is read whole.
+pub fn collections(path: &Path) -> Result<Vec<CollectionFile>, ImportError> {
+    let format = detect(path).ok_or_else(|| ImportError::UnknownFormat(path.to_owned()))?;
+    let mut out = Vec::new();
+    match format {
+        Format::VCard | Format::ICalendar => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            out.push(read_collection(path, &name)?);
+        }
+        Format::Tree => {
+            let mut files = Vec::new();
+            collect_collections(path, &mut files)?;
+            for file in files {
+                let relative = file.strip_prefix(path).unwrap_or(&file);
+                out.push(read_collection(&file, &slash_path(relative))?);
+            }
+        }
+        Format::Zip => {
+            let file = File::open(path).map_err(io(path))?;
+            let zip_error = |source| ImportError::Zip {
+                path: path.to_owned(),
+                source,
+            };
+            let mut archive = zip::ZipArchive::new(file).map_err(zip_error)?;
+            for index in 0..archive.len() {
+                let entry = archive.by_index(index).map_err(zip_error)?;
+                let Some(name) = entry.enclosed_name() else {
+                    continue;
+                };
+                let Some(format) = collection_format(&name).filter(|_| !entry.is_dir()) else {
+                    continue;
+                };
+                if entry.size() > MAX_COLLECTION_FILE {
+                    return Err(ImportError::TooLarge(path.join(&name)));
+                }
+                let mut bytes = Vec::new();
+                entry
+                    .take(MAX_COLLECTION_FILE + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(io(&path.join(&name)))?;
+                if bytes.len() as u64 > MAX_COLLECTION_FILE {
+                    return Err(ImportError::TooLarge(path.join(&name)));
+                }
+                out.push(CollectionFile {
+                    path: slash_path(&name),
+                    name: stem(&name),
+                    format,
+                    bytes,
+                });
+            }
+        }
+        Format::Mbox | Format::Maildir | Format::Eml => {}
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
+fn stem(path: &Path) -> String {
+    path.file_stem()
+        .map(|s| s.to_string_lossy().trim().to_owned())
+        .unwrap_or_default()
+}
+
+fn slash_path(path: &Path) -> String {
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn read_collection(path: &Path, relative: &str) -> Result<CollectionFile, ImportError> {
+    let format =
+        collection_format(path).ok_or_else(|| ImportError::UnknownFormat(path.to_owned()))?;
+    let size = fs::metadata(path).map_err(io(path))?.len();
+    if size > MAX_COLLECTION_FILE {
+        return Err(ImportError::TooLarge(path.to_owned()));
+    }
+    Ok(CollectionFile {
+        path: relative.to_owned(),
+        name: stem(path),
+        format,
+        bytes: fs::read(path).map_err(io(path))?,
+    })
+}
+
+fn collect_collections(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ImportError> {
+    for entry in fs::read_dir(dir).map_err(io(dir))? {
+        let path = entry.map_err(io(dir))?.path();
+        if path.is_dir() {
+            collect_collections(&path, files)?;
+        } else if collection_format(&path).is_some() {
+            files.push(path);
+        }
+    }
+    Ok(())
 }
 
 /// Reads every message in `path`, detecting its format.
@@ -104,6 +254,7 @@ pub fn open_as(path: &Path, format: Format) -> Result<Messages, ImportError> {
         }
         Format::Zip => read_zip(path),
         Format::Tree => read_tree(path),
+        Format::VCard | Format::ICalendar => Ok(Box::new(std::iter::empty())),
     }
 }
 
@@ -487,5 +638,90 @@ mod tests {
         let path = dir.path().join("notes.txt");
         fs::write(&path, b"hello").unwrap();
         assert!(matches!(open(&path), Err(ImportError::UnknownFormat(_))));
+    }
+
+    const CARD: &[u8] = b"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ada Quill\r\nEND:VCARD\r\n";
+    const CALENDAR: &[u8] =
+        b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    #[test]
+    fn reads_a_single_address_book_without_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Friends.VCF");
+        fs::write(&path, CARD).unwrap();
+        assert_eq!(detect(&path), Some(Format::VCard));
+        assert_eq!(all(&path).len(), 0);
+        let files = collections(&path).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "Friends.VCF");
+        assert_eq!(files[0].name, "Friends");
+        assert_eq!(files[0].format, CollectionFormat::VCard);
+        assert_eq!(files[0].bytes, CARD);
+    }
+
+    #[test]
+    fn reads_a_takeout_zip_with_mail_contacts_and_calendars() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("takeout-20250101T000000Z-001.zip");
+        let mut zip = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("Takeout/Contacts/My Contacts/My Contacts.vcf", options)
+            .unwrap();
+        zip.write_all(CARD).unwrap();
+        zip.start_file("Takeout/Calendar/ada@example.com.ics", options)
+            .unwrap();
+        zip.write_all(CALENDAR).unwrap();
+        zip.start_file("Takeout/Mail/Inbox/one.eml", options)
+            .unwrap();
+        zip.write_all(ONE).unwrap();
+        zip.start_file("../escape.vcf", options).unwrap();
+        zip.write_all(CARD).unwrap();
+        zip.finish().unwrap();
+
+        let files = collections(&path).unwrap();
+        let found: Vec<_> = files
+            .iter()
+            .map(|f| (f.path.as_str(), f.name.as_str(), f.format))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (
+                    "Takeout/Calendar/ada@example.com.ics",
+                    "ada@example.com",
+                    CollectionFormat::ICalendar
+                ),
+                (
+                    "Takeout/Contacts/My Contacts/My Contacts.vcf",
+                    "My Contacts",
+                    CollectionFormat::VCard
+                ),
+            ]
+        );
+        assert_eq!(subjects(&all(&path)).len(), 1, "mail is still read");
+    }
+
+    #[test]
+    fn reads_collections_from_a_directory_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Calendar")).unwrap();
+        fs::write(dir.path().join("Calendar/Team.ics"), CALENDAR).unwrap();
+        fs::write(dir.path().join("people.vcf"), CARD).unwrap();
+        let files = collections(dir.path()).unwrap();
+        let paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["Calendar/Team.ics", "people.vcf"]);
+        assert!(all(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn an_mbox_has_no_collections() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Sent.mbox");
+        fs::write(
+            &path,
+            b"From a@example.com Fri Mar 14 09:00:00 2025\nSubject: x\n\nx\n",
+        )
+        .unwrap();
+        assert!(collections(&path).unwrap().is_empty());
     }
 }

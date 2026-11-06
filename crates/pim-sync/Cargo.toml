@@ -1,0 +1,30 @@
+[package]
+name = "holtmail-pim-sync"
+description = "Archiving an account's address books and calendars with their history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-collection.workspace = true
+holtmail-core.workspace = true
+holtmail-ingest.workspace = true
+holtmail-pim.workspace = true
+holtmail-store.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-collection = { workspace = true, features = ["testing"] }
+holtmail-index.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

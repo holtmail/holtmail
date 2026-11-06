@@ -117,6 +117,14 @@ impl Provider {
             (Self::Microsoft, Access::Graph) => Some(
                 "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access",
             ),
+            (Self::Google, Access::ImapDav) => Some(
+                "https://mail.google.com/ https://www.googleapis.com/auth/carddav https://www.googleapis.com/auth/calendar.readonly",
+            ),
+            (Self::Microsoft, Access::ImapDav) => None,
+            (Self::Microsoft, Access::GraphPim) => Some(
+                "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/Calendars.Read offline_access",
+            ),
+            (Self::Google, Access::GraphPim) => None,
         }
     }
 }
@@ -130,6 +138,14 @@ pub enum Access {
     Imap,
     /// Reading the mailbox through Microsoft Graph; Microsoft only.
     Graph,
+    /// Reading the mailbox over IMAP and the contacts and calendars over CardDAV and CalDAV;
+    /// Google only. Google has no read-only CardDAV scope, so contacts use the full `carddav`
+    /// scope; calendars use `calendar.readonly`, except with Thunderbird's client, which asks
+    /// for the `calendar` scope Thunderbird itself asks for.
+    ImapDav,
+    /// Reading the mailbox, the contacts and the calendars through Microsoft Graph
+    /// (`Mail.Read`, `Contacts.Read`, `Calendars.Read`); Microsoft only.
+    GraphPim,
 }
 
 impl Access {
@@ -138,7 +154,16 @@ impl Access {
         match self {
             Self::Imap => "imap",
             Self::Graph => "graph",
+            Self::ImapDav => "imap_dav",
+            Self::GraphPim => "graph_pim",
         }
+    }
+
+    /// Whether a sign-in for `self` also grants everything `other` grants.
+    pub fn covers(self, other: Access) -> bool {
+        self == other
+            || (self == Self::ImapDav && other == Self::Imap)
+            || (self == Self::GraphPim && other == Self::Graph)
     }
 
     /// Parses [`Access::as_str`] output.
@@ -146,6 +171,8 @@ impl Access {
         match raw {
             "imap" => Some(Self::Imap),
             "graph" => Some(Self::Graph),
+            "imap_dav" => Some(Self::ImapDav),
+            "graph_pim" => Some(Self::GraphPim),
             _ => None,
         }
     }
@@ -224,8 +251,13 @@ impl Client {
     /// sign-in and every refresh of its token use the same access.
     pub fn for_access(&self, access: Access) -> Option<Self> {
         let scope = self.provider.scope(access)?;
+        let scope = if access == Access::ImapDav && self.is_thunderbird() {
+            scope.replace("auth/calendar.readonly", "auth/calendar")
+        } else {
+            scope.to_owned()
+        };
         Some(Self {
-            scope: scope.to_owned(),
+            scope,
             ..self.clone()
         })
     }

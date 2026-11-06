@@ -89,6 +89,35 @@ async fn asks_for_graph_scopes_for_graph_access() {
     );
     assert_eq!(Access::parse(Access::Graph.as_str()), Some(Access::Graph));
     assert_eq!(Access::parse("pop3"), None);
+    assert_eq!(
+        Access::parse(Access::ImapDav.as_str()),
+        Some(Access::ImapDav)
+    );
+    assert!(Access::ImapDav.covers(Access::Imap));
+    assert!(!Access::Imap.covers(Access::ImapDav));
+    assert!(!Access::Graph.covers(Access::Imap));
+    assert_eq!(
+        Access::parse(Access::GraphPim.as_str()),
+        Some(Access::GraphPim)
+    );
+    assert!(Access::GraphPim.covers(Access::Graph));
+    assert!(!Access::Graph.covers(Access::GraphPim));
+    let pim = Client::thunderbird(Provider::Microsoft)
+        .for_access(Access::GraphPim)
+        .unwrap();
+    for scope in [
+        "Mail.Read",
+        "Contacts.Read",
+        "Calendars.Read",
+        "offline_access",
+    ] {
+        assert!(pim.scope.contains(scope), "{scope}");
+    }
+    assert!(
+        Client::thunderbird(Provider::Google)
+            .for_access(Access::GraphPim)
+            .is_none()
+    );
 
     let endpoint = FakeTokenEndpoint::default();
     endpoint.answer(200, serde_json::json!({ "access_token": "a1" }));
@@ -275,4 +304,31 @@ async fn tells_revoked_grants_from_other_failures() {
         client.refresh(&endpoint, "r").await,
         Err(OAuthError::Connection(_))
     ));
+}
+
+#[tokio::test]
+async fn google_contacts_and_calendars_add_dav_scopes() {
+    let thunderbird = Client::thunderbird(Provider::Google)
+        .for_access(Access::ImapDav)
+        .unwrap();
+    assert_eq!(
+        thunderbird.scope,
+        "https://mail.google.com/ https://www.googleapis.com/auth/carddav https://www.googleapis.com/auth/calendar",
+        "Thunderbird's client asks for what Thunderbird asks for"
+    );
+    let own = Client::own(
+        Provider::Google,
+        "own-id",
+        None,
+        "https://holtmail.example.com/cb",
+    )
+    .for_access(Access::ImapDav)
+    .unwrap();
+    assert!(own.scope.ends_with("auth/calendar.readonly"));
+    assert!(
+        Client::thunderbird(Provider::Microsoft)
+            .for_access(Access::ImapDav)
+            .is_none(),
+        "Microsoft contacts and calendars come through Graph"
+    );
 }

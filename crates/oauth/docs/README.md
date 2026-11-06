@@ -15,8 +15,11 @@ The scopes above are for `Access::Imap`. `Provider::scope(access)` gives them pe
 | --- | --- | --- | --- |
 | `Imap` (default) | `imap` | `https://mail.google.com/` | `https://outlook.office.com/IMAP.AccessAsUser.All offline_access` |
 | `Graph` | `graph` | `None`: Google has no Graph | `https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read offline_access` |
+| `ImapDav` | `imap_dav` | `https://mail.google.com/ https://www.googleapis.com/auth/carddav https://www.googleapis.com/auth/calendar.readonly` | `None`: Microsoft contacts and calendars come through Graph |
 
-A code and a refresh token only work for the scopes they were granted for: an IMAP token is refused by Graph and the other way round, so a sign-in and every refresh of its token must ask for the same access. `Access::parse` reads `as_str` back.
+A code and a refresh token only work for the scopes they were granted for: an IMAP token is refused by Graph and the other way round, so a sign-in and every refresh of its token must ask for the same access. `Access::parse` reads `as_str` back, and `covers(other)` says whether a grant for one also grants the other (`ImapDav` covers `Imap`).
+
+`ImapDav` is IMAP plus Google's CardDAV and CalDAV, for accounts that also archive contacts and calendars. Google has no read-only CardDAV scope (CardDAV accepts only `auth/carddav`), so contacts use it; Holtmail still only reads. Calendars use `auth/calendar.readonly` with an own client. With Thunderbird's client `for_access(ImapDav)` asks for `auth/calendar` instead, the scope Thunderbird itself requests: a borrowed client is verified by Google only for the scopes its owner registered, so asking it for a narrower one risks an "unverified app" block (not checked against Google).
 
 Thunderbird's Microsoft client declares Graph scopes too (`User.Read`, `MailboxFolder.ReadWrite`, `Mail.ReadWrite`, `Mail.Send` with `offline_access`, behind its `mail.graph.enabled` preference in `OAuth2Providers.sys.mjs`). Holtmail asks for less: `Mail.Read` (it only reads) and `User.Read` (the mailbox address), relying on Microsoft's incremental consent for a scope the registration does not list. Whether Microsoft grants `Mail.Read` to the borrowed client has not been checked against Microsoft; an own client with those two delegated permissions certainly works.
 
@@ -30,7 +33,7 @@ pub struct Client { provider, client_id, client_secret, authorize_url, token_url
 
 - `Client::thunderbird(provider)` is Thunderbird's public installed-app client, copied from `mailnews/base/src/OAuth2Providers.sys.mjs` in comm-central: the Google client id with its public client secret, the Microsoft client id without a secret. The redirect is `LOOPBACK_REDIRECT` (`http://127.0.0.1`), the default Thunderbird uses (Thunderbird adds a port of its own; loopback redirects are matched on any port). Nothing listens there, so the browser shows an error page whose address holds the answer.
 - `Client::own(provider, client_id, client_secret, redirect_url)` is a client the owner registered; endpoints and scopes come from the provider.
-- `for_access(access)` is the same client asking for the scopes of `access` (`None` for Google and `Graph`).
+- `for_access(access)` is the same client asking for the scopes of `access` (`None` for Google and `Graph`, and for Microsoft and `ImapDav`).
 - `is_thunderbird()` tells them apart. `Debug` never prints the secret.
 
 | Method | Guarantees |

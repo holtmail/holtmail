@@ -3,11 +3,16 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
   ApiError,
   bodyUrl,
+  calendarExportUrl,
+  calendarParams,
+  contactsExportUrl,
   exportUrl,
   fetchBody,
   isUnauthorized,
+  itemVersionRawUrl,
   login,
   logout,
+  peopleParams,
   rawUrl,
 } from './index.ts'
 
@@ -31,6 +36,7 @@ describe('urls', () => {
     expect(bodyUrl('abc', 'direct')).toBe('/api/messages/abc/body?remote=direct')
     expect(bodyUrl('abc', 'proxy', false)).toBe('/api/messages/abc/body?remote=proxy&saved=false')
     expect(rawUrl('a/b')).toBe('/api/messages/a%2Fb/raw')
+    expect(itemVersionRawUrl('i/1', 3)).toBe('/api/items/i%2F1/versions/3/raw')
   })
 
   test('builds export addresses with one scope', () => {
@@ -47,6 +53,22 @@ describe('urls', () => {
     expect(exportUrl('a1', 'mbox', { q: '   ' })).toBe('/api/archives/a1/export?format=mbox')
     expect(exportUrl('a1', 'zip', { folder: 'f1', q: 'x' })).toBe(
       '/api/archives/a1/export?format=zip&folder=f1',
+    )
+  })
+
+  test('builds contacts and calendar export addresses', () => {
+    expect(contactsExportUrl('a1', 'vcf')).toBe('/api/archives/a1/contacts/export?format=vcf')
+    expect(contactsExportUrl('a1', 'zip', { collection: 'c1', removed: true })).toBe(
+      '/api/archives/a1/contacts/export?format=zip&collection=c1&removed=true',
+    )
+    expect(contactsExportUrl('a1', 'vcf', { collection: 'c1', person: 'p1' })).toBe(
+      '/api/archives/a1/contacts/export?format=vcf&person=p1',
+    )
+    expect(calendarExportUrl('a1', 'ics', { from: 10.5, to: 20.5 })).toBe(
+      '/api/archives/a1/calendar/export?format=ics&from=10&to=21',
+    )
+    expect(calendarExportUrl('a1', 'zip', { collection: 'k1', from: 20, to: 10 })).toBe(
+      '/api/archives/a1/calendar/export?format=zip&collection=k1',
     )
   })
 })
@@ -106,5 +128,34 @@ describe('sign-in', () => {
     expect(error).toMatchObject({ status: 429, retryAfter: 600 })
     expect(isUnauthorized(error)).toBe(false)
     expect(isUnauthorized(new ApiError(401, 'sign in required'))).toBe(true)
+  })
+})
+
+describe('people', () => {
+  test('leaves empty filters out of the query', () => {
+    expect(peopleParams({})).toEqual({})
+    expect(peopleParams({ q: '  ', source: '', differences: false })).toEqual({})
+    expect(peopleParams({ q: ' ada ', source: 'mail', differences: true })).toEqual({
+      q: 'ada',
+      source: 'mail',
+      has_differences: true,
+    })
+  })
+})
+
+describe('calendar', () => {
+  test('joins calendars, rounds the span and leaves defaults out', () => {
+    expect(calendarParams({ from: 10.4, to: 20.2 })).toEqual({ from: 10, to: 21 })
+    expect(calendarParams({ from: 1, to: 2, collections: ['b', 'a'], showRemoved: true })).toEqual({
+      from: 1,
+      to: 2,
+      collections: 'a,b',
+      show_removed: true,
+    })
+    expect(calendarParams({ from: 1, to: 2, collections: [] })).toEqual({
+      from: 1,
+      to: 2,
+      collections: '',
+    })
   })
 })

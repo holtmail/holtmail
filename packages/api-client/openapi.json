@@ -773,6 +773,602 @@
         }
       }
     },
+    "/api/archives/{id}/calendar": {
+      "get": {
+        "tags": ["calendar"],
+        "operationId": "calendar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the span, Unix milliseconds.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the span, Unix milliseconds; at most 400 days after `from`.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "collections",
+            "in": "query",
+            "description": "Comma-separated calendar ids to show; all calendars when absent, none when empty.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "show_removed",
+            "in": "query",
+            "description": "Whether events and calendars removed from their source are shown.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Instances of events overlapping the span with copies across calendars folded together, by start",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarRangeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A span that ends before it starts or is longer than 400 days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive or calendar id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/calendar/export": {
+      "get": {
+        "tags": ["export"],
+        "operationId": "export_calendar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`ics` for the latest version of each item in one file, `zip` for every version.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "collection",
+            "in": "query",
+            "description": "Only the items of this calendar id.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "With `to`: only events with an instance from here on, Unix milliseconds. Tasks are left\nout then.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "With `from`: only events with an instance before this, Unix milliseconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "removed",
+            "in": "query",
+            "description": "`true` to put items removed from their source into an `ics` too; a zip has them always.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest version of each calendar item as one `.ics` (`text/calendar`), or every version in a zip (`application/zip`) with `manifest.json`, streamed as they are read; a download cut short means the export failed",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "Unknown format, or only one end of the range, or a range that ends before it starts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive or calendar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/collections": {
+      "get": {
+        "tags": ["pim"],
+        "operationId": "list_collections",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Address books and calendars, removed ones too, by kind and name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CollectionDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/contacts": {
+      "get": {
+        "tags": ["pim"],
+        "operationId": "list_contacts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "collection",
+            "in": "query",
+            "description": "Only items of this collection.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "removed",
+            "in": "query",
+            "description": "`hide` (default) leaves out items removed from their source, `include` lists them too,\n`only` lists just them.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "`next` from the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, at most 500; 50 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contacts by name, without regard to letter case; unnamed ones last",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed cursor or removed filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive or collection id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/contacts/export": {
+      "get": {
+        "tags": ["export"],
+        "operationId": "export_contacts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`vcf` for the latest version of each contact in one file, `zip` for every version.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "collection",
+            "in": "query",
+            "description": "Only the contacts of this address book id.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "person",
+            "in": "query",
+            "description": "Only the cards of this person id.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "removed",
+            "in": "query",
+            "description": "`true` to put contacts removed from their source into a `vcf` too; a zip has them always.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest version of each contact as one `.vcf` (`text/vcard`), or every version in a zip (`application/zip`) with `manifest.json`, streamed as they are read; a download cut short means the export failed",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "400": {
+            "description": "Unknown format, or both collection and person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive, address book or person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/events": {
+      "get": {
+        "tags": ["pim"],
+        "operationId": "list_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "collection",
+            "in": "query",
+            "description": "Only items of this collection.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "removed",
+            "in": "query",
+            "description": "`hide` (default) leaves out items removed from their source, `include` lists them too,\n`only` lists just them.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "`next` from the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, at most 500; 50 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events by start; a recurring event once, by its first start; events without a start last",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed cursor or removed filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive or collection id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/export": {
       "get": {
         "tags": ["export"],
@@ -960,7 +1556,7 @@
           }
         ],
         "requestBody": {
-          "description": "An mbox, .eml or zip file",
+          "description": "An mbox, .eml, .vcf, .ics or zip file (Google Takeout too)",
           "content": {
             "application/octet-stream": {
               "schema": {
@@ -1197,6 +1793,184 @@
         }
       }
     },
+    "/api/archives/{id}/people": {
+      "get": {
+        "tags": ["persons"],
+        "operationId": "list_people",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only people whose name, an email address or a phone number contains this text, without\nregard to letter case.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "`contacts` (with a card), `mail` (from mail alone) or an address book's id.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "has_differences",
+            "in": "query",
+            "description": "`true` for only people whose cards disagree.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "`next` from the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, at most 500; 100 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "People by name without regard to letter case, nameless ones last",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed cursor or source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/people/overrides": {
+      "get": {
+        "tags": ["overrides"],
+        "operationId": "list_overrides",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archive's splits and joins, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PersonOverrideDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/remote-images": {
       "post": {
         "tags": ["manage"],
@@ -1393,6 +2167,172 @@
         }
       }
     },
+    "/api/archives/{id}/search/items": {
+      "get": {
+        "tags": ["calendar"],
+        "operationId": "search_items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "The search, in the same language as mail search.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "At most 100; 20 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events by start, the latest first, then contacts; copies of one event in several calendars once per page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The search cannot be parsed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed archive id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/{id}": {
+      "get": {
+        "tags": ["calendar"],
+        "operationId": "get_event",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Event group id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "description": "An IANA zone such as `Europe/Paris`; times are also given in it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/image-proxy": {
       "get": {
         "tags": ["tasks"],
@@ -1474,6 +2414,130 @@
           },
           "403": {
             "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/items/{id}": {
+      "get": {
+        "tags": ["pim"],
+        "operationId": "get_item",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/items/{id}/versions/{number}/raw": {
+      "get": {
+        "tags": ["pim"],
+        "operationId": "get_version_raw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "Version number, from 1",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version's bytes exactly as received, as a download: text/vcard, text/calendar, or the JSON a Microsoft Graph or JMAP server sent (application/vnd.microsoft.graph.contact+json, application/vnd.microsoft.graph.event+json, application/jscontact+json, application/jscalendar+json)",
+            "content": {
+              "text/calendar": {}
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item or version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2359,6 +3423,310 @@
         }
       }
     },
+    "/api/people/join": {
+      "post": {
+        "tags": ["overrides"],
+        "operationId": "join",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The join; `people` is the one person they are now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonOverrideDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Fewer than two people, or people of different archives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A split made by hand keeps them apart",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/people/overrides/{id}": {
+      "delete": {
+        "tags": ["overrides"],
+        "operationId": "remove_override",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Override id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The undone split or join; `people` holds its keys after the rebuild",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonOverrideDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such override",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/people/{id}": {
+      "get": {
+        "tags": ["persons"],
+        "operationId": "get_person",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Person id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/people/{id}/split": {
+      "post": {
+        "tags": ["overrides"],
+        "operationId": "split",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Person id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The split; `people` is the person left with the other cards, then the person of the moved cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonOverrideDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No cards, every card, or a card of another person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session": {
       "get": {
         "tags": ["session"],
@@ -3040,6 +4408,17 @@
               }
             ]
           },
+          "contacts_calendars": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ContactsCalendarsDto",
+                "description": "Whether its contacts and calendars are archived; `null` for accounts that cannot have\nthem yet (import accounts; Microsoft accounts until Microsoft Graph contacts arrive)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -3094,6 +4473,17 @@
         "description": "What is happening to an account now and how its last sync or import ended.",
         "required": ["running", "new_messages"],
         "properties": {
+          "contacts_calendars": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ContactsCalendarsRunDto",
+                "description": "The latest contacts and calendars sync; `null` when there was none."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error": {
             "type": ["string", "null"],
             "description": "Why the last run failed."
@@ -3129,6 +4519,17 @@
               {
                 "$ref": "#/components/schemas/ConnectionRequest",
                 "description": "A new server, user name and excluded folders; checked by signing in, with `password`\nwhen given and the stored one otherwise. Another host or port, or a move to `plain`,\nneeds `password`; OAuth accounts keep their server, port and security."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contacts_calendars": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ContactsCalendarsRequest",
+                "description": "Turn archiving contacts and calendars on or off."
               },
               {
                 "type": "null"
@@ -3181,6 +4582,20 @@
           },
           "name": {
             "type": ["string", "null"]
+          }
+        }
+      },
+      "AddressPersonDto": {
+        "type": "object",
+        "description": "An address that belongs to a person.",
+        "required": ["email", "person_id"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The address as the message writes it."
+          },
+          "person_id": {
+            "type": "string"
           }
         }
       },
@@ -3260,6 +4675,288 @@
           }
         }
       },
+      "CalendarOccurrenceDto": {
+        "type": "object",
+        "description": "One instance of an event in a span, its copies folded together.",
+        "required": [
+          "group_id",
+          "item_id",
+          "collection_id",
+          "collection_ids",
+          "copies",
+          "starts_at",
+          "ends_at",
+          "start_local",
+          "end_local",
+          "all_day",
+          "floating",
+          "recurring",
+          "cancelled",
+          "changed",
+          "removed"
+        ],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean",
+            "description": "Whether this instance was changed apart from its series."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "The leading copy's calendar."
+          },
+          "collection_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The calendars of every copy, the leading one first."
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many copies of this instance the shown calendars hold.",
+            "minimum": 0
+          },
+          "end_local": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "End in UTC, Unix milliseconds; for dates the midnight after the last day."
+          },
+          "floating": {
+            "type": "boolean",
+            "description": "Times that read the same in every zone."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Open the event at `/api/events/{group_id}`."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The leading copy: the highest `SEQUENCE`, then the latest `DTSTAMP` or `LAST-MODIFIED`."
+          },
+          "location": {
+            "type": ["string", "null"]
+          },
+          "recurrence_id": {
+            "type": ["string", "null"],
+            "description": "The original start naming the instance, such as `2025-03-10T08:00:00Z` or `2025-03-10`;\nabsent for events that do not repeat."
+          },
+          "recurring": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "boolean",
+            "description": "Whether every copy was removed from its source."
+          },
+          "start_local": {
+            "type": "string",
+            "description": "The start as a wall-clock time in its own zone, `2025-03-10T09:00:00` or `2025-03-10`."
+          },
+          "starts_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Start in UTC, Unix milliseconds. Dates count from midnight UTC and floating times as if\nthey were UTC."
+          },
+          "time_zone": {
+            "type": ["string", "null"],
+            "description": "The start's original zone; absent for dates and floating times."
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "CalendarRangeDto": {
+        "type": "object",
+        "description": "The instances of a span and the calendars they come from.",
+        "required": ["occurrences", "calendars", "truncated"],
+        "properties": {
+          "calendars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarSourceDto"
+            },
+            "description": "Every calendar of the archive, removed ones too."
+          },
+          "occurrences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarOccurrenceDto"
+            },
+            "description": "By start."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether instances were left out because there were too many."
+          }
+        }
+      },
+      "CalendarSourceDto": {
+        "type": "object",
+        "description": "A calendar of the archive, for the toggles of the calendar views.",
+        "required": ["id", "name", "from_mail", "items"],
+        "properties": {
+          "account_name": {
+            "type": ["string", "null"],
+            "description": "The account it is read from; absent for imported files and once the account is gone."
+          },
+          "color": {
+            "type": ["string", "null"],
+            "description": "The color its source gave it, as written."
+          },
+          "from_mail": {
+            "type": "boolean",
+            "description": "Whether it holds the events found in mail."
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Events not removed.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was removed from its source, Unix milliseconds."
+          }
+        }
+      },
+      "ChangeDto": {
+        "type": "object",
+        "description": "One difference between a version and the one before it.",
+        "required": ["field"],
+        "properties": {
+          "after": {
+            "type": ["string", "null"],
+            "description": "Absent when the value was removed."
+          },
+          "before": {
+            "type": ["string", "null"],
+            "description": "Absent when the value was added."
+          },
+          "field": {
+            "type": "string",
+            "description": "Such as `email`, `start`, or `instance 2025-03-17T09:00:00 Europe/Berlin summary` for a\nchanged instance of a recurring event."
+          }
+        }
+      },
+      "ChangedInstanceDto": {
+        "type": "object",
+        "description": "A changed or cancelled instance of a recurring event.",
+        "required": ["cancelled"],
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "end": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventTimeDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrence_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventTimeDto",
+                "description": "The original start it replaces."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventTimeDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "CollectionDto": {
+        "type": "object",
+        "description": "An address book or a calendar.",
+        "required": ["id", "archive_id", "kind", "name", "created_at", "items", "removed_items"],
+        "properties": {
+          "account_id": {
+            "type": ["string", "null"],
+            "description": "The account it was read from; absent once that account was removed."
+          },
+          "account_name": {
+            "type": ["string", "null"],
+            "description": "That account's name."
+          },
+          "archive_id": {
+            "type": "string"
+          },
+          "color": {
+            "type": ["string", "null"]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Items not marked removed.",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string",
+            "description": "`contacts` or `calendar`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was noticed gone from the source, Unix milliseconds; it stays readable."
+          },
+          "removed_items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Items marked removed.",
+            "minimum": 0
+          },
+          "synced_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was last synced from its server, Unix milliseconds; absent for imported files\nand the calendar of events found in mail."
+          }
+        }
+      },
       "ConnectionRequest": {
         "type": "object",
         "description": "A new connection for an IMAP account, checked by signing in before it is stored.",
@@ -3290,6 +4987,179 @@
           }
         }
       },
+      "ContactsCalendarsDto": {
+        "type": "object",
+        "description": "Whether and where an account's contacts and calendars are archived.",
+        "required": ["enabled", "needs_consent", "protocol"],
+        "properties": {
+          "calendars_url": {
+            "type": ["string", "null"],
+            "description": "Where calendars are read; `null` when not set, and for members."
+          },
+          "contacts_url": {
+            "type": ["string", "null"],
+            "description": "Where address books are read; `null` when not set, and for members."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Archived after each mail sync."
+          },
+          "needs_consent": {
+            "type": "boolean",
+            "description": "A Google or Microsoft Graph account that has to sign in again to grant access to\ncontacts and calendars."
+          },
+          "protocol": {
+            "type": "string",
+            "description": "How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`\n(Microsoft Graph) or `jmap` (the JMAP account's own session)."
+          }
+        }
+      },
+      "ContactsCalendarsRequest": {
+        "type": "object",
+        "description": "Turns archiving an account's contacts and calendars on or off.",
+        "required": ["enabled"],
+        "properties": {
+          "calendars_url": {
+            "type": ["string", "null"],
+            "description": "Where calendars are read."
+          },
+          "contacts_url": {
+            "type": ["string", "null"],
+            "description": "Where address books are read: a server such as `https://carddav.fastmail.com`, a DAV\nroot such as `https://cloud.example.com/remote.php/dav`, or one address book. With\nneither address, they are detected from the account's address; with one, it serves both.\nIgnored for Google accounts, which use Google's addresses, and Graph accounts, which use\nGraph. A JMAP account without an address reads them through its JMAP session when that\noffers contacts."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Turning on signs in to the contacts and calendars server before anything is stored\n(Google and Microsoft Graph accounts instead wait for their next sign-in); turning off\nkeeps what is archived."
+          }
+        }
+      },
+      "ContactsCalendarsRunDto": {
+        "type": "object",
+        "description": "The latest sync of an account's contacts and calendars.",
+        "required": ["running", "summary"],
+        "properties": {
+          "error": {
+            "type": ["string", "null"],
+            "description": "Why it failed."
+          },
+          "finished_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "string",
+            "description": "What it did, with counts only."
+          }
+        }
+      },
+      "CopyAnswerDto": {
+        "type": "object",
+        "description": "One copy's answer of an attendee.",
+        "required": ["item_id"],
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Lowercase `PARTSTAT`; absent when the copy does not list them or has no answer."
+          }
+        }
+      },
+      "CopyDifferenceDto": {
+        "type": "object",
+        "description": "A field whose value differs between copies.",
+        "required": ["field", "values"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Such as `start`, `location` or `attendee`; prefixed `instance <RECURRENCE-ID> ` for a\nchanged instance."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopyValuesDto"
+            },
+            "description": "In the order of `copies`."
+          }
+        }
+      },
+      "CopyValuesDto": {
+        "type": "object",
+        "description": "One copy's values of a field that differs between copies.",
+        "required": ["item_id", "values"],
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty when the copy has no value."
+          }
+        }
+      },
+      "CorrespondenceDto": {
+        "type": "object",
+        "description": "What the mail says about a person: every message with one of their addresses, each once.",
+        "required": ["messages", "from_them", "to_them", "years", "threads", "attachments"],
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonAttachmentDto"
+            },
+            "description": "The newest first, at most 12; calendar parts are left out."
+          },
+          "first_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "from_them": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sent by them.",
+            "minimum": 0
+          },
+          "last_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonThreadDto"
+            },
+            "description": "The most recently active conversations first, at most 20."
+          },
+          "to_them": {
+            "type": "integer",
+            "format": "int64",
+            "description": "With them among the recipients.",
+            "minimum": 0
+          },
+          "years": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearCountDto"
+            },
+            "description": "Oldest year first."
+          }
+        }
+      },
       "ErrorDto": {
         "type": "object",
         "description": "An error.",
@@ -3297,6 +5167,328 @@
         "properties": {
           "error": {
             "type": "string"
+          }
+        }
+      },
+      "EventCopyDto": {
+        "type": "object",
+        "description": "One copy of an event: an item in a calendar.",
+        "required": [
+          "item_id",
+          "collection_id",
+          "collection_name",
+          "from_mail",
+          "leading",
+          "versions"
+        ],
+        "properties": {
+          "account_name": {
+            "type": ["string", "null"]
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "collection_name": {
+            "type": "string"
+          },
+          "color": {
+            "type": ["string", "null"]
+          },
+          "from_mail": {
+            "type": "boolean",
+            "description": "Whether it is the event as the archived mail describes it."
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "leading": {
+            "type": "boolean",
+            "description": "Whether it is the copy the event is shown from."
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When the copy, or its calendar, was removed from its source, Unix milliseconds."
+          },
+          "sequence": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "stamp": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The later of `DTSTAMP` and `LAST-MODIFIED`, Unix milliseconds."
+          },
+          "versions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "EventDetailDto": {
+        "type": "object",
+        "description": "Everything about one event and its copies.",
+        "required": [
+          "group_id",
+          "archive_id",
+          "item_id",
+          "all_day",
+          "cancelled",
+          "attendees",
+          "copies",
+          "differences",
+          "messages",
+          "timeline",
+          "data"
+        ],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "archive_id": {
+            "type": "string"
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventPersonDto"
+            },
+            "description": "Everyone any copy lists, in the order they first appear."
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "copies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventCopyDto"
+            },
+            "description": "The leading copy first, then by rank."
+          },
+          "data": {
+            "type": "object",
+            "description": "The leading copy as normalized: `{\"type\": \"calendar\", \"components\": [...]}`."
+          },
+          "description": {
+            "type": ["string", "null"]
+          },
+          "differences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopyDifferenceDto"
+            },
+            "description": "Fields whose values differ between the copies."
+          },
+          "end": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventMomentDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The leading copy."
+          },
+          "location": {
+            "type": ["string", "null"]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventMessageDto"
+            },
+            "description": "Messages any copy's versions came in, oldest first."
+          },
+          "organizer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventPersonDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrence": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RecurrenceDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventMomentDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Lowercase `STATUS` of the leading copy."
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventVersionDto"
+            },
+            "description": "Every version of every copy, oldest first."
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "viewer_zone": {
+            "type": ["string", "null"],
+            "description": "The viewer's zone the `in_zone` times are in, when it names a known zone."
+          }
+        }
+      },
+      "EventMessageDto": {
+        "type": "object",
+        "description": "A message about the event.",
+        "required": ["id", "thread_id", "from", "date"],
+        "properties": {
+          "date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "thread_id": {
+            "type": "string"
+          }
+        }
+      },
+      "EventMomentDto": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EventTimeDto"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "in_zone": {
+                "type": ["string", "null"],
+                "description": "The wall-clock time in the viewer's zone (`tz`), such as `2025-03-10T09:00:00`; absent for\ndates, floating times and without `tz`."
+              }
+            }
+          }
+        ],
+        "description": "A time of the event as written, and in the zone the viewer asked for."
+      },
+      "EventPersonDto": {
+        "type": "object",
+        "description": "An organizer or attendee, linked to a person when one has their address.",
+        "required": ["answers"],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopyAnswerDto"
+            },
+            "description": "Their answer in each copy, in the order of `copies`; empty for the organizer."
+          },
+          "email": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "person_id": {
+            "type": ["string", "null"],
+            "description": "Open them at `/api/people/{person_id}`."
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Their answer in the leading copy, lowercase."
+          }
+        }
+      },
+      "EventTimeDto": {
+        "type": "object",
+        "description": "A time of an event: as written, in its zone, and in UTC.",
+        "required": ["value"],
+        "properties": {
+          "time_zone": {
+            "type": ["string", "null"],
+            "description": "The original zone: a `TZID` such as `Europe/Berlin`, `UTC`, an offset, or absent for\nfloating times and dates."
+          },
+          "utc": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "value": {
+            "type": "string",
+            "description": "As written: `2025-03-10` for a date, `2025-03-10T09:00:00` for a time, with `Z` or an\noffset when written so."
+          }
+        }
+      },
+      "EventVersionDto": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ItemVersionDto"
+          },
+          {
+            "type": "object",
+            "required": ["item_id", "collection_name", "at"],
+            "properties": {
+              "at": {
+                "type": "integer",
+                "format": "int64",
+                "description": "When it happened: the date of the first message it came in, else when it was first seen.\nUnix milliseconds."
+              },
+              "collection_name": {
+                "type": "string"
+              },
+              "item_id": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A version of one copy, on the event's merged timeline."
+      },
+      "FieldValueDto": {
+        "type": "object",
+        "description": "One value of a person's field.",
+        "required": ["value", "sources"],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValueSourceDto"
+            },
+            "description": "The cards that say it."
+          },
+          "value": {
+            "type": "string",
+            "description": "As the first card that says it writes it."
           }
         }
       },
@@ -3420,6 +5612,381 @@
           }
         }
       },
+      "InvitationDto": {
+        "type": "object",
+        "description": "An event or task a message's calendar part is a version of, as the archive knows it now.",
+        "required": [
+          "item_id",
+          "version",
+          "all_day",
+          "recurring",
+          "cancelled",
+          "version_count",
+          "updates_after"
+        ],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "end": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventTimeDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group_id": {
+            "type": ["string", "null"],
+            "description": "The event with its copies in calendars: open it at `/api/events/{group_id}`."
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "location": {
+            "type": ["string", "null"]
+          },
+          "method": {
+            "type": ["string", "null"],
+            "description": "This message's iTIP method, lowercase; absent when the part named none."
+          },
+          "my_status": {
+            "type": ["string", "null"],
+            "description": "The answer of the attendee whose address is one of the archive's account addresses, when\none matches."
+          },
+          "organizer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ParticipantDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurring": {
+            "type": "boolean"
+          },
+          "start": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventTimeDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Lowercase `STATUS` of the event now, such as `confirmed` or `cancelled`."
+          },
+          "summary": {
+            "type": ["string", "null"],
+            "description": "The event's summary now."
+          },
+          "uid": {
+            "type": ["string", "null"],
+            "description": "iCalendar `UID`."
+          },
+          "updates_after": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many later versions changed the event itself (updates and cancellations, not\nanswers).",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of this message's version among the item's versions.",
+            "minimum": 0
+          },
+          "version_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many versions the item has.",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemDetail": {
+        "type": "object",
+        "description": "An item with every version and what changed between them.",
+        "required": ["item", "data", "versions"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "The normalized view of the latest version: `{\"type\": \"contact\", ...}`,\n`{\"type\": \"calendar\", \"components\": [...]}` or `{\"type\": \"unreadable\"}`. For an event\nfound in mail, the versions merged: the latest invitation with later instance changes,\nevery attendee's latest answer, and `status` `CANCELLED` once cancelled."
+          },
+          "item": {
+            "$ref": "#/components/schemas/ItemSummaryDto"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemVersionDto"
+            },
+            "description": "Oldest first."
+          }
+        }
+      },
+      "ItemHitDto": {
+        "type": "object",
+        "description": "A contact or event a search found.",
+        "required": ["item_id", "kind", "all_day", "recurring", "emails"],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A contact's addresses, or an event's organizer and attendees."
+          },
+          "group_id": {
+            "type": ["string", "null"],
+            "description": "An event's group: open it at `/api/events/{group_id}`."
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`event` or `contact`."
+          },
+          "person_id": {
+            "type": ["string", "null"],
+            "description": "The person a contact belongs to: open them at `/api/people/{person_id}`."
+          },
+          "recurring": {
+            "type": "boolean"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was removed from its source, Unix milliseconds."
+          },
+          "starts_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "An event's start, Unix milliseconds."
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ItemPage": {
+        "type": "object",
+        "description": "One page of contacts or events.",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemSummaryDto"
+            }
+          },
+          "next": {
+            "type": ["string", "null"],
+            "description": "Pass as `after` for the next page; absent on the last page."
+          }
+        }
+      },
+      "ItemSearchResponse": {
+        "type": "object",
+        "description": "One page of contacts and events a search found.",
+        "required": ["items", "total"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemHitDto"
+            }
+          },
+          "next_offset": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Pass as `offset` for the next page; absent on the last page.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemSummaryDto": {
+        "type": "object",
+        "description": "A contact, event or task with the fields of its latest version.",
+        "required": [
+          "id",
+          "archive_id",
+          "collection_id",
+          "kind",
+          "readable",
+          "versions",
+          "first_seen_at",
+          "all_day",
+          "recurring",
+          "emails",
+          "phones"
+        ],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "archive_id": {
+            "type": "string"
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Lowercased addresses: a contact's, or an event's organizer and attendees."
+          },
+          "ends_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "End in UTC, Unix milliseconds."
+          },
+          "first_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`contact`, `event`, `task` or `other`."
+          },
+          "organizer": {
+            "type": ["string", "null"],
+            "description": "The organizer's address."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A contact's phone numbers in E.164 form."
+          },
+          "readable": {
+            "type": "boolean",
+            "description": "Whether the latest version could be read; an unreadable one is still archived."
+          },
+          "recurring": {
+            "type": "boolean"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was noticed gone from the source, Unix milliseconds."
+          },
+          "starts_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Start in UTC, Unix milliseconds."
+          },
+          "time_zone": {
+            "type": ["string", "null"],
+            "description": "The start's original time zone, as written."
+          },
+          "title": {
+            "type": ["string", "null"],
+            "description": "A contact's name or an event's summary."
+          },
+          "uid": {
+            "type": ["string", "null"],
+            "description": "iCalendar `UID`, or a contact's `UID`."
+          },
+          "versions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many versions are archived.",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemVersionDto": {
+        "type": "object",
+        "description": "One archived version of an item.",
+        "required": [
+          "number",
+          "messages",
+          "seen_at",
+          "content_type",
+          "readable",
+          "raw_url",
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeDto"
+            },
+            "description": "What changed from the version before; empty for the first. For a reply, counter or\nrefresh found in mail: the attendees it speaks for, as `answer` changes."
+          },
+          "content_type": {
+            "type": "string",
+            "description": "`text/vcard` or `text/calendar`."
+          },
+          "etag": {
+            "type": ["string", "null"],
+            "description": "The source's version tag."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceMessageDto"
+            },
+            "description": "The messages this version was found in, oldest first; empty when it did not come from mail."
+          },
+          "method": {
+            "type": ["string", "null"],
+            "description": "For a version found in mail: its iTIP method, lowercase (`request`, `reply`, `cancel`,\n`publish`, `add`, `counter`, `declinecounter`, `refresh`); absent when the calendar part\nnamed none or the version did not come from mail."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 for the first version. Versions found in mail are numbered in the order of their\n`SEQUENCE`, `DTSTAMP` and message date, so a version found later can move later ones up.",
+            "minimum": 0
+          },
+          "raw_url": {
+            "type": "string",
+            "description": "The raw bytes exactly as received."
+          },
+          "readable": {
+            "type": "boolean",
+            "description": "Whether it could be read."
+          },
+          "seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was first seen, Unix milliseconds."
+          },
+          "sequence": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "For a version found in mail: its `SEQUENCE`."
+          }
+        }
+      },
       "JmapAccountRequest": {
         "type": "object",
         "description": "A JMAP account to add.",
@@ -3499,6 +6066,20 @@
           }
         }
       },
+      "JoinRequest": {
+        "type": "object",
+        "description": "People to make one.",
+        "required": ["people"],
+        "properties": {
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Two or more person ids of one archive."
+          }
+        }
+      },
       "LabelDto": {
         "type": "object",
         "description": "A label of an archive's messages, as Gmail has them.",
@@ -3556,6 +6137,57 @@
           }
         }
       },
+      "MeetingDto": {
+        "type": "object",
+        "description": "An event a person organizes or attends.",
+        "required": ["item_id", "all_day", "recurring", "role", "cancelled"],
+        "properties": {
+          "all_day": {
+            "type": "boolean"
+          },
+          "cancelled": {
+            "type": "boolean",
+            "description": "Whether the event is cancelled."
+          },
+          "ends_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "End in UTC, Unix milliseconds."
+          },
+          "group_id": {
+            "type": ["string", "null"],
+            "description": "The event with its copies: open it at `/api/events/{group_id}`."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Open it at `/api/items/{item_id}`."
+          },
+          "recurring": {
+            "type": "boolean"
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was removed from its calendar, Unix milliseconds."
+          },
+          "role": {
+            "type": "string",
+            "description": "`organizer` or `attendee`."
+          },
+          "starts_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Start in UTC, Unix milliseconds."
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Their lowercase `PARTSTAT` as an attendee, such as `accepted`."
+          },
+          "title": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "MessageDetail": {
         "type": "object",
         "description": "Everything the reader shows about a message, except its HTML body.",
@@ -3577,7 +6209,9 @@
           "has_html",
           "attachments",
           "locations",
-          "labels"
+          "labels",
+          "invitations",
+          "people"
         ],
         "properties": {
           "archive_id": {
@@ -3629,6 +6263,13 @@
             },
             "description": "`In-Reply-To` ids without angle brackets."
           },
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvitationDto"
+            },
+            "description": "The events its calendar parts (invitations, updates, replies, cancellations) belong to,\nas the archive knows them now; empty when it has none."
+          },
           "labels": {
             "type": "array",
             "items": {
@@ -3641,6 +6282,13 @@
             "items": {
               "$ref": "#/components/schemas/LocationDto"
             }
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressPersonDto"
+            },
+            "description": "The people of its `From`, `To`, `Cc`, `Bcc` and `Reply-To` addresses, for those that\nbelong to one, each address once."
           },
           "preview": {
             "type": "string",
@@ -3912,6 +6560,23 @@
           }
         }
       },
+      "ParticipantDto": {
+        "type": "object",
+        "description": "An organizer or attendee.",
+        "properties": {
+          "email": {
+            "type": ["string", "null"],
+            "description": "Lowercased address."
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Lowercase `PARTSTAT`, such as `accepted`, `declined`, `tentative`, `needs-action`."
+          }
+        }
+      },
       "PasswordRequest": {
         "type": "object",
         "description": "A password change.",
@@ -3923,6 +6588,141 @@
           "new": {
             "type": "string",
             "description": "At least 10 characters."
+          }
+        }
+      },
+      "PersonAttachmentDto": {
+        "type": "object",
+        "description": "A file exchanged with a person.",
+        "required": ["message_id", "date", "from_them", "attachment"],
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/AttachmentDto"
+          },
+          "date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The message's date, Unix milliseconds."
+          },
+          "from_them": {
+            "type": "boolean",
+            "description": "Whether they sent it."
+          },
+          "message_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonCardDto": {
+        "type": "object",
+        "description": "One of a person's contact cards.",
+        "required": [
+          "item_id",
+          "collection_id",
+          "collection_name",
+          "readable",
+          "versions",
+          "first_seen_at",
+          "seen_at"
+        ],
+        "properties": {
+          "account_name": {
+            "type": ["string", "null"]
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "collection_name": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Open its history at `/api/items/{item_id}`."
+          },
+          "readable": {
+            "type": "boolean",
+            "description": "Whether its latest version could be read."
+          },
+          "removed_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "When it was removed from its source, Unix milliseconds."
+          },
+          "seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was last known as it is, Unix milliseconds."
+          },
+          "title": {
+            "type": ["string", "null"],
+            "description": "The card's name."
+          },
+          "versions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many versions are archived.",
+            "minimum": 0
+          }
+        }
+      },
+      "PersonDetailDto": {
+        "type": "object",
+        "description": "Everything about a person.",
+        "required": [
+          "person",
+          "fields",
+          "cards",
+          "links",
+          "correspondence",
+          "meetings",
+          "overrides"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonCardDto"
+            },
+            "description": "Their cards, the current ones first."
+          },
+          "correspondence": {
+            "$ref": "#/components/schemas/CorrespondenceDto"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonFieldDto"
+            },
+            "description": "Their fields merged from every card, with where each value comes from."
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonLinkDto"
+            },
+            "description": "The shared addresses and phone numbers that made the cards one person."
+          },
+          "meetings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDto"
+            },
+            "description": "Events whose organizer or attendees include them, the latest start first, at most 50;\ncopies of one event in several calendars once."
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonOverrideDto"
+            },
+            "description": "Splits and joins made by hand that touch one of their cards or addresses, oldest first."
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonSummaryDto"
           }
         }
       },
@@ -3948,6 +6748,244 @@
           }
         }
       },
+      "PersonFieldDto": {
+        "type": "object",
+        "description": "A field of a person merged from their cards.",
+        "required": ["name", "values", "differs"],
+        "properties": {
+          "differs": {
+            "type": "boolean",
+            "description": "Whether their current cards disagree on it."
+          },
+          "name": {
+            "type": "string",
+            "description": "`name`, `nickname`, `email`, `phone`, `organization`, `title`, `birthday`, `address` or\n`note`."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldValueDto"
+            }
+          }
+        }
+      },
+      "PersonLinkDto": {
+        "type": "object",
+        "description": "Why two cards are the same person.",
+        "required": ["from_item_id", "to_item_id", "kind", "value"],
+        "properties": {
+          "from_item_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`email`, `phone`, or `hand` for a join made by hand."
+          },
+          "to_item_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "The shared address, the phone number in E.164 form, or the join's id."
+          }
+        }
+      },
+      "PersonOverrideDto": {
+        "type": "object",
+        "description": "A split or join of people made by hand. It names cards and addresses, never person ids, so\nit holds through every rebuild of the people.",
+        "required": ["id", "kind", "keys", "from", "created_at", "people"],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "created_by": {
+            "type": ["string", "null"],
+            "description": "The user who made it."
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A split: the cards they were separated from. Empty for a join."
+          },
+          "id": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A join: what is one person, as `item:<item id>` for a card or `email:<address>` for a\nperson from mail. A split: the cards moved out, as `item:<item id>`."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`join` or `split`."
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The people that hold its keys now, each once: for a join in the order of its keys, for a\nsplit the people of `from` first."
+          }
+        }
+      },
+      "PersonPage": {
+        "type": "object",
+        "description": "One page of people.",
+        "required": ["items", "total"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonSummaryDto"
+            }
+          },
+          "next": {
+            "type": ["string", "null"],
+            "description": "Pass as `after` for the next page; absent on the last page."
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many people match the filters, on every page.",
+            "minimum": 0
+          }
+        }
+      },
+      "PersonSummaryDto": {
+        "type": "object",
+        "description": "A person in a list: contact cards grouped by a shared email address or phone number, or an\naddress from mail alone.",
+        "required": [
+          "id",
+          "archive_id",
+          "emails",
+          "phones",
+          "cards",
+          "removed_cards",
+          "collection_ids",
+          "messages",
+          "from_me",
+          "differences",
+          "removed"
+        ],
+        "properties": {
+          "archive_id": {
+            "type": "string"
+          },
+          "cards": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many contact cards; 0 for a person from mail alone.",
+            "minimum": 0
+          },
+          "collection_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The address books of their cards."
+          },
+          "differences": {
+            "type": "boolean",
+            "description": "Whether their current cards disagree on a field."
+          },
+          "email": {
+            "type": ["string", "null"],
+            "description": "The email address to show first."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every email address, lowercased."
+          },
+          "first_message_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The oldest of those messages, Unix milliseconds."
+          },
+          "from_me": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages the archive's owner sent to them.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable across rebuilds while the group keeps its smallest email address or phone."
+          },
+          "last_message_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The newest of those messages, Unix milliseconds."
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages with one of their addresses, counted per address.",
+            "minimum": 0
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "The name most of their cards give, else the name their mail is written with most."
+          },
+          "phone": {
+            "type": ["string", "null"],
+            "description": "The phone number to show first, in E.164 form when known."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every phone number in E.164 form."
+          },
+          "removed": {
+            "type": "boolean",
+            "description": "Whether every card was removed and no mail keeps them."
+          },
+          "removed_cards": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many of those were removed from their source.",
+            "minimum": 0
+          }
+        }
+      },
+      "PersonThreadDto": {
+        "type": "object",
+        "description": "A conversation with a person.",
+        "required": ["thread_id", "message_id", "messages", "last_at"],
+        "properties": {
+          "last_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The newest one's date, Unix milliseconds."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The newest message of theirs in it; open it in the reader."
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages of theirs in it.",
+            "minimum": 0
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "thread_id": {
+            "type": "string"
+          }
+        }
+      },
       "ProfileRequest": {
         "type": "object",
         "description": "Changes to your own profile; missing fields stay as they are.",
@@ -3957,6 +6995,142 @@
           },
           "name": {
             "type": ["string", "null"]
+          }
+        }
+      },
+      "RecurrenceDto": {
+        "type": "object",
+        "description": "How an event repeats.",
+        "required": [
+          "interval",
+          "by_day",
+          "by_month_day",
+          "by_month",
+          "by_set_pos",
+          "by_year_day",
+          "by_week_no",
+          "by_hour",
+          "by_minute",
+          "week_start",
+          "rdates",
+          "exdates",
+          "changed"
+        ],
+        "properties": {
+          "by_day": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleDayDto"
+            }
+          },
+          "by_hour": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "by_minute": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "by_month": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "by_month_day": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "by_set_pos": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "by_week_no": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "by_year_day": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "changed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangedInstanceDto"
+            },
+            "description": "Instances changed or cancelled apart from the series."
+          },
+          "count": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "minimum": 0
+          },
+          "exdates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventTimeDto"
+            },
+            "description": "Left-out dates (`EXDATE`)."
+          },
+          "first_start": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The first start, Unix milliseconds."
+          },
+          "frequency": {
+            "type": ["string", "null"],
+            "description": "`YEARLY`, `MONTHLY`, `WEEKLY`, `DAILY`, `HOURLY`, `MINUTELY` or `SECONDLY`; absent when\nthe rule cannot be read."
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_end": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "The last end, Unix milliseconds; absent when it repeats without end."
+          },
+          "rdates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventTimeDto"
+            },
+            "description": "Extra dates (`RDATE`)."
+          },
+          "rule": {
+            "type": ["string", "null"],
+            "description": "The `RRULE` as written; absent when it repeats by `RDATE` alone."
+          },
+          "until": {
+            "type": ["string", "null"],
+            "description": "`UNTIL` as written, such as `20250428T070000Z` or `20250428`."
+          },
+          "week_start": {
+            "type": "string",
+            "description": "`MO` unless the rule says otherwise."
           }
         }
       },
@@ -4011,6 +7185,21 @@
         "type": "string",
         "description": "What to do with remote images in an HTML body.",
         "enum": ["block", "proxy", "direct"]
+      },
+      "RuleDayDto": {
+        "type": "object",
+        "description": "A weekday of a rule, with its ordinal: `{ ordinal: -1, weekday: \"FR\" }` is the last Friday.",
+        "required": ["weekday"],
+        "properties": {
+          "ordinal": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "weekday": {
+            "type": "string",
+            "description": "`MO`, `TU`, `WE`, `TH`, `FR`, `SA` or `SU`."
+          }
+        }
       },
       "SearchResponse": {
         "type": "object",
@@ -4075,6 +7264,44 @@
           "needed": {
             "type": "boolean",
             "description": "`true` while there are no users; the web app then shows the setup screen."
+          }
+        }
+      },
+      "SourceMessageDto": {
+        "type": "object",
+        "description": "A message a version of an item was found in.",
+        "required": ["id", "from", "date"],
+        "properties": {
+          "date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The message's date, Unix milliseconds."
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddressDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "SplitRequest": {
+        "type": "object",
+        "description": "Cards to move out of a person into a person of their own.",
+        "required": ["cards"],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Item ids of some of the person's cards, not all of them."
           }
         }
       },
@@ -4285,6 +7512,52 @@
           },
           "role": {
             "type": ["string", "null"]
+          }
+        }
+      },
+      "ValueSourceDto": {
+        "type": "object",
+        "description": "Where a value of a person's field comes from.",
+        "required": ["item_id", "collection_id", "collection_name", "removed", "seen_at"],
+        "properties": {
+          "account_name": {
+            "type": ["string", "null"],
+            "description": "The account the address book was read from; absent for imported files and removed\naccounts."
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "collection_name": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The contact card."
+          },
+          "removed": {
+            "type": "boolean",
+            "description": "Whether the card was removed from its source."
+          },
+          "seen_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the card was last known to say this, Unix milliseconds: when it was removed, else\nwhen its address book last synced, else when its latest version was seen."
+          }
+        }
+      },
+      "YearCountDto": {
+        "type": "object",
+        "description": "Messages of a year.",
+        "required": ["year", "messages"],
+        "properties": {
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       }

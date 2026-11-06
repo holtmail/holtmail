@@ -100,6 +100,102 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/calendar': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['calendar']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/calendar/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['export_calendar']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/collections': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_collections']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/contacts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_contacts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/contacts/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['export_contacts']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_events']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/export': {
     parameters: {
       query?: never
@@ -180,6 +276,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/people': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_people']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/people/overrides': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_overrides']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/remote-images': {
     parameters: {
       query?: never
@@ -212,6 +340,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/search/items': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['search_items']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/events/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_event']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/image-proxy': {
     parameters: {
       query?: never
@@ -221,6 +381,38 @@ export interface paths {
     }
     get: operations['get_image_proxy']
     put: operations['set_image_proxy']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/items/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_item']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/items/{id}/versions/{number}/raw': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_version_raw']
+    put?: never
     post?: never
     delete?: never
     options?: never
@@ -452,6 +644,70 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/people/join': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['join']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/people/overrides/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['remove_override']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/people/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_person']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/people/{id}/split': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['split']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/session': {
     parameters: {
       query?: never
@@ -588,6 +844,7 @@ export interface components {
     AccountDto: {
       address?: string | null
       connection?: components['schemas']['ImapConnectionDto'] | null
+      contacts_calendars?: components['schemas']['ContactsCalendarsDto'] | null
       enabled: boolean
       id: string
       jmap?: components['schemas']['JmapConnectionDto'] | null
@@ -613,6 +870,7 @@ export interface components {
     }
     /** @description What is happening to an account now and how its last sync or import ended. */
     AccountStatusDto: {
+      contacts_calendars?: components['schemas']['ContactsCalendarsRunDto'] | null
       /** @description Why the last run failed. */
       error?: string | null
       /**
@@ -636,6 +894,7 @@ export interface components {
     /** @description Changes to an account; missing fields stay as they are. */
     AccountUpdateRequest: {
       connection?: components['schemas']['ConnectionRequest'] | null
+      contacts_calendars?: components['schemas']['ContactsCalendarsRequest'] | null
       /** @description Paused accounts are not synced. */
       enabled?: boolean | null
       jmap?: components['schemas']['JmapConnectionRequest'] | null
@@ -662,6 +921,12 @@ export interface components {
     AddressDto: {
       email: string
       name?: string | null
+    }
+    /** @description An address that belongs to a person. */
+    AddressPersonDto: {
+      /** @description The address as the message writes it. */
+      email: string
+      person_id: string
     }
     /** @description An archive with its totals. */
     ArchiveDto: {
@@ -704,6 +969,143 @@ export interface components {
       /** @description Where to download it. */
       url: string
     }
+    /** @description One instance of an event in a span, its copies folded together. */
+    CalendarOccurrenceDto: {
+      all_day: boolean
+      cancelled: boolean
+      /** @description Whether this instance was changed apart from its series. */
+      changed: boolean
+      /** @description The leading copy's calendar. */
+      collection_id: string
+      /** @description The calendars of every copy, the leading one first. */
+      collection_ids: string[]
+      /**
+       * Format: int32
+       * @description How many copies of this instance the shown calendars hold.
+       */
+      copies: number
+      end_local: string
+      /**
+       * Format: int64
+       * @description End in UTC, Unix milliseconds; for dates the midnight after the last day.
+       */
+      ends_at: number
+      /** @description Times that read the same in every zone. */
+      floating: boolean
+      /** @description Open the event at `/api/events/{group_id}`. */
+      group_id: string
+      /** @description The leading copy: the highest `SEQUENCE`, then the latest `DTSTAMP` or `LAST-MODIFIED`. */
+      item_id: string
+      location?: string | null
+      /**
+       * @description The original start naming the instance, such as `2025-03-10T08:00:00Z` or `2025-03-10`;
+       *     absent for events that do not repeat.
+       */
+      recurrence_id?: string | null
+      recurring: boolean
+      /** @description Whether every copy was removed from its source. */
+      removed: boolean
+      /** @description The start as a wall-clock time in its own zone, `2025-03-10T09:00:00` or `2025-03-10`. */
+      start_local: string
+      /**
+       * Format: int64
+       * @description Start in UTC, Unix milliseconds. Dates count from midnight UTC and floating times as if
+       *     they were UTC.
+       */
+      starts_at: number
+      /** @description The start's original zone; absent for dates and floating times. */
+      time_zone?: string | null
+      title?: string | null
+    }
+    /** @description The instances of a span and the calendars they come from. */
+    CalendarRangeDto: {
+      /** @description Every calendar of the archive, removed ones too. */
+      calendars: components['schemas']['CalendarSourceDto'][]
+      /** @description By start. */
+      occurrences: components['schemas']['CalendarOccurrenceDto'][]
+      /** @description Whether instances were left out because there were too many. */
+      truncated: boolean
+    }
+    /** @description A calendar of the archive, for the toggles of the calendar views. */
+    CalendarSourceDto: {
+      /** @description The account it is read from; absent for imported files and once the account is gone. */
+      account_name?: string | null
+      /** @description The color its source gave it, as written. */
+      color?: string | null
+      /** @description Whether it holds the events found in mail. */
+      from_mail: boolean
+      id: string
+      /**
+       * Format: int64
+       * @description Events not removed.
+       */
+      items: number
+      name: string
+      /**
+       * Format: int64
+       * @description When it was removed from its source, Unix milliseconds.
+       */
+      removed_at?: number | null
+    }
+    /** @description One difference between a version and the one before it. */
+    ChangeDto: {
+      /** @description Absent when the value was removed. */
+      after?: string | null
+      /** @description Absent when the value was added. */
+      before?: string | null
+      /**
+       * @description Such as `email`, `start`, or `instance 2025-03-17T09:00:00 Europe/Berlin summary` for a
+       *     changed instance of a recurring event.
+       */
+      field: string
+    }
+    /** @description A changed or cancelled instance of a recurring event. */
+    ChangedInstanceDto: {
+      cancelled: boolean
+      end?: components['schemas']['EventTimeDto'] | null
+      recurrence_id?: components['schemas']['EventTimeDto'] | null
+      start?: components['schemas']['EventTimeDto'] | null
+      summary?: string | null
+    }
+    /** @description An address book or a calendar. */
+    CollectionDto: {
+      /** @description The account it was read from; absent once that account was removed. */
+      account_id?: string | null
+      /** @description That account's name. */
+      account_name?: string | null
+      archive_id: string
+      color?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      id: string
+      /**
+       * Format: int64
+       * @description Items not marked removed.
+       */
+      items: number
+      /** @description `contacts` or `calendar`. */
+      kind: string
+      name: string
+      /**
+       * Format: int64
+       * @description When it was noticed gone from the source, Unix milliseconds; it stays readable.
+       */
+      removed_at?: number | null
+      /**
+       * Format: int64
+       * @description Items marked removed.
+       */
+      removed_items: number
+      /**
+       * Format: int64
+       * @description When it was last synced from its server, Unix milliseconds; absent for imported files
+       *     and the calendar of events found in mail.
+       */
+      synced_at?: number | null
+    }
     /** @description A new connection for an IMAP account, checked by signing in before it is stored. */
     ConnectionRequest: {
       /** @description Folder paths not to archive. */
@@ -718,9 +1120,239 @@ export interface components {
       security?: string | null
       username: string
     }
+    /** @description Whether and where an account's contacts and calendars are archived. */
+    ContactsCalendarsDto: {
+      /** @description Where calendars are read; `null` when not set, and for members. */
+      calendars_url?: string | null
+      /** @description Where address books are read; `null` when not set, and for members. */
+      contacts_url?: string | null
+      /** @description Archived after each mail sync. */
+      enabled: boolean
+      /**
+       * @description A Google or Microsoft Graph account that has to sign in again to grant access to
+       *     contacts and calendars.
+       */
+      needs_consent: boolean
+      /**
+       * @description How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`
+       *     (Microsoft Graph) or `jmap` (the JMAP account's own session).
+       */
+      protocol: string
+    }
+    /** @description Turns archiving an account's contacts and calendars on or off. */
+    ContactsCalendarsRequest: {
+      /** @description Where calendars are read. */
+      calendars_url?: string | null
+      /**
+       * @description Where address books are read: a server such as `https://carddav.fastmail.com`, a DAV
+       *     root such as `https://cloud.example.com/remote.php/dav`, or one address book. With
+       *     neither address, they are detected from the account's address; with one, it serves both.
+       *     Ignored for Google accounts, which use Google's addresses, and Graph accounts, which use
+       *     Graph. A JMAP account without an address reads them through its JMAP session when that
+       *     offers contacts.
+       */
+      contacts_url?: string | null
+      /**
+       * @description Turning on signs in to the contacts and calendars server before anything is stored
+       *     (Google and Microsoft Graph accounts instead wait for their next sign-in); turning off
+       *     keeps what is archived.
+       */
+      enabled: boolean
+    }
+    /** @description The latest sync of an account's contacts and calendars. */
+    ContactsCalendarsRunDto: {
+      /** @description Why it failed. */
+      error?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      finished_at?: number | null
+      running: boolean
+      /** @description What it did, with counts only. */
+      summary: string
+    }
+    /** @description One copy's answer of an attendee. */
+    CopyAnswerDto: {
+      item_id: string
+      /** @description Lowercase `PARTSTAT`; absent when the copy does not list them or has no answer. */
+      status?: string | null
+    }
+    /** @description A field whose value differs between copies. */
+    CopyDifferenceDto: {
+      /**
+       * @description Such as `start`, `location` or `attendee`; prefixed `instance <RECURRENCE-ID> ` for a
+       *     changed instance.
+       */
+      field: string
+      /** @description In the order of `copies`. */
+      values: components['schemas']['CopyValuesDto'][]
+    }
+    /** @description One copy's values of a field that differs between copies. */
+    CopyValuesDto: {
+      item_id: string
+      /** @description Empty when the copy has no value. */
+      values: string[]
+    }
+    /** @description What the mail says about a person: every message with one of their addresses, each once. */
+    CorrespondenceDto: {
+      /** @description The newest first, at most 12; calendar parts are left out. */
+      attachments: components['schemas']['PersonAttachmentDto'][]
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      first_at?: number | null
+      /**
+       * Format: int64
+       * @description Sent by them.
+       */
+      from_them: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      last_at?: number | null
+      /** Format: int64 */
+      messages: number
+      /** @description The most recently active conversations first, at most 20. */
+      threads: components['schemas']['PersonThreadDto'][]
+      /**
+       * Format: int64
+       * @description With them among the recipients.
+       */
+      to_them: number
+      /** @description Oldest year first. */
+      years: components['schemas']['YearCountDto'][]
+    }
     /** @description An error. */
     ErrorDto: {
       error: string
+    }
+    /** @description One copy of an event: an item in a calendar. */
+    EventCopyDto: {
+      account_name?: string | null
+      collection_id: string
+      collection_name: string
+      color?: string | null
+      /** @description Whether it is the event as the archived mail describes it. */
+      from_mail: boolean
+      item_id: string
+      /** @description Whether it is the copy the event is shown from. */
+      leading: boolean
+      /**
+       * Format: int64
+       * @description When the copy, or its calendar, was removed from its source, Unix milliseconds.
+       */
+      removed_at?: number | null
+      /** Format: int64 */
+      sequence?: number | null
+      /**
+       * Format: int64
+       * @description The later of `DTSTAMP` and `LAST-MODIFIED`, Unix milliseconds.
+       */
+      stamp?: number | null
+      /** Format: int32 */
+      versions: number
+    }
+    /** @description Everything about one event and its copies. */
+    EventDetailDto: {
+      all_day: boolean
+      archive_id: string
+      /** @description Everyone any copy lists, in the order they first appear. */
+      attendees: components['schemas']['EventPersonDto'][]
+      cancelled: boolean
+      /** @description The leading copy first, then by rank. */
+      copies: components['schemas']['EventCopyDto'][]
+      /** @description The leading copy as normalized: `{"type": "calendar", "components": [...]}`. */
+      data: Record<string, never>
+      description?: string | null
+      /** @description Fields whose values differ between the copies. */
+      differences: components['schemas']['CopyDifferenceDto'][]
+      end?: components['schemas']['EventMomentDto'] | null
+      group_id: string
+      /** @description The leading copy. */
+      item_id: string
+      location?: string | null
+      /** @description Messages any copy's versions came in, oldest first. */
+      messages: components['schemas']['EventMessageDto'][]
+      organizer?: components['schemas']['EventPersonDto'] | null
+      recurrence?: components['schemas']['RecurrenceDto'] | null
+      start?: components['schemas']['EventMomentDto'] | null
+      /** @description Lowercase `STATUS` of the leading copy. */
+      status?: string | null
+      /** @description Every version of every copy, oldest first. */
+      timeline: components['schemas']['EventVersionDto'][]
+      title?: string | null
+      /** @description The viewer's zone the `in_zone` times are in, when it names a known zone. */
+      viewer_zone?: string | null
+    }
+    /** @description A message about the event. */
+    EventMessageDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      date: number
+      from: components['schemas']['AddressDto'][]
+      id: string
+      subject?: string | null
+      thread_id: string
+    }
+    /** @description A time of the event as written, and in the zone the viewer asked for. */
+    EventMomentDto: components['schemas']['EventTimeDto'] & {
+      /**
+       * @description The wall-clock time in the viewer's zone (`tz`), such as `2025-03-10T09:00:00`; absent for
+       *     dates, floating times and without `tz`.
+       */
+      in_zone?: string | null
+    }
+    /** @description An organizer or attendee, linked to a person when one has their address. */
+    EventPersonDto: {
+      /** @description Their answer in each copy, in the order of `copies`; empty for the organizer. */
+      answers: components['schemas']['CopyAnswerDto'][]
+      email?: string | null
+      name?: string | null
+      /** @description Open them at `/api/people/{person_id}`. */
+      person_id?: string | null
+      /** @description Their answer in the leading copy, lowercase. */
+      status?: string | null
+    }
+    /** @description A time of an event: as written, in its zone, and in UTC. */
+    EventTimeDto: {
+      /**
+       * @description The original zone: a `TZID` such as `Europe/Berlin`, `UTC`, an offset, or absent for
+       *     floating times and dates.
+       */
+      time_zone?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      utc?: number | null
+      /**
+       * @description As written: `2025-03-10` for a date, `2025-03-10T09:00:00` for a time, with `Z` or an
+       *     offset when written so.
+       */
+      value: string
+    }
+    /** @description A version of one copy, on the event's merged timeline. */
+    EventVersionDto: components['schemas']['ItemVersionDto'] & {
+      /**
+       * Format: int64
+       * @description When it happened: the date of the first message it came in, else when it was first seen.
+       *     Unix milliseconds.
+       */
+      at: number
+      collection_name: string
+      item_id: string
+    }
+    /** @description One value of a person's field. */
+    FieldValueDto: {
+      /** @description The cards that say it. */
+      sources: components['schemas']['ValueSourceDto'][]
+      /** @description As the first card that says it writes it. */
+      value: string
     }
     /** @description A folder with its message count. */
     FolderDto: {
@@ -781,6 +1413,192 @@ export interface components {
       security: string
       username: string
     }
+    /** @description An event or task a message's calendar part is a version of, as the archive knows it now. */
+    InvitationDto: {
+      all_day: boolean
+      cancelled: boolean
+      end?: components['schemas']['EventTimeDto'] | null
+      /** @description The event with its copies in calendars: open it at `/api/events/{group_id}`. */
+      group_id?: string | null
+      item_id: string
+      location?: string | null
+      /** @description This message's iTIP method, lowercase; absent when the part named none. */
+      method?: string | null
+      /**
+       * @description The answer of the attendee whose address is one of the archive's account addresses, when
+       *     one matches.
+       */
+      my_status?: string | null
+      organizer?: components['schemas']['ParticipantDto'] | null
+      recurring: boolean
+      start?: components['schemas']['EventTimeDto'] | null
+      /** @description Lowercase `STATUS` of the event now, such as `confirmed` or `cancelled`. */
+      status?: string | null
+      /** @description The event's summary now. */
+      summary?: string | null
+      /** @description iCalendar `UID`. */
+      uid?: string | null
+      /**
+       * Format: int32
+       * @description How many later versions changed the event itself (updates and cancellations, not
+       *     answers).
+       */
+      updates_after: number
+      /**
+       * Format: int32
+       * @description The number of this message's version among the item's versions.
+       */
+      version: number
+      /**
+       * Format: int32
+       * @description How many versions the item has.
+       */
+      version_count: number
+    }
+    /** @description An item with every version and what changed between them. */
+    ItemDetail: {
+      /**
+       * @description The normalized view of the latest version: `{"type": "contact", ...}`,
+       *     `{"type": "calendar", "components": [...]}` or `{"type": "unreadable"}`. For an event
+       *     found in mail, the versions merged: the latest invitation with later instance changes,
+       *     every attendee's latest answer, and `status` `CANCELLED` once cancelled.
+       */
+      data: Record<string, never>
+      item: components['schemas']['ItemSummaryDto']
+      /** @description Oldest first. */
+      versions: components['schemas']['ItemVersionDto'][]
+    }
+    /** @description A contact or event a search found. */
+    ItemHitDto: {
+      all_day: boolean
+      /** @description A contact's addresses, or an event's organizer and attendees. */
+      emails: string[]
+      /** @description An event's group: open it at `/api/events/{group_id}`. */
+      group_id?: string | null
+      item_id: string
+      /** @description `event` or `contact`. */
+      kind: string
+      /** @description The person a contact belongs to: open them at `/api/people/{person_id}`. */
+      person_id?: string | null
+      recurring: boolean
+      /**
+       * Format: int64
+       * @description When it was removed from its source, Unix milliseconds.
+       */
+      removed_at?: number | null
+      /**
+       * Format: int64
+       * @description An event's start, Unix milliseconds.
+       */
+      starts_at?: number | null
+      title?: string | null
+    }
+    /** @description One page of contacts or events. */
+    ItemPage: {
+      items: components['schemas']['ItemSummaryDto'][]
+      /** @description Pass as `after` for the next page; absent on the last page. */
+      next?: string | null
+    }
+    /** @description One page of contacts and events a search found. */
+    ItemSearchResponse: {
+      items: components['schemas']['ItemHitDto'][]
+      /**
+       * Format: int32
+       * @description Pass as `offset` for the next page; absent on the last page.
+       */
+      next_offset?: number | null
+      /** Format: int64 */
+      total: number
+    }
+    /** @description A contact, event or task with the fields of its latest version. */
+    ItemSummaryDto: {
+      all_day: boolean
+      archive_id: string
+      collection_id: string
+      /** @description Lowercased addresses: a contact's, or an event's organizer and attendees. */
+      emails: string[]
+      /**
+       * Format: int64
+       * @description End in UTC, Unix milliseconds.
+       */
+      ends_at?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      first_seen_at: number
+      id: string
+      /** @description `contact`, `event`, `task` or `other`. */
+      kind: string
+      /** @description The organizer's address. */
+      organizer?: string | null
+      /** @description A contact's phone numbers in E.164 form. */
+      phones: string[]
+      /** @description Whether the latest version could be read; an unreadable one is still archived. */
+      readable: boolean
+      recurring: boolean
+      /**
+       * Format: int64
+       * @description When it was noticed gone from the source, Unix milliseconds.
+       */
+      removed_at?: number | null
+      /**
+       * Format: int64
+       * @description Start in UTC, Unix milliseconds.
+       */
+      starts_at?: number | null
+      /** @description The start's original time zone, as written. */
+      time_zone?: string | null
+      /** @description A contact's name or an event's summary. */
+      title?: string | null
+      /** @description iCalendar `UID`, or a contact's `UID`. */
+      uid?: string | null
+      /**
+       * Format: int32
+       * @description How many versions are archived.
+       */
+      versions: number
+    }
+    /** @description One archived version of an item. */
+    ItemVersionDto: {
+      /**
+       * @description What changed from the version before; empty for the first. For a reply, counter or
+       *     refresh found in mail: the attendees it speaks for, as `answer` changes.
+       */
+      changes: components['schemas']['ChangeDto'][]
+      /** @description `text/vcard` or `text/calendar`. */
+      content_type: string
+      /** @description The source's version tag. */
+      etag?: string | null
+      /** @description The messages this version was found in, oldest first; empty when it did not come from mail. */
+      messages: components['schemas']['SourceMessageDto'][]
+      /**
+       * @description For a version found in mail: its iTIP method, lowercase (`request`, `reply`, `cancel`,
+       *     `publish`, `add`, `counter`, `declinecounter`, `refresh`); absent when the calendar part
+       *     named none or the version did not come from mail.
+       */
+      method?: string | null
+      /**
+       * Format: int32
+       * @description 1 for the first version. Versions found in mail are numbered in the order of their
+       *     `SEQUENCE`, `DTSTAMP` and message date, so a version found later can move later ones up.
+       */
+      number: number
+      /** @description The raw bytes exactly as received. */
+      raw_url: string
+      /** @description Whether it could be read. */
+      readable: boolean
+      /**
+       * Format: int64
+       * @description When it was first seen, Unix milliseconds.
+       */
+      seen_at: number
+      /**
+       * Format: int64
+       * @description For a version found in mail: its `SEQUENCE`.
+       */
+      sequence?: number | null
+    }
     /** @description A JMAP account to add. */
     JmapAccountRequest: {
       /** @description `password` (default; HTTP Basic) or `token` (bearer token, such as a Fastmail API token). */
@@ -825,6 +1643,11 @@ export interface components {
       /** @description Needed for `password`; may be empty for `token`. */
       username?: string
     }
+    /** @description People to make one. */
+    JoinRequest: {
+      /** @description Two or more person ids of one archive. */
+      people: string[]
+    }
     /** @description A label of an archive's messages, as Gmail has them. */
     LabelDto: {
       /**
@@ -855,6 +1678,37 @@ export interface components {
       email: string
       password: string
     }
+    /** @description An event a person organizes or attends. */
+    MeetingDto: {
+      all_day: boolean
+      /** @description Whether the event is cancelled. */
+      cancelled: boolean
+      /**
+       * Format: int64
+       * @description End in UTC, Unix milliseconds.
+       */
+      ends_at?: number | null
+      /** @description The event with its copies: open it at `/api/events/{group_id}`. */
+      group_id?: string | null
+      /** @description Open it at `/api/items/{item_id}`. */
+      item_id: string
+      recurring: boolean
+      /**
+       * Format: int64
+       * @description When it was removed from its calendar, Unix milliseconds.
+       */
+      removed_at?: number | null
+      /** @description `organizer` or `attendee`. */
+      role: string
+      /**
+       * Format: int64
+       * @description Start in UTC, Unix milliseconds.
+       */
+      starts_at?: number | null
+      /** @description Their lowercase `PARTSTAT` as an attendee, such as `accepted`. */
+      status?: string | null
+      title?: string | null
+    }
     /** @description Everything the reader shows about a message, except its HTML body. */
     MessageDetail: {
       archive_id: string
@@ -871,9 +1725,19 @@ export interface components {
       id: string
       /** @description `In-Reply-To` ids without angle brackets. */
       in_reply_to: string[]
+      /**
+       * @description The events its calendar parts (invitations, updates, replies, cancellations) belong to,
+       *     as the archive knows them now; empty when it has none.
+       */
+      invitations: components['schemas']['InvitationDto'][]
       /** @description Its labels, sorted. */
       labels: string[]
       locations: components['schemas']['LocationDto'][]
+      /**
+       * @description The people of its `From`, `To`, `Cc`, `Bcc` and `Reply-To` addresses, for those that
+       *     belong to one, each address once.
+       */
+      people: components['schemas']['AddressPersonDto'][]
       /** @description One line from the start of the body. */
       preview: string
       /** Format: int64 */
@@ -997,11 +1861,81 @@ export interface components {
       /** @description A path in the web app the callback returns to, e.g. `/settings`; `/settings` when missing. */
       return_to?: string | null
     }
+    /** @description An organizer or attendee. */
+    ParticipantDto: {
+      /** @description Lowercased address. */
+      email?: string | null
+      name?: string | null
+      /** @description Lowercase `PARTSTAT`, such as `accepted`, `declined`, `tentative`, `needs-action`. */
+      status?: string | null
+    }
     /** @description A password change. */
     PasswordRequest: {
       current: string
       /** @description At least 10 characters. */
       new: string
+    }
+    /** @description A file exchanged with a person. */
+    PersonAttachmentDto: {
+      attachment: components['schemas']['AttachmentDto']
+      /**
+       * Format: int64
+       * @description The message's date, Unix milliseconds.
+       */
+      date: number
+      /** @description Whether they sent it. */
+      from_them: boolean
+      message_id: string
+    }
+    /** @description One of a person's contact cards. */
+    PersonCardDto: {
+      account_name?: string | null
+      collection_id: string
+      collection_name: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      first_seen_at: number
+      /** @description Open its history at `/api/items/{item_id}`. */
+      item_id: string
+      /** @description Whether its latest version could be read. */
+      readable: boolean
+      /**
+       * Format: int64
+       * @description When it was removed from its source, Unix milliseconds.
+       */
+      removed_at?: number | null
+      /**
+       * Format: int64
+       * @description When it was last known as it is, Unix milliseconds.
+       */
+      seen_at: number
+      /** @description The card's name. */
+      title?: string | null
+      /**
+       * Format: int32
+       * @description How many versions are archived.
+       */
+      versions: number
+    }
+    /** @description Everything about a person. */
+    PersonDetailDto: {
+      /** @description Their cards, the current ones first. */
+      cards: components['schemas']['PersonCardDto'][]
+      correspondence: components['schemas']['CorrespondenceDto']
+      /** @description Their fields merged from every card, with where each value comes from. */
+      fields: components['schemas']['PersonFieldDto'][]
+      /** @description The shared addresses and phone numbers that made the cards one person. */
+      links: components['schemas']['PersonLinkDto'][]
+      /**
+       * @description Events whose organizer or attendees include them, the latest start first, at most 50;
+       *     copies of one event in several calendars once.
+       */
+      meetings: components['schemas']['MeetingDto'][]
+      /** @description Splits and joins made by hand that touch one of their cards or addresses, oldest first. */
+      overrides: components['schemas']['PersonOverrideDto'][]
+      person: components['schemas']['PersonSummaryDto']
     }
     /** @description A user as owners and admins see them. */
     PersonDto: {
@@ -1014,10 +1948,183 @@ export interface components {
       created_at: number
       user: components['schemas']['UserDto']
     }
+    /** @description A field of a person merged from their cards. */
+    PersonFieldDto: {
+      /** @description Whether their current cards disagree on it. */
+      differs: boolean
+      /**
+       * @description `name`, `nickname`, `email`, `phone`, `organization`, `title`, `birthday`, `address` or
+       *     `note`.
+       */
+      name: string
+      values: components['schemas']['FieldValueDto'][]
+    }
+    /** @description Why two cards are the same person. */
+    PersonLinkDto: {
+      from_item_id: string
+      /** @description `email`, `phone`, or `hand` for a join made by hand. */
+      kind: string
+      to_item_id: string
+      /** @description The shared address, the phone number in E.164 form, or the join's id. */
+      value: string
+    }
+    /**
+     * @description A split or join of people made by hand. It names cards and addresses, never person ids, so
+     *     it holds through every rebuild of the people.
+     */
+    PersonOverrideDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      /** @description The user who made it. */
+      created_by?: string | null
+      /** @description A split: the cards they were separated from. Empty for a join. */
+      from: string[]
+      id: string
+      /**
+       * @description A join: what is one person, as `item:<item id>` for a card or `email:<address>` for a
+       *     person from mail. A split: the cards moved out, as `item:<item id>`.
+       */
+      keys: string[]
+      /** @description `join` or `split`. */
+      kind: string
+      /**
+       * @description The people that hold its keys now, each once: for a join in the order of its keys, for a
+       *     split the people of `from` first.
+       */
+      people: string[]
+    }
+    /** @description One page of people. */
+    PersonPage: {
+      items: components['schemas']['PersonSummaryDto'][]
+      /** @description Pass as `after` for the next page; absent on the last page. */
+      next?: string | null
+      /**
+       * Format: int64
+       * @description How many people match the filters, on every page.
+       */
+      total: number
+    }
+    /**
+     * @description A person in a list: contact cards grouped by a shared email address or phone number, or an
+     *     address from mail alone.
+     */
+    PersonSummaryDto: {
+      archive_id: string
+      /**
+       * Format: int32
+       * @description How many contact cards; 0 for a person from mail alone.
+       */
+      cards: number
+      /** @description The address books of their cards. */
+      collection_ids: string[]
+      /** @description Whether their current cards disagree on a field. */
+      differences: boolean
+      /** @description The email address to show first. */
+      email?: string | null
+      /** @description Every email address, lowercased. */
+      emails: string[]
+      /**
+       * Format: int64
+       * @description The oldest of those messages, Unix milliseconds.
+       */
+      first_message_at?: number | null
+      /**
+       * Format: int64
+       * @description Messages the archive's owner sent to them.
+       */
+      from_me: number
+      /** @description Stable across rebuilds while the group keeps its smallest email address or phone. */
+      id: string
+      /**
+       * Format: int64
+       * @description The newest of those messages, Unix milliseconds.
+       */
+      last_message_at?: number | null
+      /**
+       * Format: int64
+       * @description Messages with one of their addresses, counted per address.
+       */
+      messages: number
+      /** @description The name most of their cards give, else the name their mail is written with most. */
+      name?: string | null
+      /** @description The phone number to show first, in E.164 form when known. */
+      phone?: string | null
+      /** @description Every phone number in E.164 form. */
+      phones: string[]
+      /** @description Whether every card was removed and no mail keeps them. */
+      removed: boolean
+      /**
+       * Format: int32
+       * @description How many of those were removed from their source.
+       */
+      removed_cards: number
+    }
+    /** @description A conversation with a person. */
+    PersonThreadDto: {
+      /**
+       * Format: int64
+       * @description The newest one's date, Unix milliseconds.
+       */
+      last_at: number
+      /** @description The newest message of theirs in it; open it in the reader. */
+      message_id: string
+      /**
+       * Format: int64
+       * @description Messages of theirs in it.
+       */
+      messages: number
+      subject?: string | null
+      thread_id: string
+    }
     /** @description Changes to your own profile; missing fields stay as they are. */
     ProfileRequest: {
       email?: string | null
       name?: string | null
+    }
+    /** @description How an event repeats. */
+    RecurrenceDto: {
+      by_day: components['schemas']['RuleDayDto'][]
+      by_hour: number[]
+      by_minute: number[]
+      by_month: number[]
+      by_month_day: number[]
+      by_set_pos: number[]
+      by_week_no: number[]
+      by_year_day: number[]
+      /** @description Instances changed or cancelled apart from the series. */
+      changed: components['schemas']['ChangedInstanceDto'][]
+      /** Format: int32 */
+      count?: number | null
+      /** @description Left-out dates (`EXDATE`). */
+      exdates: components['schemas']['EventTimeDto'][]
+      /**
+       * Format: int64
+       * @description The first start, Unix milliseconds.
+       */
+      first_start?: number | null
+      /**
+       * @description `YEARLY`, `MONTHLY`, `WEEKLY`, `DAILY`, `HOURLY`, `MINUTELY` or `SECONDLY`; absent when
+       *     the rule cannot be read.
+       */
+      frequency?: string | null
+      /** Format: int32 */
+      interval: number
+      /**
+       * Format: int64
+       * @description The last end, Unix milliseconds; absent when it repeats without end.
+       */
+      last_end?: number | null
+      /** @description Extra dates (`RDATE`). */
+      rdates: components['schemas']['EventTimeDto'][]
+      /** @description The `RRULE` as written; absent when it repeats by `RDATE` alone. */
+      rule?: string | null
+      /** @description `UNTIL` as written, such as `20250428T070000Z` or `20250428`. */
+      until?: string | null
+      /** @description `MO` unless the rule says otherwise. */
+      week_start: string
     }
     /** @description Remote images an archive keeps. */
     RemoteImagesDto: {
@@ -1060,6 +2167,13 @@ export interface components {
      * @enum {string}
      */
     RemoteMode: 'block' | 'proxy' | 'direct'
+    /** @description A weekday of a rule, with its ordinal: `{ ordinal: -1, weekday: "FR" }` is the last Friday. */
+    RuleDayDto: {
+      /** Format: int32 */
+      ordinal?: number | null
+      /** @description `MO`, `TU`, `WE`, `TH`, `FR`, `SA` or `SU`. */
+      weekday: string
+    }
     /** @description One page of search results. */
     SearchResponse: {
       items: components['schemas']['MessageSummary'][]
@@ -1088,6 +2202,22 @@ export interface components {
     SetupStatusDto: {
       /** @description `true` while there are no users; the web app then shows the setup screen. */
       needed: boolean
+    }
+    /** @description A message a version of an item was found in. */
+    SourceMessageDto: {
+      /**
+       * Format: int64
+       * @description The message's date, Unix milliseconds.
+       */
+      date: number
+      from: components['schemas']['AddressDto'][]
+      id: string
+      subject?: string | null
+    }
+    /** @description Cards to move out of a person into a person of their own. */
+    SplitRequest: {
+      /** @description Item ids of some of the person's cards, not all of them. */
+      cards: string[]
     }
     /** @description Totals of an archive. */
     StatsDto: {
@@ -1184,6 +2314,33 @@ export interface components {
       /** @description A new password; ends the user's sessions. */
       password?: string | null
       role?: string | null
+    }
+    /** @description Where a value of a person's field comes from. */
+    ValueSourceDto: {
+      /**
+       * @description The account the address book was read from; absent for imported files and removed
+       *     accounts.
+       */
+      account_name?: string | null
+      collection_id: string
+      collection_name: string
+      /** @description The contact card. */
+      item_id: string
+      /** @description Whether the card was removed from its source. */
+      removed: boolean
+      /**
+       * Format: int64
+       * @description When the card was last known to say this, Unix milliseconds: when it was removed, else
+       *     when its address book last synced, else when its latest version was seen.
+       */
+      seen_at: number
+    }
+    /** @description Messages of a year. */
+    YearCountDto: {
+      /** Format: int64 */
+      messages: number
+      /** Format: int32 */
+      year: number
     }
   }
   responses: never
@@ -1847,6 +3004,407 @@ export interface operations {
       }
     }
   }
+  calendar: {
+    parameters: {
+      query: {
+        /** @description Start of the span, Unix milliseconds. */
+        from: number
+        /** @description End of the span, Unix milliseconds; at most 400 days after `from`. */
+        to: number
+        /** @description Comma-separated calendar ids to show; all calendars when absent, none when empty. */
+        collections?: string
+        /** @description Whether events and calendars removed from their source are shown. */
+        show_removed?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Instances of events overlapping the span with copies across calendars folded together, by start */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CalendarRangeDto']
+        }
+      }
+      /** @description A span that ends before it starts or is longer than 400 days */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive or calendar id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  export_calendar: {
+    parameters: {
+      query: {
+        /** @description `ics` for the latest version of each item in one file, `zip` for every version. */
+        format: string
+        /** @description Only the items of this calendar id. */
+        collection?: string
+        /**
+         * @description With `to`: only events with an instance from here on, Unix milliseconds. Tasks are left
+         *     out then.
+         */
+        from?: number
+        /** @description With `from`: only events with an instance before this, Unix milliseconds. */
+        to?: number
+        /** @description `true` to put items removed from their source into an `ics` too; a zip has them always. */
+        removed?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The latest version of each calendar item as one `.ics` (`text/calendar`), or every version in a zip (`application/zip`) with `manifest.json`, streamed as they are read; a download cut short means the export failed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/octet-stream': unknown
+        }
+      }
+      /** @description Unknown format, or only one end of the range, or a range that ends before it starts */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or calendar */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_collections: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Address books and calendars, removed ones too, by kind and name */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CollectionDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_contacts: {
+    parameters: {
+      query?: {
+        /** @description Only items of this collection. */
+        collection?: string
+        /**
+         * @description `hide` (default) leaves out items removed from their source, `include` lists them too,
+         *     `only` lists just them.
+         */
+        removed?: string
+        /** @description `next` from the previous page. */
+        after?: string
+        /** @description Page size, at most 500; 50 by default. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Contacts by name, without regard to letter case; unnamed ones last */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemPage']
+        }
+      }
+      /** @description A malformed cursor or removed filter */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive or collection id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  export_contacts: {
+    parameters: {
+      query: {
+        /** @description `vcf` for the latest version of each contact in one file, `zip` for every version. */
+        format: string
+        /** @description Only the contacts of this address book id. */
+        collection?: string
+        /** @description Only the cards of this person id. */
+        person?: string
+        /** @description `true` to put contacts removed from their source into a `vcf` too; a zip has them always. */
+        removed?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The latest version of each contact as one `.vcf` (`text/vcard`), or every version in a zip (`application/zip`) with `manifest.json`, streamed as they are read; a download cut short means the export failed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/octet-stream': unknown
+        }
+      }
+      /** @description Unknown format, or both collection and person */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive, address book or person */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_events: {
+    parameters: {
+      query?: {
+        /** @description Only items of this collection. */
+        collection?: string
+        /**
+         * @description `hide` (default) leaves out items removed from their source, `include` lists them too,
+         *     `only` lists just them.
+         */
+        removed?: string
+        /** @description `next` from the previous page. */
+        after?: string
+        /** @description Page size, at most 500; 50 by default. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Events by start; a recurring event once, by its first start; events without a start last */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemPage']
+        }
+      }
+      /** @description A malformed cursor or removed filter */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive or collection id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   export: {
     parameters: {
       query: {
@@ -1977,7 +3535,7 @@ export interface operations {
       }
       cookie?: never
     }
-    /** @description An mbox, .eml or zip file */
+    /** @description An mbox, .eml, .vcf, .ics or zip file (Google Takeout too) */
     requestBody: {
       content: {
         'application/octet-stream': number[]
@@ -2148,6 +3706,129 @@ export interface operations {
       }
     }
   }
+  list_people: {
+    parameters: {
+      query?: {
+        /**
+         * @description Only people whose name, an email address or a phone number contains this text, without
+         *     regard to letter case.
+         */
+        q?: string
+        /** @description `contacts` (with a card), `mail` (from mail alone) or an address book's id. */
+        source?: string
+        /** @description `true` for only people whose cards disagree. */
+        has_differences?: boolean
+        /** @description `next` from the previous page. */
+        cursor?: string
+        /** @description Page size, at most 500; 100 by default. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description People by name without regard to letter case, nameless ones last */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonPage']
+        }
+      }
+      /** @description A malformed cursor or source */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_overrides: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The archive's splits and joins, oldest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonOverrideDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   start_remote_images: {
     parameters: {
       query?: never
@@ -2286,6 +3967,123 @@ export interface operations {
       }
     }
   }
+  search_items: {
+    parameters: {
+      query: {
+        /** @description The search, in the same language as mail search. */
+        q: string
+        offset?: number
+        /** @description At most 100; 20 by default. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Events by start, the latest first, then contacts; copies of one event in several calendars once per page */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemSearchResponse']
+        }
+      }
+      /** @description The search cannot be parsed */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_event: {
+    parameters: {
+      query?: {
+        /** @description An IANA zone such as `Europe/Paris`; times are also given in it. */
+        tz?: string
+      }
+      header?: never
+      path: {
+        /** @description Event group id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['EventDetailDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such event */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_image_proxy: {
     parameters: {
       query?: never
@@ -2364,6 +4162,107 @@ export interface operations {
       }
       /** @description Not an owner or admin */
       403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_item: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemDetail']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_version_raw: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item id */
+        id: string
+        /** @description Version number, from 1 */
+        number: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The version's bytes exactly as received, as a download: text/vcard, text/calendar, or the JSON a Microsoft Graph or JMAP server sent (application/vnd.microsoft.graph.contact+json, application/vnd.microsoft.graph.event+json, application/jscontact+json, application/jscalendar+json) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'text/calendar': unknown
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item or version */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
         headers: {
           [name: string]: unknown
         }
@@ -3075,6 +4974,264 @@ export interface operations {
         }
       }
       /** @description No such archive or account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  join: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['JoinRequest']
+      }
+    }
+    responses: {
+      /** @description The join; `people` is the one person they are now */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonOverrideDto']
+        }
+      }
+      /** @description Fewer than two people, or people of different archives */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such person */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A split made by hand keeps them apart */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  remove_override: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Override id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The undone split or join; `people` holds its keys after the rebuild */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonOverrideDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such override */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_person: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Person id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonDetailDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such person */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  split: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Person id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SplitRequest']
+      }
+    }
+    responses: {
+      /** @description The split; `people` is the person left with the other cards, then the person of the moved cards */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PersonOverrideDto']
+        }
+      }
+      /** @description No cards, every card, or a card of another person */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such person */
       404: {
         headers: {
           [name: string]: unknown

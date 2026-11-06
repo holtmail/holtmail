@@ -49,6 +49,94 @@ export type OAuthStartRequest = Omit<Schemas['OAuthStartRequest'], 'provider' | 
   kind?: OAuthKind | null
 }
 export type OAuthStart = Schemas['OAuthStartDto']
+export type Invitation = Schemas['InvitationDto']
+export type EventTime = Schemas['EventTimeDto']
+export type Participant = Schemas['ParticipantDto']
+export type ItemSummary = Schemas['ItemSummaryDto']
+export type ItemDetail = Schemas['ItemDetail']
+export type ItemVersion = Schemas['ItemVersionDto']
+export type ItemChange = Schemas['ChangeDto']
+export type SourceMessage = Schemas['SourceMessageDto']
+export type ContactsCalendars = Schemas['ContactsCalendarsDto']
+export type ContactsCalendarsRun = Schemas['ContactsCalendarsRunDto']
+export type ContactsCalendarsRequest = Schemas['ContactsCalendarsRequest']
+export type Collection = Schemas['CollectionDto']
+export type PersonSummary = Schemas['PersonSummaryDto']
+export type PeoplePage = Schemas['PersonPage']
+export type PersonDetail = Schemas['PersonDetailDto']
+export type PersonField = Schemas['PersonFieldDto']
+export type PersonFieldValue = Schemas['FieldValueDto']
+export type ValueSource = Schemas['ValueSourceDto']
+export type PersonCard = Schemas['PersonCardDto']
+export type PersonLink = Schemas['PersonLinkDto']
+export type Correspondence = Schemas['CorrespondenceDto']
+export type PersonThread = Schemas['PersonThreadDto']
+export type PersonAttachment = Schemas['PersonAttachmentDto']
+export type Meeting = Schemas['MeetingDto']
+export type AddressPerson = Schemas['AddressPersonDto']
+export type CalendarRange = Schemas['CalendarRangeDto']
+export type CalendarOccurrence = Schemas['CalendarOccurrenceDto']
+export type CalendarSource = Schemas['CalendarSourceDto']
+export type EventDetail = Schemas['EventDetailDto']
+export type EventMoment = Schemas['EventMomentDto']
+export type EventCopy = Schemas['EventCopyDto']
+export type EventPerson = Schemas['EventPersonDto']
+export type EventMessage = Schemas['EventMessageDto']
+export type EventVersion = Schemas['EventVersionDto']
+export type CopyDifference = Schemas['CopyDifferenceDto']
+export type CopyAnswer = Schemas['CopyAnswerDto']
+export type Recurrence = Schemas['RecurrenceDto']
+export type RuleDay = Schemas['RuleDayDto']
+export type ChangedInstance = Schemas['ChangedInstanceDto']
+export type ItemHit = Schemas['ItemHitDto']
+export type ItemSearchResponse = Schemas['ItemSearchResponse']
+export type PersonOverride = Schemas['PersonOverrideDto']
+
+/** What a calendar request shows: a span in Unix milliseconds, the calendars to show (all when
+ * absent, none when empty) and whether removed events are shown. */
+export interface CalendarFilters {
+  from: number
+  to: number
+  collections?: readonly string[]
+  showRemoved?: boolean
+}
+
+/** The query string of a calendar request: calendars joined by commas, defaults left out. */
+export function calendarParams(filters: CalendarFilters): {
+  from: number
+  to: number
+  collections?: string
+  show_removed?: boolean
+} {
+  return {
+    from: Math.floor(filters.from),
+    to: Math.ceil(filters.to),
+    ...(filters.collections ? { collections: filters.collections.toSorted().join(',') } : {}),
+    ...(filters.showRemoved ? { show_removed: true } : {}),
+  }
+}
+
+/** Which people a list shows: `source` is `contacts`, `mail` or an address book's id. */
+export interface PeopleFilters {
+  q?: string
+  source?: string
+  differences?: boolean
+}
+
+/** The query string of a people list: empty filters are left out. */
+export function peopleParams(filters: PeopleFilters): {
+  q?: string
+  source?: string
+  has_differences?: boolean
+} {
+  const q = filters.q?.trim()
+  const source = filters.source?.trim()
+  return {
+    ...(q ? { q } : {}),
+    ...(source ? { source } : {}),
+    ...(filters.differences ? { has_differences: true } : {}),
+  }
+}
 
 export const client = createClient<paths>({ baseUrl: '' })
 
@@ -285,6 +373,9 @@ export function bodyUrl(id: string, remote: RemoteMode = 'block', saved = true):
 
 export const rawUrl = (id: string): string => `/api/messages/${encode(id)}/raw`
 
+export const itemVersionRawUrl = (id: string, version: number): string =>
+  `/api/items/${encode(id)}/versions/${version}/raw`
+
 export type ExportFormat = 'mbox' | 'zip'
 
 export interface ExportScope {
@@ -303,6 +394,52 @@ export function exportUrl(
   else if (scope.label) params.set('label', scope.label)
   else if (scope.q?.trim()) params.set('q', scope.q.trim())
   return `/api/archives/${encode(archiveId)}/export?${params.toString()}`
+}
+
+export type ContactsExportFormat = 'vcf' | 'zip'
+export type CalendarExportFormat = 'ics' | 'zip'
+
+/** Which contacts an export holds: an address book or a person's cards; removed contacts go
+ * into a `.vcf` only when asked, a zip has them always. */
+export interface ContactsExportScope {
+  collection?: string
+  person?: string
+  removed?: boolean
+}
+
+/** Which calendar items an export holds: a calendar and a span in Unix milliseconds. */
+export interface CalendarExportScope {
+  collection?: string
+  from?: number
+  to?: number
+  removed?: boolean
+}
+
+export function contactsExportUrl(
+  archiveId: string,
+  format: ContactsExportFormat,
+  scope: ContactsExportScope = {},
+): string {
+  const params = new URLSearchParams({ format })
+  if (scope.person) params.set('person', scope.person)
+  else if (scope.collection) params.set('collection', scope.collection)
+  if (scope.removed) params.set('removed', 'true')
+  return `/api/archives/${encode(archiveId)}/contacts/export?${params.toString()}`
+}
+
+export function calendarExportUrl(
+  archiveId: string,
+  format: CalendarExportFormat,
+  scope: CalendarExportScope = {},
+): string {
+  const params = new URLSearchParams({ format })
+  if (scope.collection) params.set('collection', scope.collection)
+  if (scope.from !== undefined && scope.to !== undefined && scope.from < scope.to) {
+    params.set('from', String(Math.floor(scope.from)))
+    params.set('to', String(Math.ceil(scope.to)))
+  }
+  if (scope.removed) params.set('removed', 'true')
+  return `/api/archives/${encode(archiveId)}/calendar/export?${params.toString()}`
 }
 
 export interface MessageBody {
@@ -470,4 +607,123 @@ export const rawQuery = (id: string) =>
     queryKey: ['messages', id, 'raw'],
     queryFn: ({ signal }) => fetchRaw(id, signal),
     staleTime: Infinity,
+  })
+
+export const itemQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['items', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/items/{id}', { params: { path: { id } }, signal })),
+  })
+
+export const collectionsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'collections'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/collections', {
+          params: { path: { id: archiveId } },
+          signal,
+        }),
+      ),
+  })
+
+export const peopleInfiniteQuery = (archiveId: string, filters: PeopleFilters) => {
+  const params = peopleParams(filters)
+  return infiniteQueryOptions({
+    queryKey: ['archives', archiveId, 'people', params],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/people', {
+          params: {
+            path: { id: archiveId },
+            query: { ...params, cursor: pageParam, limit: pageSize },
+          },
+          signal,
+        }),
+      ),
+    getNextPageParam: (page) => page.next ?? undefined,
+  })
+}
+
+export const calendarQuery = (archiveId: string, filters: CalendarFilters) => {
+  const params = calendarParams(filters)
+  return queryOptions({
+    queryKey: ['archives', archiveId, 'calendar', params],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/calendar', {
+          params: { path: { id: archiveId }, query: params },
+          signal,
+        }),
+      ),
+  })
+}
+
+export const eventQuery = (id: string, tz?: string) =>
+  queryOptions({
+    queryKey: ['events', id, tz ?? null],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/events/{id}', {
+          params: { path: { id }, query: tz ? { tz } : {} },
+          signal,
+        }),
+      ),
+  })
+
+export const itemSearchQuery = (archiveId: string, q: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'search-items', q],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/search/items', {
+          params: { path: { id: archiveId }, query: { q, limit: 20 } },
+          signal,
+        }),
+      ),
+    retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 3,
+  })
+
+export const peopleOverridesQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'people-overrides'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/people/overrides', {
+          params: { path: { id: archiveId } },
+          signal,
+        }),
+      ),
+  })
+
+/** Moves `cards` out of the person into a person of their own; `people` of the answer is the
+ * person left with the other cards, then the new one. */
+export const splitPerson = async (personId: string, cards: readonly string[]) =>
+  unwrap(
+    await client.POST('/api/people/{id}/split', {
+      params: { path: { id: personId } },
+      body: { cards: [...cards] },
+    }),
+  )
+
+/** Makes the people one; `people` of the answer is the person they are now. */
+export const joinPeople = async (people: readonly string[]) =>
+  unwrap(await client.POST('/api/people/join', { body: { people: [...people] } }))
+
+/** Undoes a split or join; `people` of the answer holds its cards and addresses now. */
+export const undoPersonOverride = async (id: string) =>
+  unwrap(
+    await client.DELETE('/api/people/overrides/{id}', {
+      params: { path: { id } },
+      headers: json,
+    }),
+  )
+
+export const personQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['people', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/people/{id}', { params: { path: { id } }, signal })),
   })

@@ -804,6 +804,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/push/dav/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['receive']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/session': {
     parameters: {
       query?: never
@@ -1059,10 +1075,13 @@ export interface components {
        * @description Its own minutes between syncs, 0 for only on request; `null` follows the server's.
        */
       sync_interval_minutes?: number | null
+      watch?: components['schemas']['WatchDto'] | null
     }
     /** @description What is happening to an account now and how its last sync or import ended. */
     AccountStatusDto: {
       contacts_calendars?: components['schemas']['ContactsCalendarsRunDto'] | null
+      /** @description The watch on its contacts and calendars. */
+      contacts_watch: components['schemas']['WatchStateDto']
       /** @description Why the last run failed. */
       error?: string | null
       /**
@@ -1082,11 +1101,19 @@ export interface components {
       next_sync_at?: number | null
       /** @description A sync or import is running. */
       running: boolean
+      /** @description The watch on its mail. */
+      watch: components['schemas']['WatchStateDto']
     }
     /** @description Changes to an account; missing fields stay as they are. */
     AccountUpdateRequest: {
       connection?: components['schemas']['ConnectionRequest'] | null
       contacts_calendars?: components['schemas']['ContactsCalendarsRequest'] | null
+      /**
+       * Format: int64
+       * @description Minutes between contacts and calendars syncs, 0 for only on request; `null` follows the
+       *     mail interval again. Missing keeps it.
+       */
+      contacts_interval_minutes?: number | null
       /** @description Paused accounts are not synced. */
       enabled?: boolean | null
       jmap?: components['schemas']['JmapConnectionRequest'] | null
@@ -1108,6 +1135,7 @@ export interface components {
        *     Missing keeps it.
        */
       sync_interval_minutes?: number | null
+      watch?: components['schemas']['WatchDto'] | null
     }
     /** @description One mailbox of an address header. */
     AddressDto: {
@@ -1314,26 +1342,47 @@ export interface components {
     }
     /** @description Whether and where an account's contacts and calendars are archived. */
     ContactsCalendarsDto: {
+      /**
+       * @description A CalDAV address that answered for a JMAP account without calendars; `null` otherwise,
+       *     and for members.
+       */
+      caldav_offer?: string | null
+      /**
+       * @description How calendars are read, as `protocol`; `dav` with `protocol` `jmap` for a JMAP account
+       *     whose session offers no calendars.
+       */
+      calendars_protocol: string
       /** @description Where calendars are read; `null` when not set, and for members. */
       calendars_url?: string | null
       /** @description Where address books are read; `null` when not set, and for members. */
       contacts_url?: string | null
       /** @description Archived after each mail sync. */
       enabled: boolean
+      /** @description CardDAV and CalDAV sign in with a password of their own. */
+      has_dav_password: boolean
+      /**
+       * Format: int64
+       * @description Minutes between their syncs, 0 for only on request; `null` follows the mail interval.
+       */
+      interval_minutes?: number | null
       /**
        * @description A Google or Microsoft Graph account that has to sign in again to grant access to
        *     contacts and calendars.
        */
       needs_consent: boolean
       /**
-       * @description How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`
-       *     (Microsoft Graph) or `jmap` (the JMAP account's own session).
+       * @description How address books are read: `dav` (CardDAV at the address above), `graph` (Microsoft
+       *     Graph) or `jmap` (the JMAP account's own session).
        */
       protocol: string
     }
     /** @description Turns archiving an account's contacts and calendars on or off. */
     ContactsCalendarsRequest: {
-      /** @description Where calendars are read. */
+      /**
+       * @description Where calendars are read. For a JMAP account whose session offers contacts but no
+       *     calendars, an address here alone (or none, when one is found) reads calendars over
+       *     CalDAV while contacts stay on JMAP.
+       */
       calendars_url?: string | null
       /**
        * @description Where address books are read: a server such as `https://carddav.fastmail.com`, a DAV
@@ -1344,6 +1393,11 @@ export interface components {
        *     offers contacts.
        */
       contacts_url?: string | null
+      /**
+       * @description A password for CardDAV and CalDAV when the account's own does not work there, such as
+       *     an app password; never returned. Empty removes a stored one.
+       */
+      dav_password?: string | null
       /**
        * @description Turning on signs in to the contacts and calendars server before anything is stored
        *     (Google and Microsoft Graph accounts instead wait for their next sign-in); turning off
@@ -2735,6 +2789,26 @@ export interface components {
       anchor?: string | null
       /** @description Also read every message's bytes and compare their hash; as slow as reading the archive. */
       blobs?: boolean
+    }
+    /** @description Which folders of an account are watched for changes. */
+    WatchDto: {
+      /**
+       * @description The watched folder paths for `folders`; a server without `NOTIFY` watches the first
+       *     three.
+       */
+      folders?: string[]
+      /** @description `off`, `inbox` (the default; the all-mail folder on Gmail) or `folders`. */
+      mode: string
+    }
+    /** @description What a watch is doing now. */
+    WatchStateDto: {
+      /** @description Why it is reconnecting. */
+      reason?: string | null
+      /**
+       * @description `off`, `starting`, `live` (changes start a sync within seconds), `polling` (the server
+       *     cannot push) or `reconnecting`.
+       */
+      state: string
     }
     /** @description A webhook with its signing secret, shown only when it is made. */
     WebhookCreatedDto: {
@@ -6058,6 +6132,39 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ErrorDto']
         }
+      }
+    }
+  }
+  receive: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description The push address this server registered */
+        id: string
+      }
+      cookie?: never
+    }
+    /** @description A Web Push message encrypted with `aes128gcm` (RFC 8291) */
+    requestBody: {
+      content: {
+        'application/octet-stream': number[]
+      }
+    }
+    responses: {
+      /** @description Accepted; the account's contacts and calendars sync soon */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not a push address of this server, or a message it cannot decrypt */
+      410: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }

@@ -4155,6 +4155,48 @@
         }
       }
     },
+    "/api/push/dav/{id}": {
+      "post": {
+        "tags": ["push"],
+        "operationId": "receive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The push address this server registered",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "A Web Push message encrypted with `aes128gcm` (RFC 8291)",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Accepted; the account's contacts and calendars sync soon"
+          },
+          "410": {
+            "description": "Not a push address of this server, or a message it cannot decrypt"
+          }
+        },
+        "security": [{}]
+      }
+    },
     "/api/session": {
       "get": {
         "tags": ["session"],
@@ -5392,13 +5434,24 @@
             "format": "int64",
             "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's.",
             "minimum": 0
+          },
+          "watch": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WatchDto",
+                "description": "Which folders are watched for changes; `null` for import accounts and for members."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
       "AccountStatusDto": {
         "type": "object",
         "description": "What is happening to an account now and how its last sync or import ended.",
-        "required": ["running", "new_messages"],
+        "required": ["running", "new_messages", "watch", "contacts_watch"],
         "properties": {
           "contacts_calendars": {
             "oneOf": [
@@ -5410,6 +5463,10 @@
                 "type": "null"
               }
             ]
+          },
+          "contacts_watch": {
+            "$ref": "#/components/schemas/WatchStateDto",
+            "description": "The watch on its contacts and calendars."
           },
           "error": {
             "type": ["string", "null"],
@@ -5434,6 +5491,10 @@
           "running": {
             "type": "boolean",
             "description": "A sync or import is running."
+          },
+          "watch": {
+            "$ref": "#/components/schemas/WatchStateDto",
+            "description": "The watch on its mail."
           }
         }
       },
@@ -5462,6 +5523,12 @@
                 "type": "null"
               }
             ]
+          },
+          "contacts_interval_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Minutes between contacts and calendars syncs, 0 for only on request; `null` follows the\nmail interval again. Missing keeps it.",
+            "minimum": 0
           },
           "enabled": {
             "type": ["boolean", "null"],
@@ -5496,6 +5563,17 @@
             "format": "int64",
             "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's again.\nMissing keeps it.",
             "minimum": 0
+          },
+          "watch": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WatchDto",
+                "description": "Which folders are watched for changes."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5917,8 +5995,22 @@
       "ContactsCalendarsDto": {
         "type": "object",
         "description": "Whether and where an account's contacts and calendars are archived.",
-        "required": ["enabled", "needs_consent", "protocol"],
+        "required": [
+          "enabled",
+          "needs_consent",
+          "protocol",
+          "calendars_protocol",
+          "has_dav_password"
+        ],
         "properties": {
+          "caldav_offer": {
+            "type": ["string", "null"],
+            "description": "A CalDAV address that answered for a JMAP account without calendars; `null` otherwise,\nand for members."
+          },
+          "calendars_protocol": {
+            "type": "string",
+            "description": "How calendars are read, as `protocol`; `dav` with `protocol` `jmap` for a JMAP account\nwhose session offers no calendars."
+          },
           "calendars_url": {
             "type": ["string", "null"],
             "description": "Where calendars are read; `null` when not set, and for members."
@@ -5931,13 +6023,23 @@
             "type": "boolean",
             "description": "Archived after each mail sync."
           },
+          "has_dav_password": {
+            "type": "boolean",
+            "description": "CardDAV and CalDAV sign in with a password of their own."
+          },
+          "interval_minutes": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Minutes between their syncs, 0 for only on request; `null` follows the mail interval.",
+            "minimum": 0
+          },
           "needs_consent": {
             "type": "boolean",
             "description": "A Google or Microsoft Graph account that has to sign in again to grant access to\ncontacts and calendars."
           },
           "protocol": {
             "type": "string",
-            "description": "How they are read: `dav` (CardDAV and CalDAV at the addresses above), `graph`\n(Microsoft Graph) or `jmap` (the JMAP account's own session)."
+            "description": "How address books are read: `dav` (CardDAV at the address above), `graph` (Microsoft\nGraph) or `jmap` (the JMAP account's own session)."
           }
         }
       },
@@ -5948,11 +6050,15 @@
         "properties": {
           "calendars_url": {
             "type": ["string", "null"],
-            "description": "Where calendars are read."
+            "description": "Where calendars are read. For a JMAP account whose session offers contacts but no\ncalendars, an address here alone (or none, when one is found) reads calendars over\nCalDAV while contacts stay on JMAP."
           },
           "contacts_url": {
             "type": ["string", "null"],
             "description": "Where address books are read: a server such as `https://carddav.fastmail.com`, a DAV\nroot such as `https://cloud.example.com/remote.php/dav`, or one address book. With\nneither address, they are detected from the account's address; with one, it serves both.\nIgnored for Google accounts, which use Google's addresses, and Graph accounts, which use\nGraph. A JMAP account without an address reads them through its JMAP session when that\noffers contacts."
+          },
+          "dav_password": {
+            "type": ["string", "null"],
+            "description": "A password for CardDAV and CalDAV when the account's own does not work there, such as\nan app password; never returned. Empty removes a stored one."
           },
           "enabled": {
             "type": "boolean",
@@ -8895,6 +9001,39 @@
           "blobs": {
             "type": "boolean",
             "description": "Also read every message's bytes and compare their hash; as slow as reading the archive."
+          }
+        }
+      },
+      "WatchDto": {
+        "type": "object",
+        "description": "Which folders of an account are watched for changes.",
+        "required": ["mode"],
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The watched folder paths for `folders`; a server without `NOTIFY` watches the first\nthree."
+          },
+          "mode": {
+            "type": "string",
+            "description": "`off`, `inbox` (the default; the all-mail folder on Gmail) or `folders`."
+          }
+        }
+      },
+      "WatchStateDto": {
+        "type": "object",
+        "description": "What a watch is doing now.",
+        "required": ["state"],
+        "properties": {
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Why it is reconnecting."
+          },
+          "state": {
+            "type": "string",
+            "description": "`off`, `starting`, `live` (changes start a sync within seconds), `polling` (the server\ncannot push) or `reconnecting`."
           }
         }
       },

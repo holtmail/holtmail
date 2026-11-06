@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-calendar"
+description = "The derived calendar: event groups across calendars, stored instances and copy differences"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-pim.workspace = true
+holtmail-recur.workspace = true
+holtmail-store.workspace = true
+blake3.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+holtmail-blob.workspace = true
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

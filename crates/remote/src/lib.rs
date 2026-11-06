@@ -6,20 +6,23 @@
 //! the whole instance, and identical bytes behind different URLs are stored once, because blobs
 //! are addressed by their hash.
 
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use futures::stream::{self, StreamExt};
 use holtmail_blob::{BlobError, BlobStore};
 use holtmail_core::{ArchiveId, MessageId, Timestamp};
 use holtmail_fetch::{FetchError, Fetcher};
 use holtmail_store::{ArchivedWhen, RemoteCopy, Store, StoreError};
+use tokio::sync::Semaphore;
 
 /// Remote images saved for one message at most; the rest are left out.
 pub const MAX_IMAGES_PER_MESSAGE: usize = 100;
 
 const FETCHES_AT_ONCE: usize = 6;
+/// Messages looked at together, so one slow sender does not hold up the others.
+pub const MESSAGES_AT_ONCE: usize = 4;
 const MESSAGES_PER_BATCH: u32 = 50;
 
 /// Which messages [`RemoteImages::save_archive`] looks at, relative to when saving was turned on
@@ -69,6 +72,39 @@ pub struct RemoteImages {
     store: Arc<dyn Store>,
 }
 
+impl Saved {
+    fn add(&mut self, other: Saved) {
+        self.messages += other.messages;
+        self.fetched += other.fetched;
+        self.known += other.known;
+        self.failed += other.failed;
+    }
+}
+
+/// What one run shares between the messages it looks at together.
+struct Run {
+    fetches: Semaphore,
+    urls: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl Run {
+    fn new() -> Self {
+        Self {
+            fetches: Semaphore::new(FETCHES_AT_ONCE),
+            urls: Mutex::default(),
+        }
+    }
+
+    fn url(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.urls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .entry(key.to_owned())
+            .or_default()
+            .clone()
+    }
+}
+
 impl RemoteImages {
     /// Saves through `fetcher` into these stores.
     pub fn new(
@@ -86,8 +122,11 @@ impl RemoteImages {
     /// Saves the remote images of the messages in `scope` that were not looked at yet, when the
     /// archive has saving turned on; does nothing otherwise.
     ///
-    /// `progress` is called after every message. The run checks `cancel` between messages and
-    /// stops with `cancelled` set; messages done so far stay done. A URL fetched or failed before,
+    /// Up to [`MESSAGES_AT_ONCE`] messages are looked at together, with at most six downloads
+    /// at a time across them, so a slow sender does not hold up the others; a URL two of them
+    /// link is still fetched once. `progress` is called after every message. The run checks
+    /// `cancel` before starting each message and stops with `cancelled` set once the messages
+    /// already started are done; messages done so far stay done. A URL fetched or failed before,
     /// for any archive, is linked without fetching it again, so failures are not retried. The image
     /// bytes are durable before any message links to them. Safe to run while messages are being
     /// added.
@@ -113,6 +152,7 @@ impl RemoteImages {
         };
         saved.total = self.store.count_unscanned(archive, when).await?;
         progress(&saved);
+        let run = Run::new();
         loop {
             let batch = self
                 .store
@@ -121,14 +161,26 @@ impl RemoteImages {
             if batch.is_empty() {
                 return Ok(saved);
             }
-            for message in batch {
-                if cancel.load(Ordering::Relaxed) {
-                    saved.cancelled = true;
-                    return Ok(saved);
-                }
-                self.save_message(message, &mut saved).await?;
+            let mut messages = stream::iter(batch)
+                .map(|message| {
+                    let run = &run;
+                    async move {
+                        if cancel.load(Ordering::Relaxed) {
+                            return Ok(None);
+                        }
+                        self.save_message(message, run).await.map(Some)
+                    }
+                })
+                .buffer_unordered(MESSAGES_AT_ONCE);
+            while let Some(done) = messages.next().await {
+                let Some(one) = done? else { continue };
+                saved.add(one);
                 saved.total = saved.total.max(saved.messages);
                 progress(&saved);
+            }
+            if cancel.load(Ordering::Relaxed) {
+                saved.cancelled = true;
+                return Ok(saved);
             }
         }
     }
@@ -172,10 +224,13 @@ impl RemoteImages {
         }
     }
 
-    async fn save_message(&self, id: MessageId, saved: &mut Saved) -> Result<(), RemoteError> {
-        saved.messages += 1;
+    async fn save_message(&self, id: MessageId, run: &Run) -> Result<Saved, RemoteError> {
+        let mut saved = Saved {
+            messages: 1,
+            ..Saved::default()
+        };
         let Some(message) = self.store.get_message(id).await? else {
-            return Ok(());
+            return Ok(saved);
         };
         let urls = match self.blobs.get(&message.blob_id).await? {
             Some(raw) => holtmail_mime::parse(&raw)
@@ -194,7 +249,7 @@ impl RemoteImages {
             .collect();
 
         let outcomes: Vec<Result<Outcome, RemoteError>> = stream::iter(wanted.iter().cloned())
-            .map(|(key, url)| self.save_url(key, url))
+            .map(|(key, url)| self.save_url(key, url, run))
             .buffer_unordered(FETCHES_AT_ONCE)
             .collect()
             .await;
@@ -207,13 +262,16 @@ impl RemoteImages {
         }
         let keys: Vec<String> = wanted.into_iter().map(|(key, _)| key).collect();
         self.store.record_remote_scan(id, &keys).await?;
-        Ok(())
+        Ok(saved)
     }
 
-    async fn save_url(&self, key: String, url: String) -> Result<Outcome, RemoteError> {
+    async fn save_url(&self, key: String, url: String, run: &Run) -> Result<Outcome, RemoteError> {
+        let same_url = run.url(&key);
+        let _only_one = same_url.lock().await;
         if self.store.remote_copy(&key).await?.is_some() {
             return Ok(Outcome::Known);
         }
+        let _permit = run.fetches.acquire().await.ok();
         self.fetch(key, url).await
     }
 
@@ -420,6 +478,105 @@ mod tests {
             store.remote_copy_totals(archive).await.unwrap().failed,
             0,
             "a retried image still counts as failed"
+        );
+    }
+
+    #[derive(Default)]
+    struct GatedFetcher {
+        asked: Mutex<Vec<String>>,
+        in_flight: std::sync::atomic::AtomicUsize,
+        most: std::sync::atomic::AtomicUsize,
+        open: tokio::sync::Notify,
+        released: AtomicBool,
+    }
+
+    #[async_trait]
+    impl Fetcher for GatedFetcher {
+        async fn image(&self, url: &str) -> Result<RemoteImage, FetchError> {
+            self.asked.lock().unwrap().push(url.to_owned());
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.most.fetch_max(now, Ordering::SeqCst);
+            if url.contains("slow") {
+                while !self.released.load(Ordering::SeqCst) {
+                    self.open.notified().await;
+                }
+            } else {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(RemoteImage {
+                content_type: "image/png".into(),
+                bytes: Bytes::copy_from_slice(url.as_bytes()),
+            })
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_slow_sender_does_not_hold_up_other_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let blobs: Arc<dyn BlobStore> =
+            Arc::new(FsBlobStore::open(dir.path().join("blobs")).await.unwrap());
+        let store: Arc<dyn Store> =
+            Arc::new(SqliteStore::open(dir.path().join("db")).await.unwrap());
+        let index: Arc<dyn SearchIndex> = Arc::new(TantivyIndex::in_memory().unwrap());
+        let ingest = Ingest::new(blobs.clone(), store.clone(), index);
+        let archive = store.create_archive("News").await.unwrap().id;
+        store.set_save_remote_images(archive, true).await.unwrap();
+        let fetcher = Arc::new(GatedFetcher::default());
+        let remote = RemoteImages::new(fetcher.clone(), blobs.clone(), store.clone());
+        let mut bodies = vec![r#"<img src="https://slow.example.com/a.png">"#.to_owned()];
+        for n in 1..6 {
+            let many: String = (0..20)
+                .map(|i| format!(r#"<img src="https://example.com/{n}/{i}.png">"#))
+                .collect();
+            bodies.push(format!(
+                r#"{many}<img src="https://example.com/shared.png">"#
+            ));
+        }
+        for (n, body) in bodies.iter().enumerate() {
+            ingest
+                .ingest(archive, newsletter(n as u32, body), &Placement::default())
+                .await
+                .unwrap();
+        }
+
+        let done = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let running = {
+            let remote = remote.clone();
+            let done = done.clone();
+            tokio::spawn(async move {
+                remote
+                    .save_archive(archive, Scope::New, &AtomicBool::new(false), |p| {
+                        done.store(p.messages, Ordering::SeqCst);
+                    })
+                    .await
+                    .unwrap()
+            })
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while done.load(Ordering::SeqCst) < 5 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the other messages waited for the slow one"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(!running.is_finished());
+        fetcher.released.store(true, Ordering::SeqCst);
+        fetcher.open.notify_waiters();
+        let saved = running.await.unwrap();
+        assert_eq!((saved.messages, saved.fetched), (6, 102));
+        assert_eq!(saved.known, 4, "{saved:?}");
+        let asked = fetcher.asked.lock().unwrap().clone();
+        assert_eq!(asked.len(), 102, "a URL was fetched twice");
+        assert_eq!(
+            asked.iter().filter(|u| u.ends_with("shared.png")).count(),
+            1
+        );
+        assert!(
+            fetcher.most.load(Ordering::SeqCst) <= FETCHES_AT_ONCE,
+            "{} downloads at once",
+            fetcher.most.load(Ordering::SeqCst)
         );
     }
 }

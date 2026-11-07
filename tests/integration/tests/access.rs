@@ -560,6 +560,40 @@ impl World {
                 format!("/api/archives/{a}/remote-images"),
                 Body::Json(json!({ "job": "failed" })),
             ),
+            ("PUT", "/api/archives/{id}/category-overrides") => (
+                format!("/api/archives/{a}/category-overrides"),
+                Body::Json(json!({ "scope": "domain", "key": "example.com", "kind": "bulk" })),
+            ),
+            ("DELETE", "/api/archives/{id}/category-overrides/{override}") if !manages => (
+                format!(
+                    "/api/archives/{a}/category-overrides/{}",
+                    uuid::Uuid::now_v7()
+                ),
+                Body::NoneAsJson,
+            ),
+            ("DELETE", "/api/archives/{id}/category-overrides/{override}") => {
+                let made = self
+                    .owner
+                    .request(
+                        Method::PUT,
+                        &format!("/api/archives/{a}/category-overrides"),
+                        Some(&json!({
+                            "scope": "address",
+                            "key": format!("{}@example.org", unique("sender")),
+                            "topics": ["travel"],
+                        })),
+                    )
+                    .await
+                    .ok();
+                (
+                    format!("/api/archives/{a}/category-overrides/{}", id(&made)),
+                    Body::NoneAsJson,
+                )
+            }
+            ("POST", "/api/messages/{id}/unsubscribe") => (
+                format!("/api/messages/{m}/unsubscribe"),
+                Body::Json(json!({ "confirm": true })),
+            ),
             ("PATCH", "/api/accounts/{id}") => (
                 format!("/api/accounts/{}", s.import_account),
                 Body::Json(json!({ "name": "Imported mail" })),
@@ -789,6 +823,18 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
             [202, 202, 403, 403, 401],
         ),
         ("GET", "/api/archives/{id}/insights/status", READ),
+        ("GET", "/api/archives/{id}/categories", READ),
+        ("GET", "/api/archives/{id}/category-overrides", READ),
+        (
+            "PUT",
+            "/api/archives/{id}/category-overrides",
+            [200, 200, 403, 403, 401],
+        ),
+        (
+            "DELETE",
+            "/api/archives/{id}/category-overrides/{override}",
+            [204, 204, 403, 403, 401],
+        ),
         ("GET", "/api/archives/{id}/labels", READ),
         ("GET", "/api/archives/{id}/messages", READ),
         ("GET", "/api/archives/{id}/people", READ),
@@ -806,6 +852,7 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
         ("GET", "/api/events/{id}", READ),
         ("GET", "/api/image-proxy", MANAGE_READ),
         ("PUT", "/api/image-proxy", MANAGE_READ),
+        ("GET", "/api/insights/data", [200, 200, 200, 200, 401]),
         ("GET", "/api/items/{id}", READ),
         ("GET", "/api/items/{id}/versions/{number}/raw", READ),
         ("PATCH", "/api/me", [200, 200, 200, 200, 401]),
@@ -821,6 +868,11 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
         ("GET", "/api/messages/{id}/live/{key}", READ),
         ("GET", "/api/messages/{id}/raw", READ),
         ("GET", "/api/messages/{id}/remote/{key}", READ),
+        (
+            "POST",
+            "/api/messages/{id}/unsubscribe",
+            [400, 400, 403, 403, 401],
+        ),
         ("POST", "/api/oauth/start", [200, 200, 403, 403, 401]),
         ("POST", "/api/oauth/finish", [400, 400, 403, 403, 401]),
         ("POST", "/api/people/join", [201, 201, 403, 403, 401]),

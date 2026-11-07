@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 
 /// The image built from this checkout by `it.sh`.
 pub const DEV_IMAGE: &str = "holtmail:dev";
+/// The image built from this checkout with the `insights-test-data` feature (allowed test
+/// networks for one-click unsubscribe), by `it.sh`.
+pub const INSIGHTS_IMAGE: &str = "holtmail:it-insights";
 /// The image built from `fed635b`, before migrations 0006–0015.
 pub const OLD_IMAGE: &str = "holtmail:it-old";
 /// The commit [`OLD_IMAGE`] is built from.
@@ -86,6 +89,18 @@ impl Container {
         env: &[(&str, &str)],
         extra: &[&str],
     ) -> Self {
+        Self::run(image, volume, env, extra, &[]).await
+    }
+
+    /// [`Container::start_with`] with `command` after the image instead of its default
+    /// `serve`, such as `["--config", "/config/holtmail.toml", "serve"]`.
+    pub async fn run(
+        image: &str,
+        volume: &Volume,
+        env: &[(&str, &str)],
+        extra: &[&str],
+        command: &[&str],
+    ) -> Self {
         let name = crate::unique("holtmail-it");
         let mount = format!("{}:/data", volume.name);
         let mut args = vec![
@@ -110,19 +125,10 @@ impl Container {
         }
         args.extend_from_slice(extra);
         args.push(image);
+        args.extend_from_slice(command);
         docker_ok(&args);
-        let port = docker_ok(&["port", &name, "8080/tcp"]);
-        let port = port
-            .lines()
-            .next()
-            .and_then(|l| l.rsplit(':').next())
-            .expect("a published port")
-            .trim()
-            .to_owned();
-        let container = Self {
-            name,
-            url: format!("http://127.0.0.1:{port}"),
-        };
+        let url = published(&name);
+        let container = Self { name, url };
         container.wait_ready().await;
         container
     }
@@ -197,6 +203,19 @@ impl Container {
         docker_ok(&["stop", "-t", "30", &self.name]);
     }
 
+    /// Starts the stopped container again, keeping its networks, and waits until `/api/setup`
+    /// answers; [`Container::url`] follows the port Docker publishes this time.
+    pub async fn start_again(&mut self) {
+        docker_ok(&["start", &self.name]);
+        self.url = published(&self.name);
+        self.wait_ready().await;
+    }
+
+    /// Attaches the container to one more network.
+    pub fn connect(&self, network: &str) {
+        docker_ok(&["network", "connect", network, &self.name]);
+    }
+
     /// Copies `path` out of the container (running or stopped) to `to` on this machine.
     pub fn copy_out(&self, path: &str, to: &std::path::Path) {
         docker_ok(&[
@@ -214,6 +233,18 @@ impl Drop for Container {
         }
         let _ = docker(&["rm", "-f", "-v", &self.name], b"");
     }
+}
+
+fn published(name: &str) -> String {
+    let port = docker_ok(&["port", name, "8080/tcp"]);
+    let port = port
+        .lines()
+        .next()
+        .and_then(|l| l.rsplit(':').next())
+        .expect("a published port")
+        .trim()
+        .to_owned();
+    format!("http://127.0.0.1:{port}")
 }
 
 /// Whether the image `name` is here.

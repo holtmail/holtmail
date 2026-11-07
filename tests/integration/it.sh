@@ -30,7 +30,7 @@ fi
 
 mkdir -p "$here/.state"
 touch "$here/.state/dovecot-locked-users"
-mkdir -p "$here/.state/images" "$here/.state/pdf" "$here/.state/sl"
+mkdir -p "$here/.state/images" "$here/.state/pdf" "$here/.state/sl" "$here/.state/data"
 docker compose -f "$here/compose.yaml" ${profiles[@]+"${profiles[@]}"} up -d --wait "${pull[@]}"
 
 if [[ ",$IT_PROFILES," == *",docker,"* ]]; then
@@ -38,6 +38,7 @@ if [[ ",$IT_PROFILES," == *",docker,"* ]]; then
     echo "Less than 5 GiB free: not building images for the docker profile" >&2
   else
     docker build -t holtmail:dev "$root"
+    docker build -t holtmail:it-insights --build-arg FEATURES=insights-test-data "$root"
     if ! docker image inspect holtmail:it-old >/dev/null 2>&1; then
       old="$(mktemp -d)/holtmail-fed635b"
       git -C "$root" worktree add --detach "$old" fed635b

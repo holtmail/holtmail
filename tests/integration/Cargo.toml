@@ -9,12 +9,16 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+aws-lc-rs.workspace = true
 axum.workspace = true
 base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+ed25519-dalek.workspace = true
 futures.workspace = true
 holtmail-blob.workspace = true
+holtmail-category.workspace = true
+holtmail-category-data.workspace = true
 holtmail-core.workspace = true
 holtmail-hooks.workspace = true
 holtmail-mime.workspace = true
@@ -27,6 +31,7 @@ image.workspace = true
 object_store.workspace = true
 reqwest = { workspace = true, features = ["cookies", "json"] }
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 tar.workspace = true
 tempfile.workspace = true

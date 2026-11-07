@@ -6,8 +6,10 @@
 //! tests only run with `HOLTMAIL_IT=1`, which `mise run it` sets after starting the stack.
 
 pub mod api;
+pub mod categories;
 pub mod data;
 pub mod dav;
+pub mod dkim;
 pub mod docker;
 pub mod holtmail;
 pub mod images;
@@ -23,6 +25,8 @@ pub mod relay;
 pub mod s3;
 pub mod services;
 pub mod stalwart;
+pub mod submit;
+pub mod unsubscribe;
 
 pub use api::Api;
 pub use holtmail::{Holtmail, Options};

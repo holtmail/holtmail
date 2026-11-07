@@ -1,0 +1,13 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your sign-in code
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <code-1@accounts.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Your verification code is:
+
+482913
+
+It expires in 10 minutes. If you did not try to sign in, ignore this message.

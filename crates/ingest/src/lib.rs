@@ -15,12 +15,14 @@ use holtmail_blob::{BlobError, BlobId, BlobStore};
 use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
 use holtmail_extract::{ExtractError, Extractor, File};
 use holtmail_index::{IndexDocument, IndexError, SearchIndex};
-use holtmail_insights::Runner;
+use holtmail_insight::KindTags;
+use holtmail_insights::{Deriver, Runner};
 use holtmail_mime::{MimeError, ParsedMessage};
 use holtmail_store::{
-    Attachment, Derived, DerivedKind, InsightOutcome, InsightRow, MessageAlias, NewMessage, Store,
-    StoreError,
+    Attachment, CategoryPolicy, Derived, DerivedKind, InsightOutcome, InsightRow, MessageAlias,
+    NewMessage, Store, StoreError,
 };
+use uuid::Uuid;
 
 pub use pim::{IncomingItem, MAIL_COLLECTION, item_document, pim_index};
 
@@ -86,6 +88,7 @@ pub struct Ingest {
     extractor: Option<Arc<dyn Extractor>>,
     detectors: Vec<Arc<dyn AliasDetector>>,
     insights: Option<Arc<Runner>>,
+    categories: Option<(Arc<Deriver>, CategoryPolicy)>,
 }
 
 impl Ingest {
@@ -102,6 +105,7 @@ impl Ingest {
             extractor: None,
             detectors: Vec::new(),
             insights: None,
+            categories: None,
         }
     }
 
@@ -117,23 +121,55 @@ impl Ingest {
         self
     }
 
+    /// The same pipeline, also running stage B for one message with `deriver` and recording it
+    /// with `CategoryStore::set_message_categories` under `policy`.
+    ///
+    /// It runs after every insights write ([`Ingest::ingest`], [`Ingest::insights_for`],
+    /// [`Ingest::refresh_insights`], [`Ingest::reindex`]), and on every [`Ingest::ingest`] once
+    /// the location is recorded, since a new location can change the trusted authserv-ids that
+    /// apply. Each run takes a new [`DeriveContext`](holtmail_insights::DeriveContext), reads only
+    /// the store, never a blob, and writes the fingerprint it computed with. A message without an
+    /// insights row of outcome ok or partial is left alone. Failing never fails the call it runs
+    /// in; the failure is logged with the message id only. Without it no categories are written
+    /// here.
+    pub fn with_categories(mut self, deriver: Arc<Deriver>, policy: CategoryPolicy) -> Self {
+        self.categories = Some((deriver, policy));
+        self
+    }
+
     /// Computes the insights of `message` from its stored bytes `raw`, already parsed into
     /// `parsed`, and records them under the current fingerprint. A row equal to the stored one in
-    /// everything but `computed_at` is not written. Returns whether it wrote; always `false`
-    /// without [`Ingest::with_insights`]. Fails with `StoreError::NotFound` for an unknown
-    /// message.
+    /// everything but `computed_at` is not written. Returns `None` when it did not write, always
+    /// without [`Ingest::with_insights`].
+    ///
+    /// Before a write the message is queued for reindexing as by `CategoryStore::queue_reindex`,
+    /// so a new insights row is never stored without its queued reindex. After the write, stage B
+    /// runs as [`Ingest::with_categories`] says, then the message's index document is rebuilt from
+    /// `parsed`, so `has:` and `category:` follow the new rows (searchable after
+    /// [`Ingest::commit`]); no blob is read. The returned sequence is the message's queue
+    /// sequence read before that rebuild, for `CategoryStore::dequeue_reindex` once the index is
+    /// committed; 0 when it was no longer queued. Fails with `StoreError::NotFound` for an
+    /// unknown message.
     pub async fn insights_for(
         &self,
         message: MessageId,
         _raw: &[u8],
         parsed: &ParsedMessage,
-    ) -> Result<bool, IngestError> {
+    ) -> Result<Option<u64>, IngestError> {
         let Some(runner) = &self.insights else {
-            return Ok(false);
+            return Ok(None);
         };
         let archive = self.archive_of(message).await?;
         let row = compute_insights(runner, message, archive, parsed);
-        self.write_insights_if_changed(row).await
+        if !self.insights_changed(&row).await? {
+            return Ok(None);
+        }
+        self.store.queue_reindex(&[message]).await?;
+        self.store.set_message_insights(message, &row).await?;
+        self.categorize(message, archive).await;
+        let seq = self.queued_seq(archive, message).await?;
+        self.reindex_parsed(message, parsed).await?;
+        Ok(Some(seq))
     }
 
     /// Records that the stored bytes of `message` could not be read: outcome `unreadable`, no
@@ -155,8 +191,9 @@ impl Ingest {
     /// Computes the insights of a stored message again from its bytes and records them only when
     /// they changed: items, signals, kinds, auth facts, sender address, outcome, `truncated` or
     /// the fingerprint. Returns whether it wrote; always `false` without
-    /// [`Ingest::with_insights`]. No indexed field depends on insights yet, so it never
-    /// reindexes.
+    /// [`Ingest::with_insights`]. When it wrote, stage B runs and the message is reindexed as in
+    /// [`Ingest::insights_for`], reusing the one blob read; searchable after
+    /// [`Ingest::commit`].
     pub async fn refresh_insights(&self, message: MessageId) -> Result<bool, IngestError> {
         if self.insights.is_none() {
             return Ok(false);
@@ -172,7 +209,33 @@ impl Ingest {
             .await?
             .ok_or(StoreError::NotFound("message bytes"))?;
         let parsed = holtmail_mime::parse(&raw)?;
-        self.insights_for(message, &raw, &parsed).await
+        Ok(self.insights_for(message, &raw, &parsed).await?.is_some())
+    }
+
+    /// Runs stage B for one stored message in place with a new
+    /// [`DeriveContext`](holtmail_insights::DeriveContext) and stores the result through
+    /// `CategoryStore::set_message_categories_queued`, replacing any earlier row, so the row then
+    /// carries the current derive fingerprint and a changed kind or topic is queued for
+    /// reindexing in the same transaction. Reads only the store, never a blob. Returns whether
+    /// the effective kind or topics changed, a new row counting as changed; on `true` the caller
+    /// wakes whatever drains the reindex queue. `false` without [`Ingest::with_categories`] or
+    /// when the message has no insights row with outcome ok or partial, and then nothing is
+    /// written. Fails with `StoreError::NotFound` for an unknown message.
+    pub async fn derive_categories(&self, message: MessageId) -> Result<bool, IngestError> {
+        let archive = self.archive_of(message).await?;
+        let Some((deriver, policy)) = &self.categories else {
+            return Ok(false);
+        };
+        let Some(row) = self.store.derive_input(message).await? else {
+            return Ok(false);
+        };
+        let ctx = deriver.context(&*self.store, archive).await?;
+        let write = deriver.derive(&ctx, &row);
+        let changed = self
+            .store
+            .set_message_categories_queued(&[write], *policy)
+            .await?;
+        Ok(!changed.is_empty())
     }
 
     /// The same pipeline, also recording which alias each new message was forwarded to, by the
@@ -212,7 +275,10 @@ impl Ingest {
     }
 
     /// Detects the alias of a stored message again and records it. When the answer changed, the
-    /// message is reindexed (searchable after [`Ingest::commit`]). Returns whether it changed.
+    /// message's stage-B row is removed with `CategoryStore::invalidate_derived`, so the next
+    /// stage-B pass recomputes its trust, sender and categories, and the message is reindexed
+    /// (searchable after [`Ingest::commit`]). Returns whether it changed; on `true` the caller
+    /// must wake the stage-B pass (the server signals `WalkWake`). Reads the message's blob once.
     pub async fn refresh_alias(&self, message: MessageId) -> Result<bool, IngestError> {
         let stored = self
             .store
@@ -232,6 +298,7 @@ impl Ingest {
         self.store
             .set_message_alias(message, found.as_ref())
             .await?;
+        self.store.invalidate_derived(&[message]).await?;
         self.index_parsed(message, &parsed, found.as_ref()).await?;
         Ok(true)
     }
@@ -256,8 +323,9 @@ impl Ingest {
     /// from the archive on purpose are not stored again: [`IngestError::Deleted`], and their
     /// folder and UID are remembered so the source is not asked for them again. The raw bytes are
     /// durable before any metadata refers to them, so a crash never leaves a message without its
-    /// bytes. The index change becomes searchable after [`Ingest::commit`]; callers commit once per
-    /// batch.
+    /// bytes. With [`Ingest::with_insights`] and [`Ingest::with_categories`], insights and then
+    /// stage B are recorded as those say; neither ever fails ingest. The index change becomes
+    /// searchable after [`Ingest::commit`]; callers commit once per batch.
     pub async fn ingest(
         &self,
         archive: ArchiveId,
@@ -336,6 +404,7 @@ impl Ingest {
         if let Some(labels) = &placement.labels {
             self.store.set_labels(inserted.message_id, labels).await?;
         }
+        self.categorize(inserted.message_id, archive).await;
         let alias = if inserted.created {
             alias
         } else {
@@ -348,8 +417,9 @@ impl Ingest {
 
     /// Rebuilds the index document of a message from its stored bytes, e.g. after its folders,
     /// flags or labels changed. With [`Ingest::with_insights`], a missing insights row, or one
-    /// with another fingerprint, is computed and stored first. Searchable after
-    /// [`Ingest::commit`].
+    /// with another fingerprint, is computed and stored first, after queueing the message for
+    /// reindexing as [`Ingest::insights_for`] does, then stage B as [`Ingest::with_categories`]
+    /// says. Searchable after [`Ingest::commit`].
     pub async fn reindex(&self, message: MessageId) -> Result<(), IngestError> {
         let stored = self
             .store
@@ -371,7 +441,9 @@ impl Ingest {
                 .is_none_or(|view| view.insights.fingerprint != current);
             if stale {
                 let row = compute_insights(runner, message, stored.archive_id, &parsed);
+                self.store.queue_reindex(&[message]).await?;
                 self.store.set_message_insights(message, &row).await?;
+                self.categorize(message, stored.archive_id).await;
             }
         }
         self.reindex_parsed(message, &parsed).await
@@ -473,6 +545,7 @@ impl Ingest {
         flags.sort();
         flags.dedup();
 
+        let (insights, categories) = self.indexed_insights(message).await?;
         let attachments: Vec<_> = parsed.attachments.iter().filter(|a| !a.inline).collect();
         let document = IndexDocument {
             message_id: message,
@@ -501,6 +574,8 @@ impl Ingest {
             labels: self.store.labels(message).await?,
             date: stored.date,
             has_attachments: !attachments.is_empty(),
+            insights,
+            categories,
         };
         self.index.put(vec![document]).await?;
         Ok(())
@@ -508,6 +583,33 @@ impl Ingest {
 }
 
 impl Ingest {
+    async fn indexed_insights(
+        &self,
+        message: MessageId,
+    ) -> Result<(Vec<String>, Vec<String>), IngestError> {
+        let Some(view) = self.store.insight_view(message).await? else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let insights = match view.insights.outcome {
+            InsightOutcome::Ok | InsightOutcome::Partial => {
+                KindTags::from_bits(view.insights.kinds)
+                    .iter()
+                    .map(|tag| tag.name().to_owned())
+                    .collect()
+            }
+            InsightOutcome::Unparsable | InsightOutcome::Unreadable => Vec::new(),
+        };
+        let categories = view
+            .categories
+            .map(|c| {
+                std::iter::once(format!("kind:{}", c.row.kind.name()))
+                    .chain(c.row.topics.iter().map(|t| format!("topic:{}", t.name())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok((insights, categories))
+    }
+
     async fn archive_of(&self, message: MessageId) -> Result<ArchiveId, IngestError> {
         Ok(self
             .store
@@ -548,18 +650,61 @@ impl Ingest {
         }
     }
 
-    async fn write_insights_if_changed(&self, row: InsightRow) -> Result<bool, IngestError> {
-        let message = row.message;
-        if let Some(view) = self.store.insight_view(message).await?
-            && (InsightRow {
-                computed_at: row.computed_at,
-                ..view.insights
-            }) == row
+    async fn categorize(&self, message: MessageId, archive: ArchiveId) {
+        let Some((deriver, policy)) = &self.categories else {
+            return;
+        };
+        if self
+            .derive_one(deriver, *policy, message, archive)
+            .await
+            .is_err()
         {
-            return Ok(false);
+            tracing::warn!(%message, "deriving message categories failed");
         }
-        self.store.set_message_insights(message, &row).await?;
-        Ok(true)
+    }
+
+    async fn derive_one(
+        &self,
+        deriver: &Deriver,
+        policy: CategoryPolicy,
+        message: MessageId,
+        archive: ArchiveId,
+    ) -> Result<(), StoreError> {
+        let Some(row) = self.store.derive_input(message).await? else {
+            return Ok(());
+        };
+        let ctx = deriver.context(&*self.store, archive).await?;
+        let write = deriver.derive(&ctx, &row);
+        self.store.set_message_categories(&[write], policy).await?;
+        Ok(())
+    }
+
+    async fn insights_changed(&self, row: &InsightRow) -> Result<bool, IngestError> {
+        Ok(self
+            .store
+            .insight_view(row.message)
+            .await?
+            .is_none_or(|view| {
+                InsightRow {
+                    computed_at: row.computed_at,
+                    ..view.insights
+                } != *row
+            }))
+    }
+
+    async fn queued_seq(&self, archive: ArchiveId, message: MessageId) -> Result<u64, IngestError> {
+        let before = message
+            .as_uuid()
+            .as_u128()
+            .checked_sub(1)
+            .map(|n| MessageId::from(Uuid::from_u128(n)));
+        Ok(self
+            .store
+            .reindex_queue(archive, before, 1)
+            .await?
+            .into_iter()
+            .find(|(id, _)| *id == message)
+            .map_or(0, |(_, seq)| seq))
     }
 
     async fn mark_insights(
@@ -722,6 +867,7 @@ fn truncate(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use holtmail_blob_fs::FsBlobStore;
+    use holtmail_category::{MessageKind, TrustState};
     use holtmail_core::CollectionId;
     use holtmail_index::{Clause, SearchQuery, SortOrder};
     use holtmail_index_tantivy::TantivyIndex;
@@ -1637,5 +1783,413 @@ mod tests {
         assert_eq!(index.organizer.as_deref(), Some("ada@example.com"));
         assert_eq!(index.emails, ["ada@example.com", "bo@example.org"]);
         assert_eq!(index.data["type"], "calendar");
+    }
+
+    struct CountingBlobs {
+        inner: Arc<dyn BlobStore>,
+        gets: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingBlobs {
+        fn gets(&self) -> usize {
+            self.gets.swap(0, std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BlobStore for CountingBlobs {
+        async fn put(&self, bytes: Bytes) -> Result<BlobId, BlobError> {
+            self.inner.put(bytes).await
+        }
+
+        async fn get(&self, id: &BlobId) -> Result<Option<Bytes>, BlobError> {
+            self.gets.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.get(id).await
+        }
+
+        async fn contains(&self, id: &BlobId) -> Result<bool, BlobError> {
+            self.inner.contains(id).await
+        }
+
+        async fn delete(&self, id: &BlobId) -> Result<(), BlobError> {
+            self.inner.delete(id).await
+        }
+    }
+
+    fn deriver() -> Arc<Deriver> {
+        Arc::new(Deriver::new(
+            vec![Arc::new(
+                holtmail_category_signals::SignalsCategorizer::new(),
+            )],
+            holtmail_insights::DeriveConfig::default(),
+        ))
+    }
+
+    fn categorized(f: &Fixture, blobs: Arc<dyn BlobStore>, deriver: &Arc<Deriver>) -> Ingest {
+        Ingest::new(blobs, f.store.clone(), f.index.clone())
+            .with_insights(runner("1"))
+            .with_categories(deriver.clone(), deriver.policy())
+    }
+
+    async fn categories(f: &Fixture, message: MessageId) -> Option<holtmail_store::CategoryRow> {
+        f.store
+            .insight_view(message)
+            .await
+            .unwrap()
+            .and_then(|view| view.categories)
+            .map(|view| view.row)
+    }
+
+    const SIGNED_FORWARD: &[u8] = b"Authentication-Results: mx.example.org; dkim=pass header.d=sl.example.org\r\nX-SimpleLogin-Type: Forward\r\nX-SimpleLogin-Envelope-To: shop@alias.example.org\r\nFrom: \"Grace Hopper - grace at example.com\" <ra_q1@sl.example.org>\r\nTo: shop@alias.example.org\r\nSubject: Parcel\r\nMessage-ID: <p2@example.com>\r\nDate: Fri, 14 Mar 2025 11:00:00 +0000\r\n\r\nOn its way.\r\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stage_b_follows_ingest_and_alias_changes_without_blob_reads() {
+        let f = fixture().await;
+        let counting = Arc::new(CountingBlobs {
+            inner: f.blobs.clone(),
+            gets: Default::default(),
+        });
+        let deriver = deriver();
+        let ingest = categorized(&f, counting.clone(), &deriver);
+        let created = ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(SIGNED_FORWARD),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(counting.gets(), 0, "ingest read a blob");
+        let row = categories(&f, created.message_id)
+            .await
+            .expect("no categories row");
+        let ctx = deriver.context(&*f.store, f.archive).await.unwrap();
+        assert_eq!(row.write.derive_fp, ctx.derive_fp());
+        assert_eq!(row.write.trust, TrustState::Unknown);
+        assert_eq!(
+            row.write.sender_address.as_deref(),
+            Some("ra_q1@sl.example.org")
+        );
+        assert_eq!(row.kind, MessageKind::Personal);
+
+        let detecting = ingest.with_alias_detectors(vec![Arc::new(
+            holtmail_alias_simplelogin::SimpleLoginDetector::new(&["sl.example.org".into()]),
+        )]);
+        assert!(detecting.refresh_alias(created.message_id).await.unwrap());
+        assert_eq!(counting.gets(), 1, "detection reads the blob once");
+        assert_eq!(categories(&f, created.message_id).await, None);
+        assert_eq!(
+            f.store
+                .count_needing_derive(f.archive, ctx.derive_fp())
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(!detecting.refresh_alias(created.message_id).await.unwrap());
+        counting.gets();
+
+        let ctx = deriver.context(&*f.store, f.archive).await.unwrap();
+        let input = f
+            .store
+            .derive_input(created.message_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let write = deriver.derive(&ctx, &input);
+        f.store
+            .set_message_categories(&[write], deriver.policy())
+            .await
+            .unwrap();
+        assert_eq!(counting.gets(), 0, "stage B read a blob");
+        let row = categories(&f, created.message_id).await.unwrap();
+        assert_eq!(
+            row.write.trust,
+            TrustState::Relayed {
+                provider: "simplelogin".into()
+            }
+        );
+        assert_eq!(
+            row.write.sender_address.as_deref(),
+            Some("grace@example.com")
+        );
+        assert_eq!(row.write.sender_domain.as_deref(), Some("example.com"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn every_insights_write_runs_stage_b() {
+        let f = fixture().await;
+        let plain = f
+            .ingest
+            .clone()
+            .with_insights(runner("1"))
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap()
+            .message_id;
+        assert_eq!(categories(&f, plain).await, None, "no deriver, no row");
+
+        let deriver = deriver();
+        let next = f
+            .ingest
+            .clone()
+            .with_insights(runner("2"))
+            .with_categories(deriver.clone(), deriver.policy());
+        assert!(next.refresh_insights(plain).await.unwrap());
+        assert!(categories(&f, plain).await.is_some());
+
+        f.store.invalidate_derived(&[plain]).await.unwrap();
+        assert!(!next.refresh_insights(plain).await.unwrap());
+        assert_eq!(categories(&f, plain).await, None, "nothing was written");
+
+        let mut row = insights(&f, plain).await.unwrap();
+        row.fingerprint = "old".into();
+        f.store.set_message_insights(plain, &row).await.unwrap();
+        next.reindex(plain).await.unwrap();
+        assert!(categories(&f, plain).await.is_some());
+
+        f.store.invalidate_derived(&[plain]).await.unwrap();
+        next.ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        assert!(
+            categories(&f, plain).await.is_some(),
+            "ingest of known bytes runs stage B"
+        );
+
+        let unreadable = categorized(&f, f.blobs.clone(), &deriver);
+        unreadable.mark_insights_unreadable(plain).await.unwrap();
+        f.store.invalidate_derived(&[plain]).await.unwrap();
+        unreadable
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap();
+        assert_eq!(
+            categories(&f, plain).await,
+            None,
+            "an unreadable row gets no stage B"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn derive_categories_rewrites_one_row_without_blob_reads() {
+        let f = fixture().await;
+        let counting = Arc::new(CountingBlobs {
+            inner: f.blobs.clone(),
+            gets: Default::default(),
+        });
+        let deriver = deriver();
+        let ingest = categorized(&f, counting.clone(), &deriver);
+        let message = ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 1, &[]))
+            .await
+            .unwrap()
+            .message_id;
+        let plain = f.ingest.clone().with_insights(runner("1"));
+        assert!(!plain.derive_categories(message).await.unwrap());
+
+        f.store.invalidate_derived(&[message]).await.unwrap();
+        let queued = f.store.reindex_queue(f.archive, None, 10).await.unwrap();
+        f.store.dequeue_reindex(&queued).await.unwrap();
+        assert!(ingest.derive_categories(message).await.unwrap());
+        let ctx = deriver.context(&*f.store, f.archive).await.unwrap();
+        let row = categories(&f, message).await.expect("no categories row");
+        assert_eq!(row.write.derive_fp, ctx.derive_fp());
+        let queued = f.store.reindex_queue(f.archive, None, 10).await.unwrap();
+        assert!(queued.iter().any(|(id, _)| *id == message), "{queued:?}");
+
+        let mut stale = row.write.clone();
+        stale.derive_fp = "old".into();
+        f.store
+            .set_message_categories(&[stale], deriver.policy())
+            .await
+            .unwrap();
+        assert!(!ingest.derive_categories(message).await.unwrap());
+        let row = categories(&f, message).await.unwrap();
+        assert_eq!(row.write.derive_fp, ctx.derive_fp());
+        assert_eq!(counting.gets(), 0, "stage B read a blob");
+
+        let unknown = MessageId::new();
+        assert!(ingest.derive_categories(unknown).await.is_err());
+    }
+
+    const SIGN_IN_CODE: &[u8] = include_bytes!("../tests/fixtures/sign-in-code.eml");
+    const NEWSLETTER: &[u8] = include_bytes!("../tests/fixtures/newsletter.eml");
+
+    fn extracting() -> Arc<Runner> {
+        Arc::new(Runner::new(vec![
+            Arc::new(holtmail_insight_unsubscribe::UnsubscribeExtractor::new()),
+            Arc::new(holtmail_insight_code::CodeExtractor::new()),
+        ]))
+    }
+
+    fn insight(name: &str) -> Clause {
+        Clause::Insight(name.into())
+    }
+
+    fn category(value: &str) -> Clause {
+        Clause::Category(value.into())
+    }
+
+    async fn document_values(f: &Fixture, message: MessageId) -> (Vec<String>, Vec<String>) {
+        f.ingest.indexed_insights(message).await.unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn new_messages_are_found_by_insights_and_categories() {
+        let f = fixture().await;
+        let deriver = deriver();
+        let ingest = f
+            .ingest
+            .clone()
+            .with_insights(extracting())
+            .with_categories(deriver.clone(), deriver.policy());
+        let code = ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(SIGN_IN_CODE),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap()
+            .message_id;
+        let news = ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(NEWSLETTER),
+                &in_inbox(&f, 2, &[]),
+            )
+            .await
+            .unwrap()
+            .message_id;
+        let plain = ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 3, &[]))
+            .await
+            .unwrap()
+            .message_id;
+        ingest.commit().await.unwrap();
+
+        assert_eq!(find(&f, vec![insight("code")]).await, [code]);
+        assert_eq!(find(&f, vec![insight("unsubscribe")]).await, [news]);
+        assert_eq!(find(&f, vec![category("kind:bulk")]).await, [news]);
+        assert_eq!(
+            find(&f, vec![Clause::Not(Box::new(insight("code")))]).await,
+            [news, plain]
+        );
+        let (insights, categories) = document_values(&f, news).await;
+        assert_eq!(insights, ["unsubscribe"]);
+        assert_eq!(categories, ["kind:bulk"]);
+        let (insights, categories) = document_values(&f, plain).await;
+        assert!(insights.is_empty());
+        assert_eq!(categories, ["kind:personal"]);
+        assert!(
+            !find(&f, vec![Clause::Text("482913".into())])
+                .await
+                .is_empty(),
+            "the body is still indexed as text"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn insights_for_an_old_message_makes_it_findable() {
+        let f = fixture().await;
+        let old = f
+            .ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(SIGN_IN_CODE),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap()
+            .message_id;
+        f.ingest.commit().await.unwrap();
+        assert_eq!(document_values(&f, old).await, (Vec::new(), Vec::new()));
+        assert!(find(&f, vec![insight("code")]).await.is_empty());
+
+        let counting = Arc::new(CountingBlobs {
+            inner: f.blobs.clone(),
+            gets: Default::default(),
+        });
+        let deriver = deriver();
+        let with = Ingest::new(counting.clone(), f.store.clone(), f.index.clone())
+            .with_insights(extracting())
+            .with_categories(deriver.clone(), deriver.policy());
+        let parsed = holtmail_mime::parse(SIGN_IN_CODE).unwrap();
+        let seq = with
+            .insights_for(old, SIGN_IN_CODE, &parsed)
+            .await
+            .unwrap()
+            .expect("insights written");
+        assert_eq!(
+            f.store.reindex_queue(f.archive, None, 10).await.unwrap(),
+            [(old, seq)],
+            "queued before the write, so a crash before the commit leaves it queued"
+        );
+        assert_eq!(
+            with.insights_for(old, SIGN_IN_CODE, &parsed).await.unwrap(),
+            None
+        );
+        with.commit().await.unwrap();
+        assert_eq!(counting.gets(), 0, "insights_for read a blob");
+        assert_eq!(find(&f, vec![insight("code")]).await, [old]);
+        let (insights, categories) = document_values(&f, old).await;
+        assert_eq!(insights, ["code"]);
+        assert_eq!(
+            find(&f, vec![category(&categories[0])]).await,
+            [old],
+            "the document carries its kind"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn refresh_insights_reindexes_what_it_wrote() {
+        let f = fixture().await;
+        let message = f
+            .ingest
+            .clone()
+            .with_insights(runner("1"))
+            .ingest(
+                f.archive,
+                Bytes::from_static(NEWSLETTER),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap()
+            .message_id;
+        f.ingest.commit().await.unwrap();
+        assert!(find(&f, vec![insight("unsubscribe")]).await.is_empty());
+
+        let next = f.ingest.clone().with_insights(extracting());
+        assert!(next.refresh_insights(message).await.unwrap());
+        next.commit().await.unwrap();
+        assert_eq!(find(&f, vec![insight("unsubscribe")]).await, [message]);
+        assert!(
+            find(&f, vec![category("kind:bulk")]).await.is_empty(),
+            "no stage B without a deriver"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unreadable_rows_index_no_insights() {
+        let f = fixture().await;
+        let deriver = deriver();
+        let ingest = f
+            .ingest
+            .clone()
+            .with_insights(extracting())
+            .with_categories(deriver.clone(), deriver.policy());
+        let message = ingest
+            .ingest(
+                f.archive,
+                Bytes::from_static(SIGN_IN_CODE),
+                &in_inbox(&f, 1, &[]),
+            )
+            .await
+            .unwrap()
+            .message_id;
+        let mut row = insights(&f, message).await.unwrap();
+        row.outcome = InsightOutcome::Unreadable;
+        f.store.set_message_insights(message, &row).await.unwrap();
+        assert!(document_values(&f, message).await.0.is_empty());
     }
 }

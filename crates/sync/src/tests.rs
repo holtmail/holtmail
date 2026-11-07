@@ -100,6 +100,7 @@ impl Fixture {
                 archive_id: self.account.archive_id,
                 folder_id: None,
                 label: None,
+                category: None,
                 after: None,
                 limit: 500,
             })
@@ -679,6 +680,7 @@ async fn never_brings_back_a_deleted_message() {
                 archive_id: f.account.archive_id,
                 folder_id: None,
                 label: None,
+                category: None,
                 after: None,
                 limit: 10,
             })

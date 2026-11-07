@@ -8,13 +8,15 @@ The one path into the archive. Sync and import both hand raw message bytes to `I
 let ingest = Ingest::new(blobs, store, index) // Arc<dyn BlobStore>, Arc<dyn Store>, Arc<dyn SearchIndex>
     .with_extractor(extractor) // Arc<dyn Extractor>, optional
     .with_alias_detectors(detectors) // Vec<Arc<dyn AliasDetector>>, optional
-    .with_insights(runner); // Arc<holtmail_insights::Runner>, optional
+    .with_insights(runner) // Arc<holtmail_insights::Runner>, optional
+    .with_categories(deriver, policy); // Arc<holtmail_insights::Deriver>, CategoryPolicy, optional
 let done = ingest.ingest(archive, raw, &Placement { folder, uid, flags, labels, received_at }).await?;
 ingest.commit().await?; // once per batch
 ingest.reindex(message).await?; // after folders, flags or labels change
 ingest.refresh_alias(message).await?; // detect the alias again; true when it changed
 ingest.reindex_parsed(message, &parsed).await?; // the index document from bytes already parsed
 ingest.refresh_insights(message).await?; // compute insights again; true when the row changed
+ingest.derive_categories(message).await?; // stage B again in place; true when a category changed
 ```
 
 `Ingested { message_id, thread_id, created }`; `created` is `false` when the archive already had these bytes.
@@ -55,7 +57,7 @@ Every `text/calendar` or `application/ics` part of a message (`ParsedMessage::ca
 
 ## Aliases
 
-With `with_alias_detectors`, the first detector (in the given order) that recognises a new message decides its alias, recorded with `AliasStore::set_message_alias` (see [holtmail-alias](../../alias/docs/README.md) and [ALIASES.md](../../../docs/ALIASES.md)); a message no detector recognises is recorded as having none. The sender a service hid is added to the index document's `from`, so `from:` finds the message by either address; `reindex` keeps it. `detect_alias(&parsed)` is the detection alone. `refresh_alias(message)` reads the stored bytes, detects again, records the answer and reindexes the message only when the answer changed; the server runs it over every message when the detectors' versions change.
+With `with_alias_detectors`, the first detector (in the given order) that recognises a new message decides its alias, recorded with `AliasStore::set_message_alias` (see [holtmail-alias](../../alias/docs/README.md) and [ALIASES.md](../../../docs/ALIASES.md)); a message no detector recognises is recorded as having none. The sender a service hid is added to the index document's `from`, so `from:` finds the message by either address; `reindex` keeps it. `detect_alias(&parsed)` is the detection alone. `refresh_alias(message)` reads the stored bytes, detects again, records the answer and, only when the answer changed, removes the message's stage-B row with `CategoryStore::invalidate_derived` and reindexes it. The caller must then wake the stage-B pass (the server signals `WalkWake`), which recomputes trust, sender and categories from the stored rows: an alias hit is `relayed` when the service signed it and `unverified` otherwise, and its sender is the service's claimed real sender. The server runs `refresh_alias` over every message when the detectors' versions change. It reads the message's blob once, for detection; the invalidation reads none.
 
 ## Insights
 
@@ -63,10 +65,18 @@ With `with_insights`, message insights (stage A of [INSIGHTS.md](../../../docs/I
 
 - `ingest` computes them for a new message, and for known bytes whose message has no `message_insights` row, so a repeated sync repairs a lost write. Known bytes that already have a row write nothing. Failing to read or store the row is logged with the message id only and never fails ingest.
 - `reindex` computes and stores them before building the document when the row is missing or its fingerprint is not the current one.
-- `refresh_insights(message)` reads the stored bytes and writes only when the row changed in anything but `computed_at` (items, signals, kinds, auth facts, sender address, outcome, `truncated`, fingerprint). It returns whether it wrote. No indexed field depends on insights yet, so it does not reindex.
-- For the server's walk, which reads and parses each blob itself: `insights_for(message, &raw, &parsed)` computes and stores like `refresh_insights` and returns whether it wrote; `mark_insights_unreadable(message)` and `mark_insights_unparsable(message)` write a row with that outcome, no items, no signals or kinds and the current fingerprint, so the message is not listed as needing insights again until the fingerprint changes. Both fail with `StoreError::NotFound` for an unknown message.
+- `refresh_insights(message)` reads the stored bytes and writes only when the row changed in anything but `computed_at` (items, signals, kinds, auth facts, sender address, outcome, `truncated`, fingerprint). It returns whether it wrote. When it wrote, stage B runs and the message is reindexed from the bytes it already parsed.
+- For the server's walk, which reads and parses each blob itself: `insights_for(message, &raw, &parsed)` computes and stores like `refresh_insights` and returns `None` when it did not write. Before a write it queues the message for reindexing (`CategoryStore::queue_reindex`), so a new insights row is never stored without its queued reindex; after it, it runs stage B and rebuilds the index document from `parsed`, reading no blob, so `has:` and `category:` follow the new rows after the next `commit`. It returns `Some(seq)`, the message's queue sequence read before that rebuild, for `dequeue_reindex` once the index is committed (0 when no longer queued). `reindex` queues the same way before it fills a missing or stale row; `mark_insights_unreadable(message)` and `mark_insights_unparsable(message)` write a row with that outcome, no items, no signals or kinds and the current fingerprint, so the message is not listed as needing insights again until the fingerprint changes. Both fail with `StoreError::NotFound` for an unknown message.
 
-Without a runner nothing about insights is read or written, `refresh_insights` and `insights_for` return `false`, and the marks do nothing. Stage B (categories) is not run here yet.
+Without a runner nothing about insights is read or written, `refresh_insights` returns `false`, `insights_for` returns `None`, and the marks do nothing.
+
+Every index document (built by `ingest`, `reindex`, `reindex_parsed`, `refresh_alias` and the calls above) carries `insights` and `categories` from one `insight_view` read, as labels are read: `insights` holds the names of the kinds in the row's `kinds` bits, in bit order, and is empty when there is no row or its outcome is `unreadable` or `unparsable`; `categories` holds `kind:<effective kind>` and `topic:<name>` for every effective topic, and is empty before stage B. `ingest` and `reindex` run stage B before building the document, so a new message is indexed with its categories. Only these names are indexed, never codes, URLs or numbers.
+
+## Categories
+
+With `with_categories(deriver, policy)`, stage B ([`holtmail_insights::Deriver`](../../insights/docs/README.md#stage-b), INSIGHTS §6.3 and §6.5) runs for one message after every insights write: in `ingest`, `insights_for` and `refresh_insights` when they wrote, and in `reindex` when it filled a missing or stale row. `ingest` also runs it for known bytes, after the new location is recorded, because a location in another account can change the trusted authserv-ids that apply. Each run takes a new `DeriveContext` (`deriver.context(store, archive)`: snapshots, trust lists, own addresses), reads `CategoryStore::derive_input`, derives and writes with `set_message_categories(&[write], policy)` under the context's `derive_fp`. It reads no blob. A message whose insights row is missing, `unreadable` or `unparsable` is left alone. A failure is logged with the message id only and never fails the call it runs in; the server's stage-B pass picks the message up again. Without `with_categories` no categories are written here.
+
+`derive_categories(message)` runs the same stage B on demand for one stored message, failing instead of logging: a new `DeriveContext`, `derive_input`, and a write through `set_message_categories_queued`, so the row carries the current `derive_fp` and a changed kind or topic is queued for reindexing in the same transaction. It reads no blob and returns whether the effective kind or topics changed (a new row counts); the caller then wakes the walk. It returns `false` and writes nothing without `with_categories` or when the message has no ok or partial insights row, and fails with `StoreError::NotFound` for an unknown message. The one-click unsubscribe route uses it, through the server's `Operations::fresh_insights`, when the stage-B row is missing or stale.
 
 ## Attachment text
 

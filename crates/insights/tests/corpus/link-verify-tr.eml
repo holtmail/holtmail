@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?RS1wb3N0YSBhZHJlc2luaXppIGRvxJ9ydWxhecSxbg==?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <b4600026779f@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-b4600026779f"
+
+--b-b4600026779f
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Example hesabınızı oluşturduğunuz için teşekkürler. Lütfen adresinizi doğrulayın.
+
+E-posta adresimi doğrula: https://accounts.example.com/verify?token=13d455bc6cf764f5
+
+Bu isteği siz yapmadıysanız bu e-postayı yok sayın.
+
+--b-b4600026779f
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Example hesabınızı oluşturduğunuz için teşekkürler. Lütfen adresinizi doğrulayın.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/verify?token=13d455bc6cf764f5" style="color:#ffffff;text-decoration:none;font-weight:bold">E-posta adresimi doğrula</a></td></tr></table>
+<p>Bu isteği siz yapmadıysanız bu e-postayı yok sayın.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-b4600026779f--

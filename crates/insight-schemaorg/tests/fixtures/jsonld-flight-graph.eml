@@ -1,0 +1,61 @@
+From: Example Travel <bookings@travel.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your flight XA482
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-flight-graph@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "FlightReservation",
+   "@id": "#res",
+   "reservationNumber": "QX7K2P",
+   "reservationStatus": "https://schema.org/ReservationConfirmed",
+   "underName": {
+    "@id": "#ada"
+   },
+   "reservationFor": {
+    "@id": "#leg"
+   },
+   "airplaneSeat": "14C",
+   "url": "https://travel.example.com/trips/QX7K2P",
+   "checkinUrl": "https://travel.example.com/checkin/QX7K2P"
+  },
+  {
+   "@type": "Person",
+   "@id": "#ada",
+   "name": "Ada Example"
+  },
+  {
+   "@type": "Flight",
+   "@id": "#leg",
+   "flightNumber": "XA482",
+   "airline": {
+    "@type": "Airline",
+    "name": "Example Air",
+    "iataCode": "XA"
+   },
+   "departureAirport": {
+    "@type": "Airport",
+    "name": "Example Field",
+    "iataCode": "LHR"
+   },
+   "arrivalAirport": {
+    "@type": "Airport",
+    "iataCode": "AMS"
+   },
+   "departureTime": "2027-03-14T09:30:00+00:00",
+   "arrivalTime": "2027-03-14T12:05:00+01:00"
+  }
+ ]
+}
+</script>
+</head><body>
+<p>Hello Ada, your flight is booked. Booking reference QX7K2P.</p>
+</body></html>

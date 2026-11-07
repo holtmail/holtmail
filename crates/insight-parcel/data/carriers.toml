@@ -1,0 +1,157 @@
+# Carrier table for holtmail-insight-parcel. Its blake3 hash is part of the extractor version.
+#
+# Patterns: `A` an ASCII letter, `D` an ASCII digit, `X` either; anything else is literal.
+# Numbers are matched in compact uppercase form, spaces inside groupings removed.
+# `check` names the check-digit scheme (see docs/README.md). Tracking URLs are https templates
+# with `{number}`; the host never comes from mail.
+
+[scores]
+keyword = 850
+host = 900
+keyword_and_host = 950
+no_check_digit = 500
+likely = 700
+
+[context]
+keyword_window = 64
+negative_window = 24
+max_group_words = 8
+
+[keywords]
+en = [
+  "tracking",
+  "tracking number",
+  "tracking no",
+  "tracking id",
+  "tracking code",
+  "track your package",
+  "track your parcel",
+  "track your shipment",
+  "track package",
+  "track parcel",
+  "waybill",
+  "air waybill",
+  "consignment number",
+  "parcel number",
+  "shipment number",
+]
+de = ["sendungsnummer", "sendungsverfolgung", "paketnummer", "trackingnummer", "sendung verfolgen"]
+fr = ["numéro de suivi", "suivi de colis", "suivre mon colis", "numéro de colis"]
+es = [
+  "número de seguimiento",
+  "seguimiento",
+  "número de rastreo",
+  "rastreo",
+  "número de envío",
+  "rastrear envío",
+]
+pt = [
+  "código de rastreio",
+  "código de rastreamento",
+  "número de rastreamento",
+  "rastreamento",
+  "rastreio",
+  "rastrear",
+]
+it = ["codice di tracciamento", "numero di tracciamento", "tracciamento", "numero di spedizione"]
+ru = [
+  "трек-номер",
+  "трек номер",
+  "трек",
+  "номер отправления",
+  "отслеживание",
+  "отследить",
+  "почтовый идентификатор",
+]
+zh = ["运单号", "快递单号", "物流单号", "追踪号", "跟踪号"]
+ja = ["追跡番号", "お問い合わせ番号", "伝票番号"]
+ko = ["운송장", "송장번호", "배송조회"]
+tr = ["takip numarası", "kargo takip", "gönderi numarası"]
+pl = ["numer przesyłki", "numer śledzenia", "śledzenie przesyłki"]
+nl = ["track & trace", "zendingnummer"]
+
+# A number preceded by one of these within `negative_window` chars, with no tracking keyword
+# closer, is an order, invoice, account or phone number.
+[negative]
+words = [
+  "order",
+  "order number",
+  "invoice",
+  "phone",
+  "tel",
+  "telephone",
+  "fax",
+  "call",
+  "iban",
+  "account",
+  "card",
+  "bestellung",
+  "bestellnummer",
+  "rechnung",
+  "telefon",
+  "commande",
+  "facture",
+  "pedido",
+  "factura",
+  "ordine",
+  "fattura",
+  "заказ",
+  "номер заказа",
+  "счёт",
+  "счет",
+  "телефон",
+  "订单",
+  "注文",
+  "주문",
+  "sipariş",
+  "zamówienie",
+  "faktura",
+]
+
+[carriers.s10]
+check = "s10"
+patterns = ["AADDDDDDDDDAA"]
+keywords = ["registered mail", "einschreiben", "заказное письмо", "ems"]
+hosts = ["pochta.ru", "usps.com", "deutschepost.de", "dhl.de", "royalmail.com", "chinapost.com.cn"]
+
+[carriers.s10.track_urls]
+RU = "https://www.pochta.ru/tracking?barcode={number}"
+US = "https://tools.usps.com/go/TrackConfirmAction?tLabels={number}"
+DE = "https://www.deutschepost.de/de/s/sendungsverfolgung.html?piececode={number}"
+CN = "https://yjcx.ems.com.cn/qps/yjcx?mailNum={number}"
+GB = "https://www.royalmail.com/track-your-item#/tracking-results/{number}"
+
+[carriers.ups]
+check = "ups"
+patterns = ["1ZXXXXXXXXXXXXXXXX"]
+keywords = ["ups"]
+hosts = ["ups.com"]
+track_url = "https://www.ups.com/track?tracknum={number}"
+
+[carriers.usps]
+check = "usps"
+patterns = ["DDDDDDDDDDDDDDDDDDDD", "DDDDDDDDDDDDDDDDDDDDD", "DDDDDDDDDDDDDDDDDDDDDD"]
+keywords = ["usps"]
+hosts = ["usps.com"]
+track_url = "https://tools.usps.com/go/TrackConfirmAction?tLabels={number}"
+
+[carriers.fedex]
+check = "fedex"
+patterns = ["DDDDDDDDDDDD", "DDDDDDDDDDDDDDD"]
+keywords = ["fedex"]
+hosts = ["fedex.com"]
+track_url = "https://www.fedex.com/fedextrack/?trknbr={number}"
+
+[carriers.dhl_express]
+check = "dhl_express"
+patterns = ["DDDDDDDDDD"]
+keywords = ["dhl", "dhl express"]
+hosts = ["dhl.com"]
+track_url = "https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id={number}"
+
+[carriers.russian_post]
+check = "russian_post"
+patterns = ["DDDDDDDDDDDDDD"]
+keywords = ["почта россии", "russian post"]
+hosts = ["pochta.ru"]
+track_url = "https://www.pochta.ru/tracking?barcode={number}"

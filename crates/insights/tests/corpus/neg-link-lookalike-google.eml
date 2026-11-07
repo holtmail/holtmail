@@ -1,0 +1,16 @@
+From: Example Docs <docs-noreply@docs.example.com>
+To: Ada Example <ada@example.org>
+Subject: Shared document
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <436c5adb0e70@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Dan shared a document with you.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://evil.example/url?q=https%3A%2F%2Faccounts.example.com%2Freset%3Ftoken%3D3c01627cf1f82343" style="color:#ffffff;text-decoration:none;font-weight:bold">Open the document</a></td></tr></table>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>

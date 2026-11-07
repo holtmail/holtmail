@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-links-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+holtmail-links = { path = ".." }
+url = "2"
+
+[[bin]]
+name = "unwrap"
+path = "fuzz_targets/unwrap.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

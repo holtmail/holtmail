@@ -1,0 +1,16 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Merci pour votre commande
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <2ddfd11b3d9f@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Bonjour Ada,
+
+Merci pour votre commande.
+
+Numéro de commande : 503182746192033
+
+Example Shop

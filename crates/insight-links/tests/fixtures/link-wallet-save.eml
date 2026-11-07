@@ -1,0 +1,17 @@
+From: Example Air <booking@example.com>
+To: Ada Example <ada@example.org>
+Subject: Your boarding pass
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <c9eca3d69daa@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>Your boarding pass for flight EX 123 is ready.</p>
+<p><a href="https://example.com/trips/QX7K2P">Manage booking</a></p>
+<table role="presentation"><tr><td bgcolor="#000000"><a href="https://pay.google.com/gp/v/save/eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJib29raW5nQGV4YW1wbGUuY29tIn0.c2lnbmF0dXJl"><img src="https://example.com/img/wallet.png" alt="Add to Google Wallet" width="200" height="48"></a></td></tr></table>
+<p>Have a good flight.</p>
+</body></html>

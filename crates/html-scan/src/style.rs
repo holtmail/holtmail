@@ -7,7 +7,11 @@ impl Style {
             text.split(';')
                 .filter_map(|declaration| {
                     let (property, value) = declaration.split_once(':')?;
-                    let property = property.trim().to_ascii_lowercase();
+                    let property = property.trim();
+                    if !relevant(property) {
+                        return None;
+                    }
+                    let property = property.to_ascii_lowercase();
                     let value = value.trim().to_ascii_lowercase();
                     let value = value
                         .strip_suffix("!important")
@@ -61,6 +65,28 @@ impl Style {
                 _ => false,
             })
     }
+}
+
+fn relevant(property: &str) -> bool {
+    [
+        "display",
+        "visibility",
+        "font-size",
+        "opacity",
+        "max-height",
+        "overflow",
+        "overflow-y",
+        "font-weight",
+        "letter-spacing",
+        "background",
+        "background-color",
+        "background-image",
+    ]
+    .iter()
+    .any(|name| property.eq_ignore_ascii_case(name))
+        || property
+            .get(..7)
+            .is_some_and(|start| start.eq_ignore_ascii_case("padding"))
 }
 
 fn number(value: &str) -> Option<(f64, &str)> {

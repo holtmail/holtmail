@@ -1,0 +1,15 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Shipped
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-action-track-wrapped@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "TrackAction",
+ "name": "Track",
+ "target": "https://www.google.com/url?q=https%3A%2F%2Fparcels.example.org%2Ft%2F77k1"
+}</script></head><body><p>Your order has shipped.</p></body></html>

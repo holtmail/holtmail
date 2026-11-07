@@ -5,6 +5,10 @@ use std::sync::Arc;
 
 use holtmail_insight::InsightExtractor;
 use holtmail_insight_code::CodeExtractor;
+use holtmail_insight_links::LinksExtractor;
+use holtmail_insight_parcel::ParcelExtractor;
+use holtmail_insight_pass::PassExtractor;
+use holtmail_insight_schemaorg::SchemaOrgExtractor;
 use holtmail_insight_unsubscribe::UnsubscribeExtractor;
 use holtmail_insights::Runner;
 use holtmail_mime::ParsedMessage;
@@ -24,6 +28,34 @@ pub struct Label {
     pub origin: Option<String>,
     pub negative: Option<String>,
     pub unsubscribe: Option<UnsubscribeLabel>,
+    pub links: Option<Vec<LinkLabel>>,
+    pub parcel: Option<Vec<ParcelLabel>>,
+    pub structured: Option<Vec<StructuredLabel>>,
+    pub kind: Option<String>,
+    pub topics: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructuredLabel {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(rename = "ref")]
+    pub reference: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkLabel {
+    pub action: String,
+    pub host: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParcelLabel {
+    pub carrier: String,
+    pub number: String,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Deserialize)]
@@ -63,10 +95,14 @@ pub fn parse(file: &str) -> ParsedMessage {
     holtmail_mime::parse(&raw).unwrap_or_else(|_| panic!("{file} does not parse"))
 }
 
-/// The runner with the Phase 35 extractors, in the order the server runs them.
+/// The runner with every built extractor, in the order the server runs them.
 pub fn runner() -> Runner {
     let extractors: Vec<Arc<dyn InsightExtractor>> = vec![
         Arc::new(UnsubscribeExtractor::new()),
+        Arc::new(SchemaOrgExtractor::new()),
+        Arc::new(PassExtractor::new()),
+        Arc::new(ParcelExtractor::new()),
+        Arc::new(LinksExtractor::new()),
         Arc::new(CodeExtractor::new()),
     ];
     Runner::new(extractors)

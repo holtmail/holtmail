@@ -1,0 +1,42 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Order ORD-2041 confirmed
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-order@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "ORD-2041",
+ "seller": {
+  "@type": "Organization",
+  "name": "Example Shop"
+ },
+ "price": "59.90",
+ "priceCurrency": "EUR",
+ "orderStatus": "https://schema.org/OrderProcessing",
+ "url": "https://shop.example.com/orders/2041",
+ "acceptedOffer": {
+  "@type": "Offer",
+  "itemOffered": {
+   "@type": "Product",
+   "name": "Example Kettle"
+  },
+  "price": "59.90",
+  "priceCurrency": "EUR"
+ },
+ "potentialAction": {
+  "@type": "ViewAction",
+  "name": "View order",
+  "target": "https://shop.example.com/orders/2041"
+ }
+}
+</script>
+</head><body>
+<p>Thanks for your order.</p>
+</body></html>

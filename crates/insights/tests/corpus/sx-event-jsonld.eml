@@ -1,0 +1,39 @@
+From: Example Hall <tickets@hall.example.org>
+To: Ada Example <ada@example.org>
+Subject: Your tickets
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-event-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "EventReservation",
+ "reservationNumber": "EV-3301",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservedTicket": [
+  {
+   "@type": "Ticket",
+   "ticketNumber": "T-1001"
+  },
+  {
+   "@type": "Ticket",
+   "ticketNumber": "T-1002"
+  }
+ ],
+ "reservationFor": {
+  "@type": "Event",
+  "name": "Example Quartet in Concert",
+  "startDate": "2027-04-18T19:30:00+02:00",
+  "endDate": "2027-04-18T22:00:00+02:00",
+  "location": {
+   "@type": "Place",
+   "name": "Example Hall",
+   "address": "1 Example Square"
+  }
+ }
+}</script></head><body><p>Doors open at 19:00.</p></body></html>

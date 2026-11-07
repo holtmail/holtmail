@@ -1,0 +1,26 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: ご注文ありがとうございます
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-price-jpy@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "JP-3310",
+ "seller": {
+  "@type": "Organization",
+  "name": "Example Shop"
+ },
+ "price": "12800",
+ "priceCurrency": "JPY"
+}
+</script>
+</head><body>
+<p>ご注文を承りました。合計 ¥12,800</p>
+</body></html>

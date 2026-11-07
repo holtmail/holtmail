@@ -1,0 +1,25 @@
+From: Example Stays <stays@stays.example.com>
+To: Ada Example <ada@example.org>
+Subject: Reservation confirmed
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-lodging-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "LodgingReservation",
+ "reservationNumber": "ST-88310",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "LodgingBusiness",
+  "name": "Example Seaside Inn",
+  "address": "5 Example Beach, Exampleport"
+ },
+ "checkinTime": "2027-07-03T14:00:00",
+ "checkoutTime": "2027-07-07T10:00:00"
+}</script></head><body><p>We look forward to your stay.</p></body></html>

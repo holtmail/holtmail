@@ -1,0 +1,20 @@
+From: Example Bistro <tables@bistro.example.com>
+To: Ada Example <ada@example.org>
+Subject: Table booked
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-food-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "FoodEstablishmentReservation",
+ "reservationNumber": "TB-4410",
+ "partySize": "4",
+ "reservationFor": {
+  "@type": "FoodEstablishment",
+  "name": "Example Bistro"
+ },
+ "startTime": "2027-02-20T20:00:00"
+}</script></head><body><p>Your table for four is reserved.</p></body></html>

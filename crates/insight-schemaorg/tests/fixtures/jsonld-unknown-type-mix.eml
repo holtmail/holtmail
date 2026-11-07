@@ -1,0 +1,44 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your order
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-unknown-type-mix@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": [
+   "Thing",
+   "ExampleThing",
+   "https://schema.org/Order"
+  ],
+  "orderNumber": "MIX-7",
+  "seller": {
+   "name": "Example Shop"
+  }
+ },
+ {
+  "@type": "Recipe",
+  "name": "Example Soup"
+ },
+ {
+  "@type": [
+   "CreativeWork",
+   "WebPage"
+  ],
+  "name": "Example page"
+ },
+ {
+  "@type": "https://example.org/FlightReservation",
+  "reservationNumber": "NOPE"
+ }
+]
+</script>
+</head><body>
+<p>Thanks for your order.</p>
+</body></html>

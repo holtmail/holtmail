@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/server", "crates/*", "tests/integration"]
+members = ["apps/category-builder", "apps/server", "crates/*", "tests/integration"]
 
 [workspace.package]
 version = "0.0.0"
@@ -25,6 +25,10 @@ holtmail-blob = { path = "crates/blob" }
 holtmail-blob-fs = { path = "crates/blob-fs" }
 holtmail-blob-s3 = { path = "crates/blob-s3" }
 holtmail-calendar = { path = "crates/calendar" }
+holtmail-category = { path = "crates/category" }
+holtmail-category-data = { path = "crates/category-data" }
+holtmail-category-domains = { path = "crates/category-domains" }
+holtmail-category-signals = { path = "crates/category-signals" }
 holtmail-collection = { path = "crates/collection" }
 holtmail-collection-merge = { path = "crates/collection-merge" }
 holtmail-collection-dav = { path = "crates/collection-dav" }
@@ -35,6 +39,10 @@ holtmail-auth-results = { path = "crates/auth-results" }
 holtmail-html-scan = { path = "crates/html-scan" }
 holtmail-insight = { path = "crates/insight" }
 holtmail-insight-code = { path = "crates/insight-code" }
+holtmail-insight-links = { path = "crates/insight-links" }
+holtmail-insight-parcel = { path = "crates/insight-parcel" }
+holtmail-insight-pass = { path = "crates/insight-pass" }
+holtmail-insight-schemaorg = { path = "crates/insight-schemaorg" }
 holtmail-insight-unsubscribe = { path = "crates/insight-unsubscribe" }
 holtmail-insights = { path = "crates/insights" }
 holtmail-export = { path = "crates/export" }
@@ -45,6 +53,7 @@ holtmail-fetch-http = { path = "crates/fetch-http" }
 holtmail-import = { path = "crates/import" }
 holtmail-index = { path = "crates/index" }
 holtmail-ledger = { path = "crates/ledger" }
+holtmail-links = { path = "crates/links" }
 holtmail-index-tantivy = { path = "crates/index-tantivy" }
 holtmail-hooks = { path = "crates/hooks" }
 holtmail-ingest = { path = "crates/ingest" }
@@ -91,9 +100,12 @@ chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive", "env"] }
 bytes = "1"
 chacha20poly1305 = "0.11"
+ed25519-dalek = { version = "3", default-features = false }
 futures = "0.3"
+flate2 = "1"
 getrandom = "0.4"
 html5ever = "0.40"
+idna = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 lopdf = { version = "0.47", default-features = false }
 mail-parser = { version = "1", features = ["full_encoding"] }
@@ -134,6 +146,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
   "logging",
 ] }
 unicode-normalization = "0.1"
+unicode-security = "0.1.3"
 utoipa = { version = "6", features = ["uuid"] }
 url = "2"
 uuid = { version = "1", features = ["v7", "v8", "serde"] }

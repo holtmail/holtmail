@@ -1,0 +1,32 @@
+From: Example Utilities <billing@utilities.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your invoice INV-0091
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-invoice@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Invoice",
+ "confirmationNumber": "INV-0091",
+ "provider": {
+  "@type": "Organization",
+  "name": "Example Utilities"
+ },
+ "totalPaymentDue": {
+  "@type": "MonetaryAmount",
+  "value": "84.20",
+  "currency": "EUR"
+ },
+ "paymentDueDate": "2027-01-15",
+ "paymentStatus": "https://schema.org/PaymentDue",
+ "url": "https://billing.example.com/invoices/0091"
+}
+</script>
+</head><body>
+<p>Your invoice is ready.</p>
+</body></html>

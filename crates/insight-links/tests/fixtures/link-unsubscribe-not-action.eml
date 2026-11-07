@@ -1,0 +1,19 @@
+From: Example Weekly <news@example.com>
+To: Ada Example <ada@example.org>
+Subject: Are you sure you want to leave?
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <b8dbf2c58c99@example.com>
+List-Unsubscribe: <https://example.com/unsubscribe/confirm?u=91c3e0&list=weekly>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>You asked to stop receiving Example Weekly.</p>
+<p>Press the button to confirm.</p>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://example.com/unsubscribe/confirm?u=91c3e0&amp;list=weekly" style="color:#ffffff;text-decoration:none">Confirm</a></td></tr></table>
+<p>Changed your mind? Just ignore this message.</p>
+<p>© 2026 Example Media, 1 Example Street</p>
+</body></html>

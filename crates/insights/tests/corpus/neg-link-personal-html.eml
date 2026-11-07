@@ -1,0 +1,17 @@
+From: Bob Example <bob@example.org>
+To: Ada Example <ada@example.org>
+Subject: Photos from Saturday
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <76b3744fb6fd@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Hi Ada,</p>
+<p>Here are the photos from Saturday: <a href="https://photos.example.org/album/saturday">the album</a></p>
+<p>Can you sign in and add yours too? Thanks!</p>
+<p>Bob</p>
+</body></html>

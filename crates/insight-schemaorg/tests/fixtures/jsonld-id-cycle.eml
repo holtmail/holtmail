@@ -1,0 +1,66 @@
+From: Example Travel <bookings@travel.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your flight to Rome
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-id-cycle@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "FlightReservation",
+   "@id": "#r",
+   "reservationNumber": "CYC123",
+   "reservationFor": {
+    "@id": "#f"
+   },
+   "partOfReservation": {
+    "@id": "#r"
+   }
+  },
+  {
+   "@type": "Flight",
+   "@id": "#f",
+   "flightNumber": "300",
+   "airline": {
+    "@id": "#a"
+   },
+   "departureAirport": {
+    "@type": "Airport",
+    "iataCode": "CDG"
+   },
+   "arrivalAirport": {
+    "@type": "Airport",
+    "iataCode": "FCO"
+   },
+   "departureTime": "2027-07-01T08:00:00+02:00",
+   "subjectOf": {
+    "@id": "#r"
+   }
+  },
+  {
+   "@type": "Airline",
+   "@id": "#a",
+   "iataCode": "XA",
+   "parentOrganization": {
+    "@id": "#b"
+   }
+  },
+  {
+   "@type": "Organization",
+   "@id": "#b",
+   "subOrganization": {
+    "@id": "#a"
+   }
+  }
+ ]
+}
+</script>
+</head><body>
+<p>Your flight is booked.</p>
+</body></html>

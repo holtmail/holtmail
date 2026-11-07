@@ -1,0 +1,19 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your parcel is on its way
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-parcel-jsonld-and-text@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "ParcelDelivery",
+ "trackingNumber": "1Z4E7092F038824511",
+ "carrier": {
+  "@type": "Organization",
+  "name": "UPS"
+ },
+ "trackingUrl": "https://parcels.example.org/t/4e7092"
+}</script></head><body><p>Your parcel ships with UPS.</p><p>UPS tracking number: 1Z4E7092F038824511</p></body></html>

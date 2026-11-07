@@ -63,7 +63,9 @@ impl HeaderField {
 /// The visible parts of an HTML body, as the scanner reports them.
 ///
 /// Hidden content (`hidden`, `aria-hidden`, `display:none` and the like, `<template>`,
-/// `<noscript>`, and whatever the sanitizer strips) is already gone. Script, style and other
+/// `<noscript>`, and whatever the sanitizer strips) is already gone from anchors and segments.
+/// JSON-LD and microdata are metadata: they are kept inside CSS- or `aria`-hidden subtrees, never
+/// inside `<template>`, foreign content or what the sanitizer strips. Script, style and other
 /// raw-text elements never contribute segments. Lists are in document order and within the caps of
 /// [`crate::limits`].
 ///
@@ -76,6 +78,10 @@ pub struct HtmlView {
     pub anchors: Vec<Anchor>,
     /// The text of each `<script type="application/ld+json">` block, unparsed.
     pub ld_json: Vec<String>,
+    /// The index in [`ld_json`](Self::ld_json) of the first block found below an inline-forward
+    /// marker; `None` when no block is. Blocks are in document order, so every block from this
+    /// index on is below the marker and every block before it is above.
+    pub ld_json_forward_at: Option<usize>,
     /// Microdata items, flat. Nested items are referenced by index, so the list itself never
     /// recurses.
     pub microdata: Vec<MicrodataItem>,
@@ -84,6 +90,11 @@ pub struct HtmlView {
     /// The index in [`segments`](Self::segments) of the first segment at or after the footer
     /// marker (an unsubscribe anchor or `©`); `None` when there is no footer.
     pub footer_at: Option<usize>,
+    /// A cap on the structured data was hit while building the view: a JSON-LD block was
+    /// dropped for its size or count, or microdata items or properties were left out by the depth,
+    /// item or property caps of [`crate::limits`]. `false` guarantees that `ld_json` and
+    /// `microdata` hold everything the scanner reads; the lengths of the lists alone do not tell.
+    pub truncated_structured: bool,
 }
 
 impl HtmlView {
@@ -104,6 +115,12 @@ impl HtmlView {
         self
     }
 
+    /// The view with this position of the first JSON-LD block below a forward marker.
+    pub fn with_ld_json_forward_at(mut self, ld_json_forward_at: Option<usize>) -> Self {
+        self.ld_json_forward_at = ld_json_forward_at;
+        self
+    }
+
     /// The view with these microdata items.
     pub fn with_microdata(mut self, microdata: Vec<MicrodataItem>) -> Self {
         self.microdata = microdata;
@@ -119,6 +136,12 @@ impl HtmlView {
     /// The view with this footer position.
     pub fn with_footer_at(mut self, footer_at: Option<usize>) -> Self {
         self.footer_at = footer_at;
+        self
+    }
+
+    /// The view with this structured-data truncation flag.
+    pub fn with_truncated_structured(mut self, truncated_structured: bool) -> Self {
+        self.truncated_structured = truncated_structured;
         self
     }
 }
@@ -167,6 +190,8 @@ pub struct MicrodataItem {
     pub properties: Vec<MicrodataProperty>,
     /// The item is not itself the value of a property.
     pub top_level: bool,
+    /// The `itemscope` element sits below an inline-forward marker.
+    pub below_forward: bool,
 }
 
 impl MicrodataItem {
@@ -191,7 +216,7 @@ pub struct MicrodataProperty {
 /// The value of a microdata property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MicrodataValue {
-    /// Text content or a `content` / `datetime` attribute.
+    /// Text content with whitespace collapsed, or a `content`, `value` or `datetime` attribute.
     Text(String),
     /// An `href` or `src` attribute, as written.
     Url(String),
@@ -248,5 +273,22 @@ mod tests {
             .with_footer_at(Some(0));
         assert_eq!(view.segments.len(), 1);
         assert_eq!(view.footer_at, Some(0));
+    }
+
+    #[test]
+    fn html_view_builds_structured_fields() {
+        let mut item = MicrodataItem::new(vec!["https://schema.org/Order".into()]);
+        item.below_forward = true;
+        let view = HtmlView::new()
+            .with_ld_json(vec!["{}".into(), "{}".into()])
+            .with_ld_json_forward_at(Some(1))
+            .with_microdata(vec![item])
+            .with_truncated_structured(true);
+        assert_eq!(view.ld_json_forward_at, Some(1));
+        assert!(view.microdata[0].below_forward);
+        assert!(view.truncated_structured);
+        let empty = HtmlView::new();
+        assert_eq!(empty.ld_json_forward_at, None);
+        assert!(!empty.truncated_structured);
     }
 }

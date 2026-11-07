@@ -1,0 +1,32 @@
+From: Example Recipes <hello@recipes.example.net>
+To: Ada Example <ada@example.org>
+Subject: This week's recipes
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-unknown-types@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">[
+ {
+  "@context": "https://schema.org",
+  "@type": "Recipe",
+  "name": "Example soup",
+  "recipeYield": "4"
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": [
+   "CreativeWork",
+   "Product"
+  ],
+  "name": "Example pan",
+  "sku": "PAN-4821"
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Example Recipes",
+  "url": "https://recipes.example.net/"
+ }
+]</script></head><body><p>Three new soups.</p></body></html>

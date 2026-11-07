@@ -1,0 +1,29 @@
+[package]
+name = "holtmail-insight-pass"
+description = "Insight extractor for wallet pass attachments"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+blake3.workspace = true
+chrono.workspace = true
+holtmail-insight.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+chrono.workspace = true
+bytes.workspace = true
+holtmail-insight = { workspace = true, features = ["testing"] }
+holtmail-insights.workspace = true
+holtmail-mime.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

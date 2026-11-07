@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Reset your password
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <c29bc84c7978@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-c29bc84c7978"
+
+--b-c29bc84c7978
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+We received a request to reset the password for your Example account.
+
+Reset password: https://urldefense.proofpoint.com/v1/url?u=https%3A%2F%2Faccounts.example.com%2Freset%3Ftoken%3D49c39482f2c0c265&k=ExAmPlEkEy%3D%3D%0A&r=ExAmPlErEcIpIeNt%3D%0A&m=ExAmPlEm%3D%0A&s=0a1b2c3d4e5f
+
+If you did not ask for this, you can ignore this email.
+
+--b-c29bc84c7978
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>We received a request to reset the password for your Example account.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://urldefense.proofpoint.com/v1/url?u=https%3A%2F%2Faccounts.example.com%2Freset%3Ftoken%3D49c39482f2c0c265&amp;k=ExAmPlEkEy%3D%3D%0A&amp;r=ExAmPlErEcIpIeNt%3D%0A&amp;m=ExAmPlEm%3D%0A&amp;s=0a1b2c3d4e5f" style="color:#ffffff;text-decoration:none;font-weight:bold">Reset password</a></td></tr></table>
+<p>If you did not ask for this, you can ignore this email.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-c29bc84c7978--

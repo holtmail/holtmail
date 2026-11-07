@@ -1,0 +1,17 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Ihre Bestellung ist unterwegs
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <31d9ab819672@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Ada,
+
+Ihre Bestellung wurde verschickt.
+
+Sendungsnummer: CP 207 305 183 DE
+
+Viele Grüße
+Example Shop

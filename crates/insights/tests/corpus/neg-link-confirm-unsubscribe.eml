@@ -1,0 +1,16 @@
+From: Example News <news@news.example.com>
+To: Ada Example <ada@example.org>
+Subject: Confirm your unsubscribe request
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <5c769bd20e79@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>We received a request to remove ada@example.org from Example News.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://news.example.com/unsubscribe/confirm?token=b9c69e5488ff88b9" style="color:#ffffff;text-decoration:none;font-weight:bold">Confirm</a></td></tr></table>
+<p>If you want to keep receiving it, do nothing.</p>
+</body></html>

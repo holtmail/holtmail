@@ -1041,6 +1041,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "curve25519-dalek"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "curve25519-dalek-derive",
+ "digest 0.11.3",
+ "fiat-crypto",
+ "rustc_version",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "darling"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,6 +1227,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
+dependencies = [
+ "signature",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ebaa1a2bf1290ab3bfe5a7b771d050ebffab2711c19a81691c683a5144a25de"
+dependencies = [
+ "curve25519-dalek",
+ "ed25519",
+ "sha2 0.11.1",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1324,6 +1373,12 @@ checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filetime"
@@ -1803,6 +1858,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "chrono",
  "futures",
  "holtmail-alias",
  "holtmail-alias-simplelogin",
@@ -1811,6 +1867,7 @@ dependencies = [
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-calendar",
+ "holtmail-category",
  "holtmail-core",
  "holtmail-export",
  "holtmail-extract-basic",
@@ -1820,6 +1877,9 @@ dependencies = [
  "holtmail-index-tantivy",
  "holtmail-ingest",
  "holtmail-insight",
+ "holtmail-insight-unsubscribe",
+ "holtmail-insights",
+ "holtmail-links",
  "holtmail-mime",
  "holtmail-people",
  "holtmail-pim",
@@ -1837,6 +1897,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "url",
  "utoipa",
  "zip",
@@ -1915,6 +1976,81 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "holtmail-category"
+version = "0.0.0"
+dependencies = [
+ "holtmail-insight",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-category-builder"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "holtmail-category",
+ "holtmail-category-data",
+ "holtmail-links",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "holtmail-category-data"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "flate2",
+ "holtmail-category",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-category-domains"
+version = "0.0.0"
+dependencies = [
+ "ed25519-dalek",
+ "flate2",
+ "holtmail-category",
+ "holtmail-category-data",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-category-signals"
+version = "0.0.0"
+dependencies = [
+ "holtmail-category",
+ "holtmail-insight",
+ "holtmail-insight-code",
+ "holtmail-insight-links",
+ "holtmail-insight-parcel",
+ "holtmail-insight-pass",
+ "holtmail-insight-schemaorg",
+ "holtmail-insight-unsubscribe",
+ "holtmail-insights",
+ "holtmail-mime",
 ]
 
 [[package]]
@@ -2060,7 +2196,9 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "holtmail-core",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -2145,12 +2283,16 @@ dependencies = [
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-calendar",
+ "holtmail-category",
+ "holtmail-category-signals",
  "holtmail-core",
  "holtmail-extract",
  "holtmail-extract-basic",
  "holtmail-index",
  "holtmail-index-tantivy",
  "holtmail-insight",
+ "holtmail-insight-code",
+ "holtmail-insight-unsubscribe",
  "holtmail-insights",
  "holtmail-mime",
  "holtmail-pim",
@@ -2161,6 +2303,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2192,6 +2335,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-insight-links"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "holtmail-core",
+ "holtmail-insight",
+ "holtmail-insights",
+ "holtmail-mime",
+ "proptest",
+ "serde",
+ "toml",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "holtmail-insight-parcel"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "holtmail-core",
+ "holtmail-insight",
+ "holtmail-insights",
+ "holtmail-mime",
+ "proptest",
+ "serde",
+ "toml",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "holtmail-insight-pass"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "bytes",
+ "chrono",
+ "holtmail-insight",
+ "holtmail-insights",
+ "holtmail-mime",
+ "proptest",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
+name = "holtmail-insight-schemaorg"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "holtmail-core",
+ "holtmail-insight",
+ "holtmail-insights",
+ "holtmail-mime",
+ "proptest",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "holtmail-insight-unsubscribe"
 version = "0.0.0"
 dependencies = [
@@ -2206,20 +2411,33 @@ dependencies = [
 name = "holtmail-insights"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "bytes",
  "chrono",
  "holtmail-auth-results",
+ "holtmail-blob",
+ "holtmail-category",
+ "holtmail-category-signals",
  "holtmail-core",
  "holtmail-html-scan",
  "holtmail-insight",
  "holtmail-insight-code",
+ "holtmail-insight-links",
+ "holtmail-insight-parcel",
+ "holtmail-insight-pass",
+ "holtmail-insight-schemaorg",
  "holtmail-insight-unsubscribe",
+ "holtmail-links",
  "holtmail-mime",
  "holtmail-people",
  "holtmail-store",
+ "holtmail-store-sqlite",
+ "html5ever",
  "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
  "toml",
  "tracing",
  "unicode-normalization",
@@ -2230,12 +2448,16 @@ dependencies = [
 name = "holtmail-integration"
 version = "0.0.0"
 dependencies = [
+ "aws-lc-rs",
  "axum",
  "base64 0.22.1",
  "bytes",
  "chrono",
+ "ed25519-dalek",
  "futures",
  "holtmail-blob",
+ "holtmail-category",
+ "holtmail-category-data",
  "holtmail-core",
  "holtmail-hooks",
  "holtmail-mime",
@@ -2248,6 +2470,7 @@ dependencies = [
  "object_store",
  "reqwest",
  "serde_json",
+ "sha2 0.11.1",
  "sqlx",
  "tar",
  "tempfile",
@@ -2280,6 +2503,21 @@ dependencies = [
  "holtmail-core",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-links"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "idna",
+ "proptest",
+ "publicsuffix",
+ "serde",
+ "toml",
+ "unicode-security",
+ "url",
 ]
 
 [[package]]
@@ -2383,8 +2621,10 @@ dependencies = [
 name = "holtmail-query"
 version = "0.0.0"
 dependencies = [
+ "holtmail-category",
  "holtmail-core",
  "holtmail-index",
+ "holtmail-insight",
  "thiserror 2.0.21",
 ]
 
@@ -2457,6 +2697,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "ed25519-dalek",
  "holtmail-alias",
  "holtmail-alias-addy",
  "holtmail-alias-apple",
@@ -2471,6 +2712,10 @@ dependencies = [
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-blob-s3",
+ "holtmail-category",
+ "holtmail-category-data",
+ "holtmail-category-domains",
+ "holtmail-category-signals",
  "holtmail-collection",
  "holtmail-collection-dav",
  "holtmail-collection-graph",
@@ -2489,6 +2734,10 @@ dependencies = [
  "holtmail-ingest",
  "holtmail-insight",
  "holtmail-insight-code",
+ "holtmail-insight-links",
+ "holtmail-insight-parcel",
+ "holtmail-insight-pass",
+ "holtmail-insight-schemaorg",
  "holtmail-insight-unsubscribe",
  "holtmail-insights",
  "holtmail-ledger",
@@ -2624,12 +2873,14 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "holtmail-blob",
+ "holtmail-category",
  "holtmail-core",
  "holtmail-ledger",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2638,6 +2889,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "holtmail-blob",
+ "holtmail-category",
  "holtmail-core",
  "holtmail-store",
  "serde",
@@ -4641,6 +4893,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "signature"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5"
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5682,6 +5940,16 @@ name = "unicode-script"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa04c955db05429d464c74d495c1ee677e1866e783a4c3747f9c0cef7756cabf"
+
+[[package]]
+name = "unicode-security"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a23f3d0a5f302dbfdc8c5303c943c325e67cb478611bf1f44fb4c1520c64eb7"
+dependencies = [
+ "unicode-normalization",
+ "unicode-script",
+]
 
 [[package]]
 name = "universal-hash"

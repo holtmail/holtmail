@@ -1,0 +1,20 @@
+From: Ada Example <ada@example.org>
+To: Ada Example <ada@example.org>
+Subject: Fwd: Reset your password
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <33a7b892f1ed@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Bob, is this one real? I did not ask for it.</p>
+<div>---------- Forwarded message ---------</div>
+<div>From: Example Accounts &lt;no-reply@accounts.example.com&gt;</div>
+<div>Subject: Reset your password</div>
+<br>
+<p>We received a request to reset your password.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/reset?token=4806e32f5bab74fc" style="color:#ffffff;text-decoration:none;font-weight:bold">Reset password</a></td></tr></table>
+</body></html>

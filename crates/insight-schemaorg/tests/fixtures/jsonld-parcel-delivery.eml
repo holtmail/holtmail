@@ -1,0 +1,33 @@
+From: Example Store <shipping@store.example.com>
+To: Ada Example <ada@example.org>
+Subject: Shipped: your order
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-parcel-delivery@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "ParcelDelivery",
+ "carrier": {
+  "@type": "Organization",
+  "name": "UPS"
+ },
+ "trackingNumber": "1Z4E8752A038192654",
+ "trackingUrl": "https://store.example.com/track/7731",
+ "partOfOrder": {
+  "@type": "Order",
+  "orderNumber": "7731",
+  "merchant": {
+   "@type": "Organization",
+   "name": "Example Store"
+  }
+ }
+}
+</script>
+</head><body>
+<p>Your order has shipped.</p>
+</body></html>

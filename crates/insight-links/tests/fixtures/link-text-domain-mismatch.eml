@@ -1,0 +1,17 @@
+From: Example Bank <alerts@example.com>
+To: Ada Example <ada@example.org>
+Subject: Unusual sign-in attempt
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <e5a8cbf25f66@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>We noticed a sign-in from a new device.</p>
+<p>Review your account at</p>
+<p><a href="https://example.net/login?session=4d2b" role="button" aria-label="Sign in to your account">accounts.example.com</a></p>
+<p>Thank you for banking with us.</p>
+</body></html>

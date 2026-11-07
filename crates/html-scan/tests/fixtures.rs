@@ -1,7 +1,8 @@
 //! Raw-text, hidden-content, forward and footer fixtures.
 
 use holtmail_html_scan::scan;
-use holtmail_insight::HtmlView;
+use holtmail_insight::limits::{MAX_MICRODATA_DEPTH, MAX_MICRODATA_PROPERTIES};
+use holtmail_insight::{HtmlView, MicrodataValue};
 
 fn fixture(name: &str) -> HtmlView {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -231,5 +232,177 @@ fn malformed_markup() {
             ("https://example.com/1", "First", 0),
             ("https://example.com/2", "Second", 1),
         ]
+    );
+}
+
+fn items(view: &HtmlView) -> Vec<String> {
+    view.microdata
+        .iter()
+        .map(|item| {
+            let props = item
+                .properties
+                .iter()
+                .map(|p| match &p.value {
+                    MicrodataValue::Text(text) => format!("{}={text:?}", p.name),
+                    MicrodataValue::Url(url) => format!("{}=<{url}>", p.name),
+                    MicrodataValue::Item(i) => format!("{}=#{i}", p.name),
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let types = item
+                .types
+                .iter()
+                .map(|t| t.rsplit('/').next().unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join(",");
+            let flags = format!(
+                "{}{}",
+                if item.top_level { "top" } else { "nested" },
+                if item.below_forward { " fwd" } else { "" }
+            );
+            format!("{types} [{flags}] {props}")
+        })
+        .collect()
+}
+
+#[test]
+fn microdata_lodging() {
+    let view = fixture("microdata-lodging.html");
+    assert_eq!(
+        items(&view),
+        [
+            "LodgingReservation [top] reservationNumber=\"HX-4417\" \
+             reservationStatus=<http://schema.org/ReservationConfirmed> reservationFor=#1 \
+             checkinTime=\"2026-12-01T15:00:00+01:00\" checkoutTime=\"2 Dec 2026\" \
+             price=\"240.00\" image=<https://example.org/room.jpg>",
+            "LodgingBusiness [nested] name=\"Example Harbour Hotel\" address=#2 \
+             url=<https://example.com/hotel>",
+            "PostalAddress [nested] streetAddress=\"1 Example Quay\" addressLocality=\"Exampleton\"",
+        ]
+    );
+    assert_eq!(view.microdata[0].id.as_deref(), Some("urn:example:res:1"));
+    assert!(!view.truncated_structured);
+    assert!(text(&view).contains("Example Harbour Hotel"));
+}
+
+#[test]
+fn microdata_itemref() {
+    let view = fixture("microdata-itemref.html");
+    assert_eq!(
+        items(&view),
+        [
+            "FoodEstablishmentReservation [top] reservationNumber=\"T-1234\" reservationFor=#1 \
+             startTime=\"2026-12-24T19:30\" partySize=\"4\"",
+            "FoodEstablishment [nested] name=\"Example Bistro\"",
+        ]
+    );
+}
+
+#[test]
+fn microdata_itemref_cycle_is_cut() {
+    let view = fixture("microdata-itemref-cycle.html");
+    assert_eq!(
+        items(&view),
+        [
+            "Thing [top] name=\"Alpha\" sibling=#1",
+            "Thing [nested] name=\"Beta\" sibling=#2",
+            "Thing [nested] sibling=#1 name=\"Gamma\"",
+        ]
+    );
+    assert!(!view.truncated_structured);
+}
+
+#[test]
+fn microdata_in_hidden_subtrees_is_kept() {
+    let view = fixture("microdata-hidden-div.html");
+    assert_eq!(
+        items(&view),
+        [
+            "Order [top] orderNumber=\"EX-77812\" merchant=#1 \
+             url=<https://example.com/orders/EX-77812>",
+            "Organization [nested] name=\"Example Shop\"",
+        ]
+    );
+    assert_eq!(text(&view), "Your order shipped. | Visible footer text");
+    assert!(view.anchors.is_empty());
+}
+
+#[test]
+fn microdata_never_comes_from_inert_or_raw_content() {
+    let view = fixture("microdata-in-template.html");
+    assert!(view.microdata.is_empty(), "{:?}", items(&view));
+    assert!(!view.truncated_structured);
+}
+
+#[test]
+fn ld_json_and_microdata_below_forward() {
+    let view = fixture("ld-json-below-forward.html");
+    assert_eq!(view.ld_json.len(), 3);
+    assert!(view.ld_json[0].contains("ABOVE-1"));
+    assert_eq!(view.ld_json_forward_at, Some(1));
+    assert_eq!(
+        items(&view),
+        [
+            "Thing [top] name=\"above\"",
+            "Order [top fwd] orderNumber=\"BELOW-2\"",
+        ]
+    );
+
+    let plain = fixture("script-ld-json.html");
+    assert_eq!(plain.ld_json_forward_at, None);
+}
+
+#[test]
+fn microdata_fan_in_bomb_stays_in_budget() {
+    let big = (0..1_000)
+        .map(|i| format!("<span itemprop=\"part\">p{i}</span>"))
+        .collect::<String>();
+    let refs = "<div itemscope itemtype=\"https://schema.org/Thing\" itemref=\"big\"></div>\n"
+        .repeat(1_000);
+    let view = scan(&format!("<div id=\"big\">{big}</div>{refs}"));
+    let total: usize = view.microdata.iter().map(|i| i.properties.len()).sum();
+    assert_eq!(total, MAX_MICRODATA_PROPERTIES);
+    assert!(view.truncated_structured);
+    assert_eq!(view.microdata[0].properties.len(), 1_000);
+    assert_eq!(
+        view.microdata[0].properties[999].value,
+        MicrodataValue::Text("p999".into())
+    );
+}
+
+#[test]
+fn microdata_nested_depth_20_is_capped() {
+    let depth = 20;
+    let html = format!(
+        "{}<span itemprop=\"leaf\">deep</span>{}",
+        (0..depth)
+            .map(|i| format!(
+                "<div itemprop=\"child\" itemscope itemtype=\"https://schema.org/T{i}\">"
+            ))
+            .collect::<String>(),
+        "</div>".repeat(depth)
+    );
+    let view = scan(&html);
+    assert_eq!(view.microdata.len(), MAX_MICRODATA_DEPTH);
+    assert!(view.truncated_structured);
+    for (i, item) in view
+        .microdata
+        .iter()
+        .enumerate()
+        .take(MAX_MICRODATA_DEPTH - 1)
+    {
+        assert_eq!(item.properties.len(), 1);
+        assert_eq!(item.properties[0].value, MicrodataValue::Item(i + 1));
+    }
+    let deepest = view.microdata.last().expect("deepest");
+    let names: Vec<_> = deepest.properties.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["child", "child", "child", "child", "leaf"]);
+    assert_eq!(
+        deepest.properties[4].value,
+        MicrodataValue::Text("deep".into())
+    );
+    assert_eq!(
+        deepest.properties[0].value,
+        MicrodataValue::Text("deep".into())
     );
 }

@@ -1,0 +1,19 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your e-ticket
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-flight-microdata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><div itemscope itemtype="http://schema.org/FlightReservation">
+<meta itemprop="reservationNumber" content="M2PLX8">
+<div itemprop="underName" itemscope itemtype="http://schema.org/Person"><meta itemprop="name" content="Ada Example"></div>
+<div itemprop="reservationFor" itemscope itemtype="http://schema.org/Flight">
+<meta itemprop="flightNumber" content="219">
+<div itemprop="airline" itemscope itemtype="http://schema.org/Airline"><meta itemprop="name" content="Example Air"><meta itemprop="iataCode" content="XA"></div>
+<div itemprop="departureAirport" itemscope itemtype="http://schema.org/Airport"><meta itemprop="iataCode" content="CPH"></div>
+<div itemprop="arrivalAirport" itemscope itemtype="http://schema.org/Airport"><meta itemprop="iataCode" content="ARN"></div>
+<p>Departs <time itemprop="departureTime" datetime="2027-06-11T16:40:00+02:00">11 June 16:40</time></p>
+</div></div><p>See you on board.</p></body></html>

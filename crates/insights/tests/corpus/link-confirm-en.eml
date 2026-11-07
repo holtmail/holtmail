@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Was this you?
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <e48f59ae09d0@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-e48f59ae09d0"
+
+--b-e48f59ae09d0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Someone is trying to add a new device to your Example account from Example City.
+
+Yes, confirm: https://accounts.example.com/confirm?token=094e70abcb080871
+
+This link works once.
+
+--b-e48f59ae09d0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Someone is trying to add a new device to your Example account from Example City.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/confirm?token=094e70abcb080871" style="color:#ffffff;text-decoration:none;font-weight:bold">Yes, confirm</a></td></tr></table>
+<p>This link works once.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-e48f59ae09d0--

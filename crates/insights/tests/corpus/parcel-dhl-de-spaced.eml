@@ -1,0 +1,17 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Ihre Sendung ist unterwegs
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <5a7e05cf21f7@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Hallo Ada,</p>
+<p>Ihre Sendung wurde an DHL Express übergeben.</p>
+<p>Sendungsnummer: 12 0847 5660</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Shop GmbH, 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>

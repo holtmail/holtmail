@@ -1,0 +1,19 @@
+From: Example Arena <tickets@arena.example.org>
+To: Ada Example <ada@example.org>
+Subject: Your ticket
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-pkpass-not-zip@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Ticket attached.
+--b1
+Content-Type: application/vnd.apple.pkpass
+Content-Disposition: attachment; filename="pass.pkpass"
+Content-Transfer-Encoding: base64
+
+dGhpcyBpcyBub3QgYSB6aXAgYXJjaGl2ZSBhdCBhbGw=
+--b1--

@@ -1,0 +1,32 @@
+From: Example Coaches <tickets@coach.example.net>
+To: Ada Example <ada@example.org>
+Subject: Your coach booking
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-bus-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "BusReservation",
+ "reservationNumber": "BC-70211",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "BusTrip",
+  "busNumber": "N77",
+  "departureBusStop": {
+   "@type": "BusStop",
+   "name": "Example Coach Station"
+  },
+  "arrivalBusStop": {
+   "@type": "BusStop",
+   "name": "Exampleford Square"
+  },
+  "departureTime": "2027-03-02T22:15:00+00:00",
+  "arrivalTime": "2027-03-03T06:40:00+00:00"
+ }
+}</script></head><body><p>Please arrive 15 minutes early.</p></body></html>

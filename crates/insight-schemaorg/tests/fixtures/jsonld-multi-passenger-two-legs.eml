@@ -1,0 +1,236 @@
+From: Example Travel <bookings@travel.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your round trip for four
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-multi-passenger-two-legs@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Ada Example"
+   },
+   "airplaneSeat": "20A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "101",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "departureTime": "2027-03-14T09:30:00Z",
+    "arrivalTime": "2027-03-14T12:00:00+01:00"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Ben Example"
+   },
+   "airplaneSeat": "21A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "101",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "departureTime": "2027-03-14T09:30:00Z",
+    "arrivalTime": "2027-03-14T12:00:00+01:00"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Cleo Example"
+   },
+   "airplaneSeat": "22A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "101",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "departureTime": "2027-03-14T09:30:00Z",
+    "arrivalTime": "2027-03-14T12:00:00+01:00"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Dan Example"
+   },
+   "airplaneSeat": "23A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "101",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "departureTime": "2027-03-14T09:30:00Z",
+    "arrivalTime": "2027-03-14T12:00:00+01:00"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Ada Example"
+   },
+   "airplaneSeat": "20A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "102",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "departureTime": "2027-03-21T18:10:00+01:00",
+    "arrivalTime": "2027-03-21T18:35:00Z"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Ben Example"
+   },
+   "airplaneSeat": "21A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "102",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "departureTime": "2027-03-21T18:10:00+01:00",
+    "arrivalTime": "2027-03-21T18:35:00Z"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Cleo Example"
+   },
+   "airplaneSeat": "22A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "102",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "departureTime": "2027-03-21T18:10:00+01:00",
+    "arrivalTime": "2027-03-21T18:35:00Z"
+   }
+  },
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "RT4PAX",
+   "underName": {
+    "@type": "Person",
+    "name": "Dan Example"
+   },
+   "airplaneSeat": "23A",
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "102",
+    "airline": {
+     "@type": "Airline",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "AMS"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "LHR"
+    },
+    "departureTime": "2027-03-21T18:10:00+01:00",
+    "arrivalTime": "2027-03-21T18:35:00Z"
+   }
+  }
+ ]
+}
+</script>
+</head><body>
+<p>Four travellers, two flights. Have a good trip.</p>
+</body></html>

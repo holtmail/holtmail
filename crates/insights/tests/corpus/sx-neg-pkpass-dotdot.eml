@@ -1,0 +1,32 @@
+From: Example Arena <tickets@arena.example.org>
+To: Ada Example <ada@example.org>
+Subject: Your ticket
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-pkpass-dotdot@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Ticket attached.
+--b1
+Content-Type: application/vnd.apple.pkpass
+Content-Disposition: attachment; filename="pass.pkpass"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAAAAYV25hhUXEwEAALYBAAAMAAAALi4vcGFzcy5qc29uVZBdS8MwFIb/Ssm1LW1A
+ZntXtQNRx3RlCOLFaXtawpK0JFmxlv1384Ewb8/7vB+clfSjEmCOqDQbJSmi7CYiE2hdLxM+dSgN
+6xkqK/hr0o4iwW8QE8fEsPaERhPr0KgY8N1ZNIGtjnGe08xJBkH8D6o+ytf9S5VSJ49qAMl+wNj6
+HQj0QCiISoUSHNShbhWbTJhIHkbZojJRGOAAhRxnkOYRjE+gKd3E6W1MaZ3lRZo6Bmc7og6WIlrJ
+pJgAtWwZ8k7by+dKTrg4tyedhUOD3C/6u8zAz77hYO1yiNowhVy+LlZtQLWjHRvSwmsdvH++D8rW
+n97eXZRArWHAq3fFh6qs42xzpVbS2myRo86mj+9c0y9QSwMEFAAAAAgAAABhXbmGFRcTAQAAtgEA
+AAkAAABwYXNzLmpzb25VkF1LwzAUhv9KybUtbUBme1e1A1HHdGUI4sVpe1rCkrQkWbGW/XfzgTBv
+z/u8H5yV9KMSYI6oNBslKaLsJiITaF0vEz51KA3rGSor+GvSjiLBbxATx8Sw9oRGE+vQqBjw3Vk0
+ga2OcZ7TzEkGQfwPqj7K1/1LlVInj2oAyX7A2PodCPRAKIhKhRIc1KFuFZtMmEgeRtmiMlEY4ACF
+HGeQ5hGMT6Ap3cTpbUxpneVFmjoGZzuiDpYiWsmkmAC1bBnyTtvL50pOuDi3J52FQ4PcL/q7zMDP
+vuFg7XKI2jCFXL4uVm1AtaMdG9LCax28f74Pytaf3t5dlECtYcCrd8WHqqzjbHOlVtLabJGjzqaP
+71zTL1BLAQIUAxQAAAAIAAAAYV25hhUXEwEAALYBAAAMAAAAAAAAAAAAAACkAQAAAAAuLi9wYXNz
+Lmpzb25QSwECFAMUAAAACAAAAGFduYYVFxMBAAC2AQAACQAAAAAAAAAAAAAApAE9AQAAcGFzcy5q
+c29uUEsFBgAAAAACAAIAcQAAAHcCAAAAAA==
+--b1--

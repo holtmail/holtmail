@@ -1,0 +1,37 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Booking Q7MZ3D
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-flight-array-uri-type@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">[
+ {
+  "@type": "http://schema.org/FlightReservation",
+  "reservationNumber": "Q7MZ3D",
+  "underName": {
+   "@type": "Person",
+   "name": "Ada Example"
+  },
+  "reservationFor": {
+   "@type": "Flight",
+   "flightNumber": "XA 731",
+   "airline": {
+    "@type": "Airline",
+    "name": "Example Air",
+    "iataCode": "XA"
+   },
+   "departureAirport": {
+    "@type": "Airport",
+    "iataCode": "fra"
+   },
+   "arrivalAirport": {
+    "@type": "Airport",
+    "iataCode": "osl"
+   },
+   "departureTime": "2027-05-01T07:05:00+02:00"
+  }
+ }
+]</script></head><body><p>Your booking is confirmed.</p></body></html>

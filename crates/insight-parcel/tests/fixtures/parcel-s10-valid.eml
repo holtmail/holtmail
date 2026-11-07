@@ -1,0 +1,17 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your parcel is on its way
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <parcel-s10-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Ada,
+
+Your order has been handed to the post office.
+Tracking number: RA 123 456 785 RU
+
+It usually arrives within 10 days.
+
+Example Shop

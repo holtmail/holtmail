@@ -1,0 +1,36 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your booking code
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-booking-code@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@type": "FlightReservation",
+ "reservationNumber": "K7Q2XM",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "Flight",
+  "flightNumber": "604",
+  "airline": {
+   "@type": "Airline",
+   "name": "Example Air",
+   "iataCode": "XA"
+  },
+  "departureAirport": {
+   "@type": "Airport",
+   "iataCode": "MUC"
+  },
+  "arrivalAirport": {
+   "@type": "Airport",
+   "iataCode": "ATH"
+  },
+  "departureTime": "2027-06-02T13:20:00+02:00"
+ },
+ "@context": "https://schema.org"
+}</script></head><body><p>Your booking code is <strong>K7Q2XM</strong>. Keep it for check-in.</p></body></html>

@@ -11,6 +11,10 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 holtmail-insight = { path = "../../insight" }
 holtmail-insight-code = { path = "../../insight-code" }
+holtmail-insight-links = { path = "../../insight-links" }
+holtmail-insight-parcel = { path = "../../insight-parcel" }
+holtmail-insight-pass = { path = "../../insight-pass" }
+holtmail-insight-schemaorg = { path = "../../insight-schemaorg" }
 holtmail-insight-unsubscribe = { path = "../../insight-unsubscribe" }
 holtmail-insights = { path = ".." }
 holtmail-mime = { path = "../../mime" }

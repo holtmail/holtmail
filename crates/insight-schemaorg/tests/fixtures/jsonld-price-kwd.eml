@@ -1,0 +1,30 @@
+From: Example Telecom <billing@telecom.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your bill
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-price-kwd@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Invoice",
+ "confirmationNumber": "KW-0042",
+ "provider": {
+  "@type": "Organization",
+  "name": "Example Telecom"
+ },
+ "totalPaymentDue": {
+  "@type": "PriceSpecification",
+  "price": "4.125",
+  "priceCurrency": "KWD"
+ },
+ "paymentDueDate": "2027-01-31"
+}
+</script>
+</head><body>
+<p>Your bill is ready.</p>
+</body></html>

@@ -1,0 +1,34 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your boarding pass
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-pkpass-boarding@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Your boarding pass is attached. Add it to your wallet.
+--b1
+Content-Type: application/vnd.apple.pkpass
+Content-Disposition: attachment; filename="pass.pkpass"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAAAAYV2vmJSNEwIAABkEAAAJAAAAcGFzcy5qc29ubVPLbtswELz7KwhdG7uUrSCO
+b/ILCOIEbmoULoocKIlSF5FIYUW7dYL8e5akJKNOffBhNTs7nJ19G7Ag11gJ80NiA1oFMxZeUbEW
+TbM71fIuk8pADhLpi6uOUl2N5F9R1aUcCcBRogVmoIrA9jUSQZSPhyrxHft4OObjmyHn0dgBjBTV
+v6Srffyw3ax46L5rLISCV2FIzKOopEP4aSwGdJhMNilCbbzeYN4KYFYeWz/FzGi2ufvusChLeRTK
+LIVxXF7NZBhGOz6dRddfeDjj3EG7h2yJhqBvA0ZyUagGjLXCdm/vd+dCK4dsQagEntYgy8x2/qKi
+a6dvL/JkGzVCAcrBqViKRJa2vCa2l/yApvtyFOXBTaJnBLb0fvWZjN5vQDmLPjFuoEnO5Z7O2uHo
+6O954FiDRGCqiatV7Ga0afBvnXvA2pXiVyNTzxtUsmlE4YgfwnZ/X+NlzLrffbSfj7/ZXdDgfcx4
+NB0zfjP5ycNoYbPAQm/6mWylaJaNEZFCo4fT6fXtMLSiSfOzz1ZFi4S0Xw6lrwQlF6TRZ82vIy+h
++G36DNJoV85kLdAc0O6t1mi6Nut0C+htvYC0YbIShLncsK096T8WF0ad8bZ4voLF2XtHk2qVgzXV
+hrxHedPaSFEGpSoktjfgl1PAUfZXEWeidTAXFZSni2txzvlpB0Q6uGX3/v+dwu1swttToHQM3j8A
+UEsDBBQAAAAIAAAAYV1Dv6ajBAAAAAIAAAANAAAAbWFuaWZlc3QuanNvbquuBQBQSwMEFAAAAAgA
+AABhXb8/8icKAAAACAAAAAkAAABzaWduYXR1cmXLzCtLzStJTQEAUEsBAhQDFAAAAAgAAABhXa+Y
+lI0TAgAAGQQAAAkAAAAAAAAAAAAAAKQBAAAAAHBhc3MuanNvblBLAQIUAxQAAAAIAAAAYV1Dv6aj
+BAAAAAIAAAANAAAAAAAAAAAAAACkAToCAABtYW5pZmVzdC5qc29uUEsBAhQDFAAAAAgAAABhXb8/
+8icKAAAACAAAAAkAAAAAAAAAAAAAAKQBaQIAAHNpZ25hdHVyZVBLBQYAAAAAAwADAKkAAACaAgAA
+AAA=
+--b1--

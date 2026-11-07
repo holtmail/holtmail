@@ -1,7 +1,8 @@
 use std::fmt::Write as _;
 
 use holtmail_insight::{
-    Confidence, Explanation, Insight, InsightInput, InsightKind, PartRef, Provenance,
+    Confidence, Explanation, Insight, InsightInput, InsightKind, LocalOrZoned, PartRef, Provenance,
+    Reservation,
 };
 
 use crate::{Extracted, Runner, scope};
@@ -151,7 +152,176 @@ fn item_line(item: &Insight) -> String {
                 list_id.is_some()
             );
         }
-        _ => {}
+        InsightKind::Action {
+            action,
+            via,
+            tracked,
+            text_host,
+            label,
+            ..
+        } => {
+            let action = serde_json::to_value(action)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let _ = write!(
+                line,
+                " action={action} via={} tracked={tracked} text_host={} label={}",
+                via.is_some(),
+                text_host.is_some(),
+                label.is_some()
+            );
+        }
+        InsightKind::Parcel {
+            carrier,
+            number,
+            check_digit,
+            track_url,
+        } => {
+            let _ = write!(
+                line,
+                " carrier={} shape={} check_digit={check_digit} track_url={}",
+                carrier.as_str(),
+                holtmail_insight::Skeleton::of(number),
+                track_url.is_some()
+            );
+        }
+        InsightKind::Reservation(reservation) => {
+            let _ = write!(line, " {}", reservation_shape(reservation));
+        }
+        InsightKind::Order {
+            number,
+            merchant,
+            total,
+            status,
+            url,
+        } => {
+            let _ = write!(
+                line,
+                " number={} merchant={} total={} status={} url={}",
+                shape(number.as_deref()),
+                merchant.is_some(),
+                total.is_some(),
+                status.is_some(),
+                url.is_some()
+            );
+        }
+        InsightKind::Invoice {
+            number,
+            payee,
+            total,
+            due,
+            url,
+        } => {
+            let _ = write!(
+                line,
+                " number={} payee={} total={} due={} url={}",
+                shape(number.as_deref()),
+                payee.is_some(),
+                total.is_some(),
+                due.is_some(),
+                url.is_some()
+            );
+        }
+        InsightKind::Pass {
+            style,
+            relevant,
+            boarding,
+            attachment,
+            signature_checked,
+            ..
+        } => {
+            let style = serde_json::to_value(style)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let _ = write!(
+                line,
+                " style={style} attachment={attachment} relevant={} boarding_legs={} signature_checked={signature_checked}",
+                relevant.as_ref().map_or("-", time_shape),
+                boarding.as_ref().map_or(0, |b| b.legs.len())
+            );
+        }
     }
     line
+}
+
+fn shape(value: Option<&str>) -> String {
+    value.map_or_else(
+        || "-".to_owned(),
+        |value| holtmail_insight::Skeleton::of(value).to_string(),
+    )
+}
+
+fn time_shape(at: &LocalOrZoned) -> &'static str {
+    match at {
+        LocalOrZoned::Local(_) => "local",
+        LocalOrZoned::Zoned(..) => "zoned",
+    }
+}
+
+fn reservation_shape(reservation: &Reservation) -> String {
+    let (kind, number, start, people, seats, url) = match reservation {
+        Reservation::Flight(r) => (
+            "flight",
+            r.reservation_number.as_deref(),
+            &r.departure,
+            r.passengers.len(),
+            r.seats.len(),
+            r.url.is_some(),
+        ),
+        Reservation::Lodging(r) => (
+            "lodging",
+            Some(r.reservation_number.as_str()),
+            &r.checkin,
+            r.guests.len(),
+            0,
+            r.url.is_some(),
+        ),
+        Reservation::Train(r) => (
+            "train",
+            r.reservation_number.as_deref(),
+            &r.departure,
+            r.passengers.len(),
+            r.seats.len(),
+            r.url.is_some(),
+        ),
+        Reservation::Bus(r) => (
+            "bus",
+            r.reservation_number.as_deref(),
+            &r.departure,
+            r.passengers.len(),
+            r.seats.len(),
+            r.url.is_some(),
+        ),
+        Reservation::Event(r) => (
+            "event",
+            r.reservation_number.as_deref(),
+            &r.start,
+            0,
+            r.tickets.len(),
+            r.url.is_some(),
+        ),
+        Reservation::Food(r) => (
+            "food",
+            r.reservation_number.as_deref(),
+            &r.start,
+            0,
+            0,
+            r.url.is_some(),
+        ),
+        Reservation::RentalCar(r) => (
+            "rental_car",
+            Some(r.reservation_number.as_str()),
+            &r.pickup,
+            0,
+            0,
+            r.url.is_some(),
+        ),
+    };
+    format!(
+        "reservation={kind} number={} start={} people={people} seats={seats} url={url}",
+        shape(number),
+        time_shape(start)
+    )
 }

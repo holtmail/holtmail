@@ -4,7 +4,7 @@ use holtmail_auth_results::{DkimResult, parse_auth_results, parse_dkim_signature
 use holtmail_insight::InsightInput;
 use serde::Serialize;
 
-pub(crate) const AUTH_VERSION: u32 = 1;
+pub(crate) const AUTH_VERSION: u32 = 2;
 pub(crate) const MAX_RESULTS: usize = 8;
 pub(crate) const MAX_DKIM_PER_RESULT: usize = 8;
 pub(crate) const MAX_SIGNATURES: usize = 8;
@@ -19,6 +19,7 @@ struct AuthFacts {
     fields: BTreeMap<&'static str, usize>,
     sig_cap_hit: bool,
     from_domain: Option<String>,
+    from_addresses: usize,
 }
 
 #[derive(Serialize)]
@@ -136,6 +137,7 @@ pub(crate) fn auth_facts(input: &InsightInput) -> String {
         fields,
         sig_cap_hit,
         from_domain: from_address(input).map(|(_, domain)| domain),
+        from_addresses: input.from.len(),
     };
     serde_json::to_string(&facts).unwrap_or_default()
 }
@@ -211,7 +213,7 @@ mod tests {
         assert_eq!(
             facts(&message),
             json!({
-                "v": 1,
+                "v": 2,
                 "results": [{"pos": 3, "authserv": "mx.example.org", "dkim": [
                     {"d": "xn--bcher-kva.example", "i": null, "s": "s1", "b": "AbC12345"}
                 ]}],
@@ -219,7 +221,8 @@ mod tests {
                     "h": {"from": 1, "list-unsubscribe": 2}, "l": false}],
                 "fields": {"from": 1, "list-unsubscribe": 1, "list-unsubscribe-post": 0},
                 "sig_cap_hit": false,
-                "from_domain": "xn--bcher-kva.example"
+                "from_domain": "xn--bcher-kva.example",
+                "from_addresses": 1
             })
         );
         assert_eq!(
@@ -229,6 +232,23 @@ mod tests {
                 "xn--bcher-kva.example".into()
             ))
         );
+    }
+
+    #[test]
+    fn counts_from_addresses() {
+        let mut message = input(vec![(
+            "From",
+            "support@signer.example, billing@bank.example".into(),
+        )]);
+        message.from.push(Address {
+            name: None,
+            email: "billing@bank.example".into(),
+        });
+        let counted = facts(&message);
+        assert_eq!(counted["fields"]["from"], 1);
+        assert_eq!(counted["from_addresses"], 2);
+        message.from.clear();
+        assert_eq!(facts(&message)["from_addresses"], 0);
     }
 
     #[test]

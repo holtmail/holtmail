@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?UmVkZWZpbmnDp8OjbyBkZSBzZW5oYQ==?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <410838eb133d@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-410838eb133d"
+
+--b-410838eb133d
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Recebemos um pedido para redefinir a senha da sua conta Example.
+
+Redefinir senha: https://accounts.example.com/reset?token=90f76598dbdde9bf
+
+Se não foi você, ignore este e-mail.
+
+--b-410838eb133d
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="pt"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Recebemos um pedido para redefinir a senha da sua conta Example.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/reset?token=90f76598dbdde9bf" style="color:#ffffff;text-decoration:none;font-weight:bold">Redefinir senha</a></td></tr></table>
+<p>Se não foi você, ignore este e-mail.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-410838eb133d--

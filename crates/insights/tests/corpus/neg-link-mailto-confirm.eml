@@ -1,0 +1,16 @@
+From: Example Events <events@example.com>
+To: Ada Example <ada@example.org>
+Subject: Please confirm your attendance
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <80522b3136aa@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>We are planning the team dinner on Friday.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="mailto:events@example.com?subject=Confirm" style="color:#ffffff;text-decoration:none;font-weight:bold">Confirm</a></td></tr></table>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#777777" style="padding:12px 24px"><a href="mailto:events@example.com?subject=Decline" style="color:#ffffff;text-decoration:none;font-weight:bold">Decline</a></td></tr></table>
+</body></html>

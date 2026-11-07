@@ -1,0 +1,36 @@
+From: Example Cars <rentals@cars.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your rental car
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-rental-car-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "RentalCarReservation",
+ "reservationNumber": "RC-901377",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "RentalCar",
+  "name": "Compact",
+  "rentalCompany": {
+   "@type": "Organization",
+   "name": "Example Cars"
+  }
+ },
+ "pickupLocation": {
+  "@type": "Place",
+  "name": "Example Airport"
+ },
+ "pickupTime": "2027-05-14T10:00:00+02:00",
+ "dropoffLocation": {
+  "@type": "Place",
+  "name": "Example Airport"
+ },
+ "dropoffTime": "2027-05-21T10:00:00+02:00"
+}</script></head><body><p>Bring your driving licence.</p></body></html>

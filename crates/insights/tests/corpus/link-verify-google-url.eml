@@ -1,0 +1,32 @@
+From: Example Docs <docs-noreply@docs.example.com>
+To: Ada Example <ada@example.org>
+Subject: Please verify your email
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <5a686d97205e@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-5a686d97205e"
+
+--b-5a686d97205e
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Ada shared a document with you. Before you can open it, verify your address.
+
+Verify email: https://www.google.com/url?q=https%3A%2F%2Faccounts.example.com%2Fverify%3Ftoken%3D171346a5df20b1b6&sa=D&source=editors&ust=1762420000000000&usg=AOvVaw0ExAmPlE0nLy
+
+The link expires in 24 hours.
+
+--b-5a686d97205e
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Ada shared a document with you. Before you can open it, verify your address.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://www.google.com/url?q=https%3A%2F%2Faccounts.example.com%2Fverify%3Ftoken%3D171346a5df20b1b6&amp;sa=D&amp;source=editors&amp;ust=1762420000000000&amp;usg=AOvVaw0ExAmPlE0nLy" style="color:#ffffff;text-decoration:none;font-weight:bold">Verify email</a></td></tr></table>
+<p>The link expires in 24 hours.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-5a686d97205e--

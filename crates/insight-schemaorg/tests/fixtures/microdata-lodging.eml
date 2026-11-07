@@ -1,0 +1,28 @@
+From: Example Stays <stays@stays.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your stay at Example Harbour Hotel
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <microdata-lodging@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<div itemscope itemtype="http://schema.org/LodgingReservation">
+  <p>Hello Ada, your stay is booked.</p>
+  <meta itemprop="reservationNumber" content="HX-4417">
+  <link itemprop="reservationStatus" href="http://schema.org/ReservationConfirmed">
+  <div itemprop="underName" itemscope itemtype="http://schema.org/Person"><meta itemprop="name" content="Ada Example"></div>
+  <div itemprop="reservationFor" itemscope itemtype="http://schema.org/LodgingBusiness">
+    <h2 itemprop="name">Example Harbour Hotel</h2>
+    <div itemprop="address" itemscope itemtype="http://schema.org/PostalAddress">
+      <span itemprop="streetAddress">1 Example Quay</span>,
+      <span itemprop="addressLocality">Exampleton</span>
+    </div>
+  </div>
+  <p>Check-in: <time itemprop="checkinTime" datetime="2026-12-01T15:00:00+01:00">1 Dec, 3 pm</time></p>
+  <p>Check-out: <time itemprop="checkoutTime" datetime="2026-12-03T11:00:00+01:00">3 Dec, 11 am</time></p>
+  <a itemprop="url" href="https://stays.example.com/booking/HX-4417">Manage booking</a>
+</div>
+<p>Thanks, Example Stays</p>
+</body></html>

@@ -1,0 +1,31 @@
+From: Example Lists <lists@lists.example.net>
+To: Ada Example <ada@example.org>
+Subject: Linked markup
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-id-cycle@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@id": "#a",
+   "@type": "FlightReservation",
+   "reservationFor": {
+    "@id": "#b"
+   }
+  },
+  {
+   "@id": "#b",
+   "@type": "Flight",
+   "provider": {
+    "@id": "#a"
+   },
+   "flightNumber": {
+    "@id": "#b"
+   }
+  }
+ ]
+}</script></head><body><p>Linked data.</p></body></html>

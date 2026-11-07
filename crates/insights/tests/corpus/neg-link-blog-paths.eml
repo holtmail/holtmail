@@ -1,0 +1,19 @@
+From: Example Blog <blog@blog.example.com>
+To: Ada Example <ada@example.org>
+Subject: Five habits for a calmer morning
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <fc55aad09686@example.com>
+MIME-Version: 1.0
+List-Unsubscribe: <https://blog.example.com/unsubscribe/u-7>
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<h1>From the Example blog</h1>
+<p><a href="https://blog.example.com/reset-your-morning-routine">Read more</a></p>
+<p><a href="https://blog.example.com/verify-before-you-share">Read more</a></p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://blog.example.com/magic-of-small-steps?token=w45" style="color:#ffffff;text-decoration:none;font-weight:bold">Read the story</a></td></tr></table>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example News Ltd. <a href="https://blog.example.com/preferences/u-7">Preferences</a> | <a href="https://blog.example.com/unsubscribe/u-7">Unsubscribe</a></p>
+</body></html>

@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Aktywuj swoje konto
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <0955c1ffbc84@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-0955c1ffbc84"
+
+--b-0955c1ffbc84
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Dziękujemy za rejestrację w Example. Aktywuj konto, aby zacząć.
+
+Aktywuj konto: https://accounts.example.com/activate?token=cecdbe904709dc7c
+
+Jeśli to nie Ty, zignoruj tę wiadomość.
+
+--b-0955c1ffbc84
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Dziękujemy za rejestrację w Example. Aktywuj konto, aby zacząć.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/activate?token=cecdbe904709dc7c" style="color:#ffffff;text-decoration:none;font-weight:bold">Aktywuj konto</a></td></tr></table>
+<p>Jeśli to nie Ty, zignoruj tę wiadomość.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-0955c1ffbc84--

@@ -3,744 +3,2245 @@
 # code: the one code the card must show (Likely or higher); absent means none.
 # origin: the origin of a WICG origin-bound code.
 # unsubscribe: the exact unsubscribe item; absent means none.
-# negative: the hard-negative family a message without a code belongs to.
+# negative: the hard-negative family a message belongs to when nothing of that kind is
+#   expected (a code family, or a link_* or parcel_* family).
+# links: the expected Likely actions, primary first; host is the destination host after
+#   unwrapping, lowercase A-label. Absent means none.
+# parcel: the expected Likely parcels, compact uppercase number. Absent means none.
+# structured: the expected structured items as { type, ref }; see the section at the end.
+# kind: the kind stage B gives with the signals categorizer and no trusted authserv-id
+#   (docs/INSIGHTS.md §4.2: header rules, then the content gate). Required.
+# topics: the topics it gives under the same trust (unknown), so never a sensitive one.
+#   Required; [] means none.
 
 [[case]]
 file = "fwd-inline-otp.eml"
 negative = "forwarded"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "neg-backup-de.eml"
 negative = "backup"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-backup-ru.eml"
 negative = "backup"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-booking-alnum.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-card-ending.eml"
 negative = "card"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-case-number.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-customer-number.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-de.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-en.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-iso.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-ru.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-slash.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-date-zh.eml"
 negative = "year"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-flight-number.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-footer-registration.eml"
 negative = "footer"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-footer-text.eml"
 negative = "footer"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-forward-begin.eml"
 negative = "forwarded"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "neg-forward-de.eml"
 negative = "forwarded"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "neg-forward-ru.eml"
 negative = "forwarded"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "neg-gift-card.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-hex-colour.eml"
 negative = "hex_colour"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-hidden-code.eml"
 negative = "hidden"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-invoice-en.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-list-discussion.eml"
 negative = "list"
 unsubscribe = { mailto = "mailto:dev-leave@lists.example.org", list_id = "dev.lists.example.org" }
+kind = "bulk"
+topics = []
 
 [[case]]
 file = "neg-meeting-room.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-de.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-en.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-es.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-fr.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-it.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-ja.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-ko.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-pl.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-pt.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-ru.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-tr.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-order-zh.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-personal-numbers.eml"
 negative = "personal"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "neg-phone-de.eml"
 negative = "phone"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-phone-en.eml"
 negative = "phone"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-phone-ru.eml"
 negative = "phone"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-phone-us.eml"
 negative = "phone"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-postcode-de.eml"
 negative = "postcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-postcode-fr.eml"
 negative = "postcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-postcode-jp.eml"
 negative = "postcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-postcode-ru.eml"
 negative = "postcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-postcode-us.eml"
 negative = "postcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-eur.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-gbp.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-jpy.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-krw.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-pln.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-rub.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-try.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-price-usd.eml"
 negative = "money"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-de.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-en.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-es.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-fr.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-html-strong.eml"
 negative = "promo"
 unsubscribe = { mailto = "mailto:leave@news.example.com" }
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-it.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-pl.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-pt.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-ru.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-tr.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-promo-zh.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-referral.eml"
 negative = "promo"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-style-attr.eml"
 negative = "in_url"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-ticket-en.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-title-only.eml"
 negative = "hidden"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-tracking-de.eml"
 negative = "order_number"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-two-codes-devices.eml"
 negative = "two_codes"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-url-path.eml"
 negative = "in_url"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-url-text.eml"
 negative = "in_url"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-version-build.eml"
 negative = "version"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "neg-year-newsletter-html.eml"
 negative = "year"
 unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-auto-submitted-list.eml"
 code = "175302"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-backup-codes.eml"
 negative = "backup"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-barcode-word.eml"
 negative = "barcode"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-css-in-style-block.eml"
 code = "739120"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-de-html-h1.eml"
 code = "551203"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-de-html-inline.eml"
 code = "702915"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-de-plain.eml"
 code = "381920"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-de-subject-only.eml"
 code = "381204"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-de-tan.eml"
 code = "482019"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-2fa.eml"
 code = "204718"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-8-digit.eml"
 code = "58301947"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-access-alnum-plain.eml"
 code = "H4K9W2"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-alnum.eml"
 code = "K7P2QX"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-base64.eml"
 code = "662019"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-confirm-alone.eml"
 code = "530194"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-inline.eml"
 code = "304857"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-link-and-code.eml"
 code = "920481"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-multipart.eml"
 code = "306182"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-pin-4.eml"
 code = "7391"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-qp.eml"
 code = "381047"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-en-split-space.eml"
 code = "381902"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-es-html.eml"
 code = "860412"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-es-html-strong-footer.eml"
 code = "930176"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-es-inline.eml"
 code = "418036"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-es-plain.eml"
 code = "257391"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-esp-template.eml"
 code = "846102"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-expiry-date.eml"
 code = "593017"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-fr-html-footer.eml"
 code = "507381"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-fr-html-letter-spacing.eml"
 code = "195037"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-fr-plain.eml"
 code = "640218"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-hex-color.eml"
 code = "902817"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-in-footer.eml"
 negative = "footer"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-in-href-only.eml"
 negative = "in_url"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-it-html.eml"
 code = "720581"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-it-inline-html.eml"
 code = "582037"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-it-plain.eml"
 code = "463728"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ja-ascii.eml"
 code = "304918"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ja-fullwidth.eml"
 code = "876543"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ja-html.eml"
 code = "481027"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ko.eml"
 code = "304918"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ko-html.eml"
 code = "593027"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ko-plain-brackets.eml"
 code = "604182"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-near-order-number.eml"
 code = "604281"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-newsletter-year.eml"
 negative = "year"
 unsubscribe = { https = "https://news.example.com/unsubscribe/q81" }
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-order-in-subject.eml"
 code = "718203"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-phone-in-footer.eml"
 code = "401928"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pl-html.eml"
 code = "264093"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pl-inline-html.eml"
 code = "715920"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pl-plain.eml"
 code = "831940"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-plain-en.eml"
 code = "482913"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-price-date-phone.eml"
 code = "715309"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-promo-code-newsletter.eml"
 negative = "promo"
 unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pt-html.eml"
 code = "402719"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pt-plain.eml"
 code = "918273"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-pt-senha.eml"
 code = "739104"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ru-html-letter-spacing.eml"
 code = "615038"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ru-html-strong.eml"
 code = "738204"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ru-html-table.eml"
 code = "9031"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-ru-plain-4.eml"
 code = "4829"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-split-dash.eml"
 code = "482913"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-subject-and-body-same.eml"
 code = "482913"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-text-html-disagree.eml"
 code = "638291"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-tie-two-codes.eml"
 negative = "two_codes"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-tr-html.eml"
 code = "390264"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-tr-inline.eml"
 code = "607142"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-tr-plain.eml"
 code = "572819"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-wicg-origin-bound.eml"
 code = "482913"
 origin = "example.com"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-with-promo-banner.eml"
 code = "284019"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-zh-html.eml"
 code = "847201"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-zh-no-space.eml"
 code = "592817"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-zh-subject-code.eml"
 code = "263815"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "otp-zh-trad.eml"
 code = "618204"
+kind = "notification"
+topics = []
 
 [[case]]
 file = "unsub-all-three.eml"
 unsubscribe = { https = "https://news.example.com/u/s", http = "http://news.example.com/u/h", mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-bad-item-stops.eml"
 unsubscribe = { mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-comment-after.eml"
 unsubscribe = { https = "https://news.example.com/u/c", mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-empty-item-first.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-esp-one-click.eml"
 unsubscribe = { https = "https://esp.example.net/u/Xy7", mailto = "mailto:u-Xy7@esp.example.net", one_click = true }
+kind = "bulk"
+topics = []
 
 [[case]]
 file = "unsub-file-only.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-file-scheme.eml"
 unsubscribe = { mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-folded-whitespace.eml"
 unsubscribe = { https = "https://news.example.com/u/folded-7", mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-http-only.eml"
 unsubscribe = { http = "http://news.example.com/u/plain-1" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-https-mailto.eml"
 unsubscribe = { https = "https://news.example.com/u/b2", mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-https-only.eml"
 unsubscribe = { https = "https://news.example.com/u/a1b2" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-javascript-then-https.eml"
 unsubscribe = { https = "https://news.example.com/u/js" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-list-id.eml"
 unsubscribe = { https = "https://news.example.com/u/w", list_id = "weekly.news.example.com" }
+kind = "bulk"
+topics = []
 
 [[case]]
 file = "unsub-list-id-invalid.eml"
 unsubscribe = { https = "https://news.example.com/u/w" }
+kind = "bulk"
+topics = []
 
 [[case]]
 file = "unsub-list-id-no-link.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-mailto-encoded.eml"
 unsubscribe = { mailto = "mailto:leave@news.example.com?subject=Unsubscribe%20me" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-mailto-only.eml"
 unsubscribe = { mailto = "mailto:leave@lists.example.org?subject=unsubscribe" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-missing-close.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-multiple-https.eml"
 unsubscribe = { https = "https://news.example.com/u/1" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-newsletter-with-numbers.eml"
 unsubscribe = { https = "https://news.example.com/u/n" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-not-oversigned.eml"
 unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-covered.eml"
 unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-h-missing-post.eml"
 unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-lowercase-post.eml"
 unsubscribe = { https = "https://news.example.com/u/oc" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-other-selector.eml"
 unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-plain.eml"
 unsubscribe = { https = "https://news.example.com/u/oc", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-one-click-unaligned.eml"
 unsubscribe = { https = "https://news.example.com/unsubscribe/one/7f3a", mailto = "mailto:leave@news.example.com", one_click = true }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-post-http-only.eml"
 unsubscribe = { http = "http://news.example.com/u/h" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-post-mailto-only.eml"
 unsubscribe = { mailto = "mailto:leave@news.example.com" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-post-with-params.eml"
 unsubscribe = { https = "https://news.example.com/u/oc" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-post-without-field.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-prepended-second-field.eml"
 unsubscribe = { https = "https://attacker.example.net/u/1" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-two-fields.eml"
 unsubscribe = { https = "https://news.example.com/u/first" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-two-post-fields.eml"
 unsubscribe = { https = "https://news.example.com/u/oc" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-unbracketed-first.eml"
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-upper-scheme.eml"
 unsubscribe = { https = "https://news.example.com/U/9" }
+kind = "personal"
+topics = []
 
 [[case]]
 file = "unsub-userinfo-refused.eml"
 unsubscribe = { https = "https://news.example.com/u/clean" }
+kind = "personal"
+topics = []
+
+# ---------------------------------------------------------------------------------
+# Action links (docs/INSIGHTS.md §7.3). Cases that also carry a parcel are here.
+# ---------------------------------------------------------------------------------
+
+[[case]]
+file = "link-activate-de.eml"
+links = [{ action = "activate", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-activate-ko.eml"
+links = [{ action = "activate", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-activate-pl.eml"
+links = [{ action = "activate", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-activate-ru.eml"
+links = [{ action = "activate", host = "id.example.org" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-checkin-de.eml"
+links = [{ action = "check_in", host = "fly.example.net" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-checkin-en.eml"
+links = [{ action = "check_in", host = "fly.example.net" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-checkin-es.eml"
+links = [{ action = "check_in", host = "fly.example.net" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-checkin-tr.eml"
+links = [{ action = "check_in", host = "fly.example.net" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-confirm-en.eml"
+links = [{ action = "confirm", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-confirm-esp-tracked.eml"
+links = [{ action = "confirm", host = "u1234567.ct.sendgrid.net" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-confirm-fr.eml"
+links = [{ action = "confirm", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-confirm-ja.eml"
+links = [{ action = "confirm", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-confirm-pt.eml"
+links = [{ action = "confirm", host = "conta.example.org" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-magic-de.eml"
+links = [{ action = "magic_link", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-magic-en.eml"
+links = [{ action = "magic_link", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-order-de.eml"
+links = [{ action = "view_order", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-order-en.eml"
+links = [{ action = "view_order", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-order-es.eml"
+links = [{ action = "view_order", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-order-it.eml"
+links = [{ action = "view_order", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-order-pl.eml"
+links = [{ action = "view_order", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-reset-aria-icon.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-de.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-en.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-es.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-fr.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-it.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-ja.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-ko.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-lookalike-wrapper.eml"
+links = [{ action = "reset_password", host = "safelinks.protection.outlook.com.evil.example" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-pl.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-plain-anchor.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-pt.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-ru.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-safelinks.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-tr.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-urldefense-v1.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-urldefense-v2.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-urldefense-v3.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-reset-zh.eml"
+links = [{ action = "reset_password", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-de-safelinks.eml"
+links = [{ action = "sign_in", host = "portal.example.org" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-en.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-es.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-fr.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-it.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-ja.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-ko.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-pl.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-pt.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-tr.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-signin-zh.eml"
+links = [{ action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-track-en.eml"
+links = [{ action = "track", host = "shop.example.com" }]
+parcel = [{ carrier = "ups", number = "1ZV77Y21K219503089" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "link-track-fr.eml"
+links = [{ action = "track", host = "shop.example.com" }]
+parcel = [{ carrier = "s10", number = "LB558201937BR" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "link-track-pt.eml"
+links = [{ action = "track", host = "shop.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-track-ru.eml"
+links = [{ action = "track", host = "shop.example.com" }]
+parcel = [{ carrier = "russian_post", number = "60311573942065" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "link-two-track-order.eml"
+links = [{ action = "track", host = "shop.example.com" }, { action = "view_order", host = "shop.example.com" }]
+parcel = [{ carrier = "fedex", number = "405512933706" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "link-two-verify-signin.eml"
+links = [{ action = "verify", host = "accounts.example.com" }, { action = "sign_in", host = "app.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-verify-aria-icon.eml"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-verify-en.eml"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-verify-es.eml"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-verify-google-url.eml"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-verify-tr.eml"
+links = [{ action = "verify", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-verify-zh.eml"
+links = [{ action = "verify", host = "id.example.net" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "link-wallet-de.eml"
+links = [{ action = "wallet_save", host = "pay.google.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "link-wallet-en.eml"
+links = [{ action = "wallet_save", host = "pay.google.com" }]
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-blog-paths.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://blog.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-confirm-unsubscribe.eml"
+negative = "link_unsubscribe"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-footer-de.eml"
+negative = "link_footer"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-footer-signin.eml"
+negative = "link_footer"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-forwarded-fr.eml"
+negative = "link_forwarded"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-forwarded-reset.eml"
+negative = "link_forwarded"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-hidden-reset.eml"
+negative = "link_hidden"
+kind = "notification"
+topics = []
+
+[[case]]
+file = "neg-link-hidden-signin.eml"
+negative = "link_hidden"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-lookalike-google.eml"
+negative = "link_lookalike"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-mailto-confirm.eml"
+negative = "link_mailto"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-mailto-verify.eml"
+negative = "link_mailto"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-de.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-en.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-es.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-fr.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-it.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-ja.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-ko.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-pl.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-pt.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-ru.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-tr.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-newsletter-zh.eml"
+negative = "link_newsletter"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-personal-doc.eml"
+negative = "link_personal"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-personal-html.eml"
+negative = "link_personal"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-preferences.eml"
+negative = "link_unsubscribe"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-privacy-confirm.eml"
+negative = "link_privacy"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-receipt-download.eml"
+negative = "link_receipt"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-rsvp.eml"
+negative = "link_rsvp"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-signup-event.eml"
+negative = "link_newsletter"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-social-follow.eml"
+negative = "link_social"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-social-icons.eml"
+negative = "link_social"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-link-unsubscribe-button.eml"
+negative = "link_unsubscribe"
+unsubscribe = { https = "https://news.example.com/unsubscribe/u-7" }
+kind = "personal"
+topics = []
+
+# ---------------------------------------------------------------------------------
+# Parcels (docs/INSIGHTS.md §7.4). Check digits, as the numbers here were computed:
+# - s10: AA + 8 digits + check + CC; weights 8,6,4,2,3,5,9,7 over the 8 digits;
+#   c = 11 - sum % 11; c = 10 becomes 0, c = 11 becomes 5.
+# - ups: 1Z + 15 chars + check; digits as is, letters (ord(ch) - 63) % 10; weights 1,2
+#   alternating from the first char after 1Z; check = (10 - sum % 10) % 10.
+# - usps (IMpb, 20-22 digits), fedex 15 digits, russian_post 14 digits: the last digit
+#   checks the others; weights 3,1,3,1... from the rightmost payload digit leftwards;
+#   check = (10 - sum % 10) % 10.
+# - fedex 12 digits: weights 3,1,7,3,1,7... from the leftmost of the first 11 digits
+#   rightwards; check = sum % 11 % 10.
+# - dhl_express: 10 digits; check = (first 9 digits as a number) % 7.
+# ---------------------------------------------------------------------------------
+
+[[case]]
+file = "neg-parcel-dhl-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-eticket-14.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-fedex-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-footer.eml"
+negative = "parcel_footer"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-forwarded.eml"
+negative = "parcel_forwarded"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-iban.eml"
+negative = "parcel_iban"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-order-10.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-order-12-de.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-order-14-ru.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-order-15-fr.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-order-20.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-payment-ref-22.eml"
+negative = "parcel_order_number"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-phone-en.eml"
+negative = "parcel_phone"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-phone-ru.eml"
+negative = "parcel_phone"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-rp-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-s10-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-s10-no-keyword.eml"
+negative = "parcel_no_keyword"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-sku-shape.eml"
+negative = "parcel_no_keyword"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-tracking-later.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-ups-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-ups-no-keyword.eml"
+negative = "parcel_no_keyword"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "neg-parcel-usps-bad-check.eml"
+negative = "parcel_bad_check"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "parcel-dhl-de-spaced.eml"
+parcel = [{ carrier = "dhl_express", number = "1208475660" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-dhl-en.eml"
+parcel = [{ carrier = "dhl_express", number = "4582019374" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-dhl-ko.eml"
+parcel = [{ carrier = "dhl_express", number = "6640291836" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-dhl-tr.eml"
+parcel = [{ carrier = "dhl_express", number = "9033172455" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-fedex-en-spaced.eml"
+parcel = [{ carrier = "fedex", number = "773204185626" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-fedex-ja.eml"
+parcel = [{ carrier = "fedex", number = "612999988208210" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-fedex-pt.eml"
+parcel = [{ carrier = "fedex", number = "398470611270" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-fedex-zh.eml"
+parcel = [{ carrier = "fedex", number = "572048113960" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-rp-en.eml"
+parcel = [{ carrier = "russian_post", number = "80088364102758" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-rp-ru.eml"
+parcel = [{ carrier = "russian_post", number = "80102547321658" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-rp-ru-spaced.eml"
+parcel = [{ carrier = "russian_post", number = "14500789120348" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-s10-de-spaced.eml"
+parcel = [{ carrier = "s10", number = "CP207305183DE" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-s10-en.eml"
+parcel = [{ carrier = "s10", number = "RR401283176CN" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-s10-es.eml"
+parcel = [{ carrier = "s10", number = "RY177362406ES" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-s10-fr.eml"
+parcel = [{ carrier = "s10", number = "LX930518629FR" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-s10-ru.eml"
+parcel = [{ carrier = "s10", number = "RA644105730RU" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-ups-de-spaced.eml"
+parcel = [{ carrier = "ups", number = "1ZA1B2C30361047724" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-ups-en.eml"
+parcel = [{ carrier = "ups", number = "1Z4E7092F038824511" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-ups-it.eml"
+parcel = [{ carrier = "ups", number = "1Z8R3W5X6601933742" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-ups-pl.eml"
+parcel = [{ carrier = "ups", number = "1Z0F9127YA04209162" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-usps-en.eml"
+parcel = [{ carrier = "usps", number = "9400111899223197428497" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-usps-en-spaced.eml"
+parcel = [{ carrier = "usps", number = "9205501008303055631121" }]
+kind = "personal"
+topics = ["purchases"]
+
+[[case]]
+file = "parcel-usps-es.eml"
+parcel = [{ carrier = "usps", number = "93612899000941827651" }]
+kind = "personal"
+topics = ["purchases"]
+
+# Structured markup and passes (docs/INSIGHTS.md §7.5, §7.6). structured: the expected shown
+# reservations, orders, invoices, parcels and passes from JSON-LD, microdata or a pkpass, as their
+# type and reference (reservation, order, invoice or tracking number, else the name; a pass by its
+# organization). Absent means none.
+
+[[case]]
+file = "sx-flight-graph.eml"
+structured = [{ type = "flight", ref = "K4XB2Q" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-flight-two-legs-four-passengers.eml"
+structured = [{ type = "flight", ref = "RT9PAX" }, { type = "flight", ref = "RT9PAX" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-flight-array-uri-type.eml"
+structured = [{ type = "flight", ref = "Q7MZ3D" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-flight-microdata.eml"
+structured = [{ type = "flight", ref = "M2PLX8" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-lodging-microdata.eml"
+structured = [{ type = "lodging", ref = "HX-5521" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-lodging-jsonld.eml"
+structured = [{ type = "lodging", ref = "ST-88310" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-train-jsonld.eml"
+structured = [{ type = "train", ref = "TRX4417" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-bus-jsonld.eml"
+structured = [{ type = "bus", ref = "BC-70211" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-event-jsonld.eml"
+structured = [{ type = "event", ref = "EV-3301" }]
+kind = "notification"
+topics = ["events"]
+
+[[case]]
+file = "sx-food-jsonld.eml"
+structured = [{ type = "food", ref = "TB-4410" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-rental-car-jsonld.eml"
+structured = [{ type = "rental_car", ref = "RC-901377" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-order-jsonld.eml"
+structured = [{ type = "order", ref = "SO-77120" }]
+kind = "notification"
+topics = ["purchases"]
+
+[[case]]
+file = "sx-invoice-jsonld.eml"
+structured = [{ type = "invoice", ref = "INV-20271" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-parcel-jsonld-and-text.eml"
+links = [{ action = "track", host = "parcels.example.org" }]
+parcel = [{ carrier = "ups", number = "1Z4E7092F038824511" }]
+structured = [{ type = "parcel", ref = "1Z4E7092F038824511" }]
+kind = "notification"
+topics = ["purchases"]
+
+[[case]]
+file = "sx-action-confirm.eml"
+links = [{ action = "confirm", host = "news.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-fwd-action-own-confirm.eml"
+links = [{ action = "confirm", host = "accounts.example.com" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-order-view-action.eml"
+links = [{ action = "view", host = "shop.example.com" }]
+structured = [{ type = "order", ref = "SO-80013" }]
+kind = "notification"
+topics = ["purchases"]
+
+[[case]]
+file = "sx-action-track-wrapped.eml"
+links = [{ action = "track", host = "parcels.example.org" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-order-microdata.eml"
+structured = [{ type = "order", ref = "EB-55102" }]
+kind = "notification"
+topics = ["purchases"]
+
+[[case]]
+file = "sx-flight-jsonld-and-microdata.eml"
+structured = [{ type = "flight", ref = "Z3HQ8V" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-pkpass-boarding.eml"
+structured = [{ type = "pass", ref = "Example Air" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-pkpass-event.eml"
+structured = [{ type = "pass", ref = "Example Arena" }]
+kind = "notification"
+topics = []
+
+[[case]]
+file = "sx-neg-forged-markup.eml"
+negative = "struct_forged"
+structured = [{ type = "flight", ref = "F0RG3D" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-neg-end-before-start.eml"
+negative = "struct_end_before_start"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-unknown-types.eml"
+negative = "struct_unknown_type"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-depth-bomb.eml"
+negative = "struct_bomb"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-id-cycle.eml"
+negative = "struct_bomb"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-itemref-cycle.eml"
+negative = "struct_bomb"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-forwarded-booking.eml"
+negative = "struct_forwarded"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-booking-code.eml"
+negative = "booking_reference"
+structured = [{ type = "flight", ref = "K7Q2XM" }]
+kind = "notification"
+topics = ["travel"]
+
+[[case]]
+file = "sx-neg-refused-urls.eml"
+negative = "struct_refused_url"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-template-microdata.eml"
+negative = "struct_template"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-missing-required.eml"
+negative = "struct_missing_required"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-bad-iata.eml"
+negative = "struct_bad_code"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-pkpass-bomb.eml"
+negative = "struct_pkpass_bomb"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-pkpass-dotdot.eml"
+negative = "struct_pkpass_path"
+kind = "personal"
+topics = []
+
+[[case]]
+file = "sx-neg-pkpass-not-zip.eml"
+negative = "struct_pkpass_path"
+kind = "personal"
+topics = []

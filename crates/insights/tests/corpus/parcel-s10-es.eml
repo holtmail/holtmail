@@ -1,0 +1,16 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Tu pedido ha sido enviado
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <cf57f0d92812@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hola Ada:
+
+Tu pedido ya está en camino.
+
+Número de seguimiento: RY177362406ES
+
+Example Shop

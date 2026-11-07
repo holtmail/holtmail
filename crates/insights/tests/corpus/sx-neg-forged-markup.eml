@@ -1,0 +1,40 @@
+From: Example Bank <alerts@bank.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your flight
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-forged-markup@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "FlightReservation",
+   "reservationNumber": "F0RG3D",
+   "underName": {
+    "@type": "Person",
+    "name": "Ada Example"
+   },
+   "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "666",
+    "airline": {
+     "@type": "Airline",
+     "name": "Example Air",
+     "iataCode": "XA"
+    },
+    "departureAirport": {
+     "@type": "Airport",
+     "iataCode": "FRA"
+    },
+    "arrivalAirport": {
+     "@type": "Airport",
+     "iataCode": "JFK"
+    },
+    "departureTime": "2027-03-01T10:00:00+01:00"
+   }
+  }
+ ]
+}</script></head><body><p>Pay the change fee to keep your flight.</p></body></html>

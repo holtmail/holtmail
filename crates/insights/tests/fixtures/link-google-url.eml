@@ -1,0 +1,17 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your order has shipped
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <b7d2e9f04c11@shop.example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>Hi Ada,</p>
+<p>Your order is on its way.</p>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://www.google.com/url?q=https%3A%2F%2Fshop.example.com%2Forders%2F48291%2Ftrack&amp;sa=D&amp;usg=AOvVaw0example" style="color:#ffffff;text-decoration:none">Track your order</a></td></tr></table>
+<p>Thank you for shopping with Example Shop.</p>
+</body></html>

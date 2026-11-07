@@ -1,0 +1,32 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Grazie per il tuo ordine
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <52ff817d3622@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-52ff817d3622"
+
+--b-52ff817d3622
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Abbiamo ricevuto il tuo ordine e lo stiamo preparando.
+
+Visualizza ordine: https://shop.example.com/account/orders/view?token=e6dc863430955172
+
+
+
+--b-52ff817d3622
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Abbiamo ricevuto il tuo ordine e lo stiamo preparando.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://shop.example.com/account/orders/view?token=e6dc863430955172" style="color:#ffffff;text-decoration:none;font-weight:bold">Visualizza ordine</a></td></tr></table>
+<p></p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Shop GmbH, 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-52ff817d3622--

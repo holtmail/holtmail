@@ -1,0 +1,21 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: Fwd: Please confirm
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-fwd-action-own-confirm@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><div dir="ltr"><p>Someone is trying to add a new device to your Example account.</p><p><a href="https://accounts.example.com/confirm?token=5c1d7e20a9b4">Yes, confirm</a></p><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>From: Example News &lt;news@news.example.org&gt;<br></div><br><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "EmailMessage",
+ "potentialAction": {
+  "@type": "ConfirmAction",
+  "name": "Confirm subscription",
+  "target": {
+   "@type": "EntryPoint",
+   "urlTemplate": "https://news.example.org/confirm/q7v3"
+  }
+ }
+}</script><p>Please confirm your subscription to Example News.</p></div></div></body></html>

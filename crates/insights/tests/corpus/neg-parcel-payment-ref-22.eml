@@ -1,0 +1,16 @@
+From: Example Billing <billing@billing.example.com>
+To: Ada Example <ada@example.org>
+Subject: Payment received
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <bb7359709b6d@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Ada,
+
+We received your payment.
+
+Payment reference: 1203948576102938475617
+
+Example Billing

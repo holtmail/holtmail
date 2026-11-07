@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?6rOE7KCV7J2EIO2ZnOyEse2ZlO2VmOyEuOyalA==?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <080ec16227e2@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-080ec16227e2"
+
+--b-080ec16227e2
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Example에 가입해 주셔서 감사합니다. 아래 버튼을 눌러 계정을 활성화하세요.
+
+계정 활성화: https://accounts.example.com/activate?token=3bfd662f1c2bbae3
+
+본인이 요청하지 않았다면 이 메일을 무시하세요.
+
+--b-080ec16227e2
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Example에 가입해 주셔서 감사합니다. 아래 버튼을 눌러 계정을 활성화하세요.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/activate?token=3bfd662f1c2bbae3" style="color:#ffffff;text-decoration:none;font-weight:bold">계정 활성화</a></td></tr></table>
+<p>본인이 요청하지 않았다면 이 메일을 무시하세요.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-080ec16227e2--

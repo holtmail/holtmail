@@ -1,0 +1,17 @@
+From: Example GmbH <rechnung@example.com>
+To: Ada Example <ada@example.org>
+Subject: Rechnung 2026-11
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <492049d22b41@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hallo Ada,
+
+bitte überweisen Sie den Betrag auf folgendes Konto:
+
+IBAN: DE44 5001 0517 5407 3249 31
+BIC: EXAMDEFFXXX
+
+Example GmbH

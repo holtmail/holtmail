@@ -1,0 +1,16 @@
+From: Example Bank <statements@bank.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your monthly statement is ready
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <c33a53f49dfd@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Hi Ada,</p>
+<p>Your statement for October is available in the app.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a> | <a href="https://app.example.com/login?token=ftr" style="padding:4px;background:#eeeeee">Sign in</a> | <a href="https://app.example.com/reset?token=ftr">Reset password</a></p>
+</body></html>

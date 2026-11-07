@@ -1,0 +1,36 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your flight
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-bad-iata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@type": "FlightReservation",
+ "reservationNumber": "B4DC0D",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "Flight",
+  "flightNumber": "77",
+  "airline": {
+   "@type": "Airline",
+   "name": "Example Air",
+   "iataCode": "XA"
+  },
+  "departureAirport": {
+   "@type": "Airport",
+   "iataCode": "FRANKFURT"
+  },
+  "arrivalAirport": {
+   "@type": "Airport",
+   "iataCode": "LIS"
+  },
+  "departureTime": "2027-03-14T09:00:00+01:00"
+ },
+ "@context": "https://schema.org"
+}</script></head><body><p>Airport names instead of codes.</p></body></html>

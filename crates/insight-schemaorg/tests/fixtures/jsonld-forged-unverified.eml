@@ -1,0 +1,43 @@
+From: Example Air <no-reply@air-example.org>
+To: Ada Example <ada@example.org>
+Subject: Your flight is confirmed
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-forged-unverified@example.com>
+Authentication-Results: mx.example.org; dkim=fail header.d=air-example.org; spf=softfail smtp.mailfrom=air-example.org
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "FlightReservation",
+ "reservationNumber": "FAKE01",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "Flight",
+  "flightNumber": "777",
+  "airline": {
+   "@type": "Airline",
+   "name": "Example Air",
+   "iataCode": "XA"
+  },
+  "departureAirport": {
+   "@type": "Airport",
+   "iataCode": "JFK"
+  },
+  "arrivalAirport": {
+   "@type": "Airport",
+   "iataCode": "LHR"
+  },
+  "departureTime": "2027-02-01T21:00:00-05:00"
+ }
+}
+</script>
+</head><body>
+<p>Your flight is confirmed. Pay the change fee at the link we sent.</p>
+</body></html>

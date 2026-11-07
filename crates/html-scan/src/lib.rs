@@ -7,6 +7,7 @@
 #![deny(clippy::string_slice, clippy::indexing_slicing)]
 
 mod forward;
+mod microdata;
 mod names;
 mod scan;
 mod style;
@@ -17,4 +18,4 @@ pub use scan::scan;
 /// The version of the scan rules. It changes whenever the same HTML or text could give a
 /// different [`HtmlView`](holtmail_insight::HtmlView) or [`forward_at`], so derived data built
 /// from the scan can be recomputed.
-pub const VERSION: &str = "1";
+pub const VERSION: &str = "2";

@@ -1,0 +1,16 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your parcel has been sent
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <faf63a76fb64@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hello Ada,
+
+Your parcel was sent with Russian Post.
+
+Tracking number: 80088364102758
+
+Example Shop

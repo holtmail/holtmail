@@ -1,0 +1,32 @@
+From: Example Air <checkin@fly.example.net>
+To: Ada Example <ada@example.org>
+Subject: Ya puedes hacer el check-in
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <10d4bc8e4b8f@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-10d4bc8e4b8f"
+
+--b-10d4bc8e4b8f
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+El check-in online de tu vuelo a Example City ya está abierto.
+
+Hacer check-in: https://fly.example.net/checkin?token=70081d646b168640
+
+
+
+--b-10d4bc8e4b8f
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>El check-in online de tu vuelo a Example City ya está abierto.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://fly.example.net/checkin?token=70081d646b168640" style="color:#ffffff;text-decoration:none;font-weight:bold">Hacer check-in</a></td></tr></table>
+<p></p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Air, 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-10d4bc8e4b8f--

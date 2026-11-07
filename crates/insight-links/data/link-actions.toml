@@ -1,0 +1,201 @@
+# Labels, URL tokens and weights for holtmail-insight-links.
+#
+# Labels are matched against the anchor text and aria-label, NFKC-normalised and lowercased.
+# Labels in spaced scripts match as whole words; labels with CJK, kana, Hangul or Thai characters
+# match as substrings. When several labels match, the one that starts first wins, and the longest
+# one among those that start at the same place ("confirm your email" beats "confirm").
+#
+# URL tokens are matched against the lowercased href and against its percent-decoded form, so a
+# wrapped link (safelinks, google /url, urldefense) is read by the path it carries. A token that
+# starts with "/" matches a path segment start and must not be followed by a letter or digit; a
+# token that ends with "=" matches a query parameter name.
+#
+# The hash of this file is part of the extractor's version.
+
+[weights]
+label = 400
+aria_label = 300
+button_like = 150
+path_token = 150
+first = 50
+in_footer = -400
+social = -300
+wallet = 600
+likely = 600
+
+[labels.verify]
+en = ["verify", "verify email", "verify your email", "verify email address", "verify my email", "confirm email", "confirm your email", "confirm email address", "confirm your email address", "verify account", "verify your account"]
+ru = ["подтвердить почту", "подтвердить email", "подтвердить e-mail", "подтвердить адрес", "подтвердите почту", "подтвердите адрес", "верифицировать", "пройти проверку"]
+de = ["verifizieren", "e-mail bestätigen", "e-mail-adresse bestätigen", "e-mail-adresse verifizieren", "konto verifizieren"]
+fr = ["vérifier", "vérifier mon adresse", "vérifier mon e-mail", "vérifier l'adresse e-mail", "confirmer mon adresse e-mail", "confirmer mon e-mail"]
+es = ["verificar", "verificar correo", "verificar mi correo", "verificar email", "confirmar correo", "confirmar mi correo"]
+pt = ["verificar", "verificar e-mail", "verificar email", "confirmar e-mail", "confirmar email"]
+it = ["verifica", "verificare", "verifica email", "verifica indirizzo email", "conferma email", "conferma indirizzo email"]
+zh = ["验证", "验证邮箱", "验证电子邮件", "确认邮箱", "驗證"]
+ja = ["認証する", "メールアドレスを確認", "メールアドレスを認証", "本人確認"]
+ko = ["인증하기", "이메일 인증", "이메일 확인", "본인 인증"]
+tr = ["doğrula", "e-postayı doğrula", "e-posta adresini doğrula", "hesabı doğrula"]
+pl = ["zweryfikuj", "weryfikuj", "potwierdź adres e-mail", "potwierdź e-mail", "zweryfikuj e-mail"]
+
+[labels.confirm]
+en = ["confirm", "confirm now", "confirm subscription", "confirm my subscription", "yes, confirm", "approve"]
+ru = ["подтвердить", "подтвердите", "подтвердить подписку", "подтверждаю"]
+de = ["bestätigen", "jetzt bestätigen", "anmeldung bestätigen", "abonnement bestätigen"]
+fr = ["confirmer", "je confirme", "confirmer l'inscription", "confirmer mon abonnement"]
+es = ["confirmar", "confirmar suscripción", "sí, confirmar"]
+pt = ["confirmar", "confirmar inscrição", "sim, confirmar"]
+it = ["conferma", "confermare", "conferma iscrizione"]
+zh = ["确认", "確認", "确认订阅"]
+ja = ["確認する", "承認する", "登録を確認"]
+ko = ["확인하기", "승인", "구독 확인"]
+tr = ["onayla", "aboneliği onayla", "onaylıyorum"]
+pl = ["potwierdź", "potwierdzam", "potwierdź subskrypcję"]
+
+[labels.activate]
+en = ["activate", "activate account", "activate your account", "activate my account"]
+ru = ["активировать", "активировать аккаунт", "активировать учётную запись", "активировать учетную запись", "активируйте"]
+de = ["aktivieren", "konto aktivieren", "jetzt aktivieren"]
+fr = ["activer", "activer mon compte", "activer le compte"]
+es = ["activar", "activar cuenta", "activar mi cuenta"]
+pt = ["ativar", "ativar conta", "ativar minha conta"]
+it = ["attiva", "attivare", "attiva account", "attiva il tuo account"]
+zh = ["激活", "激活账户", "激活帳戶", "启用账户"]
+ja = ["有効化", "アカウントを有効にする", "アカウントを有効化"]
+ko = ["활성화", "계정 활성화"]
+tr = ["etkinleştir", "aktifleştir", "hesabı etkinleştir", "hesabımı etkinleştir"]
+pl = ["aktywuj", "aktywuj konto"]
+
+[labels.reset_password]
+en = ["reset password", "reset your password", "reset my password", "change password", "change your password", "set new password", "set a new password", "choose a new password", "create new password"]
+ru = ["сбросить пароль", "восстановить пароль", "изменить пароль", "сменить пароль", "задать новый пароль"]
+de = ["passwort zurücksetzen", "kennwort zurücksetzen", "passwort ändern", "neues passwort festlegen"]
+fr = ["réinitialiser le mot de passe", "réinitialiser mon mot de passe", "changer le mot de passe", "changer mon mot de passe"]
+es = ["restablecer contraseña", "restablecer la contraseña", "restablecer mi contraseña", "cambiar contraseña", "cambiar la contraseña"]
+pt = ["redefinir senha", "redefinir a senha", "redefinir minha senha", "alterar senha", "alterar a senha"]
+it = ["reimposta password", "reimposta la password", "reimpostare la password", "cambia password", "cambia la password"]
+zh = ["重置密码", "重设密码", "重設密碼", "修改密码"]
+ja = ["パスワードをリセット", "パスワードを再設定", "パスワードの再設定", "パスワードを変更"]
+ko = ["비밀번호 재설정", "비밀번호 변경"]
+tr = ["şifreyi sıfırla", "şifremi sıfırla", "parolayı sıfırla", "şifreyi değiştir"]
+pl = ["zresetuj hasło", "resetuj hasło", "ustaw nowe hasło", "zmień hasło"]
+
+[labels.sign_in]
+en = ["sign in", "sign-in", "log in", "log-in", "login", "sign in now", "log in now"]
+ru = ["войти", "вход", "войти в аккаунт", "авторизоваться"]
+de = ["anmelden", "einloggen", "jetzt anmelden", "login"]
+fr = ["se connecter", "me connecter", "connexion"]
+es = ["iniciar sesión", "acceder", "entrar"]
+pt = ["entrar", "fazer login", "iniciar sessão", "acessar"]
+it = ["accedi", "accedere", "login"]
+zh = ["登录", "登入", "登錄"]
+ja = ["ログイン", "サインイン"]
+ko = ["로그인"]
+tr = ["giriş yap", "oturum aç"]
+pl = ["zaloguj", "zaloguj się"]
+
+[labels.magic_link]
+en = ["magic link", "sign in with link", "log in with link", "one-click sign in", "one-click login"]
+ru = ["волшебная ссылка", "ссылка для входа", "войти по ссылке"]
+de = ["magischer link", "anmeldelink", "per link anmelden"]
+fr = ["lien magique", "lien de connexion", "se connecter avec le lien"]
+es = ["enlace mágico", "enlace de inicio de sesión", "acceder con el enlace"]
+pt = ["link mágico", "link de acesso", "entrar com o link"]
+it = ["link magico", "link di accesso", "accedi con il link"]
+zh = ["魔法链接", "登录链接", "一键登录"]
+ja = ["マジックリンク", "ログインリンク"]
+ko = ["매직 링크", "로그인 링크"]
+tr = ["sihirli bağlantı", "giriş bağlantısı"]
+pl = ["magiczny link", "link do logowania"]
+
+[labels.view_order]
+en = ["view order", "view your order", "view my order", "order details", "order status", "view order details", "see your order"]
+ru = ["посмотреть заказ", "детали заказа", "мой заказ", "статус заказа", "открыть заказ"]
+de = ["bestellung ansehen", "bestellung anzeigen", "bestelldetails", "bestellstatus"]
+fr = ["voir la commande", "voir ma commande", "détails de la commande", "suivre ma commande"]
+es = ["ver pedido", "ver mi pedido", "ver el pedido", "detalles del pedido", "estado del pedido"]
+pt = ["ver pedido", "ver meu pedido", "detalhes do pedido", "status do pedido"]
+it = ["visualizza ordine", "vedi ordine", "visualizza l'ordine", "dettagli ordine", "dettagli dell'ordine"]
+zh = ["查看订单", "订单详情", "訂單詳情", "查看訂單"]
+ja = ["注文を確認", "注文詳細", "注文内容を見る", "注文履歴"]
+ko = ["주문 보기", "주문 상세", "주문 내역", "주문 확인"]
+tr = ["siparişi görüntüle", "siparişimi gör", "sipariş detayları", "sipariş durumu"]
+pl = ["zobacz zamówienie", "szczegóły zamówienia", "status zamówienia"]
+
+[labels.track]
+en = ["track", "track package", "track your package", "track parcel", "track your order", "track shipment", "track delivery"]
+ru = ["отследить", "отследить заказ", "отследить посылку", "отслеживать"]
+de = ["sendung verfolgen", "paket verfolgen", "verfolgen", "sendungsverfolgung"]
+fr = ["suivre", "suivre mon colis", "suivre le colis", "suivi du colis"]
+es = ["rastrear", "rastrear pedido", "seguir envío", "seguimiento del envío"]
+pt = ["rastrear", "rastrear pedido", "rastrear encomenda", "acompanhar pedido"]
+it = ["traccia", "traccia spedizione", "segui la spedizione", "traccia il pacco"]
+zh = ["跟踪", "追踪", "查询物流", "跟踪包裹", "物流详情"]
+ja = ["追跡", "荷物を追跡", "配送状況を確認"]
+ko = ["배송 조회", "추적", "배송 추적"]
+tr = ["takip et", "kargo takibi", "kargomu takip et"]
+pl = ["śledź", "śledź przesyłkę", "śledź paczkę"]
+
+[labels.check_in]
+en = ["check in", "check-in", "check in now", "online check-in", "check in online"]
+ru = ["зарегистрироваться на рейс", "онлайн-регистрация", "регистрация на рейс", "пройти регистрацию"]
+de = ["einchecken", "online-check-in", "jetzt einchecken", "check-in"]
+fr = ["s'enregistrer", "enregistrement en ligne", "check-in"]
+es = ["hacer check-in", "facturación online", "check-in"]
+pt = ["fazer check-in", "check-in online", "check-in"]
+it = ["effettua il check-in", "check-in online", "check-in"]
+zh = ["值机", "在线值机", "办理登机", "辦理登機"]
+ja = ["チェックイン", "オンラインチェックイン"]
+ko = ["체크인", "온라인 체크인"]
+tr = ["check-in yap", "online check-in", "check-in"]
+pl = ["odprawa online", "odprawa", "check-in"]
+
+[labels.wallet_save]
+en = ["add to google wallet", "save to google wallet", "save to google pay", "add to wallet", "save to wallet", "add to apple wallet"]
+ru = ["добавить в кошелёк", "добавить в кошелек", "сохранить в кошелёк", "сохранить в кошелек", "добавить в google wallet"]
+de = ["zu google wallet hinzufügen", "zur wallet hinzufügen", "in wallet speichern", "in google wallet speichern"]
+fr = ["ajouter à google wallet", "ajouter au portefeuille", "enregistrer dans google wallet"]
+es = ["añadir a google wallet", "agregar a google wallet", "guardar en google wallet", "añadir a wallet"]
+pt = ["adicionar à carteira", "adicionar ao google wallet", "salvar no google wallet"]
+it = ["aggiungi a google wallet", "salva su google wallet", "aggiungi al wallet"]
+zh = ["添加到钱包", "保存到钱包", "添加到 google 钱包", "加入錢包"]
+ja = ["ウォレットに追加", "ウォレットに保存", "google ウォレットに追加"]
+ko = ["월렛에 추가", "지갑에 추가", "google 월렛에 저장"]
+tr = ["cüzdana ekle", "google cüzdan'a ekle", "wallet'a ekle"]
+pl = ["dodaj do portfela", "dodaj do google wallet", "zapisz w portfelu"]
+
+# Path and query tokens. An action key maps the token to that action; `any` tokens add the
+# path_token weight without naming an action.
+[paths]
+verify = ["/verify", "/verification", "/validate", "/verify-email", "/email-verification"]
+confirm = ["/confirm", "/confirmation", "/approve"]
+activate = ["/activate", "/activation"]
+reset_password = ["/reset", "/reset-password", "/password", "/password-reset", "/forgot", "/recover"]
+sign_in = ["/login", "/signin", "/sign-in", "/log-in", "/auth"]
+magic_link = ["/magic", "/magic-link", "/magiclink"]
+view_order = ["/order", "/orders", "/purchase"]
+track = ["/track", "/tracking", "/shipment"]
+check_in = ["/checkin", "/check-in", "/online-check-in"]
+any = ["token=", "otp="]
+
+# Wallet save links. A URL that starts with one of these is wallet_save whatever its text says,
+# and scores at least the wallet weight. The JWT that follows is never decoded.
+[wallet]
+prefixes = ["https://pay.google.com/gp/v/save/"]
+
+# Hosts whose links are profiles and shares, not actions. A host matches itself and every
+# subdomain.
+[social]
+domains = [
+  "facebook.com", "fb.com", "x.com", "twitter.com", "instagram.com", "linkedin.com",
+  "youtube.com", "youtu.be", "tiktok.com", "vk.com", "ok.ru", "t.me", "telegram.me",
+  "pinterest.com", "reddit.com", "threads.net", "whatsapp.com", "wa.me", "snapchat.com",
+  "discord.gg", "discord.com", "mastodon.social", "bsky.app",
+]
+
+# URL substrings that make a link an unsubscribe, preference or privacy link; such links score 0.
+[skip]
+tokens = [
+  "unsubscribe", "unsub", "opt-out", "optout", "opt_out", "preferences", "preference-center",
+  "preference_center", "subscription-center", "manage-subscription", "email-settings",
+  "privacy", "abmelden", "desinscription", "désinscription", "darse-de-baja", "cancelar-inscricao",
+]

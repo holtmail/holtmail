@@ -1,7 +1,9 @@
 //! Memory and time bounds of stage A on hostile input (docs/INSIGHTS.md §13): no single
-//! allocation over 32 MiB anywhere, and in release builds at most 40 ms for the extractors, merge
-//! and validation per message at every cap. Building the input (MIME text, NFKC, the HTML scan) is
-//! timed and printed, not asserted.
+//! allocation over 32 MiB anywhere, and in release builds at most 40 ms per message at every cap
+//! for the whole path: building the input (MIME text, NFKC, the HTML scan), the extractors, merge
+//! and validation. A loaded machine slows html5ever's tokenizer as much as the scan, so for a
+//! message with HTML the limit is 40 ms or twice the bare tokenizer on the same HTML, whichever is
+//! larger; quadratic work still fails by a wide margin.
 
 #![allow(unsafe_code)]
 
@@ -83,9 +85,9 @@ fn messages() -> Vec<(&'static str, ParsedMessage)> {
     out.push(("text-200k-codes", lines));
 
     let mut nested = format!("{head}Content-Type: text/html; charset=utf-8\r\n\r\n");
-    nested.push_str(&"<div><b>".repeat(20_000));
+    nested.push_str(&"<div><b>".repeat(200_000));
     nested.push_str("Your code 482913");
-    out.push(("html-40k-nested-tags", nested));
+    out.push(("html-1.6mb-nested-tags", nested));
 
     let mut anchors = format!("{head}Content-Type: text/html; charset=utf-8\r\n\r\n");
     for n in 0..20_000 {
@@ -111,6 +113,43 @@ fn messages() -> Vec<(&'static str, ParsedMessage)> {
         format!("{head}{fields}Content-Type: text/plain\r\n\r\nYour code 482913\r\n"),
     ));
 
+    let mut graph = format!("{head}Content-Type: text/html; charset=utf-8\r\n\r\n<html><head>");
+    for block in 0..8 {
+        graph.push_str("<script type=\"application/ld+json\">{\"@graph\":[");
+        for n in 0..1_400 {
+            if n > 0 {
+                graph.push(',');
+            }
+            graph.push_str(&format!(
+                "{{\"@id\":\"#n{n}\",\"@type\":\"FlightReservation\",\"reservationNumber\":\"R{block}{n}\",\"reservationFor\":{{\"@id\":\"#n{}\"}},\"x\":[1,2,3,4,5,6,7,8]}}",
+                (n + 1) % 1_400
+            ));
+        }
+        graph.push_str("]}</script>");
+    }
+    graph.push_str("</head><body>Your booking</body></html>");
+    out.push(("html-2mib-ld-json-graph", graph));
+
+    let mut fan_in = format!("{head}Content-Type: text/html; charset=utf-8\r\n\r\n");
+    let ids: String = (0..64).map(|n| format!("p{n} ")).collect();
+    for n in 0..64 {
+        fan_in.push_str(&format!(
+            "<span id=\"p{n}\" itemprop=\"name\">Example {n}</span>"
+        ));
+    }
+    while fan_in.len() < 2 * 1024 * 1024 - 1024 {
+        fan_in.push_str(&format!(
+            "<div itemscope itemtype=\"http://schema.org/Order\" itemref=\"{ids}\"></div>"
+        ));
+    }
+    out.push(("html-2mib-microdata-fan-in", fan_in));
+
+    let bomb = common::corpus_dir().join("sx-neg-pkpass-bomb.eml");
+    out.push((
+        "pkpass-bomb-attachment",
+        std::fs::read_to_string(bomb).unwrap(),
+    ));
+
     out.into_iter()
         .map(|(name, raw)| {
             let parsed = holtmail_mime::parse(raw.as_bytes())
@@ -120,15 +159,45 @@ fn messages() -> Vec<(&'static str, ParsedMessage)> {
         .collect()
 }
 
-fn check(name: &str, largest: usize, took: Duration) {
-    println!("{name}: largest allocation {largest} bytes, {took:?}");
+fn check(name: &str, largest: usize, took: Duration, budget: Duration) {
+    println!("{name}: largest allocation {largest} bytes, {took:?} (budget {budget:?})");
     assert!(
         largest <= MAX_ALLOCATION,
         "{name}: one allocation of {largest} bytes"
     );
     if !cfg!(debug_assertions) {
-        assert!(took <= MAX_TIME, "{name}: {took:?}");
+        assert!(took <= budget, "{name}: {took:?} over {budget:?}");
     }
+}
+
+fn tokenize(html: &str) {
+    use html5ever::TokenizerResult;
+    use html5ever::tendril::StrTendril;
+    use html5ever::tokenizer::{
+        BufferQueue, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
+    };
+
+    struct Discard;
+    impl TokenSink for Discard {
+        type Handle = ();
+        fn process_token(&self, token: Token, _line: u64) -> TokenSinkResult<()> {
+            std::hint::black_box(token);
+            TokenSinkResult::Continue
+        }
+    }
+    let tokenizer = Tokenizer::new(Discard, TokenizerOpts::default());
+    let queue = BufferQueue::default();
+    queue.push_back(StrTendril::from_slice(html));
+    while !matches!(tokenizer.feed(&queue), TokenizerResult::Done) {}
+    tokenizer.end();
+}
+
+fn budget(message: &ParsedMessage) -> Duration {
+    let Some(html) = &message.html else {
+        return MAX_TIME;
+    };
+    let (_, _, floor) = fastest(|| tokenize(html));
+    MAX_TIME.max(floor * 2)
 }
 
 fn fastest<R>(mut f: impl FnMut() -> R) -> (R, usize, Duration) {
@@ -149,7 +218,7 @@ fn hostile_inputs_stay_within_bounds() {
     for case in hostile_corpus() {
         let input: &InsightInput = &case.input;
         let (_, largest, took) = fastest(|| runner.extract_input(input, false));
-        check(&case.name, largest, took);
+        check(&case.name, largest, took, MAX_TIME);
     }
 }
 
@@ -158,9 +227,11 @@ fn hostile_messages_stay_within_bounds() {
     let runner = common::runner();
     for (name, message) in messages() {
         let ((input, truncated), input_largest, building) = fastest(|| Runner::input(&message));
-        println!("{name}: building the input took {building:?}");
-        let (_, largest, took) = fastest(|| runner.extract_input(&input, truncated));
-        check(name, largest.max(input_largest), took);
+        let (_, largest, extracting) = fastest(|| runner.extract_input(&input, truncated));
+        println!("{name}: input {building:?}, extractors {extracting:?}");
+        let (_, whole_largest, took) = fastest(|| runner.extract(&message));
+        let largest = largest.max(input_largest).max(whole_largest);
+        check(name, largest, took, budget(&message));
     }
 }
 

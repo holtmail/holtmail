@@ -1,0 +1,25 @@
+From: Example Inn <stay@inn.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your stay
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-end-before-start@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@type": "LodgingReservation",
+ "reservationNumber": "BAD-11",
+ "reservationFor": {
+  "@type": "Hotel",
+  "name": "Example Inn"
+ },
+ "checkinTime": "2027-03-14T15:00:00+01:00",
+ "checkoutTime": "2027-03-12T11:00:00+01:00"
+}
+</script>
+</head><body>
+<p>See you soon.</p>
+</body></html>

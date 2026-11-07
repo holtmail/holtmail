@@ -426,6 +426,27 @@ pub fn hostile_corpus() -> Vec<Case> {
         },
     ));
 
+    let mut forwarded = MicrodataItem::new(vec!["https://schema.org/Order".into()]);
+    forwarded.top_level = true;
+    forwarded.below_forward = true;
+    forwarded.properties = vec![MicrodataProperty {
+        name: "orderNumber".into(),
+        value: MicrodataValue::Item(7),
+    }];
+    cases.push(hostile(
+        "structured-forward-out-of-range",
+        InsightInput {
+            html: Some(
+                HtmlView::new()
+                    .with_ld_json(vec![r#"{"@type":"Order","orderNumber":"A-1"}"#.into()])
+                    .with_ld_json_forward_at(Some(usize::MAX))
+                    .with_microdata(vec![forwarded])
+                    .with_truncated_structured(true),
+            ),
+            ..trigger()
+        },
+    ));
+
     let bomb = archive(&[
         Entry::stored("pass.json", pass_json()),
         Entry::zeros_bomb("strip.png", 65_000, true),

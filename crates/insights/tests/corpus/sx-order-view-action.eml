@@ -1,0 +1,23 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Order SO-80013 received
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-order-view-action@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "SO-80013",
+ "merchant": {
+  "@type": "Organization",
+  "name": "Example Shop"
+ },
+ "potentialAction": {
+  "@type": "ViewAction",
+  "name": "View order",
+  "target": "https://shop.example.com/orders/so-80013"
+ }
+}</script></head><body><p>We received your order.</p></body></html>

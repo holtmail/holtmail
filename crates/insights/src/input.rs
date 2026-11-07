@@ -1,7 +1,7 @@
 use holtmail_core::Timestamp;
 use holtmail_insight::limits::{
-    MAX_ANCHORS, MAX_HTML_BYTES, MAX_LD_JSON_BLOCKS, MAX_PKPASS_ATTACHMENTS, MAX_PKPASS_BYTES,
-    MAX_SEGMENTS, MAX_TEXT_BYTES,
+    MAX_ANCHORS, MAX_HTML_BYTES, MAX_PKPASS_ATTACHMENTS, MAX_PKPASS_BYTES, MAX_SEGMENTS,
+    MAX_TEXT_BYTES,
 };
 use holtmail_insight::{AttachmentMeta, HeaderField, HtmlView, InsightInput};
 use holtmail_mime::{Attachment, ParsedMessage};
@@ -74,7 +74,7 @@ pub(crate) fn build(message: &ParsedMessage) -> (InsightInput, bool) {
 fn view_at_cap(view: &HtmlView) -> bool {
     view.anchors.len() >= MAX_ANCHORS
         || view.segments.len() >= MAX_SEGMENTS
-        || view.ld_json.len() >= MAX_LD_JSON_BLOCKS
+        || view.truncated_structured
 }
 
 fn is_pkpass(attachment: &Attachment) -> bool {

@@ -1,0 +1,28 @@
+# Parcel carriers named in schema.org `ParcelDelivery.carrier`, for holtmail-insight-schemaorg.
+# Its blake3 hash is part of the extractor version.
+#
+# Each key is a carrier id of holtmail-insight-parcel's `data/carriers.toml`, so a structured
+# parcel and a heuristic one share the runner's carrier + number merge key. `names` match the
+# carrier's name after lowercasing and collapsing everything but letters and digits to single
+# spaces. `hosts` match the host of the carrier's `url` or `@id`, or any subdomain of it.
+# A carrier found here by neither gets the slug of its name as its id.
+
+[carriers.ups]
+names = ["ups", "united parcel service", "ups united parcel service"]
+hosts = ["ups.com"]
+
+[carriers.usps]
+names = ["usps", "united states postal service", "us postal service", "u s postal service"]
+hosts = ["usps.com"]
+
+[carriers.fedex]
+names = ["fedex", "fed ex", "federal express", "fedex express", "fedex ground"]
+hosts = ["fedex.com"]
+
+[carriers.dhl_express]
+names = ["dhl", "dhl express", "dhl international"]
+hosts = ["dhl.com"]
+
+[carriers.russian_post]
+names = ["russian post", "pochta rossii", "почта россии"]
+hosts = ["pochta.ru"]

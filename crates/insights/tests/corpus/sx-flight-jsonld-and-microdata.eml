@@ -1,0 +1,42 @@
+From: Example Air <bookings@air.example.com>
+To: Ada Example <ada@example.org>
+Subject: Itinerary
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-flight-jsonld-and-microdata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@type": "FlightReservation",
+ "reservationNumber": "Z3HQ8V",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservationFor": {
+  "@type": "Flight",
+  "flightNumber": "88",
+  "airline": {
+   "@type": "Airline",
+   "name": "Example Air",
+   "iataCode": "XA"
+  },
+  "departureAirport": {
+   "@type": "Airport",
+   "iataCode": "LIS"
+  },
+  "arrivalAirport": {
+   "@type": "Airport",
+   "iataCode": "MAD"
+  },
+  "departureTime": "2027-08-01T12:00:00+01:00"
+ },
+ "airplaneSeat": "3A"
+}</script></head><body><div itemscope itemtype="http://schema.org/FlightReservation">
+<meta itemprop="reservationNumber" content="Z3HQ8V">
+<div itemprop="reservationFor" itemscope itemtype="http://schema.org/Flight"><meta itemprop="flightNumber" content="88">
+<div itemprop="airline" itemscope itemtype="http://schema.org/Airline"><meta itemprop="iataCode" content="XA"></div>
+<div itemprop="departureAirport" itemscope itemtype="http://schema.org/Airport"><meta itemprop="iataCode" content="LIS"></div>
+<div itemprop="arrivalAirport" itemscope itemtype="http://schema.org/Airport"><meta itemprop="iataCode" content="MAD"></div>
+<meta itemprop="departureTime" content="2027-08-01T12:00:00+01:00"></div></div></body></html>

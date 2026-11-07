@@ -1,0 +1,39 @@
+From: Example Rail <tickets@rail.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your train ticket
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-train-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "TrainReservation",
+ "reservationNumber": "TRX4417",
+ "underName": {
+  "@type": "Person",
+  "name": "Ada Example"
+ },
+ "reservedTicket": {
+  "@type": "Ticket",
+  "ticketedSeat": {
+   "@type": "Seat",
+   "seatNumber": "61"
+  }
+ },
+ "reservationFor": {
+  "@type": "TrainTrip",
+  "trainNumber": "ICE 512",
+  "departureStation": {
+   "@type": "TrainStation",
+   "name": "Example Hbf"
+  },
+  "arrivalStation": {
+   "@type": "TrainStation",
+   "name": "Exampleburg Süd"
+  },
+  "departureTime": "2027-02-11T08:04:00+01:00",
+  "arrivalTime": "2027-02-11T11:52:00+01:00"
+ }
+}</script></head><body><p>Have a good journey.</p></body></html>

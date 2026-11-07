@@ -1,0 +1,47 @@
+From: Example News <news@news.example.com>
+To: Ada Example <ada@example.org>
+Subject: Please confirm
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-actions@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "EmailMessage",
+  "description": "Confirm your subscription",
+  "potentialAction": {
+   "@type": "ConfirmAction",
+   "name": "Confirm",
+   "handler": {
+    "@type": "HttpActionHandler",
+    "url": "https://news.example.com/api/confirm"
+   },
+   "target": {
+    "@type": "EntryPoint",
+    "urlTemplate": "https://news.example.com/confirm/k3"
+   }
+  }
+ },
+ {
+  "@type": "TrackAction",
+  "name": "Track",
+  "target": "https://store.example.com/track/42"
+ },
+ {
+  "@type": "CheckInAction",
+  "target": "javascript:alert(1)"
+ },
+ {
+  "@type": "ViewAction",
+  "target": "mailto:help@example.com"
+ }
+]
+</script>
+</head><body>
+<p>Please confirm your subscription.</p>
+</body></html>

@@ -1,0 +1,15 @@
+From: Example Records <records@example.org>
+To: Ada Example <ada@example.org>
+Subject: Verify your mailing address
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <a62cd068dfd7@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>We are updating our records. Please reply with your current postal address.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="mailto:records@example.org?subject=Verify%20address" style="color:#ffffff;text-decoration:none;font-weight:bold">Verify by email</a></td></tr></table>
+</body></html>

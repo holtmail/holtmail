@@ -1,0 +1,21 @@
+<html><body>
+<div itemscope itemtype="http://schema.org/LodgingReservation" itemid="urn:example:res:1">
+  <p>Hello Ada, your stay is booked.</p>
+  <meta itemprop="reservationNumber" content="  HX-4417 ">
+  <link itemprop="reservationStatus" href="http://schema.org/ReservationConfirmed">
+  <div itemprop="reservationFor" itemscope itemtype="http://schema.org/LodgingBusiness">
+    <h2 itemprop="name">Example   <b>Harbour</b>
+      Hotel</h2>
+    <div itemprop="address" itemscope itemtype="http://schema.org/PostalAddress">
+      <span itemprop="streetAddress">1 Example Quay</span>,
+      <span itemprop="addressLocality">Exampleton</span>
+    </div>
+    <a itemprop="url" href="https://example.com/hotel">Hotel page</a>
+  </div>
+  <p>Check-in: <time itemprop="checkinTime" datetime="2026-12-01T15:00:00+01:00">1 Dec, 3 pm</time></p>
+  <p>Check-out: <time itemprop="checkoutTime">2 Dec 2026</time></p>
+  <data itemprop="price" value="240.00">€240</data>
+  <img itemprop="image" src="https://example.org/room.jpg" alt="Room">
+</div>
+<p>Thanks, Example Stays</p>
+</body></html>

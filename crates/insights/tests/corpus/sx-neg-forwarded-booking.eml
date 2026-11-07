@@ -1,0 +1,36 @@
+From: Ben Example <ben@example.org>
+To: Ada Example <ada@example.org>
+Subject: Fwd: Your flight
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-forwarded-booking@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><div dir="ltr">See below.<br><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>From: Example Air &lt;bookings@air.example.com&gt;<br></div><br><script type="application/ld+json">{
+ "@type": "FlightReservation",
+ "reservationNumber": "FW8D11",
+ "underName": {
+  "@type": "Person",
+  "name": "Ben Example"
+ },
+ "reservationFor": {
+  "@type": "Flight",
+  "flightNumber": "300",
+  "airline": {
+   "@type": "Airline",
+   "name": "Example Air",
+   "iataCode": "XA"
+  },
+  "departureAirport": {
+   "@type": "Airport",
+   "iataCode": "LIS"
+  },
+  "arrivalAirport": {
+   "@type": "Airport",
+   "iataCode": "OPO"
+  },
+  "departureTime": "2027-03-20T07:00:00Z"
+ },
+ "@context": "https://schema.org"
+}</script><p>Your flight is confirmed.</p></div></div></body></html>

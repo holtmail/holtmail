@@ -1,0 +1,22 @@
+From: Example Store <news@example.com>
+To: Ada Example <ada@example.org>
+Subject: Autumn sale: 30% off
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <fbcdd6a9c0dd@example.com>
+List-Unsubscribe: <https://example.com/unsubscribe?u=7c1d>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<h1>Autumn sale</h1>
+<p>Everything in the store is 30% off until Sunday.</p>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://example.com/sale?utm_source=newsletter&amp;utm_campaign=autumn" style="color:#ffffff;text-decoration:none">Shop now</a></td></tr></table>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://example.com/new?utm_source=newsletter" style="color:#ffffff;text-decoration:none">See what's new</a></td></tr></table>
+<p><a href="https://www.instagram.com/example_store" aria-label="Follow us on Instagram">Instagram</a> <a href="https://www.facebook.com/examplestore">Facebook</a></p>
+<p><a href="https://example.com/preferences?u=7c1d">Manage preferences</a> · <a href="https://example.com/unsubscribe?u=7c1d">Unsubscribe</a></p>
+<p>© 2026 Example Store</p>
+</body></html>

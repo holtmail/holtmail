@@ -1,0 +1,10 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Template
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-template-microdata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><template><div itemscope itemtype="http://schema.org/Order"><meta itemprop="orderNumber" content="TP-1"><div itemprop="merchant" itemscope itemtype="http://schema.org/Organization"><meta itemprop="name" content="Example Shop"></div></div></template><p>Hello.</p></body></html>

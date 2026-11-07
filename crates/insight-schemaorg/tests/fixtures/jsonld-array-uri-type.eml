@@ -1,0 +1,56 @@
+From: Example Tickets <tickets@tickets.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your tickets
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-array-uri-type@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+[
+ {
+  "@context": "http://schema.org",
+  "@type": "http://schema.org/TrainReservation",
+  "reservationNumber": "TR-5521",
+  "reservationFor": {
+   "@type": "http://schema.org/TrainTrip",
+   "trainNumber": "IC 72",
+   "departureStation": {
+    "@type": "TrainStation",
+    "name": "Example Central"
+   },
+   "arrivalStation": {
+    "@type": "TrainStation",
+    "name": "Sampleton"
+   },
+   "departureTime": "2027-04-02T07:12:00",
+   "arrivalTime": "2027-04-02T10:40:00"
+  },
+  "reservedTicket": {
+   "@type": "Ticket",
+   "ticketedSeat": {
+    "@type": "Seat",
+    "seatNumber": "42"
+   }
+  }
+ },
+ {
+  "@type": "https://schema.org/EventReservation",
+  "reservationNumber": "EV-881",
+  "reservationFor": {
+   "@type": "Event",
+   "name": "Example Quartet Live",
+   "startDate": "2027-05-01T20:00:00+02:00",
+   "location": {
+    "@type": "Place",
+    "name": "Example Hall"
+   }
+  }
+ }
+]
+</script>
+</head><body>
+<p>Your train and concert tickets are attached to this message.</p>
+</body></html>

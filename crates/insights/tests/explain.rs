@@ -28,6 +28,28 @@ fn reports_never_carry_values_or_hosts() {
                 );
             }
         }
+        for link in label.links.iter().flatten() {
+            assert!(
+                !report.contains(link.host.as_str()),
+                "{case}: a link host in the report"
+            );
+        }
+        for parcel in label.parcel.iter().flatten() {
+            assert!(
+                !report.contains(parcel.number.as_str()),
+                "{case}: a tracking number in the report"
+            );
+        }
+        for fact in label.structured.iter().flatten() {
+            assert!(
+                !report.contains(fact.reference.as_str()),
+                "{case}: a {} reference in the report",
+                fact.kind
+            );
+        }
+        for wrapper in ["outlook.com", "proofpoint.com", "google.com", "sendgrid"] {
+            assert!(!report.contains(wrapper), "{case}: {wrapper} in the report");
+        }
     }
 }
 
@@ -56,4 +78,35 @@ fn reports_name_the_rules() {
     );
     assert!(report.contains("outcome:one_click"), "{report}");
     assert!(report.contains("one_click=true"), "{report}");
+
+    let report = runner.explain(&common::parse("link-reset-safelinks.eml"));
+    assert!(report.contains("[links "), "{report}");
+    assert!(
+        report.contains("action=reset_password via=true tracked=false"),
+        "{report}"
+    );
+
+    let report = runner.explain(&common::parse("parcel-ups-en.eml"));
+    assert!(report.contains("[parcel "), "{report}");
+    assert!(report.contains("carrier=ups shape="), "{report}");
+
+    let report = runner.explain(&common::parse("sx-flight-graph.eml"));
+    assert!(report.contains("[schemaorg "), "{report}");
+    assert!(
+        report.contains(
+            "reservation certain json-ld score=1000 origin=html reservation=flight number=aDaaDa start=zoned people=1 seats=1 url=true"
+        ),
+        "{report}"
+    );
+
+    let report = runner.explain(&common::parse("sx-pkpass-boarding.eml"));
+    assert!(report.contains("[pass "), "{report}");
+    assert!(
+        report.contains("pass certain pkpass score=1000 origin=attachment:0 style=boarding_pass attachment=0 relevant=zoned boarding_legs=1"),
+        "{report}"
+    );
+
+    let report = runner.explain(&common::parse("sx-neg-booking-code.eml"));
+    assert!(report.contains("outcome:likely"), "{report}");
+    assert!(!report.contains("code likely"), "{report}");
 }

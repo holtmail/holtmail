@@ -1,0 +1,14 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: We are packing your order
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <f8f81d37246d@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hi Ada,
+
+We are packing order 12039485761201 now. The tracking number will follow in a separate email once the carrier picks it up.
+
+Example Shop

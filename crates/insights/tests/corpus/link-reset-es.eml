@@ -1,0 +1,32 @@
+From: Example Accounts <no-reply@accounts.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?UmVzdGFibGVjZSB0dSBjb250cmFzZcOxYQ==?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <5386075a7bef@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-5386075a7bef"
+
+--b-5386075a7bef
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta de Example.
+
+Restablecer contraseña: https://accounts.example.com/reset?token=fef3a5d922497320
+
+Si no fuiste tú, ignora este correo.
+
+--b-5386075a7bef
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Recibimos una solicitud para restablecer la contraseña de tu cuenta de Example.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://accounts.example.com/reset?token=fef3a5d922497320" style="color:#ffffff;text-decoration:none;font-weight:bold">Restablecer contraseña</a></td></tr></table>
+<p>Si no fuiste tú, ignora este correo.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-5386075a7bef--

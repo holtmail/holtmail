@@ -1,0 +1,16 @@
+From: Example Weekly <news@example.com>
+To: Ada Example <ada@example.org>
+Subject: Please confirm your subscription
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <d4f7bae14e55@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>Thanks for signing up for Example Weekly.</p>
+<p>One more step: confirm that you want to receive it.</p>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://u4812.ct.sendgrid.net/ls/click?upn=u001.Qm9va2luZ0V4YW1wbGVDb25maXJtLTEyMzQ1Njc4OTA-2BxYz" style="color:#ffffff;text-decoration:none">Confirm your subscription</a></td></tr></table>
+</body></html>

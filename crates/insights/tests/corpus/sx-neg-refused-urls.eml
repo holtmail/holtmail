@@ -1,0 +1,26 @@
+From: Example News <news@news.example.com>
+To: Ada Example <ada@example.org>
+Subject: Act now
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-neg-refused-urls@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">[
+ {
+  "@context": "https://schema.org",
+  "@type": "ConfirmAction",
+  "target": "javascript:alert(1)"
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "ViewAction",
+  "target": "mailto:help@example.com"
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "CheckInAction",
+  "target": "file:///etc/passwd"
+ }
+]</script></head><body><p>Nothing to click.</p></body></html>

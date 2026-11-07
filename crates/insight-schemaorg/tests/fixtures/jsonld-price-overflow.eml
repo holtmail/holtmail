@@ -1,0 +1,26 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your order
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <jsonld-price-overflow@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "BIG-1",
+ "seller": {
+  "@type": "Organization",
+  "name": "Example Shop"
+ },
+ "price": "999999999999999999",
+ "priceCurrency": "USD"
+}
+</script>
+</head><body>
+<p>Thanks for your order.</p>
+</body></html>

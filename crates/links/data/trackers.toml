@@ -1,0 +1,75 @@
+# Opaque click trackers run by email service providers.
+# Written for Holtmail and dedicated to the public domain: CC0-1.0.
+# `host` is an exact host, or `*.` and a suffix that needs at least one more label in front.
+# `path` is an optional path prefix, matched on a segment boundary.
+# Any change here changes `holtmail_links::version()`.
+
+[[tracker]]
+name = "SendGrid"
+host = "*.ct.sendgrid.net"
+path = "/ls/click"
+
+[[tracker]]
+name = "Mailchimp"
+host = "*.list-manage.com"
+path = "/track/click"
+
+[[tracker]]
+name = "Mandrill"
+host = "mandrillapp.com"
+path = "/track/click"
+
+[[tracker]]
+name = "Mandrill"
+host = "*.mandrillapp.com"
+path = "/track/click"
+
+[[tracker]]
+name = "SparkPost"
+host = "*.sparkpostmail.com"
+path = "/f"
+
+[[tracker]]
+name = "HubSpot"
+host = "*.hubspotlinks.com"
+
+[[tracker]]
+name = "Customer.io"
+host = "*.customeriomail.com"
+path = "/e/c"
+
+[[tracker]]
+name = "Salesforce Marketing Cloud"
+host = "click.exacttarget.com"
+
+[[tracker]]
+name = "Salesforce Marketing Cloud"
+host = "*.exct.net"
+
+[[tracker]]
+name = "Amazon SES"
+host = "*.awstrack.me"
+path = "/L0"
+
+[[tracker]]
+name = "Postmark"
+host = "*.pstmrk.it"
+
+[[tracker]]
+name = "Mailjet"
+host = "*.mjt.lu"
+path = "/lnk"
+
+[[tracker]]
+name = "Constant Contact"
+host = "*.rs6.net"
+path = "/tn.jsp"
+
+[[tracker]]
+name = "Campaign Monitor"
+host = "*.createsend1.com"
+path = "/t"
+
+[[tracker]]
+name = "Klaviyo"
+host = "*.klclick.com"

@@ -1,0 +1,17 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?0JfQsNC60LDQtyDQv9C10YDQtdC00LDQvSDQsiDQtNC+0YHRgtCw0LLQutGD?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <e2f228ce3509@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Здравствуйте!</p>
+<p>Заказ передан в доставку.</p>
+<p>Почтовый идентификатор (трек-номер): 145007 89 12034 8</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Shop GmbH, 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>

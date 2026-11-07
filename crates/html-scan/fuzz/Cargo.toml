@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 holtmail-html-scan = { path = ".." }
+holtmail-insight = { path = "../../insight" }
 holtmail-sanitize = { path = "../../sanitize" }
 
 [[bin]]

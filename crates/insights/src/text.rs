@@ -57,7 +57,11 @@ impl NormalizedText {
     }
 
     fn push(&mut self, chunk: &str, original_at: usize, max_bytes: usize) -> bool {
-        let normal: String = chunk.nfkc().collect();
+        let normal = if chunk.is_ascii() || is_nfkc_quick(chunk.chars()) == IsNormalized::Yes {
+            std::borrow::Cow::Borrowed(chunk)
+        } else {
+            std::borrow::Cow::Owned(chunk.nfkc().collect())
+        };
         if self.text.len() + normal.len() > max_bytes {
             return false;
         }
@@ -68,6 +72,9 @@ impl NormalizedText {
 }
 
 fn stable(c: char) -> bool {
+    if c.is_ascii() {
+        return true;
+    }
     let mut first = None;
     decompose_compatible(c, |d| {
         first.get_or_insert(d);

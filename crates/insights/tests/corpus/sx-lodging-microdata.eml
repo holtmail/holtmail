@@ -1,0 +1,15 @@
+From: Example Stays <stays@stays.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your stay is booked
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-lodging-microdata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><div itemscope itemtype="http://schema.org/LodgingReservation">
+<meta itemprop="reservationNumber" content="HX-5521">
+<div itemprop="reservationFor" itemscope itemtype="http://schema.org/LodgingBusiness"><h2 itemprop="name">Example Garden Hotel</h2>
+<div itemprop="address" itemscope itemtype="http://schema.org/PostalAddress"><span itemprop="streetAddress">2 Example Lane</span>, <span itemprop="addressLocality">Exampleton</span></div></div>
+<p>Check-in <time itemprop="checkinTime" datetime="2027-01-20T15:00:00+01:00">20 Jan</time>, check-out <time itemprop="checkoutTime" datetime="2027-01-22T11:00:00+01:00">22 Jan</time></p>
+</div></body></html>

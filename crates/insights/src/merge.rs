@@ -2,8 +2,8 @@ use std::cmp::Reverse;
 
 use holtmail_insight::limits::MAX_ITEMS_PER_EXTRACTOR;
 use holtmail_insight::{
-    Confidence, Insight, InsightInput, InsightKind, LocalOrZoned, Provenance, Reservation, Url,
-    UrlScheme, fits_identifier, truncate_display,
+    Confidence, Insight, InsightInput, InsightKind, LinkAction, LocalOrZoned, Provenance,
+    Reservation, Url, UrlScheme, fits_identifier, truncate_display,
 };
 
 pub(crate) const MAX_ITEMS: usize = 32;
@@ -17,30 +17,131 @@ pub(crate) fn per_extractor(mut items: Vec<Insight>) -> Vec<Insight> {
 
 pub(crate) fn normalise(items: Vec<Insight>) -> Vec<Insight> {
     items
+        .into_iter()
+        .filter_map(unwrap_action)
+        .filter_map(normalise_codes)
+        .collect()
+}
+
+fn normalise_codes(mut item: Insight) -> Option<Insight> {
+    match &mut item.kind {
+        InsightKind::Reservation(Reservation::Flight(flight)) => {
+            flight.departure_airport = airport(&flight.departure_airport)?;
+            flight.arrival_airport = airport(&flight.arrival_airport)?;
+            flight.carrier = flight.carrier.as_deref().and_then(airline);
+        }
+        InsightKind::Pass {
+            boarding: Some(boarding),
+            ..
+        } => {
+            boarding.legs.retain_mut(|leg| {
+                let (Some(from), Some(to)) = (airport(&leg.from), airport(&leg.to)) else {
+                    return false;
+                };
+                leg.from = from;
+                leg.to = to;
+                leg.carrier = leg.carrier.as_deref().and_then(airline);
+                true
+            });
+        }
+        _ => {}
+    }
+    Some(item)
+}
+
+fn airport(code: &str) -> Option<String> {
+    let code = code.trim();
+    (code.len() == 3 && code.bytes().all(|b| b.is_ascii_alphabetic()))
+        .then(|| code.to_ascii_uppercase())
+}
+
+fn airline(code: &str) -> Option<String> {
+    let code = code.trim();
+    (code.len() == 2 && code.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .then(|| code.to_ascii_uppercase())
+}
+
+fn unwrap_action(mut item: Insight) -> Option<Insight> {
+    if let InsightKind::Action {
+        url,
+        destination,
+        via,
+        tracked,
+        ..
+    } = &mut item.kind
+    {
+        let unwrapped = holtmail_links::unwrap(url.as_str());
+        let target = Url::parse(&unwrapped.destination).ok()?;
+        if !target.fits_destination() {
+            return None;
+        }
+        *tracked = holtmail_links::tracker(target.as_str()).is_some();
+        *destination = target;
+        *via = unwrapped.via;
+    }
+    Some(item)
 }
 
 pub(crate) fn merge(items: Vec<Insight>) -> Vec<Insight> {
     let mut unique: Vec<Insight> = Vec::with_capacity(items.len());
+    let mut keys: Vec<Option<String>> = Vec::with_capacity(items.len());
     for item in items {
-        if !unique.contains(&item) {
-            unique.push(item);
+        if unique.contains(&item) {
+            continue;
+        }
+        let key = merge_key(&item);
+        match key
+            .as_ref()
+            .and_then(|key| keys.iter().position(|k| k.as_ref() == Some(key)))
+        {
+            Some(at) => {
+                let kept = &mut unique[at];
+                if outranks(&item, kept) {
+                    let loser = std::mem::replace(kept, item);
+                    fill(kept, loser);
+                } else {
+                    fill(kept, item);
+                }
+            }
+            None => {
+                unique.push(item);
+                keys.push(key);
+            }
         }
     }
-    let references: Vec<String> = unique.iter().flat_map(references).collect();
-    let structured_actions: Vec<&Url> = unique
+    let references: Vec<(String, bool)> = unique
+        .iter()
+        .flat_map(|item| references(item).into_iter().map(|r| (r, item.forwarded)))
+        .collect();
+    let structured_actions: Vec<(LinkAction, &Url, bool)> = unique
         .iter()
         .filter(|item| is_structured(item.provenance))
         .filter_map(|item| match &item.kind {
-            InsightKind::Action { url, .. } => Some(url),
+            InsightKind::Action {
+                action,
+                destination,
+                ..
+            } => Some((*action, destination, item.forwarded)),
             _ => None,
         })
         .collect();
     let keep: Vec<bool> = unique
         .iter()
         .map(|item| match &item.kind {
-            InsightKind::Code { value, .. } => !references.contains(&reference_key(value)),
-            InsightKind::Action { url, .. } if item.provenance == Provenance::Heuristic => {
-                !structured_actions.contains(&url)
+            InsightKind::Code { value, .. } => {
+                let key = reference_key(value);
+                !references
+                    .iter()
+                    .any(|(r, forwarded)| *r == key && (!forwarded || item.forwarded))
+            }
+            InsightKind::Action {
+                action,
+                destination,
+                ..
+            } if item.provenance == Provenance::Heuristic => {
+                !structured_actions.iter().any(|(other, target, forwarded)| {
+                    (!forwarded || item.forwarded) && (other == action || *target == destination)
+                })
             }
             _ => true,
         })
@@ -50,6 +151,150 @@ pub(crate) fn merge(items: Vec<Insight>) -> Vec<Insight> {
         .zip(keep)
         .filter_map(|(item, keep)| keep.then_some(item))
         .collect()
+}
+
+fn outranks(item: &Insight, kept: &Insight) -> bool {
+    (
+        Reverse(provenance_rank(item.provenance)),
+        item.confidence,
+        item.score,
+    ) > (
+        Reverse(provenance_rank(kept.provenance)),
+        kept.confidence,
+        kept.score,
+    )
+}
+
+fn provenance_rank(provenance: Provenance) -> u8 {
+    match provenance {
+        Provenance::JsonLd => 0,
+        Provenance::Microdata => 1,
+        Provenance::PkPass => 2,
+        _ => 3,
+    }
+}
+
+fn fill(kept: &mut Insight, other: Insight) {
+    kept.forwarded &= other.forwarded;
+    if let (
+        InsightKind::Parcel {
+            check_digit,
+            track_url,
+            ..
+        },
+        InsightKind::Parcel {
+            check_digit: other_check,
+            track_url: other_url,
+            ..
+        },
+    ) = (&mut kept.kind, other.kind)
+    {
+        *check_digit |= other_check;
+        if track_url.is_none() {
+            *track_url = other_url;
+        }
+    }
+}
+
+fn merge_key(item: &Insight) -> Option<String> {
+    let reference = |value: &str| reference_key(value);
+    let name = |value: &str| {
+        value
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+    let optional = |value: &Option<String>| value.as_deref().map(reference).unwrap_or_default();
+    let either = |first: &Option<String>, second: &Option<String>| {
+        first
+            .as_deref()
+            .or(second.as_deref())
+            .map(reference)
+            .unwrap_or_default()
+    };
+    let key = match &item.kind {
+        InsightKind::Reservation(reservation) => match reservation {
+            Reservation::Flight(r) => match &r.flight_number {
+                Some(number) => format!(
+                    "flight\u{1f}{}\u{1f}{}\u{1f}{}",
+                    optional(&r.carrier),
+                    reference(number),
+                    local_date(&r.departure)
+                ),
+                None => format!(
+                    "flight-booking\u{1f}{}\u{1f}{}\u{1f}{}",
+                    optional(&r.reservation_number),
+                    r.departure_airport,
+                    local_date(&r.departure)
+                ),
+            },
+            Reservation::Lodging(r) => format!(
+                "lodging\u{1f}{}\u{1f}{}",
+                reference(&r.reservation_number),
+                local_date(&r.checkin)
+            ),
+            Reservation::Train(r) => format!(
+                "train\u{1f}{}\u{1f}{}\u{1f}{}",
+                either(&r.train_number, &r.reservation_number),
+                name(&r.departure_station),
+                local_date(&r.departure)
+            ),
+            Reservation::Bus(r) => format!(
+                "bus\u{1f}{}\u{1f}{}\u{1f}{}",
+                either(&r.bus_number, &r.reservation_number),
+                name(&r.departure_station),
+                local_date(&r.departure)
+            ),
+            Reservation::Event(r) => {
+                format!("event\u{1f}{}\u{1f}{}", name(&r.name), start_key(&r.start))
+            }
+            Reservation::Food(r) => {
+                format!("food\u{1f}{}\u{1f}{}", name(&r.name), start_key(&r.start))
+            }
+            Reservation::RentalCar(r) => format!(
+                "rental_car\u{1f}{}\u{1f}{}",
+                reference(&r.reservation_number),
+                local_date(&r.pickup)
+            ),
+        },
+        InsightKind::Order {
+            number, merchant, ..
+        } => match (number, merchant) {
+            (Some(number), _) => format!("order\u{1f}number\u{1f}{}", reference(number)),
+            (None, Some(merchant)) => format!("order\u{1f}seller\u{1f}{}", name(merchant)),
+            (None, None) => return None,
+        },
+        InsightKind::Invoice { number, payee, .. } => match (number, payee) {
+            (Some(number), _) => format!("invoice\u{1f}number\u{1f}{}", reference(number)),
+            (None, Some(payee)) => format!("invoice\u{1f}payee\u{1f}{}", name(payee)),
+            (None, None) => return None,
+        },
+        InsightKind::Parcel {
+            carrier, number, ..
+        } => format!(
+            "parcel\u{1f}{}\u{1f}{}",
+            carrier.as_str(),
+            reference(number)
+        ),
+        InsightKind::Pass { attachment, .. } => format!("pass\u{1f}{attachment}"),
+        _ => return None,
+    };
+    Some(key)
+}
+
+fn local_date(at: &LocalOrZoned) -> String {
+    match at {
+        LocalOrZoned::Local(at) => at.date().to_string(),
+        LocalOrZoned::Zoned(at, _) => at.date_naive().to_string(),
+    }
+}
+
+fn start_key(at: &LocalOrZoned) -> String {
+    match at {
+        LocalOrZoned::Local(at) => at.to_string(),
+        LocalOrZoned::Zoned(at, _) => format!("{}Z", at.naive_utc()),
+    }
 }
 
 fn references(item: &Insight) -> Vec<String> {

@@ -1,0 +1,14 @@
+From: Example Books <orders@books.example.org>
+To: Ada Example <ada@example.org>
+Subject: Order confirmation
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-order-microdata@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head></head><body><div itemscope itemtype="http://schema.org/Order">
+<div itemprop="merchant" itemscope itemtype="http://schema.org/Organization"><meta itemprop="name" content="Example Books"></div>
+<p>Order <span itemprop="orderNumber">EB-55102</span></p>
+<link itemprop="orderStatus" href="http://schema.org/OrderDelivered">
+</div><p>Happy reading.</p></body></html>

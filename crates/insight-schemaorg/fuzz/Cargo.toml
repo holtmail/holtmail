@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-insight-schemaorg-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+holtmail-insight = { path = "../../insight" }
+holtmail-insight-schemaorg = { path = ".." }
+
+[[bin]]
+name = "extract"
+path = "fuzz_targets/extract.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

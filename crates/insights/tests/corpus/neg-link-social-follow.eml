@@ -1,0 +1,17 @@
+From: Example Team <team@example.com>
+To: Ada Example <ada@example.org>
+Subject: Join the Example community
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <168f56ad4024@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Our community is now on Facebook and LinkedIn.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://www.facebook.com/groups/example-community" style="color:#ffffff;text-decoration:none;font-weight:bold">Join the group</a></td></tr></table>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://www.linkedin.com/company/example" style="color:#ffffff;text-decoration:none;font-weight:bold">Follow us</a></td></tr></table>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>

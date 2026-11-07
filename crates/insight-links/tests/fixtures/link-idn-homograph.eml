@@ -1,0 +1,16 @@
+From: Example Accounts <no-reply@example.com>
+To: Ada Example <ada@example.org>
+Subject: Action required: sign in
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <a7cae1b47b88@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<p>Your session has expired.</p>
+<p>Sign in again to keep using your account.</p>
+<table role="presentation"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://exаmple.com/login?next=%2Fhome" style="color:#ffffff;text-decoration:none">Sign in</a></td></tr></table>
+</body></html>

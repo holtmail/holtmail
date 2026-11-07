@@ -1,0 +1,15 @@
+From: Example Team <team@example.com>
+To: Ada Example <ada@example.org>
+Subject: Meet the Example team
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <082ca221c990@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>We are hiring and we are growing. Say hello on your favourite network.</p>
+<p><a href="https://www.facebook.com/example" aria-label="Facebook"><img src="https://img.example.com/fb.png" alt="Facebook" width="24"></a> <a href="https://x.com/example" aria-label="X"><img src="https://img.example.com/x.png" alt="X" width="24"></a> <a href="https://www.instagram.com/example" aria-label="Instagram"><img src="https://img.example.com/ig.png" alt="Instagram" width="24"></a> <a href="https://www.linkedin.com/company/example" aria-label="LinkedIn"><img src="https://img.example.com/in.png" alt="LinkedIn" width="24"></a></p>
+</body></html>

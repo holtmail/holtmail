@@ -1,0 +1,32 @@
+From: Example Weekly <hello@weekly.example.com>
+To: Ada Example <ada@example.org>
+Subject: Confirm your subscription to Example Weekly
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <7affac121309@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-7affac121309"
+
+--b-7affac121309
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+You asked to receive Example Weekly. Please confirm your subscription.
+
+Confirm subscription: https://u1234567.ct.sendgrid.net/ls/click?upn=u001.Q2xpY2tFeGFtcGxlVXBuVmFsdWU-2BZXhhbXBsZQ-3D-3D307affe914f9d7ac
+
+If you did not ask for this, do nothing.
+
+--b-7affac121309
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>You asked to receive Example Weekly. Please confirm your subscription.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://u1234567.ct.sendgrid.net/ls/click?upn=u001.Q2xpY2tFeGFtcGxlVXBuVmFsdWU-2BZXhhbXBsZQ-3D-3D307affe914f9d7ac" style="color:#ffffff;text-decoration:none;font-weight:bold">Confirm subscription</a></td></tr></table>
+<p>If you did not ask for this, do nothing.</p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Inc., 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-7affac121309--

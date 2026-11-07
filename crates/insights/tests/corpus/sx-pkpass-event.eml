@@ -1,0 +1,28 @@
+From: Example Arena <tickets@arena.example.org>
+To: Ada Example <ada@example.org>
+Subject: Your ticket
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-pkpass-event@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Your ticket is attached.
+--b1
+Content-Type: application/vnd.apple.pkpass
+Content-Disposition: attachment; filename="ticket.pkpass"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAAAAYV2QAt5xKAEAAPABAAAJAAAAcGFzcy5qc29uVVFPa8IwFL/3U4SeV2kLw+nN
+bRXGNnGziDA8vNanBJO0JFHmxO++lxcPesnh9z/JORHptrMa/BKtk51Jx6J4ILAH5+pTj28bNF5u
+JVpiGB20nR7gL+he4cDLdo/epcHi0EpQs4NuorhaZqNRWTDnEfR9VLWafM4/qrxkvrM7MPIPPE2Y
+gUZWxA4xsWiAVRt0rZW9jzvTl860aL2II1hhUeERjH8FzxllXg6z/DEry7oYjfOcRXikIXU0jcU5
+EXQxKzXY01Si2jgCfwhkhrg9nkIUu4I/YAoaVDzyFj2COnDtgvLMTrRxYBrYCx3rRFzCgAZs29Fl
+rkXcc/2G4J6/P0fBlKGv75ifanQOdnjzttmimtRZMbwXVIbM1B+EB7/NnsIA6l8nl39QSwMEFAAA
+AAgAAABhXUO/pqMEAAAAAgAAAA0AAABtYW5pZmVzdC5qc29uq64FAFBLAQIUAxQAAAAIAAAAYV2Q
+At5xKAEAAPABAAAJAAAAAAAAAAAAAACkAQAAAABwYXNzLmpzb25QSwECFAMUAAAACAAAAGFdQ7+m
+owQAAAACAAAADQAAAAAAAAAAAAAApAFPAQAAbWFuaWZlc3QuanNvblBLBQYAAAAAAgACAHIAAAB+
+AQAAAAA=
+--b1--

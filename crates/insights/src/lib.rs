@@ -3,10 +3,14 @@
 //! [`Runner`] is stage A of message insights: it turns one [`ParsedMessage`] into everything the
 //! `message_insights` row stores ([`Extracted`]). It is deterministic: equal messages and equal
 //! extractors give byte-equal rows.
+//!
+//! [`Deriver`] is stage B: it turns the stored stage-A columns, the stored alias row, the trust
+//! lists and the archive's own addresses into trust, kind and topics, with no blob read.
 
 #![forbid(unsafe_code)]
 
 mod auth;
+mod derive;
 mod explain;
 mod input;
 mod merge;
@@ -24,12 +28,17 @@ use holtmail_insight::{
 use holtmail_mime::ParsedMessage;
 use holtmail_store::{InsightOutcome, InsightRow};
 
+pub use derive::{
+    ALWAYS_ON_SOURCE, AuthSummary, DERIVE_VERSION, DeriveConfig, DeriveContext, Deriver,
+    SUGGEST_MIN_MESSAGES, SUGGEST_SHARE_PERCENT, SUGGEST_WINDOW, auth_summary, override_key,
+    suggest_authserv,
+};
 pub use scope::{install_panic_hook, with_message};
 pub use text::NormalizedText;
 
 /// The version of the runner's own behaviour: input caps, signal bits, the auth facts shape,
 /// merge, validation and the row caps. Part of [`Runner::extract_fp`].
-pub const VERSION: &str = "1";
+pub const VERSION: &str = "4";
 
 /// Items in one row, at most.
 pub const MAX_ITEMS: usize = merge::MAX_ITEMS;
@@ -95,6 +104,19 @@ impl Extracted {
 /// - **Bounded.** Input is capped as [`holtmail_insight::limits`] says, each extractor
 ///   contributes at most [`MAX_ITEMS_PER_EXTRACTOR`](holtmail_insight::limits::MAX_ITEMS_PER_EXTRACTOR)
 ///   items, and the row at most [`MAX_ITEMS`] items and [`MAX_ITEMS_JSON_BYTES`] of JSON.
+/// - **Actions unwrapped.** Every kept action's `destination`, `via` and `tracked` come from
+///   [`holtmail_links::unwrap`] and [`holtmail_links::tracker`] over its `url`, never from the
+///   extractor; an action whose destination is not a valid [`Url`](holtmail_insight::Url) within
+///   [`MAX_DESTINATION_BYTES`](holtmail_insight::limits::MAX_DESTINATION_BYTES) is dropped. A
+///   heuristic action yields to a JSON-LD, microdata or pkpass action of the same kind or with the
+///   same destination, and a code equal to a reservation, order, invoice or parcel reference is
+///   dropped.
+/// - **One item per fact.** Reservations, orders, invoices, parcels and passes with equal merge
+///   keys (docs/INSIGHTS.md §7.5) are kept once, as the item of the highest provenance (JSON-LD,
+///   microdata, pkpass, heuristic), then confidence, then score, then the earliest; it is
+///   forwarded only when every joined item was.
+/// - **IATA codes.** Kept flight airports are three uppercase ASCII letters and carriers two
+///   uppercase ASCII letters or digits; a flight or boarding leg with another airport is dropped.
 pub struct Runner {
     extractors: Vec<(Arc<dyn InsightExtractor>, String)>,
     fingerprint: String,
@@ -112,9 +134,10 @@ impl Runner {
             })
             .collect();
         let mut fingerprint = format!(
-            "insights={VERSION}\nhtml-scan={}\nauth-results={}\n",
+            "insights={VERSION}\nhtml-scan={}\nauth-results={}\nlinks={}\n",
             holtmail_html_scan::VERSION,
-            holtmail_auth_results::VERSION
+            holtmail_auth_results::VERSION,
+            holtmail_links::version()
         );
         for (extractor, version) in &extractors {
             fingerprint.push_str(&format!("{}={version}\n", extractor.id()));
@@ -125,8 +148,9 @@ impl Runner {
         }
     }
 
-    /// The extraction fingerprint: a hex BLAKE3 hash of [`VERSION`], the HTML scanner's and the
-    /// auth grammar's versions, and each extractor's `id=version` in order. Equal for the life of
+    /// The extraction fingerprint: a hex BLAKE3 hash of [`VERSION`], the HTML scanner's, the auth
+    /// grammar's and the link rules' versions ([`holtmail_links::version`], which covers the
+    /// unwrap allow-list and the tracker list), and each extractor's `id=version` in order. Equal for the life of
     /// the runner; changes whenever a stored row could differ.
     pub fn extract_fp(&self) -> String {
         self.fingerprint.clone()

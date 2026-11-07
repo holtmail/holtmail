@@ -1,0 +1,32 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: =?UTF-8?B?RGFua2UgZsO8ciBJaHJlIEJlc3RlbGx1bmc=?=
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <a58fd0d99d50@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b-a58fd0d99d50"
+
+--b-a58fd0d99d50
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Wir haben Ihre Bestellung erhalten und bereiten sie vor.
+
+Bestellung ansehen: https://shop.example.com/account/orders/view?token=f010b39ecdb7f0f9
+
+
+
+--b-a58fd0d99d50
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#222222;background:#f4f4f4}</style></head>
+<body>
+<p>Wir haben Ihre Bestellung erhalten und bereiten sie vor.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="#1a73e8" style="padding:12px 24px"><a href="https://shop.example.com/account/orders/view?token=f010b39ecdb7f0f9" style="color:#ffffff;text-decoration:none;font-weight:bold">Bestellung ansehen</a></td></tr></table>
+<p></p>
+<p style="color:#888888;font-size:12px">&copy; 2026 Example Shop GmbH, 1 Example Street, Springfield. <a href="https://www.example.com/privacy" style="color:#888888">Privacy</a></p>
+</body></html>
+
+--b-a58fd0d99d50--

@@ -1,0 +1,28 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Thanks for your order
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <sx-order-jsonld@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head><script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "SO-77120",
+ "orderStatus": "http://schema.org/OrderProcessing",
+ "merchant": {
+  "@type": "Organization",
+  "name": "Example Shop"
+ },
+ "price": "42.50",
+ "priceCurrency": "EUR",
+ "acceptedOffer": {
+  "@type": "Offer",
+  "itemOffered": {
+   "@type": "Product",
+   "name": "Example Kettle"
+  }
+ }
+}</script></head><body><p>We are packing your order.</p></body></html>

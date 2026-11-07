@@ -1,0 +1,14 @@
+{
+  "head": { "vars": ["org", "class", "site"] },
+  "results": { "bindings": [
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100002" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000011" }, "site": { "type": "uri", "value": "https://www.example.com/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100001" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "site": { "type": "uri", "value": "http://Shop.Example.com" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100003" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000012" }, "site": { "type": "uri", "value": "https://shop.sites.example/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100004" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "site": { "type": "uri", "value": "https://example.org/about" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100005" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "site": { "type": "uri", "value": "ftp://files.example.org/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100006" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "site": { "type": "literal", "value": "not a url" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100099" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9999999" }, "site": { "type": "uri", "value": "https://stray.example/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100008" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "site": { "type": "uri", "value": "https://www.mail.example/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9100007" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" } }
+  ] }
+}

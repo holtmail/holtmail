@@ -1,0 +1,433 @@
+# Wikidata root classes and the topics they give. CC0 1.0: dedicated to the public domain.
+#
+# Each root is expanded to every subclass (wdt:P279*). Organisations are then fetched by
+# `property`: P452 (industry) in the first pass, P31 (instance of) in the second, for
+# organisations without an industry such as airlines, hospitals and pharmacies. `label` is the
+# English label on Wikidata; the build checks it so a mistyped QID fails instead of pulling in
+# the wrong class.
+#
+# finance, health and government are sensitive: see sensitive-reviewed.toml.
+
+# Shared platforms: site builders, free hosts and link shorteners. An organisation's site on one
+# of these says nothing about the platform, so their rows are never written. Social networks
+# are not listed: a page on them has a path and is skipped anyway, and their own row is social.
+skip_domains = [
+  "bit.ly",
+  "business.site",
+  "google.com",
+  "jimdo.com",
+  "jimdosite.com",
+  "linktr.ee",
+  "narod.ru",
+  "squarespace.com",
+  "tripod.com",
+  "ucoz.ru",
+  "webnode.page",
+  "weebly.com",
+  "wixsite.com",
+  "wordpress.com",
+]
+
+# Consumer mailbox providers and ISPs: people write from them, so a topic on their domain would
+# land on personal mail. Their rows, and the rows of their subdomains, are never written.
+mailbox_domains = [
+  "126.com",
+  "139.com",
+  "163.com",
+  "abv.bg",
+  "aim.com",
+  "alice.it",
+  "aliyun.com",
+  "aol.com",
+  "arcor.de",
+  "atlas.cz",
+  "att.net",
+  "azet.sk",
+  "bbox.fr",
+  "bellsouth.net",
+  "bigpond.com",
+  "bk.ru",
+  "bluewin.ch",
+  "bol.com.br",
+  "btinternet.com",
+  "centrum.cz",
+  "centrum.sk",
+  "charter.net",
+  "citromail.hu",
+  "comcast.net",
+  "cox.net",
+  "daum.net",
+  "earthlink.net",
+  "email.cz",
+  "email.it",
+  "fastmail.com",
+  "fastmail.fm",
+  "foxmail.com",
+  "free.fr",
+  "freemail.hu",
+  "freenet.de",
+  "gazeta.pl",
+  "gmail.com",
+  "gmx.at",
+  "gmx.ch",
+  "gmx.com",
+  "gmx.de",
+  "gmx.fr",
+  "gmx.net",
+  "googlemail.com",
+  "hanmail.net",
+  "hispeed.ch",
+  "home.nl",
+  "hotmail.co.uk",
+  "hotmail.com",
+  "hotmail.de",
+  "hotmail.es",
+  "hotmail.fr",
+  "hotmail.it",
+  "i.ua",
+  "icloud.com",
+  "ig.com.br",
+  "inbox.lv",
+  "inbox.ru",
+  "interia.pl",
+  "kakao.com",
+  "kpnmail.nl",
+  "laposte.net",
+  "libero.it",
+  "list.ru",
+  "live.co.uk",
+  "live.com",
+  "live.fr",
+  "mac.com",
+  "mail.bg",
+  "mail.com",
+  "mail.ru",
+  "mailbox.org",
+  "me.com",
+  "meta.ua",
+  "msn.com",
+  "nate.com",
+  "naver.com",
+  "neuf.fr",
+  "ntlworld.com",
+  "o2.co.uk",
+  "o2.pl",
+  "o2.sk",
+  "o2online.de",
+  "onet.pl",
+  "online.no",
+  "op.pl",
+  "optonline.net",
+  "optusnet.com.au",
+  "orange.es",
+  "orange.fr",
+  "orange.pl",
+  "orange.ro",
+  "orange.sk",
+  "otenet.gr",
+  "outlook.com",
+  "planet.nl",
+  "pm.me",
+  "post.sk",
+  "posteo.de",
+  "proton.me",
+  "protonmail.com",
+  "qq.com",
+  "rambler.ru",
+  "rediffmail.com",
+  "rocketmail.com",
+  "rogers.com",
+  "sapo.pt",
+  "sbcglobal.net",
+  "seznam.cz",
+  "sfr.fr",
+  "shaw.ca",
+  "sina.cn",
+  "sina.com",
+  "sky.com",
+  "skynet.be",
+  "sohu.com",
+  "sympatico.ca",
+  "t-online.de",
+  "talktalk.net",
+  "telenet.be",
+  "telia.com",
+  "telus.net",
+  "terra.com.br",
+  "tim.it",
+  "tiscali.it",
+  "tuta.io",
+  "tutanota.com",
+  "ukr.net",
+  "uol.com.br",
+  "verizon.com",
+  "verizon.net",
+  "virgilio.it",
+  "virginmedia.com",
+  "walla.co.il",
+  "wanadoo.fr",
+  "web.de",
+  "wp.pl",
+  "xs4all.nl",
+  "ya.ru",
+  "yahoo.co.in",
+  "yahoo.co.jp",
+  "yahoo.co.uk",
+  "yahoo.com",
+  "yahoo.com.br",
+  "yahoo.de",
+  "yahoo.es",
+  "yahoo.fr",
+  "yahoo.it",
+  "yandex.com",
+  "yandex.ru",
+  "yeah.net",
+  "ymail.com",
+  "ziggo.nl",
+  "zoho.com",
+  "zoznam.sk",
+]
+
+# P452 (industry)
+
+[[root]]
+qid = "Q126793"
+label = "retail"
+property = "P452"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q484847"
+label = "e-commerce"
+property = "P452"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q1757562"
+label = "air transport"
+property = "P452"
+topics = ["travel"]
+
+[[root]]
+qid = "Q49389"
+label = "tourism"
+property = "P452"
+topics = ["travel"]
+
+[[root]]
+qid = "Q1423777"
+label = "travel industry"
+property = "P452"
+topics = ["travel"]
+
+[[root]]
+qid = "Q837171"
+label = "financial services"
+property = "P452"
+topics = ["finance"]
+
+[[root]]
+qid = "Q806718"
+label = "economics of banking"
+property = "P452"
+topics = ["finance"]
+
+[[root]]
+qid = "Q43183"
+label = "insurance"
+property = "P452"
+topics = ["finance"]
+
+[[root]]
+qid = "Q31207"
+label = "health care"
+property = "P452"
+topics = ["health"]
+
+[[root]]
+qid = "Q130370834"
+label = "hospitals and rehabilitation"
+property = "P452"
+topics = ["health"]
+
+[[root]]
+qid = "Q334911"
+label = "health insurance"
+property = "P452"
+topics = ["health"]
+
+[[root]]
+qid = "Q202833"
+label = "social media"
+property = "P452"
+topics = ["social"]
+
+[[root]]
+qid = "Q63348704"
+label = "employment services industry"
+property = "P452"
+topics = ["jobs"]
+
+[[root]]
+qid = "Q899277"
+label = "recruitment"
+property = "P452"
+topics = ["jobs"]
+
+[[root]]
+qid = "Q100681367"
+label = "ticket sales"
+property = "P452"
+topics = ["events"]
+
+# P31 (instance of)
+
+[[root]]
+qid = "Q507619"
+label = "retail chain"
+property = "P31"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q4382945"
+label = "online shop"
+property = "P31"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q3390477"
+label = "online marketplace"
+property = "P31"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q216107"
+label = "department store"
+property = "P31"
+topics = ["purchases"]
+
+[[root]]
+qid = "Q46970"
+label = "airline"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q1631129"
+label = "hotel chain"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q27686"
+label = "hotel"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q249556"
+label = "railway company"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q217107"
+label = "travel agency"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q118710708"
+label = "online travel agency"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q291240"
+label = "car rental company"
+property = "P31"
+topics = ["travel"]
+
+[[root]]
+qid = "Q22687"
+label = "bank"
+property = "P31"
+topics = ["finance"]
+
+[[root]]
+qid = "Q2143354"
+label = "insurance company"
+property = "P31"
+topics = ["finance"]
+
+[[root]]
+qid = "Q1956140"
+label = "payment service provider"
+property = "P31"
+topics = ["finance"]
+
+[[root]]
+qid = "Q16917"
+label = "hospital"
+property = "P31"
+topics = ["health"]
+
+[[root]]
+qid = "Q13107184"
+label = "pharmacy"
+property = "P31"
+topics = ["health"]
+
+[[root]]
+qid = "Q61676930"
+label = "pharmacy chain"
+property = "P31"
+topics = ["health"]
+
+[[root]]
+qid = "Q563787"
+label = "health insurance company"
+property = "P31"
+topics = ["health"]
+
+[[root]]
+qid = "Q3220391"
+label = "social networking service"
+property = "P31"
+topics = ["social"]
+
+[[root]]
+qid = "Q261362"
+label = "employment agency"
+property = "P31"
+topics = ["jobs"]
+
+[[root]]
+qid = "Q580148"
+label = "employment website"
+property = "P31"
+topics = ["jobs"]
+
+[[root]]
+qid = "Q62069207"
+label = "ticket sales service"
+property = "P31"
+topics = ["events"]
+
+[[root]]
+qid = "Q2534781"
+label = "event management company"
+property = "P31"
+topics = ["events"]
+
+[[root]]
+qid = "Q327333"
+label = "government agency"
+property = "P31"
+topics = ["government"]
+
+[[root]]
+qid = "Q192350"
+label = "ministry"
+property = "P31"
+topics = ["government"]

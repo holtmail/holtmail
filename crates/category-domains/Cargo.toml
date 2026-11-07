@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-category-domains"
+description = "Categorizer by sender domain on the bundled and downloaded category tables"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+test-key = []
+
+[dependencies]
+ed25519-dalek.workspace = true
+holtmail-category.workspace = true
+holtmail-category-data.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+flate2.workspace = true
+holtmail-category = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true

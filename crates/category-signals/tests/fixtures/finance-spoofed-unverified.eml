@@ -1,0 +1,26 @@
+From: Example Bank <billing@bank.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your statement is ready
+Date: Fri, 06 Nov 2026 08:00:00 +0000
+Message-ID: <finance-spoofed-unverified@bank.example.com>
+Authentication-Results: mx.example.org; dkim=pass header.d=bank.example.com header.s=s1 header.b=ZmFrZWZh
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Invoice",
+ "confirmationNumber": "INV-7731",
+ "provider": {"@type": "BankOrCreditUnion", "name": "Example Bank"},
+ "totalPaymentDue": {"@type": "MonetaryAmount", "value": "312.00", "currency": "EUR"},
+ "paymentDueDate": "2027-01-20",
+ "paymentStatus": "https://schema.org/PaymentDue",
+ "url": "https://bank.example.com/invoices/7731"
+}
+</script>
+</head><body>
+<p>Your statement is ready. Pay the amount due to keep your account open.</p>
+</body></html>

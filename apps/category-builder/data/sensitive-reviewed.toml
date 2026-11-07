@@ -1,0 +1,14 @@
+# Sensitive rows the maintainer has reviewed. CC0 1.0: dedicated to the public domain.
+#
+# A row in the Wikidata file may carry finance, health or government only when the previous
+# release had that domain with that topic, or when it is listed here with that topic. Anything
+# else is stripped by the builder and listed under "unreviewed sensitive rows" in its report.
+#
+# Only the maintainer adds entries, after checking each domain against its Wikidata item and
+# the organisation's own site. Add one block per domain, sensitive topics only:
+#
+#   [[domain]]
+#   name = "bank.example"
+#   topics = ["finance"]
+#
+# The list ships empty: no sensitive topic has been reviewed yet.

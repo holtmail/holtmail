@@ -1,0 +1,123 @@
+# Golden domains: stable organisations whose topics must not change. CC0 1.0: dedicated to the
+# public domain.
+#
+# The build fails when a domain here is missing from the output or carries other topics.
+# Entries are checked by eye in a real build's output; non-sensitive topics only. `absent`
+# lists domains that must have no row, neither themselves nor any subdomain: mailbox providers
+# people write from. The build and `check` add `skip_domains` and `mailbox_domains` to it.
+
+absent = [
+  "aol.com",
+  "free.fr",
+  "gmail.com",
+  "gmx.de",
+  "hotmail.com",
+  "icloud.com",
+  "mail.ru",
+  "naver.com",
+  "o2.sk",
+  "orange.fr",
+  "orange.sk",
+  "outlook.com",
+  "qq.com",
+  "verizon.com",
+  "web.de",
+  "yahoo.com",
+  "yandex.ru",
+]
+
+[[domain]]
+name = "amazon.com"
+topics = ["purchases"]
+
+[[domain]]
+name = "ebay.com"
+topics = ["purchases"]
+
+[[domain]]
+name = "etsy.com"
+topics = ["purchases"]
+
+[[domain]]
+name = "ikea.com"
+topics = ["purchases"]
+
+[[domain]]
+name = "walmart.com"
+topics = ["purchases"]
+
+[[domain]]
+name = "zalando.de"
+topics = ["purchases"]
+
+[[domain]]
+name = "lidl.de"
+topics = ["purchases"]
+
+[[domain]]
+name = "airfrance.com"
+topics = ["travel"]
+
+[[domain]]
+name = "britishairways.com"
+topics = ["travel"]
+
+[[domain]]
+name = "delta.com"
+topics = ["travel"]
+
+[[domain]]
+name = "easyjet.com"
+topics = ["travel"]
+
+[[domain]]
+name = "expedia.com"
+topics = ["travel"]
+
+[[domain]]
+name = "hertz.com"
+topics = ["travel"]
+
+[[domain]]
+name = "klm.com"
+topics = ["travel"]
+
+[[domain]]
+name = "lufthansa.com"
+topics = ["travel"]
+
+[[domain]]
+name = "ryanair.com"
+topics = ["travel"]
+
+[[domain]]
+name = "facebook.com"
+topics = ["social"]
+
+[[domain]]
+name = "instagram.com"
+topics = ["social"]
+
+[[domain]]
+name = "linkedin.com"
+topics = ["social"]
+
+[[domain]]
+name = "reddit.com"
+topics = ["social"]
+
+[[domain]]
+name = "indeed.com"
+topics = ["jobs"]
+
+[[domain]]
+name = "monster.com"
+topics = ["jobs"]
+
+[[domain]]
+name = "eventim.de"
+topics = ["events"]
+
+[[domain]]
+name = "ticketmaster.com"
+topics = ["events"]

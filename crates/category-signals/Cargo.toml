@@ -1,0 +1,26 @@
+[package]
+name = "holtmail-category-signals"
+description = "Categorizer for the kind of a message from its header signals, and the topics its insight items imply"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-category.workspace = true
+
+[dev-dependencies]
+holtmail-category = { workspace = true, features = ["testing"] }
+holtmail-insight.workspace = true
+holtmail-insight-code.workspace = true
+holtmail-insight-links.workspace = true
+holtmail-insight-parcel.workspace = true
+holtmail-insight-pass.workspace = true
+holtmail-insight-schemaorg.workspace = true
+holtmail-insight-unsubscribe.workspace = true
+holtmail-insights.workspace = true
+holtmail-mime.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 152a02bc636d23b9972219453f3882c743676f220100b83d3d53b2cae19f9d9a # shrinks to entries = {"example¡com": (TopicSet(1), "wikidata:Q1")}, version = "A"

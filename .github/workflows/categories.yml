@@ -1,0 +1,239 @@
+name: Categories
+
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: categories
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - id: version
+        run: echo "version=$(date -u +%Y%m%d%H)" >> "$GITHUB_OUTPUT"
+      - name: Download the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p previous
+          if gh release view categories-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release download categories-latest --repo "$GITHUB_REPOSITORY" --dir previous \
+              --pattern manifest.json --pattern '*.tsv.gz'
+          else
+            echo "no categories-latest release yet"
+          fi
+          if [ ! -f previous/wikidata-categories.tsv.gz ]; then
+            cp crates/category-domains/data/wikidata-categories.tsv.gz previous/
+          fi
+      - name: Build the builder
+        run: cargo build --release --locked -p holtmail-category-builder
+      - name: Build the Wikidata file
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist reports
+          target/release/holtmail-category-builder wikidata \
+            --previous previous/wikidata-categories.tsv.gz \
+            --out dist/wikidata-categories.tsv.gz \
+            --version "$VERSION" \
+            --report reports/wikidata.txt
+      - name: Fetch UT1 at the pinned commit
+        run: |
+          set -eu
+          commit=$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' apps/category-builder/data/ut1.toml)
+          repository=$(sed -n 's/^repository = "\(https:[^"]*\)"$/\1/p' apps/category-builder/data/ut1.toml)
+          test -n "$commit" && test -n "$repository"
+          git init -q "$RUNNER_TEMP/ut1"
+          git -C "$RUNNER_TEMP/ut1" fetch -q --depth 1 "$repository" "$commit"
+          git -C "$RUNNER_TEMP/ut1" checkout -q FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/ut1" rev-parse HEAD)" = "$commit"
+      - name: Build the UT1 file
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          previous=()
+          if [ -f previous/ut1-categories.tsv.gz ]; then
+            previous=(--previous previous/ut1-categories.tsv.gz)
+          fi
+          target/release/holtmail-category-builder ut1 \
+            --dir "$RUNNER_TEMP/ut1" \
+            --out dist/ut1-categories.tsv.gz \
+            --version "$VERSION" \
+            "${previous[@]}" \
+            --report reports/ut1.txt
+      - name: Sanity gate
+        run: target/release/holtmail-category-builder gate --dir dist --previous previous
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: categories
+          path: |
+            dist/wikidata-categories.tsv.gz
+            dist/ut1-categories.tsv.gz
+            dist/LICENSE-DATA
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: categories-reports
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+      - name: Build the builder
+        run: |
+          cargo build --release --locked -p holtmail-category-builder
+          cp target/release/holtmail-category-builder "$RUNNER_TEMP/holtmail-category-builder"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories
+          path: dist
+      - name: Download the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p previous
+          if gh release view categories-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release download categories-latest --repo "$GITHUB_REPOSITORY" --dir previous \
+              --pattern manifest.json --pattern '*.tsv.gz'
+          fi
+          if [ ! -f previous/wikidata-categories.tsv.gz ]; then
+            cp crates/category-domains/data/wikidata-categories.tsv.gz previous/
+          fi
+      - name: Gate and write the manifest
+        env:
+          KEY_ID: ${{ vars.CATEGORIES_KEY_ID }}
+        run: |
+          "$RUNNER_TEMP/holtmail-category-builder" manifest \
+            --dir dist --previous previous --key-id "$KEY_ID" --not-after-days 60
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: categories-manifest
+          path: dist/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    needs: [build, manifest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: apps/category-builder/scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories-manifest
+          path: dist
+      - name: Sign
+        env:
+          CATEGORIES_SIGNING_KEY: ${{ secrets.CATEGORIES_SIGNING_KEY }}
+          KEY_ID: ${{ vars.CATEGORIES_KEY_ID }}
+        run: bash apps/category-builder/scripts/sign-manifest.sh dist "$KEY_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: categories-signature
+          path: dist/manifest.json.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [build, manifest, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories-manifest
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: categories-signature
+          path: dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -eu
+          tag="categories-${VERSION:0:8}"
+          data=(
+            dist/wikidata-categories.tsv.gz
+            dist/ut1-categories.tsv.gz
+            dist/LICENSE-DATA
+          )
+          files=("${data[@]}" dist/manifest.json.sig dist/manifest.json)
+          notes="Holtmail category data, version $VERSION. wikidata-categories.tsv.gz: CC0 1.0. ut1-categories.tsv.gz: Contains data from UT1 (Université Toulouse Capitole), CC BY-SA 4.0; see LICENSE-DATA."
+          gh release create "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "Categories $VERSION" --notes "$notes" --latest=false
+          if gh release view categories-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload categories-latest "${data[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload categories-latest dist/manifest.json.sig --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload categories-latest dist/manifest.json --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit categories-latest --repo "$GITHUB_REPOSITORY" \
+              --title "Categories (latest: $VERSION)" --notes "$notes" --latest=false
+          else
+            gh release create categories-latest "${files[@]}" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Categories (latest: $VERSION)" --notes "$notes" --latest=false
+          fi
+      - name: Check the published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -eu
+          for release in "categories-${VERSION:0:8}" categories-latest; do
+            rm -rf published
+            gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir published
+            for file in dist/*; do
+              cmp "$file" "published/$(basename "$file")"
+            done
+            echo "$release matches the signed files"
+          done

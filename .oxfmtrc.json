@@ -5,5 +5,12 @@
   "printWidth": 100,
   "sortImports": true,
   "sortPackageJson": true,
-  "ignorePatterns": ["bun.lock", "crates/**", "target/**", "docs/**", "**/dist/**"]
+  "ignorePatterns": [
+    "bun.lock",
+    "crates/**",
+    "target/**",
+    "docs/**",
+    "**/dist/**",
+    "apps/category-builder/tests/fixtures/**"
+  ]
 }

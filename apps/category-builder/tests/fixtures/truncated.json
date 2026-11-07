@@ -1,0 +1,22 @@
+{
+  "head" : {
+    "vars" : [ "org", "class", "site" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "org" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q9100001"
+      },
+      "class" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q9000001"
+      },
+      "site" : {
+        "type" : "uri",
+        "value" : "https://www.examp
+SPARQL-QUERY: queryStr=SELECT ?org ?class ?site WHERE { VALUES ?class { wd:Q9000001 } ?org wdt:P452 ?class; wdt:P856 ?site }
+java.util.concurrent.TimeoutException
+	at java.util.concurrent.FutureTask.get(FutureTask.java:205)
+	at com.bigdata.rdf.sail.webapp.BigdataServlet.submitApiTask(BigdataServlet.java:292)
+	at com.bigdata.rdf.sail.webapp.QueryServlet.doSparqlQuery(QueryServlet.java:678)

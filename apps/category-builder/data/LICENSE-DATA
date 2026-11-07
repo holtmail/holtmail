@@ -1,0 +1,15 @@
+ut1-categories.tsv.gz
+
+Contains data from UT1 (Université Toulouse Capitole), CC BY-SA 4.0.
+
+The file is an adaptation of the UT1 blacklists by Fabrice Prigent and the Université
+Toulouse Capitole, taken from the mirror @REPOSITORY@ at commit @COMMIT@. The categories
+shopping, jobsearch and social_networks were mapped to the Holtmail topics purchases, jobs and
+social; host names were normalised, and hosts that are IP addresses, shared platforms or
+mailbox providers were removed.
+
+The file is licensed under the Creative Commons Attribution-ShareAlike 4.0 International
+License (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/legalcode
+It is published next to this notice and is never bundled into Holtmail.
+
+Changes and the build tool: https://github.com/holtmail/holtmail/tree/main/apps/category-builder

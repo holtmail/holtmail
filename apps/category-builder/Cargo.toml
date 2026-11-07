@@ -1,0 +1,37 @@
+[package]
+name = "holtmail-category-builder"
+description = "Builds the category data files from Wikidata and UT1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "holtmail-category-builder"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+clap.workspace = true
+ed25519-dalek = { workspace = true, features = ["zeroize"] }
+getrandom.workspace = true
+holtmail-category.workspace = true
+holtmail-category-data.workspace = true
+holtmail-links.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "time"] }
+toml.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

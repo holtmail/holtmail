@@ -1,0 +1,10 @@
+From: Example Cafe <hello@cafe.example.com>
+To: Ada Example <ada@example.org>
+Subject: Thanks for visiting
+Date: Fri, 06 Nov 2026 12:40:00 +0000
+Message-ID: <kind-unsub-only-transactional@cafe.example.com>
+List-Unsubscribe: <mailto:leave@cafe.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Thanks for stopping by today, Ada. We hope you enjoyed your lunch.

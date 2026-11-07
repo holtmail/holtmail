@@ -1,0 +1,9 @@
+{
+  "head": { "vars": ["org", "class", "site"] },
+  "results": { "bindings": [
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9200001" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000002" }, "site": { "type": "uri", "value": "https://fly.example/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9200002" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000031" }, "site": { "type": "uri", "value": "https://bank.example" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9200003" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000003" }, "site": { "type": "uri", "value": "https://pay.example.com/" } },
+    { "org": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9200004" }, "class": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000002" }, "site": { "type": "uri", "value": "https://www.example.org/" } }
+  ] }
+}

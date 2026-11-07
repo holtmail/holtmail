@@ -1,0 +1,14 @@
+# UT1 input: the pinned upstream commit and the categories mapped to topics. CC0 1.0:
+# dedicated to the public domain.
+#
+# Only non-sensitive topics may be mapped. `bank` and `financial` are left out on purpose:
+# finance, health and government never come from UT1. The commit is moved forward by hand,
+# after reading the upstream diff.
+
+repository = "https://github.com/olbat/ut1-blacklists"
+commit = "03501c64d230df9d84124176558d758351027be1"
+
+[categories]
+shopping = "purchases"
+jobsearch = "jobs"
+social_networks = "social"

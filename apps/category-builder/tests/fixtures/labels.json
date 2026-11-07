@@ -1,0 +1,8 @@
+{
+  "head": { "vars": ["item", "l"] },
+  "results": { "bindings": [
+    { "item": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000001" }, "l": { "xml:lang": "en", "type": "literal", "value": "test retail" } },
+    { "item": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000002" }, "l": { "xml:lang": "en", "type": "literal", "value": "test airline" } },
+    { "item": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000003" }, "l": { "xml:lang": "en", "type": "literal", "value": "test bank" } }
+  ] }
+}

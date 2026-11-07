@@ -1,0 +1,28 @@
+From: Example Shop <orders@shop.example.com>
+To: Ada Example <ada@example.org>
+Subject: Your order is confirmed
+Date: Fri, 06 Nov 2026 09:12:00 +0000
+Message-ID: <kind-transactional-via-esp@shop.example.com>
+X-SES-Outgoing: 2026.11.06-198.51.100.7
+Feedback-ID: 1.eu-west-1.invented:AmazonSES
+List-Unsubscribe: <https://shop.example.com/unsubscribe/ada>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "ORD-5512",
+ "seller": {"@type": "Organization", "name": "Example Shop"},
+ "price": "24.50",
+ "priceCurrency": "EUR",
+ "orderStatus": "https://schema.org/OrderProcessing",
+ "url": "https://shop.example.com/orders/ORD-5512"
+}
+</script>
+</head><body>
+<p>Thanks for your order, Ada. We will let you know when it ships.</p>
+</body></html>

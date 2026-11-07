@@ -1,0 +1,10 @@
+From: Example Bank <statements@bank.example.com>
+To: Ada Example <ada@example.org>
+Subject: Please confirm your details
+Date: Fri, 06 Nov 2026 08:30:00 +0000
+Message-ID: <finance-override-spoofed@bank.example.com>
+Authentication-Results: mx.example.org; dkim=pass header.d=bank.example.com header.s=s1 header.b=ZmFrZWZh
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Dear customer, please confirm your details with us this week.

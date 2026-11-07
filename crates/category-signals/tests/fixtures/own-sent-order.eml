@@ -1,0 +1,26 @@
+From: Ada Example <ada@example.org>
+To: Grace Example <grace@example.org>
+Subject: Order for the workshop kit
+Date: Fri, 06 Nov 2026 11:20:00 +0000
+Message-ID: <own-sent-order@example.org>
+X-SES-Outgoing: 2026.11.06-198.51.100.9
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<html><head>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "Order",
+ "orderNumber": "ORD-0417",
+ "seller": {"@type": "Organization", "name": "Ada Example Crafts"},
+ "price": "24.50",
+ "priceCurrency": "EUR",
+ "orderStatus": "https://schema.org/OrderProcessing",
+ "url": "https://crafts.example.org/orders/ORD-0417"
+}
+</script>
+</head><body>
+<p>Hi Grace, here is the order for the workshop kit we talked about.</p>
+</body></html>

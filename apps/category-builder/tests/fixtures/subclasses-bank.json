@@ -1,0 +1,7 @@
+{
+  "head": { "vars": ["c"] },
+  "results": { "bindings": [
+    { "c": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000003" } },
+    { "c": { "type": "uri", "value": "http://www.wikidata.org/entity/Q9000031" } }
+  ] }
+}

@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-category"
+description = "Contract for message categorizers: the kind and topics of a message from its stored signals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+holtmail-insight.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

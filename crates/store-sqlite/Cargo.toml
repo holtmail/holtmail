@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 holtmail-blob.workspace = true
+holtmail-category.workspace = true
 holtmail-core.workspace = true
 holtmail-store.workspace = true
 async-trait.workspace = true

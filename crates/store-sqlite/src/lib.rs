@@ -2,6 +2,7 @@
 
 mod aliases;
 mod calendar;
+mod categories;
 mod deletion;
 mod insights;
 mod ledger;
@@ -206,6 +207,7 @@ impl ArchiveStore for SqliteStore {
              (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
             "DELETE FROM folders WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM account_runs WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM account_authserv WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM person_emails WHERE archive_id = ?1",
             "DELETE FROM person_collections WHERE person_id IN (SELECT id FROM people WHERE archive_id = ?1)",
             "DELETE FROM people WHERE archive_id = ?1",
@@ -229,6 +231,11 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM message_remote_images WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM remote_scans WHERE message_id IN (SELECT id FROM messages WHERE archive_id = ?1)",
             "DELETE FROM message_insights WHERE archive_id = ?1",
+            "DELETE FROM message_topics WHERE archive_id = ?1",
+            "DELETE FROM message_categories WHERE archive_id = ?1",
+            "DELETE FROM category_overrides WHERE archive_id = ?1",
+            "DELETE FROM insight_reindex WHERE archive_id = ?1",
+            "DELETE FROM unsubscribe_requests WHERE archive_id = ?1",
             "DELETE FROM messages WHERE archive_id = ?1",
         ] {
             sqlx::query(statement)
@@ -373,6 +380,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM deleted_locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folders WHERE account_id = ?1",
             "DELETE FROM account_runs WHERE account_id = ?1",
+            "DELETE FROM account_authserv WHERE account_id = ?1",
             "UPDATE collections SET account_id = NULL WHERE account_id = ?1",
         ] {
             sqlx::query(statement)
@@ -717,6 +725,15 @@ impl MessageStore for SqliteStore {
                   JOIN labels lb ON lb.id = ml.label_id AND lb.name = ?",
             );
         }
+        match query.category {
+            Some(CategoryFilter::Kind(_)) => {
+                sql.push_str(" JOIN message_categories mc ON mc.message_id = m.id AND mc.kind = ?")
+            }
+            Some(CategoryFilter::Topic(_)) => {
+                sql.push_str(" JOIN message_topics mt ON mt.message_id = m.id AND mt.topic = ?")
+            }
+            None => {}
+        }
         sql.push_str(
             " WHERE m.archive_id = ? AND (m.date, m.id) < (?, ?)
               ORDER BY m.date DESC, m.id DESC LIMIT ?",
@@ -727,6 +744,11 @@ impl MessageStore for SqliteStore {
         }
         if let Some(label) = &query.label {
             statement = statement.bind(label.clone());
+        }
+        match query.category {
+            Some(CategoryFilter::Kind(kind)) => statement = statement.bind(kind.name()),
+            Some(CategoryFilter::Topic(topic)) => statement = statement.bind(topic.name()),
+            None => {}
         }
         let rows = statement
             .bind(query.archive_id.to_string())
@@ -817,6 +839,25 @@ impl MessageStore for SqliteStore {
                 let message: MessageId = parse(&get::<String>(&row, "message_id")?)?;
                 if let Some(extras) = out.get_mut(&message) {
                     extras.insight_kinds = get::<i64>(&row, "kinds")? as u64;
+                }
+            }
+            let categories = format!(
+                "SELECT message_id, kind, list_topic FROM message_categories
+                 WHERE message_id IN ({marks})"
+            );
+            let mut query = sqlx::query(AssertSqlSafe(categories));
+            for id in chunk {
+                query = query.bind(id.to_string());
+            }
+            for row in query.fetch_all(&self.pool).await.map_err(backend)? {
+                let message: MessageId = parse(&get::<String>(&row, "message_id")?)?;
+                if let Some(extras) = out.get_mut(&message) {
+                    extras.kind = get::<Option<String>>(&row, "kind")?
+                        .as_deref()
+                        .and_then(holtmail_category::MessageKind::from_name);
+                    extras.topic = get::<Option<String>>(&row, "list_topic")?
+                        .as_deref()
+                        .and_then(holtmail_category::Topic::from_name);
                 }
             }
         }
@@ -2096,6 +2137,114 @@ mod tests {
         holtmail_store::testing::conformance(Arc::new(store)).await;
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn times_category_counts_on_a_generated_archive() {
+        use holtmail_category::{CategorySource, MessageKind, TopicSet, TrustState};
+        use std::time::Instant;
+
+        const MESSAGES: i64 = if cfg!(debug_assertions) {
+            100_000
+        } else {
+            500_000
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open(dir.path().join("holtmail.db"))
+            .await
+            .unwrap();
+        let archive = store.create_archive("Generated").await.unwrap().id;
+        for statement in [
+            "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < ?2)
+             INSERT INTO messages (id, archive_id, thread_id, blob_id, size, from_json, to_json,
+                 cc_json, bcc_json, archived_at, date, preview, attachment_count)
+             SELECT printf('00000000-0000-7000-8000-%012d', n), ?1,
+                 printf('00000000-0000-7000-9000-%012d', n), printf('%064d', n), 100,
+                 '[]', '[]', '[]', '[]', n, n, '', 0 FROM s",
+            "INSERT INTO message_categories (message_id, archive_id, derive_fp, trust, one_click_ok,
+                 own, sender_address, sender_domain, derived_kind, derived_kind_source,
+                 derived_topics, derived_sources, kind)
+             SELECT id, archive_id, 'd1', 'unknown', 0, 0,
+                 CASE WHEN date % 10 = 0 THEN 'news@big.example.com'
+                      ELSE 'a' || (date % 1000) || '@example.org' END,
+                 CASE WHEN date % 10 = 0 THEN 'big.example.com' ELSE 'example.org' END,
+                 'bulk', 'headers', 0, '{}',
+                 CASE date % 4 WHEN 0 THEN 'personal' WHEN 1 THEN 'list' WHEN 2 THEN 'bulk'
+                      ELSE 'notification' END
+             FROM messages WHERE archive_id = ?1 AND ?2 > 0",
+            "INSERT INTO message_topics (message_id, archive_id, topic)
+             SELECT id, archive_id, 'purchases' FROM messages WHERE archive_id = ?1 AND date % 3 = 0
+             UNION ALL SELECT id, archive_id, 'travel' FROM messages
+                 WHERE archive_id = ?1 AND date % 5 = 0
+             UNION ALL SELECT id, archive_id, 'health' FROM messages
+                 WHERE archive_id = ?1 AND date % 7 = 0 AND ?2 > 0",
+        ] {
+            sqlx::query(statement)
+                .bind(archive.to_string())
+                .bind(MESSAGES)
+                .execute(&store.pool)
+                .await
+                .unwrap();
+        }
+
+        let started = Instant::now();
+        let counts = store.category_counts(archive, false).await.unwrap();
+        println!(
+            "category_counts over {MESSAGES} messages: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(
+            counts.kinds.iter().map(|(_, n)| *n).sum::<u64>(),
+            MESSAGES as u64
+        );
+
+        let started = Instant::now();
+        let (_, changed) = store
+            .put_category_override(
+                &CategoryOverride {
+                    id: CategoryOverrideId::new(),
+                    archive_id: archive,
+                    scope: OverrideScope::Domain,
+                    key: "big.example.com".into(),
+                    kind: Some(MessageKind::Personal),
+                    topics: Some(TopicSet::EMPTY),
+                    created_at: Timestamp::from_secs(1),
+                    created_by: UserId::new(),
+                },
+                CategoryPolicy::default(),
+            )
+            .await
+            .unwrap();
+        println!(
+            "override on a {}-message domain: {:?}",
+            MESSAGES / 10,
+            started.elapsed()
+        );
+        assert_eq!(changed.len(), (MESSAGES / 10) as usize);
+
+        let writes: Vec<CategoryWrite> = (1..=500)
+            .map(|n| CategoryWrite {
+                message: format!("00000000-0000-7000-8000-{n:012}").parse().unwrap(),
+                archive,
+                derive_fp: "d2".into(),
+                trust: TrustState::Unknown,
+                trust_authserv: None,
+                one_click_ok: false,
+                own: false,
+                sender_address: Some(format!("a{n}@example.org")),
+                sender_domain: Some("example.org".into()),
+                derived_kind: MessageKind::Notification,
+                derived_kind_source: CategorySource::Headers,
+                derived_topics: TopicSet::EMPTY,
+                derived_sources: Default::default(),
+            })
+            .collect();
+        let started = Instant::now();
+        store
+            .set_message_categories(&writes, CategoryPolicy::default())
+            .await
+            .unwrap();
+        println!("set_message_categories, 500 rows: {:?}", started.elapsed());
+    }
+
     #[tokio::test]
     async fn names_messages_the_ledger_does_not_match() {
         let dir = tempfile::tempdir().unwrap();
@@ -2270,6 +2419,7 @@ mod tests {
         let result = store
             .list_messages(&MessageQuery {
                 label: None,
+                category: None,
                 archive_id: archive,
                 folder_id: None,
                 after: Some(PageCursor("garbage".into())),

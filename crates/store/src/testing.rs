@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use holtmail_blob::BlobId;
+use holtmail_category::{CategorySource, MessageKind, Topic, TopicSet, TrustState};
 use holtmail_core::{
     AccountId, Address, AliasServiceId, ArchiveId, CollectionId, EventGroupId, ItemId, MessageId,
     PersonId, PersonOverrideId, Timestamp, UserId,
@@ -49,6 +50,9 @@ pub async fn conformance(store: Arc<dyn Store>) {
     webhooks(&*store).await;
     aliases(&*store).await;
     insights(&*store).await;
+    insight_categories(&*store).await;
+    reindex_queue(&*store).await;
+    unsubscribe_requests(&*store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -1505,6 +1509,7 @@ async fn lists_page_newest_first(store: &dyn Store) {
                 archive_id: archive,
                 folder_id: None,
                 label: None,
+                category: None,
                 after: after.clone(),
                 limit: 3,
             })
@@ -1527,6 +1532,7 @@ async fn lists_page_newest_first(store: &dyn Store) {
             archive_id: archive,
             folder_id: Some(folder.id),
             label: None,
+            category: None,
             after: None,
             limit: 100,
         })
@@ -1717,6 +1723,8 @@ async fn extras_and_unread(store: &dyn Store) {
             folder_ids: both,
             labels: Vec::new(),
             insight_kinds: 0,
+            kind: None,
+            topic: None,
         }
     );
     assert_eq!(all[&reply].thread_count, 2);
@@ -1729,6 +1737,8 @@ async fn extras_and_unread(store: &dyn Store) {
             folder_ids: vec![inbox.id],
             labels: Vec::new(),
             insight_kinds: 0,
+            kind: None,
+            topic: None,
         },
         "a removed location counted"
     );
@@ -1896,6 +1906,7 @@ async fn labels(store: &dyn Store) {
             archive_id: archive,
             folder_id: None,
             label: Some("Inbox".into()),
+            category: None,
             after: None,
             limit: 1,
         })
@@ -1907,6 +1918,7 @@ async fn labels(store: &dyn Store) {
             archive_id: archive,
             folder_id: None,
             label: Some("Inbox".into()),
+            category: None,
             after: labeled.next,
             limit: 10,
         })
@@ -1922,6 +1934,7 @@ async fn labels(store: &dyn Store) {
             archive_id: archive,
             folder_id: Some(all.id),
             label: Some("Projects/2025".into()),
+            category: None,
             after: None,
             limit: 10,
         })
@@ -1933,6 +1946,7 @@ async fn labels(store: &dyn Store) {
             archive_id: archive,
             folder_id: None,
             label: Some("inbox".into()),
+            category: None,
             after: None,
             limit: 10,
         })
@@ -4280,7 +4294,14 @@ async fn insights(store: &dyn Store) {
     assert_eq!(views[&ids[4]].insights.outcome, InsightOutcome::Unreadable);
     let summaries = store.insights_among(&many).await.unwrap();
     assert_eq!(summaries.len(), 3);
-    assert_eq!(summaries[&ids[1]], InsightSummary { kinds: 2 });
+    assert_eq!(
+        summaries[&ids[1]],
+        InsightSummary {
+            kinds: 2,
+            kind: None,
+            topic: None,
+        }
+    );
     assert!(store.insights_among(&[]).await.unwrap().is_empty());
     assert!(store.insight_views_among(&[]).await.unwrap().is_empty());
 
@@ -4322,4 +4343,1284 @@ async fn insights(store: &dyn Store) {
     assert!(store.insight_view(foreign).await.unwrap().is_some());
     store.delete_archive(other).await.unwrap();
     assert!(store.insight_view(foreign).await.unwrap().is_none());
+}
+
+#[allow(clippy::too_many_arguments)]
+fn category_write(
+    message: MessageId,
+    archive: ArchiveId,
+    fp: &str,
+    trust: TrustState,
+    sender: Option<&str>,
+    domain: Option<&str>,
+    kind: MessageKind,
+    topics: &[Topic],
+) -> CategoryWrite {
+    CategoryWrite {
+        message,
+        archive,
+        derive_fp: fp.into(),
+        trust,
+        trust_authserv: Some("mx.example.org".into()),
+        one_click_ok: false,
+        own: false,
+        sender_address: sender.map(Into::into),
+        sender_domain: domain.map(Into::into),
+        derived_kind: kind,
+        derived_kind_source: CategorySource::Headers,
+        derived_topics: topics.iter().copied().collect(),
+        derived_sources: topics
+            .iter()
+            .map(|topic| (*topic, CategorySource::Content))
+            .collect(),
+    }
+}
+
+fn topic_set(topics: &[Topic]) -> TopicSet {
+    topics.iter().copied().collect()
+}
+
+async fn category_row(store: &dyn Store, message: MessageId) -> Option<CategoryRow> {
+    store
+        .insight_view(message)
+        .await
+        .unwrap()
+        .and_then(|view| view.categories)
+        .map(|view| view.row)
+}
+
+async fn listed(store: &dyn Store, archive: ArchiveId, filter: CategoryFilter) -> Vec<MessageId> {
+    let mut ids: Vec<MessageId> = store
+        .list_messages(&MessageQuery {
+            archive_id: archive,
+            folder_id: None,
+            label: None,
+            category: Some(filter),
+            after: None,
+            limit: 100,
+        })
+        .await
+        .unwrap()
+        .items
+        .iter()
+        .map(|m| m.id)
+        .collect();
+    ids.sort();
+    ids
+}
+
+fn sorted(mut ids: Vec<MessageId>) -> Vec<MessageId> {
+    ids.sort();
+    ids
+}
+
+async fn insight_categories(store: &dyn Store) {
+    use MessageKind::{Bulk, List, Notification, Personal};
+    use Topic::{Finance, Health, Purchases, Social, Travel};
+
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let account = import_account(store, archive).await;
+    let second = import_account(store, archive).await;
+    let inbox = store
+        .upsert_folder(account.id, "INBOX", None)
+        .await
+        .unwrap();
+    let kept = store
+        .upsert_folder(second.id, "Archive", None)
+        .await
+        .unwrap();
+    let mut ids = Vec::new();
+    for n in 0..6u32 {
+        let id = store
+            .insert_message(message(archive, 9701 + n, 1_700_000_000 - i64::from(n)))
+            .await
+            .unwrap()
+            .message_id;
+        store
+            .record_location(
+                id,
+                inbox.id,
+                Some(u64::from(n) + 1),
+                &[],
+                Timestamp::from_secs(1),
+            )
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    store
+        .record_location(ids[0], kept.id, Some(1), &[], Timestamp::from_secs(1))
+        .await
+        .unwrap();
+    store
+        .mark_removed(kept.id, &[1], Timestamp::from_secs(2))
+        .await
+        .unwrap();
+    let foreign = store
+        .insert_message(message(other, 9711, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    let outcomes = [
+        InsightOutcome::Ok,
+        InsightOutcome::Partial,
+        InsightOutcome::Ok,
+        InsightOutcome::Ok,
+        InsightOutcome::Unreadable,
+    ];
+    for (n, outcome) in outcomes.into_iter().enumerate() {
+        let row = InsightRow {
+            from_address: Some(format!("sender{n}@shop.example.com")),
+            signals: 1 << n,
+            kinds: 1 << 63,
+            auth: format!(r#"{{"v":1,"n":{n}}}"#),
+            ..insight_row(ids[n], archive, "x1", outcome)
+        };
+        store.set_message_insights(ids[n], &row).await.unwrap();
+    }
+    store
+        .set_message_insights(
+            foreign,
+            &insight_row(foreign, other, "x1", InsightOutcome::Ok),
+        )
+        .await
+        .unwrap();
+    let alias = MessageAlias {
+        provider: "simplelogin".into(),
+        alias: "shop@alias.example.org".into(),
+        sender: Some(Address {
+            name: Some("Shop".into()),
+            email: "orders@shop.example.com".into(),
+        }),
+        reverse_alias: Some("ra_1@sl.example.org".into()),
+        signed: true,
+    };
+    store.set_message_alias(ids[0], Some(&alias)).await.unwrap();
+
+    let fp = "d1";
+    let derivable = sorted(ids[..4].to_vec());
+    let inputs = store.derive_inputs(archive, fp, None, 100).await.unwrap();
+    assert_eq!(
+        inputs.iter().map(|r| r.message).collect::<Vec<_>>(),
+        derivable,
+        "rows with outcome ok or partial and no categories row, ascending, from the archive only"
+    );
+    assert_eq!(store.count_needing_derive(archive, fp).await.unwrap(), 4);
+    assert_eq!(
+        store
+            .count_needing_derive(ArchiveId::new(), fp)
+            .await
+            .unwrap(),
+        0
+    );
+    let first = inputs.iter().find(|r| r.message == ids[0]).unwrap();
+    assert_eq!(first.archive, archive);
+    assert_eq!(
+        first.from_address.as_deref(),
+        Some("sender0@shop.example.com")
+    );
+    assert_eq!(first.signals, 1);
+    assert_eq!(first.kinds, 1 << 63);
+    assert_eq!(first.auth, r#"{"v":1,"n":0}"#);
+    assert_eq!(first.items, r#"{"v":1,"items":[]}"#);
+    assert_eq!(first.alias.as_ref(), Some(&alias));
+    assert_eq!(
+        first.accounts,
+        sorted_accounts(&[account.id, second.id]),
+        "every account with a location, removed or not, sorted"
+    );
+    let plain = inputs.iter().find(|r| r.message == ids[1]).unwrap();
+    assert_eq!(plain.alias, None);
+    assert_eq!(plain.accounts, [account.id]);
+    assert_eq!(
+        store.derive_input(ids[0]).await.unwrap().as_ref(),
+        Some(first)
+    );
+    assert!(
+        store.derive_input(ids[4]).await.unwrap().is_none(),
+        "unreadable"
+    );
+    assert!(
+        store.derive_input(ids[5]).await.unwrap().is_none(),
+        "no insights row"
+    );
+    assert!(
+        store
+            .derive_input(MessageId::new())
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let mut paged = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store.derive_inputs(archive, fp, after, 3).await.unwrap();
+        assert!(page.len() <= 3);
+        let Some(last) = page.last().map(|r| r.message) else {
+            break;
+        };
+        paged.extend(page.iter().map(|r| r.message));
+        after = Some(last);
+    }
+    assert_eq!(paged, derivable, "keyset paging visits each row once");
+
+    let health_off = CategoryPolicy { health: false };
+    let health_on = CategoryPolicy { health: true };
+    let aligned = || TrustState::Aligned {
+        domain: "shop.example.com".into(),
+    };
+    let w0 = category_write(
+        ids[0],
+        archive,
+        fp,
+        aligned(),
+        Some("a@shop.example.com"),
+        Some("shop.example.com"),
+        Notification,
+        &[Purchases, Finance],
+    );
+    let w1 = category_write(
+        ids[1],
+        archive,
+        fp,
+        TrustState::Unverified,
+        Some("a@shop.example.com"),
+        Some("shop.example.com"),
+        Bulk,
+        &[Purchases],
+    );
+    let w2 = category_write(
+        ids[2],
+        archive,
+        fp,
+        TrustState::Unknown,
+        Some("b@shop.example.com"),
+        Some("shop.example.com"),
+        Personal,
+        &[],
+    );
+    let w3 = category_write(
+        ids[3],
+        archive,
+        fp,
+        TrustState::Relayed {
+            provider: "simplelogin".into(),
+        },
+        Some("c@other.example.org"),
+        Some("other.example.org"),
+        Personal,
+        &[Health],
+    );
+    let unknown_write = category_write(
+        MessageId::new(),
+        archive,
+        fp,
+        TrustState::Unknown,
+        None,
+        None,
+        Personal,
+        &[],
+    );
+    assert!(matches!(
+        store
+            .set_message_categories(
+                &[category_write(
+                    ids[0],
+                    other,
+                    fp,
+                    TrustState::Unknown,
+                    None,
+                    None,
+                    Personal,
+                    &[],
+                )],
+                health_off,
+            )
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    let writes = [
+        w0.clone(),
+        w1.clone(),
+        unknown_write,
+        w2.clone(),
+        w3.clone(),
+    ];
+    assert_eq!(
+        store
+            .set_message_categories(&writes, health_off)
+            .await
+            .unwrap(),
+        ids[..4],
+        "new rows count as changed, in write order; unknown messages are skipped"
+    );
+    assert!(
+        store
+            .set_message_categories(&writes, health_off)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an unchanged rewrite changes nothing"
+    );
+    assert!(
+        store
+            .derive_inputs(archive, fp, None, 100)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.count_needing_derive(archive, fp).await.unwrap(), 0);
+    assert_eq!(
+        store
+            .derive_inputs(archive, "d2", None, 100)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.message)
+            .collect::<Vec<_>>(),
+        derivable,
+        "a stale fingerprint is listed"
+    );
+    let w1 = CategoryWrite {
+        derive_fp: "d2".into(),
+        ..w1
+    };
+    assert!(
+        store
+            .set_message_categories(std::slice::from_ref(&w1), health_off)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a new fingerprint alone changes nothing effective"
+    );
+    let w1 = CategoryWrite {
+        derived_kind: Notification,
+        ..w1
+    };
+    assert_eq!(
+        store
+            .set_message_categories(std::slice::from_ref(&w1), health_off)
+            .await
+            .unwrap(),
+        [ids[1]]
+    );
+    assert_eq!(
+        store
+            .derive_inputs(archive, fp, None, 100)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.message)
+            .collect::<Vec<_>>(),
+        [ids[1]]
+    );
+
+    let row0 = category_row(store, ids[0]).await.unwrap();
+    assert_eq!(row0.write, w0, "a write reads back whole");
+    assert_eq!(row0.kind, Notification);
+    assert_eq!(row0.topics, topic_set(&[Purchases, Finance]));
+    assert_eq!(row0.list_topic, Some(Purchases));
+    assert_eq!((row0.kind_override, row0.topics_override), (None, None));
+    let row3 = category_row(store, ids[3]).await.unwrap();
+    assert_eq!(row3.write, w3);
+    assert_eq!(
+        row3.topics,
+        topic_set(&[Health]),
+        "derived topics are stored as given"
+    );
+    assert_eq!(row3.list_topic, None, "the list topic is never health");
+    assert!(category_row(store, ids[4]).await.is_none());
+
+    let counts = store.category_counts(archive, false).await.unwrap();
+    assert_eq!(
+        counts.kinds,
+        [(Personal, 2), (List, 0), (Bulk, 0), (Notification, 2)]
+    );
+    assert_eq!(
+        counts.topics,
+        Topic::ALL
+            .iter()
+            .filter(|t| **t != Health)
+            .map(|&t| (
+                t,
+                match t {
+                    Purchases => 2,
+                    Finance => 1,
+                    _ => 0,
+                }
+            ))
+            .collect::<Vec<_>>(),
+        "every topic but health in taxonomy order, zeros included"
+    );
+    let with_health = store.category_counts(archive, true).await.unwrap();
+    assert_eq!(with_health.topics.len(), Topic::ALL.len());
+    assert!(with_health.topics.contains(&(Health, 1)));
+    assert_eq!(
+        listed(store, archive, CategoryFilter::Kind(Personal)).await,
+        sorted(vec![ids[2], ids[3]])
+    );
+    assert_eq!(
+        listed(store, archive, CategoryFilter::Topic(Finance)).await,
+        [ids[0]]
+    );
+    assert!(
+        listed(store, archive, CategoryFilter::Kind(List))
+            .await
+            .is_empty()
+    );
+    let extras = store
+        .message_extras(&[ids[0], ids[3], ids[5]], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (extras[&ids[0]].kind, extras[&ids[0]].topic),
+        (Some(Notification), Some(Purchases))
+    );
+    assert_eq!(
+        (extras[&ids[3]].kind, extras[&ids[3]].topic),
+        (Some(Personal), None)
+    );
+    assert_eq!((extras[&ids[5]].kind, extras[&ids[5]].topic), (None, None));
+    let summaries = store.insights_among(&ids).await.unwrap();
+    assert_eq!(
+        (summaries[&ids[1]].kind, summaries[&ids[1]].topic),
+        (Some(Notification), Some(Purchases))
+    );
+    assert_eq!(
+        (summaries[&ids[4]].kind, summaries[&ids[4]].topic),
+        (None, None)
+    );
+
+    let user = UserId::new();
+    let shop = CategoryOverride {
+        id: CategoryOverrideId::new(),
+        archive_id: archive,
+        scope: OverrideScope::Domain,
+        key: "shop.example.com".into(),
+        kind: Some(List),
+        topics: None,
+        created_at: Timestamp::from_secs(10),
+        created_by: user,
+    };
+    assert!(matches!(
+        store
+            .put_category_override(
+                &CategoryOverride {
+                    kind: None,
+                    ..shop.clone()
+                },
+                health_off
+            )
+            .await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .put_category_override(
+                &CategoryOverride {
+                    archive_id: ArchiveId::new(),
+                    ..shop.clone()
+                },
+                health_off
+            )
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    let (stored, changed) = store
+        .put_category_override(&shop, health_off)
+        .await
+        .unwrap();
+    assert_eq!(stored, shop);
+    assert_eq!(
+        changed,
+        sorted(ids[..3].to_vec()),
+        "only rows of the domain, ascending"
+    );
+    let person = CategoryOverride {
+        id: CategoryOverrideId::new(),
+        scope: OverrideScope::Address,
+        key: "a@shop.example.com".into(),
+        kind: None,
+        topics: Some(topic_set(&[Finance, Travel])),
+        created_at: Timestamp::from_secs(20),
+        ..shop.clone()
+    };
+    let (person, changed) = store
+        .put_category_override(&person, health_off)
+        .await
+        .unwrap();
+    assert_eq!(changed, sorted(vec![ids[0], ids[1]]));
+    let view0 = store
+        .insight_view(ids[0])
+        .await
+        .unwrap()
+        .unwrap()
+        .categories
+        .unwrap();
+    assert_eq!(view0.row.kind, List, "a domain override sets the kind");
+    assert_eq!(
+        view0.row.topics,
+        topic_set(&[Finance, Travel]),
+        "an address override sets the topics; finance applies to an aligned row"
+    );
+    assert_eq!(view0.row.list_topic, Some(Travel));
+    assert_eq!(view0.row.kind_override, Some(shop.id));
+    assert_eq!(view0.row.topics_override, Some(person.id));
+    assert_eq!(view0.kind_override.as_ref(), Some(&shop));
+    assert_eq!(view0.topics_override.as_ref(), Some(&person));
+    assert_eq!(view0.row.write, w0, "derived values stay");
+    let row1 = category_row(store, ids[1]).await.unwrap();
+    assert_eq!(
+        row1.topics,
+        topic_set(&[Travel]),
+        "a sensitive override topic is held back on an unverified row"
+    );
+    assert_eq!(row1.topics_override, Some(person.id));
+    let row2 = category_row(store, ids[2]).await.unwrap();
+    assert_eq!((row2.kind, row2.topics), (List, TopicSet::EMPTY));
+
+    let (replaced, changed) = store
+        .put_category_override(
+            &CategoryOverride {
+                id: CategoryOverrideId::new(),
+                kind: Some(Personal),
+                created_at: Timestamp::from_secs(30),
+                created_by: UserId::new(),
+                ..person.clone()
+            },
+            health_off,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (replaced.id, replaced.created_at, replaced.created_by),
+        (person.id, person.created_at, person.created_by),
+        "a replaced override keeps its id and creation"
+    );
+    assert_eq!(replaced.kind, Some(Personal));
+    assert_eq!(changed, sorted(vec![ids[0], ids[1]]));
+    assert_eq!(
+        category_row(store, ids[0]).await.unwrap().kind,
+        Personal,
+        "the address override beats the domain override on the kind"
+    );
+    assert_eq!(category_row(store, ids[2]).await.unwrap().kind, List);
+    let person = replaced;
+
+    let relayed = CategoryOverride {
+        id: CategoryOverrideId::new(),
+        scope: OverrideScope::Address,
+        key: "c@other.example.org".into(),
+        kind: None,
+        topics: Some(topic_set(&[Health, Social])),
+        ..shop.clone()
+    };
+    let (relayed, changed) = store
+        .put_category_override(&relayed, health_on)
+        .await
+        .unwrap();
+    assert_eq!(changed, [ids[3]]);
+    assert_eq!(
+        category_row(store, ids[3]).await.unwrap().topics,
+        topic_set(&[Social]),
+        "health needs an aligned sender"
+    );
+    let w3_aligned = CategoryWrite {
+        trust: TrustState::Aligned {
+            domain: "other.example.org".into(),
+        },
+        ..w3.clone()
+    };
+    assert!(
+        store
+            .set_message_categories(std::slice::from_ref(&w3_aligned), health_off)
+            .await
+            .unwrap()
+            .is_empty(),
+        "health is removed from an override when the policy turns it off"
+    );
+    assert_eq!(
+        store
+            .set_message_categories(std::slice::from_ref(&w3_aligned), health_on)
+            .await
+            .unwrap(),
+        [ids[3]]
+    );
+    let row3 = category_row(store, ids[3]).await.unwrap();
+    assert_eq!(row3.topics, topic_set(&[Health, Social]));
+    assert_eq!(
+        row3.list_topic,
+        Some(Social),
+        "the list topic is never health"
+    );
+    assert_eq!(
+        store.category_counts(archive, false).await.unwrap().kinds,
+        [(Personal, 3), (List, 1), (Bulk, 0), (Notification, 0)]
+    );
+    assert_eq!(
+        listed(store, archive, CategoryFilter::Topic(Travel)).await,
+        sorted(vec![ids[0], ids[1]])
+    );
+    assert_eq!(
+        listed(store, archive, CategoryFilter::Topic(Health)).await,
+        [ids[3]]
+    );
+
+    assert_eq!(
+        store.category_overrides(archive).await.unwrap(),
+        [person.clone(), relayed.clone(), shop.clone()],
+        "by scope, address first, then key"
+    );
+    assert!(store.category_overrides(other).await.unwrap().is_empty());
+    assert!(matches!(
+        store
+            .delete_category_override(other, person.id, health_off)
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(matches!(
+        store
+            .delete_category_override(archive, CategoryOverrideId::new(), health_off)
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(
+        store
+            .delete_category_override(archive, person.id, health_off)
+            .await
+            .unwrap(),
+        sorted(vec![ids[0], ids[1]])
+    );
+    let row0 = category_row(store, ids[0]).await.unwrap();
+    assert_eq!(
+        (
+            row0.kind,
+            row0.topics,
+            row0.kind_override,
+            row0.topics_override
+        ),
+        (List, topic_set(&[Purchases, Finance]), Some(shop.id), None),
+        "derived topics come back, the remaining domain override still sets the kind"
+    );
+    assert_eq!(
+        store
+            .delete_category_override(archive, shop.id, health_off)
+            .await
+            .unwrap(),
+        sorted(ids[..3].to_vec())
+    );
+    let row0 = category_row(store, ids[0]).await.unwrap();
+    assert_eq!((row0.kind, row0.kind_override), (Notification, None));
+    assert_eq!(store.category_overrides(archive).await.unwrap(), [relayed]);
+
+    store
+        .invalidate_derived(&[ids[1], MessageId::new()])
+        .await
+        .unwrap();
+    store.invalidate_derived(&[]).await.unwrap();
+    assert!(category_row(store, ids[1]).await.is_none());
+    assert!(
+        store
+            .insight_view(ids[1])
+            .await
+            .unwrap()
+            .unwrap()
+            .categories
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .derive_inputs(archive, fp, None, 100)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.message)
+            .collect::<Vec<_>>(),
+        [ids[1]]
+    );
+    assert!(
+        listed(store, archive, CategoryFilter::Topic(Purchases))
+            .await
+            .iter()
+            .all(|id| *id != ids[1]),
+        "invalidated rows leave the topics too"
+    );
+
+    let trusted = store.trusted_authserv_ids(archive).await.unwrap();
+    assert_eq!(
+        trusted.keys().copied().collect::<Vec<_>>(),
+        sorted_accounts(&[account.id, second.id])
+    );
+    assert!(trusted.values().all(Vec::is_empty));
+    let list = vec!["mx.example.org".to_string(), "MX2.example.org".to_string()];
+    store
+        .set_trusted_authserv_ids(account.id, &list)
+        .await
+        .unwrap();
+    store
+        .set_trusted_authserv_ids(account.id, &list)
+        .await
+        .unwrap();
+    store
+        .set_trusted_authserv_ids(second.id, &["relay.example.net".to_string()])
+        .await
+        .unwrap();
+    let trusted = store.trusted_authserv_ids(archive).await.unwrap();
+    assert_eq!(trusted[&account.id], list, "kept as given and in order");
+    assert_eq!(trusted[&second.id], ["relay.example.net"]);
+    assert!(matches!(
+        store
+            .set_trusted_authserv_ids(AccountId::new(), &list)
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(store.trusted_authserv_ids(other).await.unwrap().is_empty());
+
+    let facts = store.recent_auth_facts(account.id, 100).await.unwrap();
+    let expected: Vec<String> = (0..5)
+        .rev()
+        .map(|n| format!(r#"{{"v":1,"n":{n}}}"#))
+        .collect();
+    assert_eq!(
+        facts, expected,
+        "newest archived first, only messages with an insights row"
+    );
+    assert_eq!(
+        store.recent_auth_facts(account.id, 2).await.unwrap(),
+        expected[..2]
+    );
+    assert_eq!(
+        store.recent_auth_facts(second.id, 100).await.unwrap(),
+        [r#"{"v":1,"n":0}"#],
+        "a removed location counts"
+    );
+    assert!(
+        store
+            .recent_auth_facts(AccountId::new(), 100)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    store.delete_account(second.id).await.unwrap();
+    assert!(
+        !store
+            .trusted_authserv_ids(archive)
+            .await
+            .unwrap()
+            .contains_key(&second.id)
+    );
+
+    store
+        .set_message_categories(
+            &[category_write(
+                foreign,
+                other,
+                fp,
+                TrustState::Unknown,
+                Some("a@shop.example.com"),
+                Some("shop.example.com"),
+                Bulk,
+                &[Travel],
+            )],
+            health_off,
+        )
+        .await
+        .unwrap();
+    let foreign_override = CategoryOverride {
+        id: CategoryOverrideId::new(),
+        archive_id: other,
+        ..shop.clone()
+    };
+    store
+        .put_category_override(&foreign_override, health_off)
+        .await
+        .unwrap();
+    assert_eq!(
+        category_row(store, ids[0]).await.unwrap().kind,
+        Notification,
+        "an override of another archive does not apply"
+    );
+
+    store
+        .delete_messages(archive, &[ids[0]], None)
+        .await
+        .unwrap();
+    assert!(store.derive_input(ids[0]).await.unwrap().is_none());
+    assert!(
+        listed(store, archive, CategoryFilter::Topic(Finance))
+            .await
+            .is_empty()
+    );
+    let counts = store.category_counts(archive, true).await.unwrap();
+    assert_eq!(
+        counts.kinds,
+        [(Personal, 2), (List, 0), (Bulk, 0), (Notification, 0)],
+        "deleted messages leave the counts"
+    );
+    assert!(counts.topics.contains(&(Purchases, 0)));
+
+    store.delete_archive(archive).await.unwrap();
+    let counts = store.category_counts(archive, true).await.unwrap();
+    assert!(counts.kinds.iter().all(|(_, n)| *n == 0));
+    assert!(counts.topics.iter().all(|(_, n)| *n == 0));
+    assert!(store.category_overrides(archive).await.unwrap().is_empty());
+    assert!(
+        store
+            .trusted_authserv_ids(archive)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.count_needing_derive(archive, fp).await.unwrap(), 0);
+    assert_eq!(
+        category_row(store, foreign).await.unwrap().kind,
+        List,
+        "another archive keeps its rows and overrides"
+    );
+    store.delete_archive(other).await.unwrap();
+    assert!(store.category_overrides(other).await.unwrap().is_empty());
+    assert!(store.insight_view(foreign).await.unwrap().is_none());
+    assert_eq!(
+        store.category_counts(other, false).await.unwrap().kinds,
+        MessageKind::ALL.iter().map(|&k| (k, 0)).collect::<Vec<_>>()
+    );
+}
+
+async fn whole_queue(store: &dyn Store, archive: ArchiveId) -> Vec<(MessageId, u64)> {
+    store.reindex_queue(archive, None, 10_000).await.unwrap()
+}
+
+async fn reindex_queue(store: &dyn Store) {
+    use MessageKind::{List, Notification, Personal};
+    use Topic::{Purchases, Travel};
+
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let mut ids = Vec::new();
+    for n in 0..5u32 {
+        ids.push(
+            store
+                .insert_message(message(archive, 9801 + n, 1_700_000_000 - i64::from(n)))
+                .await
+                .unwrap()
+                .message_id,
+        );
+    }
+    ids.sort();
+    let foreign = store
+        .insert_message(message(other, 9811, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+
+    assert!(whole_queue(store, archive).await.is_empty());
+    assert_eq!(store.count_reindex_queue(archive).await.unwrap(), 0);
+    store
+        .queue_reindex(&[ids[2], ids[0], MessageId::new(), ids[0], foreign])
+        .await
+        .unwrap();
+    assert_eq!(
+        whole_queue(store, archive).await,
+        [(ids[0], 1), (ids[2], 1)],
+        "ascending, sequence 1, unknown ids ignored, a repeated id counted once"
+    );
+    assert_eq!(whole_queue(store, other).await, [(foreign, 1)]);
+    assert_eq!(store.count_reindex_queue(archive).await.unwrap(), 2);
+    assert_eq!(store.count_reindex_queue(other).await.unwrap(), 1);
+    assert_eq!(
+        store.count_reindex_queue(ArchiveId::new()).await.unwrap(),
+        0
+    );
+    assert!(whole_queue(store, ArchiveId::new()).await.is_empty());
+
+    store.queue_reindex(&[ids[2]]).await.unwrap();
+    assert_eq!(
+        whole_queue(store, archive).await,
+        [(ids[0], 1), (ids[2], 2)],
+        "a re-queue raises the sequence"
+    );
+    store
+        .dequeue_reindex(&[(ids[2], 1), (ids[0], 1), (MessageId::new(), 1)])
+        .await
+        .unwrap();
+    assert_eq!(
+        whole_queue(store, archive).await,
+        [(ids[2], 2)],
+        "a message queued again since it was read stays"
+    );
+    store.dequeue_reindex(&[(ids[2], 2)]).await.unwrap();
+    store.dequeue_reindex(&[(ids[2], 2)]).await.unwrap();
+    assert!(whole_queue(store, archive).await.is_empty());
+
+    store.queue_reindex(&ids).await.unwrap();
+    let mut paged = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store.reindex_queue(archive, after, 2).await.unwrap();
+        assert!(page.len() <= 2);
+        let Some(last) = page.last().map(|(id, _)| *id) else {
+            break;
+        };
+        if let Some(after) = after {
+            assert!(page.iter().all(|(id, _)| *id > after));
+        }
+        paged.extend(page);
+        after = Some(last);
+    }
+    assert_eq!(
+        paged,
+        ids.iter().map(|id| (*id, 1)).collect::<Vec<_>>(),
+        "keyset paging visits every queued message once"
+    );
+    store.dequeue_reindex(&paged).await.unwrap();
+    assert_eq!(store.count_reindex_queue(archive).await.unwrap(), 0);
+
+    let health_off = CategoryPolicy { health: false };
+    let write = |n: usize, kind: MessageKind, topics: &[Topic]| {
+        category_write(
+            ids[n],
+            archive,
+            "d1",
+            TrustState::Unknown,
+            Some("orders@shop.example.com"),
+            Some("shop.example.com"),
+            kind,
+            topics,
+        )
+    };
+    let changed = store
+        .set_message_categories(&[write(0, Notification, &[Purchases])], health_off)
+        .await
+        .unwrap();
+    assert_eq!(changed, [ids[0]]);
+    assert!(
+        whole_queue(store, archive).await.is_empty(),
+        "set_message_categories queues nothing"
+    );
+    let changed = store
+        .set_message_categories_queued(
+            &[
+                write(0, Notification, &[Purchases]),
+                write(1, Personal, &[Travel]),
+            ],
+            health_off,
+        )
+        .await
+        .unwrap();
+    assert_eq!(changed, [ids[1]], "an equal rewrite does not change");
+    assert_eq!(
+        whole_queue(store, archive).await,
+        [(ids[1], 1)],
+        "only changed ids are queued"
+    );
+    let changed = store
+        .set_message_categories_queued(&[write(1, Personal, &[Travel])], health_off)
+        .await
+        .unwrap();
+    assert!(changed.is_empty());
+    assert_eq!(whole_queue(store, archive).await, [(ids[1], 1)]);
+    store.dequeue_reindex(&[(ids[1], 1)]).await.unwrap();
+
+    let shop = CategoryOverride {
+        id: CategoryOverrideId::new(),
+        archive_id: archive,
+        scope: OverrideScope::Domain,
+        key: "shop.example.com".into(),
+        kind: Some(List),
+        topics: None,
+        created_at: Timestamp::from_secs(10),
+        created_by: UserId::new(),
+    };
+    let (stored, changed) = store
+        .put_category_override(&shop, health_off)
+        .await
+        .unwrap();
+    assert_eq!(changed, sorted(vec![ids[0], ids[1]]));
+    assert_eq!(
+        whole_queue(store, archive).await,
+        changed.iter().map(|id| (*id, 1)).collect::<Vec<_>>(),
+        "an override queues the ids it changed"
+    );
+    let (_, unchanged) = store
+        .put_category_override(&shop, health_off)
+        .await
+        .unwrap();
+    assert!(unchanged.is_empty());
+    assert_eq!(
+        whole_queue(store, archive).await,
+        changed.iter().map(|id| (*id, 1)).collect::<Vec<_>>(),
+        "an override that changes nothing queues nothing"
+    );
+    let changed = store
+        .delete_category_override(archive, stored.id, health_off)
+        .await
+        .unwrap();
+    assert_eq!(changed, sorted(vec![ids[0], ids[1]]));
+    assert_eq!(
+        whole_queue(store, archive).await,
+        changed.iter().map(|id| (*id, 2)).collect::<Vec<_>>(),
+        "removing an override queues the ids it changed again"
+    );
+
+    store.queue_reindex(&[ids[4]]).await.unwrap();
+    store
+        .delete_messages(archive, &[ids[0]], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        whole_queue(store, archive).await,
+        [(ids[1], 2), (ids[4], 1)],
+        "a deleted message leaves the queue"
+    );
+    store.delete_archive(archive).await.unwrap();
+    assert!(whole_queue(store, archive).await.is_empty());
+    assert_eq!(store.count_reindex_queue(archive).await.unwrap(), 0);
+    assert_eq!(
+        whole_queue(store, other).await,
+        [(foreign, 1)],
+        "another archive keeps its queue"
+    );
+    store.delete_archive(other).await.unwrap();
+    assert!(whole_queue(store, other).await.is_empty());
+}
+
+fn unsubscribe_request(
+    archive: ArchiveId,
+    message: Option<MessageId>,
+    list_key: &str,
+    at: i64,
+    outcome: UnsubscribeOutcome,
+    status: Option<u16>,
+) -> UnsubscribeRequest {
+    UnsubscribeRequest {
+        id: UnsubscribeRequestId::new(),
+        archive,
+        message,
+        list_key: list_key.into(),
+        requested_at: Timestamp::from_secs(at),
+        requested_by: UserId::new(),
+        outcome,
+        status,
+    }
+}
+
+async fn unsubscribe_requests(store: &dyn Store) {
+    use UnsubscribeOutcome::{Accepted, HttpError, Network, Redirected, Refused};
+
+    let archive = archive(store).await;
+    let other = store.create_archive("Other").await.unwrap().id;
+    let first = store
+        .insert_message(message(archive, 9901, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    let second = store
+        .insert_message(message(archive, 9902, 1_700_000_001))
+        .await
+        .unwrap()
+        .message_id;
+    let foreign = store
+        .insert_message(message(other, 9903, 1_700_000_000))
+        .await
+        .unwrap()
+        .message_id;
+
+    for outcome in ["accepted", "redirected", "refused", "http_error", "network"] {
+        let parsed = UnsubscribeOutcome::parse(outcome).unwrap();
+        assert_eq!(parsed.as_str(), outcome);
+    }
+    assert_eq!(UnsubscribeOutcome::parse("ok"), None);
+
+    let key = |n: usize| format!("list{n}.news.example.com");
+    let mut recorded = Vec::new();
+    for (n, (outcome, status)) in [
+        (Accepted, Some(200)),
+        (Redirected, Some(302)),
+        (Refused, None),
+        (HttpError, Some(500)),
+        (Network, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request = unsubscribe_request(archive, Some(first), &key(n), 100, outcome, status);
+        store.record_unsubscribe(&request).await.unwrap();
+        assert_eq!(
+            store.last_unsubscribe(archive, &key(n)).await.unwrap(),
+            Some(request.clone()),
+            "every outcome and status reads back as recorded"
+        );
+        recorded.push(request);
+    }
+    let without = unsubscribe_request(archive, None, "plain.example.org", 50, Refused, None);
+    store.record_unsubscribe(&without).await.unwrap();
+    assert_eq!(
+        store
+            .last_unsubscribe(archive, "plain.example.org")
+            .await
+            .unwrap(),
+        Some(without.clone()),
+        "a request without a message is kept"
+    );
+    assert!(matches!(
+        store.record_unsubscribe(&without).await,
+        Err(StoreError::Invalid(_))
+    ));
+
+    let news = "<weekly.news.example.com>";
+    let older = unsubscribe_request(archive, Some(first), news, 200, Network, None);
+    let newest = unsubscribe_request(archive, Some(second), news, 400, Accepted, Some(204));
+    let middle = unsubscribe_request(archive, Some(second), news, 300, HttpError, Some(503));
+    for request in [&older, &newest, &middle] {
+        store.record_unsubscribe(request).await.unwrap();
+    }
+    assert_eq!(
+        store.last_unsubscribe(archive, news).await.unwrap(),
+        Some(newest.clone()),
+        "the newest by request time, whatever the order recorded"
+    );
+    let tie = unsubscribe_request(archive, Some(first), news, 400, Refused, None);
+    store.record_unsubscribe(&tie).await.unwrap();
+    assert_eq!(
+        store.last_unsubscribe(archive, news).await.unwrap(),
+        Some(tie.clone()),
+        "equal times are broken by the greatest id"
+    );
+    assert_eq!(
+        store
+            .last_unsubscribe(archive, "<WEEKLY.news.example.com>")
+            .await
+            .unwrap(),
+        None,
+        "keys compare byte for byte"
+    );
+    assert_eq!(
+        store
+            .last_unsubscribe(archive, "unknown.example.com")
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(store.last_unsubscribe(other, news).await.unwrap(), None);
+    assert_eq!(
+        store
+            .last_unsubscribe(ArchiveId::new(), news)
+            .await
+            .unwrap(),
+        None
+    );
+
+    let mut keys: Vec<String> = (0..450).map(|n| format!("absent{n}.example.org")).collect();
+    keys.insert(0, news.into());
+    keys.insert(201, key(3));
+    keys.push(key(4));
+    keys.push("unknown.example.com".into());
+    keys.push(news.into());
+    let found = store.last_unsubscribes(archive, &keys).await.unwrap();
+    assert_eq!(found.len(), 3, "only keys with requests, each once");
+    assert_eq!(found.get(news), Some(&tie));
+    assert_eq!(found.get(&key(3)), Some(&recorded[3]));
+    assert_eq!(found.get(&key(4)), Some(&recorded[4]));
+    assert!(
+        store
+            .last_unsubscribes(other, &keys)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        store
+            .last_unsubscribes(archive, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let foreign_key = "<other.news.example.com>";
+    let theirs = unsubscribe_request(other, Some(foreign), foreign_key, 100, Accepted, Some(200));
+    store.record_unsubscribe(&theirs).await.unwrap();
+    assert_eq!(
+        store.last_unsubscribe(archive, foreign_key).await.unwrap(),
+        None
+    );
+
+    let unknown = unsubscribe_request(archive, Some(MessageId::new()), news, 900, Accepted, None);
+    assert!(matches!(
+        store.record_unsubscribe(&unknown).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let nowhere = unsubscribe_request(ArchiveId::new(), None, news, 900, Accepted, None);
+    assert!(matches!(
+        store.record_unsubscribe(&nowhere).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let misplaced = unsubscribe_request(archive, Some(foreign), news, 900, Accepted, None);
+    assert!(matches!(
+        store.record_unsubscribe(&misplaced).await,
+        Err(StoreError::Invalid(_))
+    ));
+    assert_eq!(
+        store.last_unsubscribe(archive, news).await.unwrap(),
+        Some(tie.clone()),
+        "a refused record writes nothing"
+    );
+
+    store
+        .delete_messages(archive, &[first], None)
+        .await
+        .unwrap();
+    let kept = store
+        .last_unsubscribe(archive, news)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.id, tie.id);
+    assert_eq!(
+        kept.message, None,
+        "deleting the message keeps the request without it"
+    );
+    assert_eq!(
+        store.last_unsubscribe(archive, &key(0)).await.unwrap(),
+        Some(UnsubscribeRequest {
+            message: None,
+            ..recorded[0].clone()
+        })
+    );
+    store.record_unsubscribe(&tie).await.unwrap_err();
+    let later = unsubscribe_request(archive, Some(second), news, 500, Redirected, Some(302));
+    store.record_unsubscribe(&later).await.unwrap();
+    assert_eq!(
+        store.last_unsubscribe(archive, news).await.unwrap(),
+        Some(later.clone()),
+        "another message keeps its link"
+    );
+
+    store.delete_archive(archive).await.unwrap();
+    assert_eq!(store.last_unsubscribe(archive, news).await.unwrap(), None);
+    assert!(
+        store
+            .last_unsubscribes(archive, &keys)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        store.last_unsubscribe(other, foreign_key).await.unwrap(),
+        Some(theirs),
+        "another archive keeps its requests"
+    );
+    store.delete_archive(other).await.unwrap();
+    assert_eq!(
+        store.last_unsubscribe(other, foreign_key).await.unwrap(),
+        None
+    );
+}
+
+fn sorted_accounts(ids: &[AccountId]) -> Vec<AccountId> {
+    let mut ids = ids.to_vec();
+    ids.sort();
+    ids
 }

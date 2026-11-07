@@ -8,12 +8,14 @@
 
 mod aliases;
 mod calendar;
+mod categories;
 mod deletion;
 mod insights;
 mod ledger;
 mod people;
 mod pim;
 mod types;
+mod unsubscribe;
 mod webhooks;
 
 #[cfg(feature = "testing")]
@@ -30,12 +32,14 @@ use holtmail_core::{
 
 pub use aliases::*;
 pub use calendar::*;
+pub use categories::*;
 pub use deletion::*;
 pub use insights::*;
 pub use ledger::*;
 pub use people::*;
 pub use pim::*;
 pub use types::*;
+pub use unsubscribe::*;
 pub use webhooks::*;
 
 /// Why a store operation failed.
@@ -73,7 +77,8 @@ pub trait ArchiveStore: Send + Sync {
     async fn set_save_remote_images(&self, id: ArchiveId, save: bool) -> Result<(), StoreError>;
 
     /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state,
-    /// grants, people and their splits and joins, the insights of its messages, collections with their items and versions, the remote copies no remaining message
+    /// grants, people and their splits and joins, the insights and categories of its messages, its
+    /// category overrides, the trusted authserv-ids of its accounts, collections with their items and versions, the remote copies no remaining message
     /// links to, and what was derived from blobs that are no longer used. Returns the blobs that no
     /// message, attachment, item version, remote copy or derived record references any more, so
     /// the caller can delete them. Enters the deletion in the ledger as one `archive_deleted`
@@ -96,7 +101,7 @@ pub trait ArchiveStore: Send + Sync {
     /// Replaces every field of the account except `id`, `archive_id`, `kind` and `created_at`.
     async fn update_account(&self, account: &Account) -> Result<(), StoreError>;
 
-    /// Removes the account with its folders, locations and sync state. Its messages stay in the
+    /// Removes the account with its folders, locations, sync state and trusted authserv-ids. Its messages stay in the
     /// archive, and so do its collections, which no longer name an account. `NotFound` when the
     /// account does not exist.
     async fn delete_account(&self, id: AccountId) -> Result<(), StoreError>;
@@ -147,8 +152,8 @@ pub trait MessageStore: Send + Sync {
     /// Attachments of the message by `ordinal`.
     async fn attachments(&self, message: MessageId) -> Result<Vec<Attachment>, StoreError>;
 
-    /// Messages newest first by `date`, ties broken by id, narrowed by the query's folder and
-    /// label when given.
+    /// Messages newest first by `date`, ties broken by id, narrowed by the query's folder, label
+    /// and category when given.
     async fn list_messages(&self, query: &MessageQuery) -> Result<Page<Message>, StoreError>;
 
     /// Flags, thread size, folders and labels of each message among `ids` that exists, for showing a list
@@ -721,6 +726,7 @@ pub trait Store:
     + WebhookStore
     + AliasStore
     + InsightStore
+    + CategoryStore
 {
 }
 
@@ -743,5 +749,6 @@ impl<T> Store for T where
         + WebhookStore
         + AliasStore
         + InsightStore
+        + CategoryStore
 {
 }

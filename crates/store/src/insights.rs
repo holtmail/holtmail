@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use holtmail_category::{MessageKind, Topic};
 use holtmail_core::{ArchiveId, MessageId, Timestamp};
 
-use crate::StoreError;
+use crate::{CategoryView, StoreError, UnsubscribeRequest};
 
 /// How computing the insights of a message ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -75,6 +76,8 @@ pub struct InsightRow {
 pub struct InsightView {
     /// The stored insights row.
     pub insights: InsightRow,
+    /// The stage-B row with the overrides that set its values; `None` before stage B.
+    pub categories: Option<CategoryView>,
 }
 
 /// What a message list shows about the insights of a message.
@@ -82,12 +85,17 @@ pub struct InsightView {
 pub struct InsightSummary {
     /// Bits of the kinds found.
     pub kinds: u64,
+    /// The effective kind; `None` before stage B.
+    pub kind: Option<MessageKind>,
+    /// The one effective topic list rows show, never `health`.
+    pub topic: Option<Topic>,
 }
 
 /// Insights derived from messages: one row per message, replaced whole, rebuilt whenever the
 /// extraction fingerprint changes.
 ///
-/// Deleting a message or an archive removes its rows.
+/// Deleting a message or an archive removes its rows. Unsubscribe requests are an audit trail:
+/// deleting a message keeps them with no message, deleting an archive removes them.
 #[async_trait]
 pub trait InsightStore: Send + Sync {
     /// Stores `row` as the insights of `message`, replacing any earlier row whole. Idempotent.
@@ -99,18 +107,19 @@ pub trait InsightStore: Send + Sync {
         row: &InsightRow,
     ) -> Result<(), StoreError>;
 
-    /// The insights of `message`, or `None` when none were stored or the message is unknown.
+    /// The insights of `message` with its categories, or `None` when none were stored or the
+    /// message is unknown. At most 4 indexed reads.
     async fn insight_view(&self, message: MessageId) -> Result<Option<InsightView>, StoreError>;
 
-    /// The insights of every message among `ids` that has them; others are left out. Any number
-    /// of ids.
+    /// The insights of every message among `ids` that has them, with their categories; others
+    /// are left out. Any number of ids, read in batches of 200.
     async fn insight_views_among(
         &self,
         ids: &[MessageId],
     ) -> Result<HashMap<MessageId, InsightView>, StoreError>;
 
-    /// The list summary of every message among `ids` that has insights; others are left out. Any
-    /// number of ids.
+    /// The list summary of every message among `ids` that has insights, with its effective kind
+    /// and list topic; others are left out. Any number of ids, read in batches of 200.
     async fn insights_among(
         &self,
         ids: &[MessageId],
@@ -137,4 +146,26 @@ pub trait InsightStore: Send + Sync {
         archive: ArchiveId,
         fingerprint: &str,
     ) -> Result<u64, StoreError>;
+
+    /// Records a one-click unsubscribe request. `NotFound` for an unknown archive or, when
+    /// `request.message` is set, an unknown message; `Invalid` when that message is in another
+    /// archive or a request with `request.id` already exists. Nothing is written on an error.
+    async fn record_unsubscribe(&self, request: &UnsubscribeRequest) -> Result<(), StoreError>;
+
+    /// The most recent request of `archive` for `list_key` by `requested_at`, the greatest id
+    /// among equal times; `None` when there is none, also for an unknown archive. One indexed
+    /// read.
+    async fn last_unsubscribe(
+        &self,
+        archive: ArchiveId,
+        list_key: &str,
+    ) -> Result<Option<UnsubscribeRequest>, StoreError>;
+
+    /// [`InsightStore::last_unsubscribe`] for every key among `list_keys` that has a request,
+    /// keyed by list key; others are left out. Any number of keys, read in batches of 200.
+    async fn last_unsubscribes(
+        &self,
+        archive: ArchiveId,
+        list_keys: &[String],
+    ) -> Result<HashMap<String, UnsubscribeRequest>, StoreError>;
 }

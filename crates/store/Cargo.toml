@@ -12,12 +12,14 @@ testing = ["dep:tokio"]
 
 [dependencies]
 holtmail-blob.workspace = true
+holtmail-category.workspace = true
 holtmail-core.workspace = true
 holtmail-ledger.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
 tokio = { workspace = true, optional = true }
 
 [lints]

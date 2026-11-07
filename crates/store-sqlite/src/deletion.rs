@@ -105,6 +105,10 @@ impl DeletionStore for SqliteStore {
                 "DELETE FROM message_remote_images WHERE message_id = ?",
                 "DELETE FROM remote_scans WHERE message_id = ?",
                 "DELETE FROM message_insights WHERE message_id = ?",
+                "DELETE FROM message_topics WHERE message_id = ?",
+                "DELETE FROM message_categories WHERE message_id = ?",
+                "DELETE FROM insight_reindex WHERE message_id = ?",
+                "UPDATE unsubscribe_requests SET message_id = NULL WHERE message_id = ?",
                 "DELETE FROM messages WHERE id = ?",
             ] {
                 sqlx::query(statement)

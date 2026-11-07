@@ -4,7 +4,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 
 ## Traits
 
-`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore + DeletionStore + WebhookStore + AliasStore + InsightStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
+`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore + DeletionStore + WebhookStore + AliasStore + InsightStore + CategoryStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
 
 ### ArchiveStore
 
@@ -13,11 +13,11 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
 | `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives). Turning it on records `save_remote_images_since` unless it was already on; turning it off clears it. `NotFound` for a missing archive |
-| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, insights, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, insights, categories, category overrides, trusted authserv-ids, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
-| `delete_account(id)` | Removes the account with its folders, locations, cursors and failures; its messages stay in the archive. `NotFound` for a missing account |
+| `delete_account(id)` | Removes the account with its folders, locations, cursors, failures and trusted authserv-ids; its messages stay in the archive. `NotFound` for a missing account |
 | `upsert_folder(account, path, role)` | Idempotent per `(account, path)`; a new role replaces the stored one |
 | `list_folders(archive)` | Every folder of the archive's accounts with the count of messages located there and not removed, and of those without `\Seen` (any letter case), by account then path |
 
@@ -31,8 +31,8 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `get_message`, `get_messages(ids)` | `get_messages` keeps the order of `ids` and skips missing ones |
 | `find_by_blob(archive, blob)` | The message with these bytes in the archive |
 | `attachments(message)` | By ordinal; inline parts included |
-| `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed) and label filter (exact name); both may be given |
-| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id), its labels (sorted) and `insight_kinds`, the kind bits of its insights (0 without insights). Missing ids are left out |
+| `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed), label filter (exact name) and `category` filter (`CategoryFilter::Kind` for the effective kind, `CategoryFilter::Topic` for an effective topic, `health` included when asked for); any may be combined |
+| `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id), its labels (sorted), `insight_kinds`, the kind bits of its insights (0 without insights), and `kind` and `topic`, its effective kind and stored list topic (never `health`; both `None` before stage B). Missing ids are left out |
 | `thread_messages(thread)` | Oldest first |
 | `record_location(message, folder, uid, flags, seen_at)` | One location per `(folder, message)`; updates UID, flags and `last_seen_at`, clears `removed_at`; a UID held by another message moves to this one |
 | `locations`, `folder_uids`, `message_at_uid` | `folder_uids` lists only locations not removed, ascending |
@@ -204,7 +204,7 @@ Deleting messages on purpose. The archive otherwise never forgets; a deleted mes
 
 | Method | Guarantees |
 | --- | --- |
-| `delete_messages(archive, ids, actor)` | In one transaction removes the archive's messages among `ids` with their locations, attachments, labels (labels left without messages go), addresses, thread links, remote image links, insights and calendar version links; calendar versions read only from them go too, and an item left without versions is removed with its calendar instances. Records the tombstones and enters each message in the ledger as `deleted` by `actor`. Returns `DeletedMessages { messages, orphans, changed_items, removed_items }`: blobs nothing references any more (the caller deletes them), items to rebuild and items gone. Idempotent; ids not in the archive are skipped |
+| `delete_messages(archive, ids, actor)` | In one transaction removes the archive's messages among `ids` with their locations, attachments, labels (labels left without messages go), addresses, thread links, remote image links, insights, categories, effective topics and reindex queue entries, and calendar version links; calendar versions read only from them go too, and an item left without versions is removed with its calendar instances. Unsubscribe requests made from them stay, with no message. Records the tombstones and enters each message in the ledger as `deleted` by `actor`. Returns `DeletedMessages { messages, orphans, changed_items, removed_items }`: blobs nothing references any more (the caller deletes them), items to rebuild and items gone. Idempotent; ids not in the archive are skipped |
 | `is_deleted(archive, blob)` | Whether those bytes were deleted from the archive |
 | `record_deleted_location(folder, uid)` | Remembers a UID that holds a deleted message; idempotent |
 
@@ -248,17 +248,65 @@ Deleting a message removes its record; deleting an archive removes its records, 
 
 Insights derived from messages (see [INSIGHTS.md](../../../docs/INSIGHTS.md)): one `InsightRow` per message, replaced whole and rebuilt when the extraction fingerprint changes. The store treats `items` and `auth` as opaque JSON text and returns them byte for byte; `signals` and `kinds` keep all 64 bits.
 
-`InsightRow { message, archive, fingerprint, outcome, truncated, from_address, signals, kinds, auth, items, computed_at }`; `InsightOutcome` is `Ok`, `Partial`, `Unparsable` or `Unreadable`, named `ok`, `partial`, `unparsable`, `unreadable` by `as_str` and `parse`. `InsightView { insights }` is everything known about one message's insights and gains the categories later; `InsightSummary { kinds }` is what a list row shows.
+`InsightRow { message, archive, fingerprint, outcome, truncated, from_address, signals, kinds, auth, items, computed_at }`; `InsightOutcome` is `Ok`, `Partial`, `Unparsable` or `Unreadable`, named `ok`, `partial`, `unparsable`, `unreadable` by `as_str` and `parse`. `InsightView { insights, categories }` is everything known about one message's insights, `categories` being its stage-B row with the overrides that set it (`None` before stage B); `InsightSummary { kinds, kind, topic }` is what a list row shows.
 
 | Method | Guarantees |
 | --- | --- |
 | `set_message_insights(message, row)` | Replaces the message's row whole; idempotent. `NotFound` for an unknown message, `Invalid` when `row.message` is another message or `row.archive` is not its archive |
-| `insight_view(message)` | The view, or `None` when nothing was stored (the API's `pending`) |
-| `insight_views_among(ids)`, `insights_among(ids)` | Views or summaries of the ids that have a row, any number of ids; others are left out |
+| `insight_view(message)` | The view with its categories, or `None` when nothing was stored (the API's `pending`). At most 4 indexed reads |
+| `insight_views_among(ids)`, `insights_among(ids)` | Views or summaries of the ids that have a row, any number of ids read 200 at a time; others are left out |
 | `messages_needing_insights(archive, fingerprint, after, limit)` | Up to `limit` (at most 10,000) messages of the archive without a row or with a row of another fingerprint, ascending by id, strictly after `after`. A row with the current fingerprint is never listed, whatever its outcome, so `unreadable` and `unparsable` messages wait for the next fingerprint. Paging with the last id visits each such message once |
 | `count_needing_insights(archive, fingerprint)` | How many messages the walk would list from the start; 0 for an unknown archive |
+| `record_unsubscribe(&request)` | Records a one-click unsubscribe request. `NotFound` for an unknown archive or, when `request.message` is set, an unknown message; `Invalid` when that message is in another archive or the id is taken. Nothing is written on an error |
+| `last_unsubscribe(archive, list_key)` | The archive's most recent request for the key by `requested_at`, the greatest id among equal times; `None` when there is none or the archive is unknown. Keys compare byte for byte. One indexed read |
+| `last_unsubscribes(archive, list_keys)` | `last_unsubscribe` for every key that has a request, keyed by list key; others are left out. Any number of keys, read 200 at a time |
 
 Row states: no row is pending; a row with an empty item list is ready; a row with another fingerprint is outdated and still served until rewritten; `partial`, `unparsable` and `unreadable` are what the outcome says. Deleting a message removes its row; deleting an archive removes its rows.
+
+Unsubscribe requests are the audit of the one outbound action. `UnsubscribeRequest { id, archive, message, list_key, requested_at, requested_by, outcome, status }`: `id` is an `UnsubscribeRequestId` (a UUIDv7, later ids sort after earlier ones), `message` is `None` once the message is deleted, `list_key` is normalized by the caller, `status` is the HTTP status when the list answered. `UnsubscribeOutcome` is `Accepted`, `Redirected`, `Refused`, `HttpError` or `Network`, named `accepted`, `redirected`, `refused`, `http_error`, `network` by `as_str` and `parse`. Deleting a message keeps its requests with no message; deleting an archive removes its requests. The store cannot derive a list key from the opaque items JSON, so `insight_view` does not read the last request: the caller computes the key and asks `last_unsubscribe` (or `last_unsubscribes` for a thread). Which waits apply after which outcome is the caller's rule. The conformance area `unsubscribe_requests` checks every outcome and a missing status read back, the newest request per key with ties by id, unknown keys and other archives, more than 200 keys at once, the `NotFound` and `Invalid` cases, and both deletions.
+
+### CategoryStore
+
+Stage-B categories (see [INSIGHTS.md](../../../docs/INSIGHTS.md) §4.2–4.5): one row per message with the trust of its sender, the derived kind and topics, and the effective values after the user's overrides; the effective topics also as one indexed row each. Rows are derived and rebuilt whenever `derive_fp` changes. Overrides and trust lists are user state. Kinds, topics, trust and sources are the types of `holtmail-category` (`MessageKind`, `Topic`, `TopicSet`, `TrustState`, `CategorySource`).
+
+Types:
+
+- `CategoryOverrideId`: a UUIDv7 like the ids of `holtmail-core`; displays, parses and serializes as the hyphenated lowercase form.
+- `OverrideScope`: `Address` or `Domain`, named `address` and `domain` by `as_str` and `parse`.
+- `CategoryOverride { id, archive_id, scope, key, kind, topics, created_at, created_by }`: `kind` and `topics` are `None` to keep the derived value; `topics` keeps every bit. The key is normalised by the caller (lowercase, A-label domain, no trailing dot; a registrable domain for the domain scope). The store compares it exactly and never normalises it.
+- `CategoryPolicy { health }`: whether `health` may be applied.
+- `CategoryWrite { message, archive, derive_fp, trust, trust_authserv, one_click_ok, own, sender_address, sender_domain, derived_kind, derived_kind_source, derived_topics, derived_sources }`: the runner's result before overrides. The stored `trust_domain` column is the domain of `Aligned` or the provider of `Relayed`, and reads back into the state.
+- `CategoryRow { write, kind, topics, list_topic, kind_override, topics_override }`: the stored row with its effective values and the overrides that set them. `topics` holds known topics only; `list_topic` is the first effective topic in taxonomy order other than `health`.
+- `CategoryView { row, kind_override, topics_override }`: the row with the overrides themselves.
+- `DeriveRow { message, archive, from_address, signals, kinds, auth, items, alias, accounts }`: what stage B reads about a message: its stored insights columns, its `message_aliases` row and the distinct accounts owning a folder it is located in, removed or not, sorted.
+- `CategoryCounts { kinds, topics }`: every kind and topic in taxonomy order with its count, zeros included.
+- `CategoryFilter`: `Kind(MessageKind)` or `Topic(Topic)`, for `MessageQuery.category`.
+
+Effective values, per axis (kind, topics): the address override that sets the axis, else the domain override that sets it, else the derived value. Override topics pass through `TopicSet::gated` with the row's trust and the policy's health flag, so a sensitive override topic is held back on a row that is not `aligned`, and `health` is dropped (but kept stored) while the flag is off. Derived topics are stored as the runner gave them.
+
+| Method | Guarantees |
+| --- | --- |
+| `derive_inputs(archive, derive_fp, after, limit)` | Up to `limit` (at most 10,000) messages of the archive whose insights row has outcome `ok` or `partial` and that have no categories row or one with another `derive_fp`, ascending by id, strictly after `after`. Paging with the last id visits each such message once |
+| `derive_input(message)` | The same input for one message whatever its categories row holds; `None` without an insights row with outcome `ok` or `partial` |
+| `count_needing_derive(archive, derive_fp)` | How many messages `derive_inputs` would list from the start; 0 for an unknown archive |
+| `invalidate_derived(ids)` | Removes the categories rows and effective topics of those messages, so stage B lists them again; unknown ids are ignored |
+| `set_message_categories(writes, policy)` | Replaces each message's row with the write and its effective values, in transactions of up to 500 rows. A write for a message that no longer exists is skipped; `Invalid` when a write names another archive than its message's. Returns the ids whose effective kind or topics changed, a new row counting as changed, in write order; an unchanged rewrite returns nothing. Queues nothing: ingest indexes right after it |
+| `set_message_categories_queued(writes, policy)` | Exactly `set_message_categories`, and each batch's changed ids are queued for reindexing (as `queue_reindex`) in the same transaction, so a changed category is never committed without its queued reindex |
+| `put_category_override(override, policy)` | Upserts on `(archive, scope, key)`, keeping the stored id, `created_at` and `created_by`, and recomputes only the rows whose `sender_address` (address scope) or `sender_domain` (domain scope) equals the key, in one transaction that also queues the changed ids for reindexing. Returns the stored override and the changed ids, ascending. `Invalid` when it sets neither axis or the key is empty, `NotFound` for an unknown archive |
+| `delete_category_override(archive, id, policy)` | Removes it and recomputes the rows it matched: derived values come back, then any remaining override per axis, queuing the changed ids for reindexing in the same transaction. Returns the changed ids, ascending. `NotFound` for an unknown id or one of another archive |
+| `category_overrides(archive)` | By scope (address first), then key |
+| `category_counts(archive, include_health)` | Effective kinds and topics counted in the store, exact once a write returns; `health` only when asked for |
+| `trusted_authserv_ids(archive)` | Every account of the archive with its list, empty when none was set |
+| `set_trusted_authserv_ids(account, ids)` | Replaces the account's list, kept exactly as given and in order. `NotFound` for an unknown account |
+| `recent_auth_facts(account, limit)` | The `auth` JSON of up to `limit` (at most 1,000) messages located in the account, removed or not, that have an insights row, the most recently archived first (archive order, never the sent date). Empty for an unknown account |
+| `queue_reindex(ids)` | Queues the messages for reindexing in their archives: a new entry gets sequence 1, an existing one keeps its row with the sequence raised. Unknown ids are ignored, a repeated id counts once; transactions of up to 500 ids, in order |
+| `reindex_queue(archive, after, limit)` | Up to `limit` (at most 10,000) queued `(message, seq)` of the archive, ascending by id, strictly after `after`. Paging with the last id visits each entry once while nothing is written; empty for an unknown archive |
+| `dequeue_reindex(done)` | Removes each entry whose sequence still equals the given one; an entry queued again since (higher sequence) stays. Unknown ids and stale sequences are ignored; idempotent |
+| `count_reindex_queue(archive)` | Queued entries of the archive; 0 for an unknown archive |
+
+The reindex queue is durable: an index step reads `(id, seq)`, reindexes, then dequeues with the same `seq`, so a re-queue in between is never lost.
+
+Deleting a message removes its row, topics and queue entry; deleting an archive removes its rows, topics, queue, overrides and the trust lists of its accounts; deleting an account removes its trust list.
 
 ### LedgerStore
 

@@ -1,8 +1,11 @@
 use holtmail_blob::BlobId;
+use holtmail_category::{MessageKind, Topic};
 use holtmail_core::{
     AccountId, Address, ArchiveId, FolderId, MessageId, ThreadId, Timestamp, UserId,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::CategoryFilter;
 
 /// A named collection of accounts; the unit people are given access to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,6 +388,11 @@ pub struct MessageExtras {
     pub labels: Vec<String>,
     /// Bits of the insight kinds found in it; 0 when it has no insights.
     pub insight_kinds: u64,
+    /// Its effective kind; `None` before stage B.
+    pub kind: Option<MessageKind>,
+    /// The one effective topic list rows show, never `health`; `None` before stage B or without
+    /// topics.
+    pub topic: Option<Topic>,
 }
 
 /// A label of an archive with how many messages carry it.
@@ -407,6 +415,8 @@ pub struct MessageQuery {
     pub folder_id: Option<FolderId>,
     /// Only messages carrying this label, compared exactly.
     pub label: Option<String>,
+    /// Only messages with this effective kind or topic.
+    pub category: Option<CategoryFilter>,
     /// Continue after this point of a previous page.
     pub after: Option<PageCursor>,
     /// At most this many messages; implementations cap it at 500.

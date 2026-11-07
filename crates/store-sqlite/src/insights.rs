@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use holtmail_core::{ArchiveId, MessageId, Timestamp};
+use holtmail_category::{MessageKind, Topic};
+use holtmail_core::{ArchiveId, MessageId, Timestamp, UserId};
 use holtmail_store::*;
 use sqlx::AssertSqlSafe;
 use sqlx::sqlite::SqliteRow;
@@ -34,6 +35,29 @@ fn insight_row(row: &SqliteRow) -> Result<InsightRow, StoreError> {
         auth: get(row, "auth")?,
         items: get(row, "items")?,
         computed_at: Timestamp::from_millis(get(row, "computed_at")?),
+    })
+}
+
+fn unsubscribe_row(row: &SqliteRow) -> Result<UnsubscribeRequest, StoreError> {
+    let outcome: String = get(row, "outcome")?;
+    Ok(UnsubscribeRequest {
+        id: parse(&get::<String>(row, "id")?)?,
+        archive: parse(&get::<String>(row, "archive_id")?)?,
+        message: get::<Option<String>>(row, "message_id")?
+            .map(|id| parse(&id))
+            .transpose()?,
+        list_key: get(row, "list_key")?,
+        requested_at: Timestamp::from_millis(get(row, "requested_at")?),
+        requested_by: parse::<UserId>(&get::<String>(row, "requested_by")?)?,
+        outcome: UnsubscribeOutcome::parse(&outcome).ok_or_else(|| {
+            StoreError::Invalid(format!("unknown unsubscribe outcome {outcome:?}"))
+        })?,
+        status: get::<Option<i64>>(row, "status")?
+            .map(|status| {
+                u16::try_from(status)
+                    .map_err(|_| StoreError::Invalid(format!("corrupt status {status}")))
+            })
+            .transpose()?,
     })
 }
 
@@ -107,49 +131,76 @@ impl InsightStore for SqliteStore {
     }
 
     async fn insight_view(&self, message: MessageId) -> Result<Option<InsightView>, StoreError> {
-        sqlx::query("SELECT * FROM message_insights WHERE message_id = ?")
+        let Some(row) = sqlx::query("SELECT * FROM message_insights WHERE message_id = ?")
             .bind(message.to_string())
             .fetch_optional(&self.pool)
             .await
             .map_err(backend)?
-            .map(|row| {
-                Ok(InsightView {
-                    insights: insight_row(&row)?,
-                })
-            })
-            .transpose()
+        else {
+            return Ok(None);
+        };
+        let insights = insight_row(&row)?;
+        let categories = self.category_views(&[message]).await?.remove(&message);
+        Ok(Some(InsightView {
+            insights,
+            categories,
+        }))
     }
 
     async fn insight_views_among(
         &self,
         ids: &[MessageId],
     ) -> Result<HashMap<MessageId, InsightView>, StoreError> {
-        self.insight_rows("*", ids)
-            .await?
-            .iter()
-            .map(|row| {
-                let insights = insight_row(row)?;
-                Ok((insights.message, InsightView { insights }))
-            })
-            .collect()
+        let mut out = HashMap::new();
+        for chunk in ids.chunks(CHUNK) {
+            let mut categories = self.category_views(chunk).await?;
+            for row in self.insight_rows("*", chunk).await? {
+                let insights = insight_row(&row)?;
+                let message = insights.message;
+                out.insert(
+                    message,
+                    InsightView {
+                        insights,
+                        categories: categories.remove(&message),
+                    },
+                );
+            }
+        }
+        Ok(out)
     }
 
     async fn insights_among(
         &self,
         ids: &[MessageId],
     ) -> Result<HashMap<MessageId, InsightSummary>, StoreError> {
-        self.insight_rows("message_id, kinds", ids)
-            .await?
-            .iter()
-            .map(|row| {
-                Ok((
-                    parse(&get::<String>(row, "message_id")?)?,
+        let mut out = HashMap::new();
+        for chunk in ids.chunks(CHUNK) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT i.message_id, i.kinds, c.kind, c.list_topic FROM message_insights i
+                 LEFT JOIN message_categories c ON c.message_id = i.message_id
+                 WHERE i.message_id IN ({marks})"
+            );
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for id in chunk {
+                query = query.bind(id.to_string());
+            }
+            for row in query.fetch_all(&self.pool).await.map_err(backend)? {
+                out.insert(
+                    parse(&get::<String>(&row, "message_id")?)?,
                     InsightSummary {
-                        kinds: unbits(get(row, "kinds")?),
+                        kinds: unbits(get(&row, "kinds")?),
+                        kind: get::<Option<String>>(&row, "kind")?
+                            .as_deref()
+                            .and_then(MessageKind::from_name),
+                        topic: get::<Option<String>>(&row, "list_topic")?
+                            .as_deref()
+                            .and_then(Topic::from_name),
                     },
-                ))
-            })
-            .collect()
+                );
+            }
+        }
+        Ok(out)
     }
 
     async fn messages_needing_insights(
@@ -191,5 +242,97 @@ impl InsightStore for SqliteStore {
         .await
         .map_err(backend)?;
         Ok(unsigned(count))
+    }
+
+    async fn record_unsubscribe(&self, request: &UnsubscribeRequest) -> Result<(), StoreError> {
+        let archive = request.archive.to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        sqlx::query_scalar::<_, i64>("SELECT 1 FROM archives WHERE id = ?")
+            .bind(&archive)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?
+            .ok_or(StoreError::NotFound("archive"))?;
+        if let Some(message) = request.message {
+            let owner: String = sqlx::query_scalar("SELECT archive_id FROM messages WHERE id = ?")
+                .bind(message.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?
+                .ok_or(StoreError::NotFound("message"))?;
+            if owner != archive {
+                return Err(StoreError::Invalid(
+                    "the message is in another archive".into(),
+                ));
+            }
+        }
+        let done = sqlx::query(
+            "INSERT OR IGNORE INTO unsubscribe_requests (id, archive_id, message_id, list_key,
+                 requested_at, requested_by, outcome, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(request.id.to_string())
+        .bind(&archive)
+        .bind(request.message.map(|m| m.to_string()))
+        .bind(&request.list_key)
+        .bind(request.requested_at.as_millis())
+        .bind(request.requested_by.to_string())
+        .bind(request.outcome.as_str())
+        .bind(request.status.map(i64::from))
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
+        if done.rows_affected() == 0 {
+            return Err(StoreError::Invalid(
+                "an unsubscribe request with this id exists".into(),
+            ));
+        }
+        tx.commit().await.map_err(backend)
+    }
+
+    async fn last_unsubscribe(
+        &self,
+        archive: ArchiveId,
+        list_key: &str,
+    ) -> Result<Option<UnsubscribeRequest>, StoreError> {
+        sqlx::query(
+            "SELECT * FROM unsubscribe_requests WHERE archive_id = ? AND list_key = ?
+             ORDER BY requested_at DESC, id DESC LIMIT 1",
+        )
+        .bind(archive.to_string())
+        .bind(list_key)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(backend)?
+        .map(|row| unsubscribe_row(&row))
+        .transpose()
+    }
+
+    async fn last_unsubscribes(
+        &self,
+        archive: ArchiveId,
+        list_keys: &[String],
+    ) -> Result<HashMap<String, UnsubscribeRequest>, StoreError> {
+        let archive = archive.to_string();
+        let mut out = HashMap::new();
+        for chunk in list_keys.chunks(CHUNK) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY list_key
+                     ORDER BY requested_at DESC, id DESC) AS rank
+                 FROM unsubscribe_requests WHERE archive_id = ? AND list_key IN ({marks}))
+                 WHERE rank = 1"
+            );
+            let mut query = sqlx::query(AssertSqlSafe(sql)).bind(&archive);
+            for key in chunk {
+                query = query.bind(key);
+            }
+            for row in query.fetch_all(&self.pool).await.map_err(backend)? {
+                let request = unsubscribe_row(&row)?;
+                out.insert(request.list_key.clone(), request);
+            }
+        }
+        Ok(out)
     }
 }

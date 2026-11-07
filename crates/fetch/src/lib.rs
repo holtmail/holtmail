@@ -1,11 +1,22 @@
-//! Contract for fetching remote images linked from messages.
+//! Contract for outbound requests that message content can cause.
 //!
-//! The reader's image proxy and the archiver both fetch through a [`Fetcher`], so one place decides
-//! which addresses may be contacted. A message is written by its sender, so every URL in it is
-//! untrusted: a fetcher must never reach the server's own network.
+//! The reader's image proxy and the archiver fetch images through a [`Fetcher`], and one-click
+//! unsubscribe requests go through a [`OneClick`], so one place decides which addresses may be
+//! contacted. A message is written by its sender, so every URL in it is untrusted: an
+//! implementation must never reach the server's own network. Holtmail's own data files come
+//! through a [`DataDownload`], which only ever contacts a pinned list of hosts.
+
+mod data_download;
+mod one_click;
+
+#[cfg(feature = "testing")]
+pub mod testing;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+
+pub use data_download::{DataDownload, Download};
+pub use one_click::{OneClick, OneClickOutcome, OneClickResponse};
 
 /// An image downloaded from a remote server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,14 +27,24 @@ pub struct RemoteImage {
     pub bytes: Bytes,
 }
 
-/// Why an image could not be fetched.
+/// Why a request could not be made or completed.
+///
+/// For [`OneClick::post`] the variants map one to one onto the stored unsubscribe outcomes:
+/// `Refused` is `refused` and `Unavailable` is `network`. An answered request is never an error,
+/// whatever its status; see [`OneClickOutcome`].
+///
+/// For [`DataDownload::get`], `Refused` means the URL, a redirect, the `etag` or the body size
+/// broke the rules and nothing more was requested; `Unavailable` means the host could not be
+/// reached in time or answered with a status other than 2xx or a `304` to a conditional request.
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
-    /// The fetcher will not fetch this: not an `http(s)` URL, an address inside a private network,
-    /// not an image or too large. Asking again gives the same answer.
+    /// The request will not be made: a URL or address the implementation does not allow, or for
+    /// images not an image or too large. Asking again gives the same answer. For one-click, no
+    /// connection was opened.
     #[error("refused: {0}")]
     Refused(String),
-    /// The remote server could not be reached or answered with an error. It may work later.
+    /// The remote server could not be reached: the name did not resolve, the connection or TLS
+    /// failed, or the time ran out. For images, an error status too. It may work later.
     #[error("unavailable: {0}")]
     Unavailable(String),
 }
@@ -39,44 +60,4 @@ pub trait Fetcher: Send + Sync {
     /// to the implementation's size limit, and gives up after its timeout. It sends no cookies and
     /// no referrer.
     async fn image(&self, url: &str) -> Result<RemoteImage, FetchError>;
-}
-
-/// Conformance suite every [`Fetcher`] implementation runs in its own tests.
-#[cfg(feature = "testing")]
-pub mod testing {
-    use super::*;
-
-    /// URLs a fetcher must refuse without contacting anything outside the machine.
-    pub const REFUSED: &[&str] = &[
-        "not a url",
-        "ftp://example.com/logo.png",
-        "file:///etc/passwd",
-        "data:image/png;base64,AAAA",
-        "http://127.0.0.1/logo.png",
-        "http://127.1/logo.png",
-        "http://2130706433/logo.png",
-        "http://0.0.0.0/logo.png",
-        "http://localhost/logo.png",
-        "http://localhost:8080/api/archives",
-        "http://[::1]/logo.png",
-        "http://[::ffff:127.0.0.1]/logo.png",
-        "http://10.1.2.3/logo.png",
-        "http://172.16.0.1/logo.png",
-        "http://192.168.1.1/logo.png",
-        "http://100.64.0.1/logo.png",
-        "http://169.254.169.254/latest/meta-data/",
-        "http://[fd00::1]/logo.png",
-        "http://[fe80::1]/logo.png",
-    ];
-
-    /// Checks that `fetcher` refuses every URL in [`REFUSED`] with [`FetchError::Refused`].
-    /// Panics on the first violation. Needs no network.
-    pub async fn conformance(fetcher: &dyn Fetcher) {
-        for url in REFUSED {
-            match fetcher.image(url).await {
-                Err(FetchError::Refused(_)) => {}
-                other => panic!("{url} was not refused: {other:?}"),
-            }
-        }
-    }
 }

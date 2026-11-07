@@ -1,6 +1,6 @@
 [package]
 name = "holtmail-fetch"
-description = "Contract for fetching remote images linked from messages"
+description = "Contract for fetching remote images, one-click unsubscribe requests and data files"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,12 +8,14 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
-testing = []
+testing = ["dep:holtmail-core", "holtmail-core/testing", "dep:tokio"]
 
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
+holtmail-core = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "time"] }
 
 [lints]
 workspace = true

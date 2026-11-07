@@ -1,9 +1,22 @@
-//! A [`Fetcher`] over HTTP that only ever connects to public addresses.
+//! A [`Fetcher`] and a [`OneClick`](holtmail_fetch::OneClick) over HTTP that only ever connect to
+//! public addresses, and a [`DataDownload`](holtmail_fetch::DataDownload) that only ever connects
+//! to pinned hosts.
 //!
 //! Host names go through a resolver that drops every non-public address, so a name that points
 //! into a private network, or changes to one between checks, fails to connect. Addresses written
 //! in the URL and in redirects are checked before any connection. Requests can go through an
-//! outbound proxy, so senders see the proxy's address instead of the server's.
+//! outbound proxy, so senders see the proxy's address instead of the server's. One-click requests
+//! never use a proxy; see [`HttpOneClick`]. Data downloads never use one either; see
+//! [`HttpDataDownload`].
+
+mod data_download;
+mod one_click;
+
+pub use data_download::{DataDownloadOptions, GITHUB_RELEASE_HOSTS, HttpDataDownload};
+
+#[cfg(feature = "test-networks")]
+pub use one_click::parse_cidr;
+pub use one_click::{HttpOneClick, OneClickOptions};
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
@@ -259,7 +272,7 @@ fn check_url(url: &Url) -> Result<(), &'static str> {
     }
 }
 
-fn is_local_name(name: &str) -> bool {
+pub(crate) fn is_local_name(name: &str) -> bool {
     let name = name.trim_end_matches('.').to_ascii_lowercase();
     name == "localhost"
         || name.ends_with(".localhost")
@@ -276,6 +289,10 @@ async fn public_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>, FetchErr
 }
 
 /// Whether `ip` is an address on the public internet.
+///
+/// Besides the special-purpose IPv4 and IPv6 ranges, IPv4-mapped addresses count as their IPv4
+/// address, a 6to4 address (`2002::/16`) counts as the IPv4 address it embeds, and Teredo
+/// (`2001::/32`) and NAT64 (`64:ff9b::/32`) addresses are never public.
 pub fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => is_public_v4(ip),
@@ -303,15 +320,20 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
 }
 
 fn is_public_v6(ip: Ipv6Addr) -> bool {
-    let first = ip.segments()[0];
+    let [first, second, third, ..] = ip.segments();
+    if first == 0x2002 {
+        let [a, b] = second.to_be_bytes();
+        let [c, d] = third.to_be_bytes();
+        return is_public_v4(Ipv4Addr::new(a, b, c, d));
+    }
     !(ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_multicast()
         || (first & 0xfe00) == 0xfc00
         || (first & 0xffc0) == 0xfe80
         || (first & 0xffc0) == 0xfec0
-        || first == 0x2001 && ip.segments()[1] == 0x0db8
-        || first == 0x0064 && ip.segments()[1] == 0xff9b)
+        || first == 0x2001 && (second == 0 || second == 0x0db8)
+        || first == 0x0064 && second == 0xff9b)
 }
 
 struct PublicResolver;
@@ -459,7 +481,13 @@ mod tests {
 
     #[test]
     fn tells_public_addresses_apart() {
-        for public in ["93.184.216.34", "1.1.1.1", "2606:4700:4700::1111"] {
+        for public in [
+            "93.184.216.34",
+            "1.1.1.1",
+            "2606:4700:4700::1111",
+            "2002:5db8:d822::1",
+            "2001:4860:4860::8888",
+        ] {
             assert!(is_public(public.parse().unwrap()), "{public}");
         }
         for private in [
@@ -477,6 +505,14 @@ mod tests {
             "fe80::1",
             "::ffff:10.0.0.1",
             "64:ff9b::a00:1",
+            "2002:a00:1::1",
+            "2002:7f00:1::",
+            "2002:c0a8:101::1",
+            "2002:a9fe:a9fe::1",
+            "2002::",
+            "2001::1",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+            "2001:db8::1",
         ] {
             assert!(!is_public(private.parse().unwrap()), "{private}");
         }

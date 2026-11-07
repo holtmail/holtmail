@@ -1,11 +1,14 @@
 [package]
 name = "holtmail-fetch-http"
-description = "Fetching remote images over HTTP, public addresses only"
+description = "Fetching remote images and one-click unsubscribe over HTTP, public addresses only, and data files from pinned hosts"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+
+[features]
+test-networks = []
 
 [dependencies]
 holtmail-core.workspace = true
@@ -13,7 +16,7 @@ holtmail-fetch.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 reqwest.workspace = true
-tokio = { workspace = true, features = ["net"] }
+tokio = { workspace = true, features = ["net", "time"] }
 url.workspace = true
 
 [dev-dependencies]

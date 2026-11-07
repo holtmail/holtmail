@@ -49,6 +49,8 @@ struct Fields {
     folders: Field,
     flags: Field,
     labels: Field,
+    insights: Field,
+    categories: Field,
     date: Field,
     has_attachments: Field,
 }
@@ -169,6 +171,8 @@ fn schema() -> (Schema, Fields) {
         folders: builder.add_text_field("folders", STRING),
         flags: builder.add_text_field("flags", STRING),
         labels: builder.add_text_field("labels", STRING),
+        insights: builder.add_text_field("insights", STRING),
+        categories: builder.add_text_field("categories", STRING),
         date: builder.add_i64_field("date", INDEXED | tantivy::schema::FAST),
         has_attachments: builder.add_bool_field("has_attachments", INDEXED),
     };
@@ -208,6 +212,12 @@ fn document(fields: &Fields, doc: &IndexDocument) -> TantivyDocument {
     }
     for label in &doc.labels {
         out.add_text(fields.labels, label.to_lowercase());
+    }
+    for insight in &doc.insights {
+        out.add_text(fields.insights, insight.to_lowercase());
+    }
+    for category in &doc.categories {
+        out.add_text(fields.categories, category.to_lowercase());
     }
     out.add_i64(fields.date, doc.date.as_millis());
     out.add_bool(fields.has_attachments, doc.has_attachments);
@@ -384,6 +394,8 @@ impl Inner {
             Clause::In(folder) => exact(f.folders, &folder.to_lowercase()),
             Clause::Flag(flag) => exact(f.flags, flag),
             Clause::Label(label) => exact(f.labels, &label.to_lowercase()),
+            Clause::Insight(name) => exact(f.insights, &name.to_lowercase()),
+            Clause::Category(value) => exact(f.categories, &value.to_lowercase()),
             Clause::Before(at) => Box::new(RangeQuery::new(
                 Bound::Unbounded,
                 Bound::Excluded(Term::from_field_i64(f.date, at.as_millis())),
@@ -787,6 +799,42 @@ mod tests {
         assert!(!TantivyIndex::open(dir.path()).unwrap().was_emptied());
     }
 
+    #[test]
+    fn empties_an_index_written_before_insights_and_categories() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut old = Schema::builder();
+        let text = TextOptions::default().set_indexing_options(
+            TextFieldIndexing::default()
+                .set_tokenizer(TOKENIZER)
+                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+        );
+        for name in ["doc_type", "item_id", "message_id"] {
+            old.add_text_field(name, STRING | STORED);
+        }
+        old.add_text_field("archive_id", STRING);
+        for name in [
+            "subject",
+            "from",
+            "recipients",
+            "body",
+            "filenames",
+            "attachment_text",
+            "all",
+        ] {
+            old.add_text_field(name, text.clone());
+        }
+        for name in ["folders", "flags", "labels"] {
+            old.add_text_field(name, STRING);
+        }
+        old.add_i64_field("date", INDEXED | tantivy::schema::FAST);
+        old.add_bool_field("has_attachments", INDEXED);
+        Index::open_or_create(MmapDirectory::open(dir.path()).unwrap(), old.build()).unwrap();
+        let index = TantivyIndex::open(dir.path()).unwrap();
+        assert!(index.was_emptied());
+        drop(index);
+        assert!(!TantivyIndex::open(dir.path()).unwrap().was_emptied());
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn finds_other_forms_of_russian_and_english_words() {
         let index = TantivyIndex::in_memory().unwrap();
@@ -806,6 +854,8 @@ mod tests {
             labels: Vec::new(),
             date: holtmail_core::Timestamp::from_secs(1),
             has_attachments: false,
+            insights: Vec::new(),
+            categories: Vec::new(),
         };
         let lease = message("Договор аренды", "Подписанный договор во вложении.");
         let repairs = message("Lighthouse", "The repairs were finished on Monday.");

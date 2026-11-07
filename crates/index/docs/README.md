@@ -4,9 +4,16 @@ The contract for full-text search over messages, and over contacts and calendar 
 
 ## Documents
 
-`IndexDocument` holds what search needs about one message: ids (`message_id`, `archive_id`, `thread_id`), `subject`, `from`, `recipients` (To, Cc and Bcc together), `body` (plain text), `attachment_names`, `attachment_text`, `folders` (paths and role names such as `inbox`), `flags`, `labels`, `date` and `has_attachments`.
+`IndexDocument` holds what search needs about one message: ids (`message_id`, `archive_id`, `thread_id`), `subject`, `from`, `recipients` (To, Cc and Bcc together), `body` (plain text), `attachment_names`, `attachment_text`, `folders` (paths and role names such as `inbox`), `flags`, `labels`, `date`, `has_attachments`, `insights` and `categories`.
 
-`ItemDocument` holds a contact or an event: `item_id`, `archive_id`, `kind` (`DocumentKind::Event` or `Contact`), `title` (summary or name), `organizer`, `people` (attendees, or a contact's own names and addresses), `text` (description and location, or organization, title, phones, notes and addresses) and `date` (an event's start; none for contacts). Messages and items live side by side: `search` only ever finds messages and `search_items` only items, with the same clauses: an item's title counts as the subject, its organizer as the sender, its people as recipients, its text as the body and its date as the date; clauses about folders, flags, labels and attachments never match items.
+| Field | Values |
+| --- | --- |
+| `insights` | Names of the insight kinds found at `Likely` or higher outside forwarded parts: `code`, `link`, `unsubscribe`, `reservation`, `order`, `invoice`, `parcel`, `pass` (bit order of `holtmail_insight::KindTags`) |
+| `categories` | The effective categories: `kind:<name>` (`kind:personal`, `kind:list`, `kind:bulk`, `kind:notification`) and one `topic:<name>` per effective topic (`topic:travel`, ...), lowercase; empty before stage B |
+
+Only these names are indexed, never the values behind them: no codes, URLs, tracking or order numbers.
+
+`ItemDocument` holds a contact or an event: `item_id`, `archive_id`, `kind` (`DocumentKind::Event` or `Contact`), `title` (summary or name), `organizer`, `people` (attendees, or a contact's own names and addresses), `text` (description and location, or organization, title, phones, notes and addresses) and `date` (an event's start; none for contacts). Messages and items live side by side: `search` only ever finds messages and `search_items` only items, with the same clauses: an item's title counts as the subject, its organizer as the sender, its people as recipients, its text as the body and its date as the date; clauses about folders, flags, labels, attachments, insights and categories never match items.
 
 ## Queries
 
@@ -24,10 +31,14 @@ A `SearchQuery` is a list of `Clause`s that must all match; an empty list matche
 | `In(folder)` | A folder path or role, case-insensitive |
 | `Flag(flag)` | An exact flag, e.g. `\Seen` |
 | `Label(label)` | A whole label name, case-insensitive: `projects/2025` finds `Projects/2025`, `projects` does not |
+| `Insight(name)` | A whole insight kind name in `insights`, case-insensitive |
+| `Category(value)` | A whole value in `categories`, case-insensitive: `kind:bulk` finds `kind:bulk`, `kind:bul` and `bulk` do not |
 | `Before(t)`, `After(t)` | `date < t`, `date >= t` |
 | `Kind(kind)` | Documents of that kind: `Mail` every message and no item, `Event` or `Contact` only those items |
 | `With(words)` | Words in the name or address of anyone involved, as a phrase: a message's sender or recipients, an event's organizer or attendees, a contact's own names and addresses |
 | `Not(clause)` | The inner clause does not match |
+
+`Clause::reads_insights()` is true for `Insight` and `Category`, also under any number of `Not`, and `SearchQuery::reads_insights()` when any clause is: exactly when the result depends on derived insight data that may lag behind the stored messages. The server refuses deletion reviews on such queries while insights or the index are catching up.
 
 Words match after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` finds `lunch`. Outside phrases, a word of three letters or more also finds words that start with it: `quart` finds `quarterly`. Shorter words match whole words only.
 
@@ -47,7 +58,7 @@ Words match after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` f
 
 ## Writing an implementation
 
-Run `holtmail_index::testing::conformance(Arc::new(index))` from a multi-threaded test (it checks messages, then items: kinds, `With`, field clauses on items, order, replacement and removal) with `holtmail-index = { workspace = true, features = ["testing"] }` in `[dev-dependencies]`.
+Run `holtmail_index::testing::conformance(Arc::new(index))` from a multi-threaded test (it checks messages, then items: kinds, `With`, field clauses on items, order, replacement and removal, then `Insight` and `Category`: match and no match, letter case, whole values, `Not`, archive isolation, items never matching, and `put` dropping old values) with `holtmail-index = { workspace = true, features = ["testing"] }` in `[dev-dependencies]`.
 
 ## Implementations
 

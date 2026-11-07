@@ -348,6 +348,7 @@ impl Export {
                 archive_id: self.archive.id,
                 folder_id: folder,
                 label,
+                category: None,
                 after: cursor.after.take(),
                 limit: PAGE,
             })

@@ -15,8 +15,9 @@ let index = TantivyIndex::in_memory()?; // tests
 
 - Words are split on anything that is not a letter or digit, lowercased and folded to ASCII: `Zoë` → `zoe`, `ada@example.com` → `ada example com`. Cyrillic and other scripts are kept as they are, lowercased.
 - `subject`, `from`, `recipients`, `body`, `filenames` and `attachment_text` are separate fields with positions, for field clauses and phrases; `all` holds all of them for free text.
-- Folders and labels (lowercased) and flags are exact terms; `date` is a fast `i64` field for sorting and ranges.
+- Folders, labels, insights and categories (lowercased) and flags are exact terms; `date` is a fast `i64` field for sorting and ranges.
 - Contacts and events share the index: a stored `doc_type` term (`mail`, `event`, `contact`) tells them apart and every query is limited to messages or to items by it; items are keyed by a stored `item_id`, and their title, organizer, people and text go into `subject`, `from`, `recipients` and `body` (and `all`). Contacts have no `date`, so they sort after events. Adding `doc_type` and `item_id` changed the schema, so an index from before contacts and events were searchable is emptied on open and rebuilt by the server.
+- Schema bumps so far, each emptying the index once on open and making the server rebuild it: `labels`; `doc_type` and `item_id`; `insights` and `categories` (Phase 40 of [INSIGHTS.md](../../../docs/INSIGHTS.md), one bump for both).
 
 ## Guarantees and limits
 

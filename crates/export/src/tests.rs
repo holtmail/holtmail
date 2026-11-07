@@ -142,6 +142,8 @@ async fn fixture() -> Fixture {
             labels: Vec::new(),
             date: message.date,
             has_attachments: false,
+            insights: Vec::new(),
+            categories: Vec::new(),
         });
         ids.push(blob);
     }

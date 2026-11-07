@@ -12,6 +12,7 @@ use crate::*;
 pub async fn conformance(index: Arc<dyn SearchIndex>) {
     messages(&*index).await;
     items(&*index).await;
+    insights(&*index).await;
 }
 
 async fn messages(index: &dyn SearchIndex) {
@@ -301,6 +302,8 @@ fn doc(
         labels: Vec::new(),
         date: Timestamp::from_secs(kilo_secs * 1000),
         has_attachments: false,
+        insights: Vec::new(),
+        categories: Vec::new(),
     }
 }
 
@@ -522,4 +525,128 @@ async fn items(index: &dyn SearchIndex) {
         2,
         "removing items leaves messages"
     );
+}
+
+async fn insights(index: &dyn SearchIndex) {
+    let archive = ArchiveId::new();
+    let mut sign_in = doc(archive, "Your code", "login@example.com", "Login", 3);
+    sign_in.insights = vec!["code".into(), "link".into()];
+    sign_in.categories = vec!["kind:notification".into()];
+    let mut news = doc(archive, "Weekly news", "news@example.org", "News", 2);
+    news.insights = vec!["unsubscribe".into()];
+    news.categories = vec!["kind:bulk".into(), "topic:travel".into()];
+    let plain = doc(archive, "Hello", "ada@example.com", "Ada", 1);
+    let mut elsewhere = doc(
+        ArchiveId::new(),
+        "Your code",
+        "login@example.com",
+        "Login",
+        4,
+    );
+    elsewhere.insights = vec!["code".into()];
+    elsewhere.categories = vec!["kind:bulk".into()];
+    let mut contact = item(archive, DocumentKind::Contact, "code bulk", None);
+    contact.text = "kind:bulk topic:travel code".into();
+    index
+        .put(vec![
+            sign_in.clone(),
+            news.clone(),
+            plain.clone(),
+            elsewhere.clone(),
+        ])
+        .await
+        .unwrap();
+    index.put_items(vec![contact.clone()]).await.unwrap();
+    index.commit().await.unwrap();
+
+    let not = |c: Clause| Clause::Not(Box::new(c));
+    let cases: Vec<(Vec<Clause>, Vec<MessageId>)> = vec![
+        (
+            vec![Clause::Insight("code".into())],
+            vec![sign_in.message_id],
+        ),
+        (
+            vec![Clause::Insight("CODE".into())],
+            vec![sign_in.message_id],
+        ),
+        (
+            vec![Clause::Insight("unsubscribe".into())],
+            vec![news.message_id],
+        ),
+        (vec![Clause::Insight("cod".into())], vec![]),
+        (vec![Clause::Insight("parcel".into())], vec![]),
+        (
+            vec![not(Clause::Insight("code".into()))],
+            vec![news.message_id, plain.message_id],
+        ),
+        (
+            vec![Clause::Category("kind:bulk".into())],
+            vec![news.message_id],
+        ),
+        (
+            vec![Clause::Category("Topic:TRAVEL".into())],
+            vec![news.message_id],
+        ),
+        (vec![Clause::Category("kind:bul".into())], vec![]),
+        (vec![Clause::Category("bulk".into())], vec![]),
+        (vec![Clause::Category("travel".into())], vec![]),
+        (
+            vec![not(Clause::Category("kind:bulk".into()))],
+            vec![sign_in.message_id, plain.message_id],
+        ),
+        (
+            vec![
+                Clause::Insight("code".into()),
+                Clause::Category("kind:notification".into()),
+            ],
+            vec![sign_in.message_id],
+        ),
+        (vec![Clause::Text("bulk".into())], vec![]),
+    ];
+    for (clauses, expected) in cases {
+        assert_eq!(
+            search(index, archive, clauses.clone(), SortOrder::Newest).await,
+            expected,
+            "wrong result for {clauses:?}"
+        );
+    }
+
+    for clauses in [
+        vec![Clause::Insight("code".into())],
+        vec![Clause::Category("kind:bulk".into())],
+        vec![Clause::Category("topic:travel".into())],
+    ] {
+        assert_eq!(
+            found_items(index, archive, clauses.clone()).await,
+            Vec::<ItemId>::new(),
+            "items matched {clauses:?}"
+        );
+    }
+    assert_eq!(
+        found_items(index, archive, vec![not(Clause::Insight("code".into()))]).await,
+        [contact.item_id],
+        "an item has no insights"
+    );
+
+    let mut changed = news.clone();
+    changed.insights = vec!["order".into()];
+    changed.categories = vec!["kind:personal".into()];
+    index.put(vec![changed]).await.unwrap();
+    index.commit().await.unwrap();
+    for (clauses, expected) in [
+        (vec![Clause::Insight("unsubscribe".into())], vec![]),
+        (vec![Clause::Category("kind:bulk".into())], vec![]),
+        (vec![Clause::Category("topic:travel".into())], vec![]),
+        (vec![Clause::Insight("order".into())], vec![news.message_id]),
+        (
+            vec![Clause::Category("kind:personal".into())],
+            vec![news.message_id],
+        ),
+    ] {
+        assert_eq!(
+            search(index, archive, clauses.clone(), SortOrder::Newest).await,
+            expected,
+            "put kept old values for {clauses:?}"
+        );
+    }
 }

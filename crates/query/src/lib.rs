@@ -4,8 +4,10 @@
 //! from:ada@example.com has:attachment before:2024-01-01 "quarterly report" -in:trash
 //! ```
 
+use holtmail_category::{MessageKind, Topic};
 use holtmail_core::Timestamp;
 use holtmail_index::{Clause, DocumentKind, SearchQuery};
+use holtmail_insight::KindTag;
 
 /// Why a search could not be parsed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -16,6 +18,29 @@ pub enum QueryError {
     /// An operator is missing its value, e.g. `from:` at the end.
     #[error("{0}: needs a value")]
     MissingValue(String),
+    /// An operator that only takes known values got another one, e.g. `category:weather`.
+    #[error(
+        "{operator}: {value:?} is not a {operator}; use one of {}",
+        allowed(operator)
+    )]
+    UnknownValue {
+        /// The operator, lowercase.
+        operator: String,
+        /// The value as typed.
+        value: String,
+    },
+}
+
+fn allowed(operator: &str) -> String {
+    match operator {
+        "category" => Topic::ALL
+            .iter()
+            .map(|t| t.name())
+            .chain(MessageKind::ALL.iter().map(|k| k.name()))
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => String::new(),
+    }
 }
 
 /// Parses `input`.
@@ -25,12 +50,18 @@ pub enum QueryError {
 ///   or a quoted value; `label:"Muy importante"` matches the whole label name.
 /// - `has:attachment`; `is:read`, `is:unread`, `is:flagged` (also `is:starred`).
 /// - `is:event`, `is:contact` and `is:mail` find only documents of that kind.
+/// - `has:code`, `has:link`, `has:unsubscribe`, `has:reservation`, `has:order`, `has:invoice`,
+///   `has:parcel` and `has:pass` find messages with that insight ([`Clause::Insight`]).
+/// - `category:<topic or kind>` (`category:travel`, `category:bulk`) and `is:newsletter`
+///   (kind `bulk`), `is:notification`, `is:personal`, `is:list` find messages by category
+///   ([`Clause::Category`] with `topic:<name>` or `kind:<name>`). An unknown `category:` value
+///   is [`QueryError::UnknownValue`].
 /// - `with:` takes a name or an address and finds mail from or to them, events they organize
 ///   or attend, and their contact cards.
 /// - `before:` and `after:` take `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in UTC; `before:2024` means
 ///   before 1 January 2024, `after:2024-03` means from 1 March 2024 on.
 /// - `-` before any term negates it.
-/// - An unknown `name:value` is searched as plain text.
+/// - An unknown `name:value`, and an unknown `has:` or `is:` value, is searched as plain text.
 pub fn parse(input: &str) -> Result<SearchQuery, QueryError> {
     let mut clauses = Vec::new();
     for token in tokens(input) {
@@ -114,6 +145,7 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
             | "with"
             | "has"
             | "is"
+            | "category"
             | "before"
             | "after"
     );
@@ -135,7 +167,16 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
         "label" => Clause::Label(value),
         "with" => Clause::With(value),
         "has" if value.eq_ignore_ascii_case("attachment") => Clause::HasAttachment,
+        "has" => match KindTag::from_name(&value.to_ascii_lowercase()) {
+            Some(tag) => Clause::Insight(tag.name().into()),
+            None => free(text, quoted),
+        },
+        "category" => category(&value)?,
         "is" => match value.to_ascii_lowercase().as_str() {
+            "newsletter" | "newsletters" => kind(MessageKind::Bulk),
+            "notification" | "notifications" => kind(MessageKind::Notification),
+            "personal" => kind(MessageKind::Personal),
+            "list" => kind(MessageKind::List),
             "read" | "seen" => Clause::Flag("\\Seen".into()),
             "unread" | "unseen" => Clause::Not(Box::new(Clause::Flag("\\Seen".into()))),
             "flagged" | "starred" => Clause::Flag("\\Flagged".into()),
@@ -148,6 +189,24 @@ fn clause(text: &str, quoted: bool) -> Result<Clause, QueryError> {
         "after" => Clause::After(date(&value)?),
         _ => free(text, quoted),
     })
+}
+
+fn kind(kind: MessageKind) -> Clause {
+    Clause::Category(format!("kind:{}", kind.name()))
+}
+
+fn category(value: &str) -> Result<Clause, QueryError> {
+    let name = value.to_lowercase();
+    if let Some(topic) = Topic::from_name(&name) {
+        return Ok(Clause::Category(format!("topic:{}", topic.name())));
+    }
+    match MessageKind::from_name(&name) {
+        Some(found) => Ok(kind(found)),
+        None => Err(QueryError::UnknownValue {
+            operator: "category".into(),
+            value: value.to_owned(),
+        }),
+    }
 }
 
 fn free(text: &str, quoted: bool) -> Clause {
@@ -309,6 +368,114 @@ mod tests {
             vec![
                 Clause::Text("re:hello".into()),
                 Clause::Text("https://example.com".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_insight_kinds() {
+        assert_eq!(
+            clauses(
+                "has:code HAS:Link has:unsubscribe has:reservation has:order has:invoice has:parcel has:pass"
+            ),
+            [
+                "code",
+                "link",
+                "unsubscribe",
+                "reservation",
+                "order",
+                "invoice",
+                "parcel",
+                "pass"
+            ]
+            .map(|name| Clause::Insight(name.into()))
+            .to_vec()
+        );
+        assert_eq!(
+            clauses("-has:code has:attachment"),
+            vec![
+                Clause::Not(Box::new(Clause::Insight("code".into()))),
+                Clause::HasAttachment,
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_categories() {
+        let category = |value: &str| Clause::Category(value.into());
+        assert_eq!(
+            clauses("category:travel CATEGORY:Finance category:bulk category:Notification"),
+            vec![
+                category("topic:travel"),
+                category("topic:finance"),
+                category("kind:bulk"),
+                category("kind:notification"),
+            ]
+        );
+        for topic in Topic::ALL {
+            assert_eq!(
+                clauses(&format!("category:{}", topic.name())),
+                [category(&format!("topic:{}", topic.name()))]
+            );
+        }
+        assert_eq!(
+            clauses(r#"-category:"travel" category:personal category:list"#),
+            vec![
+                Clause::Not(Box::new(category("topic:travel"))),
+                category("kind:personal"),
+                category("kind:list"),
+            ]
+        );
+        assert_eq!(
+            parse("category:"),
+            Err(QueryError::MissingValue("category".into()))
+        );
+    }
+
+    #[test]
+    fn refuses_unknown_categories() {
+        let error = parse("lunch category:weather").unwrap_err();
+        assert_eq!(
+            error,
+            QueryError::UnknownValue {
+                operator: "category".into(),
+                value: "weather".into(),
+            }
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains(r#""weather" is not a category"#),
+            "{message}"
+        );
+        assert!(
+            message.contains("travel") && message.contains("bulk"),
+            "{message}"
+        );
+        assert!(parse("-category:kind:bulk").is_err());
+    }
+
+    #[test]
+    fn maps_kinds_to_categories() {
+        let category = |value: &str| Clause::Category(value.into());
+        assert_eq!(
+            clauses("is:newsletter IS:Notification is:personal -is:list"),
+            vec![
+                category("kind:bulk"),
+                category("kind:notification"),
+                category("kind:personal"),
+                Clause::Not(Box::new(category("kind:list"))),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_unknown_has_and_is_values_as_text() {
+        assert_eq!(
+            clauses("has:dog is:spam -has:codes"),
+            vec![
+                Clause::Text("has:dog".into()),
+                Clause::Text("is:spam".into()),
+                Clause::Not(Box::new(Clause::Text("has:codes".into()))),
             ]
         );
     }

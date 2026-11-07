@@ -8,8 +8,10 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+holtmail-category.workspace = true
 holtmail-core.workspace = true
 holtmail-index.workspace = true
+holtmail-insight.workspace = true
 thiserror.workspace = true
 
 [lints]

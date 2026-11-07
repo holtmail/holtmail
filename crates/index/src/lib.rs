@@ -44,6 +44,15 @@ pub struct IndexDocument {
     pub date: Timestamp,
     /// Whether the message has attachments that are not inline.
     pub has_attachments: bool,
+    /// Names of the insight kinds found at `Likely` or higher outside forwarded parts: `code`,
+    /// `link`, `unsubscribe`, `reservation`, `order`, `invoice`, `parcel`, `pass`. Only these
+    /// names are indexed, never the values themselves (codes, URLs, numbers). Matched whole and
+    /// case-insensitive by [`Clause::Insight`].
+    pub insights: Vec<String>,
+    /// The message's effective categories as `kind:<name>` (e.g. `kind:bulk`) and
+    /// `topic:<name>` (e.g. `topic:travel`). Only these names are indexed. Matched whole and
+    /// case-insensitive by [`Clause::Category`].
+    pub categories: Vec<String>,
 }
 
 /// What a document is.
@@ -85,7 +94,7 @@ pub struct ItemDocument {
 /// Contacts and events are searched with the same clauses: their title as the subject, an event's
 /// organizer as the sender, its attendees (or a contact's own names and addresses) as the
 /// recipients, their other text as the body and an event's start as the date. Clauses about
-/// folders, flags, labels and attachments never match them.
+/// folders, flags, labels, attachments, insights and categories never match them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Clause {
@@ -114,6 +123,12 @@ pub enum Clause {
     /// Carries this label, compared whole and case-insensitive: `projects` does not find
     /// `Projects/2025`.
     Label(String),
+    /// Has an insight of this kind name (see [`IndexDocument::insights`]), compared whole and
+    /// case-insensitive.
+    Insight(String),
+    /// Has this category value (see [`IndexDocument::categories`]), compared whole and
+    /// case-insensitive: `kind:bul` does not find `kind:bulk`.
+    Category(String),
     /// Dated before this time.
     Before(Timestamp),
     /// Dated at or after this time.
@@ -127,11 +142,32 @@ pub enum Clause {
     Not(Box<Clause>),
 }
 
+impl Clause {
+    /// True exactly when this clause's result depends on derived insight data, which may lag
+    /// behind the stored messages: [`Clause::Insight`] and [`Clause::Category`], also under any
+    /// number of [`Clause::Not`].
+    pub fn reads_insights(&self) -> bool {
+        match self {
+            Clause::Insight(_) | Clause::Category(_) => true,
+            Clause::Not(inner) => inner.reads_insights(),
+            _ => false,
+        }
+    }
+}
+
 /// A search: clauses that must all match.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchQuery {
     /// Clauses; an empty list matches every message.
     pub clauses: Vec<Clause>,
+}
+
+impl SearchQuery {
+    /// True exactly when the result depends on derived insight data that may lag: when any
+    /// clause [reads insights](Clause::reads_insights).
+    pub fn reads_insights(&self) -> bool {
+        self.clauses.iter().any(Clause::reads_insights)
+    }
 }
 
 /// How to order results.
@@ -234,4 +270,35 @@ pub trait SearchIndex: Send + Sync {
         offset: u32,
         limit: u32,
     ) -> Result<ItemResults, IndexError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn knows_which_clauses_read_insights() {
+        let not = |c: Clause| Clause::Not(Box::new(c));
+        assert!(Clause::Insight("code".into()).reads_insights());
+        assert!(Clause::Category("kind:bulk".into()).reads_insights());
+        assert!(not(not(Clause::Category("topic:travel".into()))).reads_insights());
+        assert!(!Clause::Label("code".into()).reads_insights());
+        assert!(!not(Clause::HasAttachment).reads_insights());
+        assert!(!SearchQuery::default().reads_insights());
+        assert!(
+            SearchQuery {
+                clauses: vec![
+                    Clause::Text("lunch".into()),
+                    not(Clause::Insight("code".into())),
+                ],
+            }
+            .reads_insights()
+        );
+        assert!(
+            !SearchQuery {
+                clauses: vec![Clause::Text("has:code".into())],
+            }
+            .reads_insights()
+        );
+    }
 }

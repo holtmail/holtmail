@@ -10,6 +10,7 @@
 - [Message insights](INSIGHTS.md) — codes, action links, reservations, unsubscribe and categories read out of each message for the reader card, with trust and the domain data file
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
+- [Release notes](RELEASES.md) — what changes for people on upgrade: new operators, changed meaning, one-time rebuilds
 
 ## Modules
 
@@ -32,7 +33,7 @@
 | `holtmail-store` | [Contract for metadata](../crates/store/docs/README.md) |
 | `holtmail-store-sqlite` | [Metadata on SQLite](../crates/store-sqlite/docs/README.md) |
 | `holtmail-sanitize` | [Safe message HTML](../crates/sanitize/docs/README.md) |
-| `holtmail-fetch` | [Contract for fetching remote images](../crates/fetch/docs/README.md) |
+| `holtmail-fetch` | [Contract for fetching remote images, sending one-click unsubscribes and downloading data files](../crates/fetch/docs/README.md) |
 | `holtmail-fetch-http` | [Fetching over HTTP, public addresses only](../crates/fetch-http/docs/README.md) |
 | `holtmail-remote` | [Saving remote images into the archive](../crates/remote/docs/README.md) |
 | `holtmail-index` | [Contract for search](../crates/index/docs/README.md) |
@@ -58,8 +59,18 @@
 | `holtmail-html-scan` | [Bounded scan of message HTML for visible anchors, text and structured data](../crates/html-scan/docs/README.md) |
 | `holtmail-insight` | [Contract for insight extractors](../crates/insight/docs/README.md) |
 | `holtmail-insight-code` | [One-time codes](../crates/insight-code/docs/README.md) |
+| `holtmail-insight-links` | [Action links: verify, reset, sign in, track and the like](../crates/insight-links/docs/README.md) |
+| `holtmail-insight-parcel` | [Parcel tracking numbers with check digits](../crates/insight-parcel/docs/README.md) |
+| `holtmail-insight-pass` | [Wallet passes (pkpass) read within zip caps: style, issuer, date, boarding details](../crates/insight-pass/docs/README.md) |
+| `holtmail-insight-schemaorg` | [schema.org JSON-LD and microdata: reservations, orders, invoices, parcels, actions](../crates/insight-schemaorg/docs/README.md) |
 | `holtmail-insight-unsubscribe` | [Unsubscribe from List-Unsubscribe headers](../crates/insight-unsubscribe/docs/README.md) |
-| `holtmail-insights` | [The insights runner: inputs, signals, auth facts, merge](../crates/insights/docs/README.md) |
+| `holtmail-insights` | [The insights runner: inputs, signals, auth facts, merge; trust and categories (stage B)](../crates/insights/docs/README.md) |
+| `holtmail-category` | [Contract for categorizers: kinds, topics, trust states](../crates/category/docs/README.md) |
+| `holtmail-category-signals` | [Kind from header signals, topics from insight kinds](../crates/category-signals/docs/README.md) |
+| `holtmail-category-data` | [The TSV format of the domain tables and the release manifest](../crates/category-data/docs/README.md) |
+| `holtmail-category-domains` | [Topics by sender domain from the bundled CC0 table; signed release checks](../crates/category-domains/docs/README.md) |
+| `holtmail-category-builder` (apps/category-builder) | [Builds the domain tables from Wikidata and UT1, gates and signs releases](../apps/category-builder/docs/README.md) |
+| `holtmail-links` | [URL unwrapping, tracking parameters, trackers, registrable domains, IDN display](../crates/links/docs/README.md) |
 | `holtmail-json-http` | [JSON over HTTPS for provider APIs](../crates/json-http/docs/README.md) |
 | `holtmail-ingest` | [From raw bytes to an archived message](../crates/ingest/docs/README.md) |
 | `holtmail-import` | [Reading mbox, Maildir, .eml and zip](../crates/import/docs/README.md) |

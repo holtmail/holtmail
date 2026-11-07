@@ -30,6 +30,7 @@ import {
   MailPlusIcon,
   RefreshCwIcon,
   SearchIcon,
+  ShapesIcon,
   SettingsIcon,
   SunMoonIcon,
   TagIcon,
@@ -37,6 +38,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { paletteEntries } from '../lib/categories.ts'
 import {
   calendarExportFormats,
   contactsExportFormats,
@@ -85,6 +87,7 @@ export function CommandPalette({
   }
 
   const q = search.trim()
+  const categories = useMemo(paletteEntries, [])
 
   return (
     <CommandDialog
@@ -202,6 +205,28 @@ export function CommandPalette({
             ))}
           </CommandGroup>
         )}
+        <CommandGroup heading={strings.categories.heading}>
+          {categories.map((entry) => (
+            <CommandItem
+              key={entry.id}
+              value={`category ${entry.id}`}
+              keywords={entry.keywords}
+              onSelect={() =>
+                run(
+                  () =>
+                    void navigate({
+                      to: '/a/$archiveId',
+                      params: { archiveId },
+                      search: { category: entry.id },
+                    }),
+                )
+              }
+            >
+              <ShapesIcon />
+              {entry.text}
+            </CommandItem>
+          ))}
+        </CommandGroup>
         {(archives.data?.length ?? 0) > 1 && (
           <CommandGroup heading={strings.command.archives}>
             {archives.data?.map((archive) => (

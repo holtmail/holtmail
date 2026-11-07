@@ -1,6 +1,7 @@
 import {
   ApiError,
   archivesQuery,
+  categoriesQuery,
   foldersQuery,
   labelsQuery,
   messagesInfiniteQuery,
@@ -13,8 +14,10 @@ import { Button, cn, Skeleton } from '@holtmail/ui'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/react-virtual'
 import {
+  BellIcon,
   CircleAlertIcon,
   KeyRoundIcon,
+  NewspaperIcon,
   MailOpenIcon,
   PaperclipIcon,
   SearchXIcon,
@@ -34,6 +37,7 @@ import {
 
 import { useNow } from '../hooks/use-now.ts'
 import { senderLabel } from '../lib/address.ts'
+import { type Category, categoryLabel, listKindGlyph, listTopic } from '../lib/categories.ts'
 import { isFlagged, isUnread } from '../lib/flags.ts'
 import { formatCount, formatListDate } from '../lib/format.ts'
 import { groupByDay, type ListRow } from '../lib/group.ts'
@@ -47,17 +51,20 @@ import { ExportMenu } from './export-menu.tsx'
 import { ItemHits } from './item-hits.tsx'
 import { SearchField } from './search-field.tsx'
 import { folderLabel } from './sidebar.tsx'
+import { StillReading } from './still-reading.tsx'
 
 export type ListSource =
   | { kind: 'all' }
   | { kind: 'folder'; folderId: string }
   | { kind: 'label'; label: string }
   | { kind: 'search'; q: string }
+  | { kind: 'category'; category: Category }
 
 function sourceKey(source: ListSource): string {
   if (source.kind === 'folder') return `f:${source.folderId}`
   if (source.kind === 'label') return `l:${source.label}`
   if (source.kind === 'search') return `s:${source.q}`
+  if (source.kind === 'category') return `c:${source.category}`
   return 'all'
 }
 
@@ -74,11 +81,17 @@ export function MessageListPane({ source }: { source: ListSource }) {
   const folderId = source.kind === 'folder' ? source.folderId : undefined
   const label = source.kind === 'label' ? source.label : undefined
   const q = source.kind === 'search' ? source.q : ''
+  const category = source.kind === 'category' ? source.category : undefined
   const isSearch = source.kind === 'search'
 
   const listing = useInfiniteQuery({
-    ...messagesInfiniteQuery(archiveId, folderId, label),
+    ...messagesInfiniteQuery(archiveId, folderId, label, category),
     enabled: !isSearch,
+  })
+  const categories = useQuery({
+    ...categoriesQuery(archiveId),
+    enabled: category !== undefined,
+    retry: false,
   })
   const search = useInfiniteQuery({
     ...searchInfiniteQuery(archiveId, q),
@@ -112,6 +125,11 @@ export function MessageListPane({ source }: { source: ListSource }) {
   } else if (label !== undefined) {
     title = label
     total = labels.data?.find((item) => item.name === label)?.messages
+  } else if (category !== undefined) {
+    title = categoryLabel(category)
+    total = [...(categories.data?.kinds ?? []), ...(categories.data?.topics ?? [])].find(
+      (entry) => entry.id === category,
+    )?.count
   } else if (isSearch) {
     title = strings.list.searchResults
     total = search.data?.pages[0]?.total
@@ -159,6 +177,7 @@ export function MessageListPane({ source }: { source: ListSource }) {
           )}
         </div>
         <SearchField query={q} error={searchError} />
+        {isSearch && <StillReading archiveId={archiveId} />}
       </header>
       {isSearch && q !== '' && !searchError && <ItemHits archiveId={archiveId} q={q} />}
       {pending ? (
@@ -182,7 +201,9 @@ export function MessageListPane({ source }: { source: ListSource }) {
               ? strings.list.emptySearch
               : label !== undefined
                 ? strings.list.emptyLabel
-                : strings.list.emptyFolder}
+                : category !== undefined
+                  ? strings.list.emptyCategory
+                  : strings.list.emptyFolder}
           </EmptyState>
         )
       ) : (
@@ -450,6 +471,9 @@ function Row({
   const unread = isUnread(message.flags)
   const flagged = isFlagged(message.flags)
   const chips = listChips(message.labels, label)
+  const glyph = listKindGlyph(message.kind)
+  const topic = listTopic(message.topic)
+  const GlyphIcon = glyph === 'bulk' ? NewspaperIcon : BellIcon
   return (
     <div
       id={`msg-${message.id}`}
@@ -506,6 +530,12 @@ function Row({
             className="size-3 shrink-0 self-center text-fg-subtle"
           />
         )}
+        {glyph && (
+          <GlyphIcon
+            aria-label={strings.categories.glyphs[glyph]}
+            className="size-3 shrink-0 self-center text-fg-subtle"
+          />
+        )}
         {flagged && (
           <StarIcon
             aria-label={strings.list.flagged}
@@ -523,9 +553,15 @@ function Row({
         <span className={cn('truncate text-sm text-fg', unread ? 'font-medium' : 'font-normal')}>
           {message.subject || strings.list.noSubject}
         </span>
-        {chips.shown.length > 0 && (
+        {(chips.shown.length > 0 || topic) && (
           <span className="ml-auto flex shrink-0 items-center gap-1">
-            <span className="sr-only">{strings.labels.shown}</span>
+            {topic && (
+              <span className="max-w-24 truncate border border-border px-1 text-xs leading-4 text-fg-muted">
+                <span className="sr-only">{strings.categories.shown}: </span>
+                {topic.label}
+              </span>
+            )}
+            {chips.shown.length > 0 && <span className="sr-only">{strings.labels.shown}</span>}
             {chips.shown.map((name) => (
               <span
                 key={name}

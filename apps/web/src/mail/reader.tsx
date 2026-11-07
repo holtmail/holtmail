@@ -44,14 +44,20 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useNow } from '../hooks/use-now.ts'
 import { replyMailto, senderLabel } from '../lib/address.ts'
 import { shownFrom } from '../lib/aliases.ts'
-import { codeTarget, unsubscribeTarget } from '../lib/insights.ts'
+import { categoryTarget } from '../lib/categories.ts'
+import { copyTarget, linkTarget, unsubscribeTarget } from '../lib/insights.ts'
 import { readerLabels } from '../lib/labels.ts'
 import { manages } from '../lib/roles.ts'
 import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
 import { EmptyState } from './empty-state.tsx'
-import { insightCopySelector, insightUnsubscribeSelector } from './insights-card.tsx'
+import {
+  insightCategorySelector,
+  insightCopySelector,
+  insightLinkSelector,
+  insightUnsubscribeSelector,
+} from './insights-card.tsx'
 import { ThreadItem } from './thread-item.tsx'
 
 export function ReaderEmpty() {
@@ -166,9 +172,12 @@ function Thread({ messages, selectedId }: { messages: MessageDetail[]; selectedI
     }
     insights.current = {
       copyCode: () =>
-        click(codeTarget(messages, isExpanded, focusedId(), Date.now())?.id, insightCopySelector),
+        click(copyTarget(messages, isExpanded, focusedId(), Date.now())?.id, insightCopySelector),
+      openLink: () => click(linkTarget(messages, isExpanded, focusedId())?.id, insightLinkSelector),
       unsubscribe: () =>
         click(unsubscribeTarget(messages, isExpanded, focusedId())?.id, insightUnsubscribeSelector),
+      category: () =>
+        click(categoryTarget(messages, isExpanded, focusedId())?.id, insightCategorySelector),
     }
     return () => {
       insights.current = null

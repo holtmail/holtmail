@@ -39,6 +39,7 @@ import {
   PlayIcon,
   RadioTowerIcon,
   RefreshCwIcon,
+  ShieldCheckIcon,
   Trash2Icon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
@@ -69,6 +70,7 @@ import { ConfirmDialog, TextDialog } from './confirm-dialog.tsx'
 import { ContactsCalendarsDialog } from './contacts-calendars.tsx'
 import { EditConnectionDialog } from './edit-connection.tsx'
 import { OAuthSignInDialog } from './oauth-sign-in.tsx'
+import { TrustedServersDialog } from './trusted-servers.tsx'
 
 const t = strings.accounts
 
@@ -164,6 +166,7 @@ function AccountRow({
     | 'contacts'
     | 'consent'
     | 'watch-folders'
+    | 'trusted'
     | null
   >(null)
   const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
@@ -177,6 +180,9 @@ function AccountRow({
   const switchTo = switchableProvider(account, offered)
   const signInWith = oauth ?? switchTo
   const token = account.jmap?.auth === 'token'
+  const trustable = !imported && Array.isArray(account.trusted_authserv_ids)
+  const suggested =
+    account.trusted_authserv_ids?.length === 0 ? account.suggested_authserv_id : undefined
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['archives'] })
   const sync = useMutation({ mutationFn: () => syncAccount(account.id), onSettled: refresh })
@@ -273,6 +279,15 @@ function AccountRow({
             <WatchMark badge={contactsWatch} />
           </span>
         )}
+        {manage && trustable && suggested && (
+          <button
+            type="button"
+            className="w-fit truncate text-left text-xs text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+            onClick={() => setDialog('trusted')}
+          >
+            {strings.trustedServers.suggestionHint(suggested)}
+          </button>
+        )}
       </div>
       {manage && (
         <>
@@ -333,6 +348,12 @@ function AccountRow({
                     <DropdownMenuItem onSelect={() => setDialog('edit')}>
                       <ServerCogIcon />
                       {t.edit}
+                    </DropdownMenuItem>
+                  )}
+                  {trustable && (
+                    <DropdownMenuItem onSelect={() => setDialog('trusted')}>
+                      <ShieldCheckIcon />
+                      {strings.trustedServers.menu}
                     </DropdownMenuItem>
                   )}
                   {support !== 'none' && (
@@ -510,6 +531,13 @@ function AccountRow({
         open={dialog === 'edit'}
         onOpenChange={(open) => setDialog(open ? 'edit' : null)}
       />
+      {trustable && (
+        <TrustedServersDialog
+          account={account}
+          open={dialog === 'trusted'}
+          onOpenChange={(open) => setDialog(open ? 'trusted' : null)}
+        />
+      )}
       <ContactsCalendarsDialog
         account={account}
         open={dialog === 'contacts'}

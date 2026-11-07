@@ -12,6 +12,19 @@ export const operators = [
   'with:',
   'is:event',
   'is:contact',
+  'category:',
+  'has:code',
+  'has:link',
+  'has:unsubscribe',
+  'has:reservation',
+  'has:order',
+  'has:invoice',
+  'has:parcel',
+  'has:pass',
+  'is:newsletter',
+  'is:notification',
+  'is:personal',
+  'is:list',
 ] as const
 
 export function insertToken(

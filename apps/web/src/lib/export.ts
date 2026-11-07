@@ -12,6 +12,7 @@ type ExportSource =
   | { kind: 'folder'; folderId: string }
   | { kind: 'label'; label: string }
   | { kind: 'search'; q: string }
+  | { kind: 'category'; category: string }
 
 export const exportFormats: readonly ExportFormat[] = ['mbox', 'zip', 'pdf']
 
@@ -19,6 +20,7 @@ export function exportScope(source: ExportSource): ExportScope | null {
   if (source.kind === 'folder') return { folder: source.folderId }
   if (source.kind === 'label') return { label: source.label }
   if (source.kind === 'search') return source.q.trim() ? { q: source.q } : null
+  if (source.kind === 'category') return null
   return {}
 }
 

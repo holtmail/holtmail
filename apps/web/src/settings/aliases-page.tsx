@@ -67,7 +67,7 @@ import { SettingsPage } from './settings-layout.tsx'
 
 const t = strings.aliases
 
-function Picker({
+export function Picker({
   label,
   value,
   choices,

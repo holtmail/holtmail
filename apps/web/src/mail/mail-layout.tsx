@@ -44,13 +44,13 @@ const PeopleEmpty = lazy(async () => ({
 
 export function MailLayout() {
   const { archiveId = '', folderId } = useParams({ strict: false })
-  const { m: messageId, p: personId } = useSearch({ strict: false })
+  const { m: messageId, p: personId, category } = useSearch({ strict: false })
   const isSearch = Boolean(useMatch({ from: '/a/$archiveId/search', shouldThrow: false }))
   const isPeople = Boolean(useMatch({ from: '/a/$archiveId/people', shouldThrow: false }))
   const isCalendar = Boolean(useMatch({ from: '/a/$archiveId/calendar', shouldThrow: false }))
   const labelMatch = useMatch({ from: '/a/$archiveId/label', shouldThrow: false })
   const label = labelMatch?.search.name
-  const isAllMail = !folderId && !isSearch && !labelMatch && !isPeople && !isCalendar
+  const isAllMail = !folderId && !isSearch && !labelMatch && !isPeople && !isCalendar && !category
   const selectedId = isCalendar ? undefined : isPeople ? personId : messageId
   const layout = useLayout()
   const navigate = useNavigate()
@@ -140,8 +140,14 @@ export function MailLayout() {
       case 'copyCode':
         if (!isCalendar && !isPeople) insights.current?.copyCode()
         break
+      case 'openLink':
+        if (!isCalendar && !isPeople) insights.current?.openLink()
+        break
       case 'unsubscribe':
         if (!isCalendar && !isPeople) insights.current?.unsubscribe()
+        break
+      case 'category':
+        if (!isCalendar && !isPeople) insights.current?.category()
         break
     }
   })
@@ -150,6 +156,7 @@ export function MailLayout() {
     <Sidebar
       folderId={folderId}
       label={label}
+      category={category}
       isAllMail={isAllMail}
       isPeople={isPeople}
       isCalendar={isCalendar}

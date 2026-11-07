@@ -13,6 +13,7 @@ import {
 
 import { currentUser, requireSession } from './auth/session.ts'
 import { parseLoginSearch, parseSetupSearch, safeNext } from './lib/auth.ts'
+import { parseCategorySearch } from './lib/categories.ts'
 import { manages } from './lib/roles.ts'
 import {
   parseArchivesSettingsSearch,
@@ -184,6 +185,19 @@ const profileSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/profile-page.tsx'), 'ProfilePage'),
 })
 
+const categoriesSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'categories',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/categories-page.tsx'), 'CategoriesPage'),
+})
+
+const aboutSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'about',
+  component: lazyRouteComponent(() => import('./settings/about-page.tsx'), 'AboutPage'),
+})
+
 const readingSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'reading',
@@ -209,7 +223,11 @@ const eventRoute = createRoute({
 const allMailRoute = createRoute({
   getParentRoute: () => archiveRoute,
   path: '/',
-  component: () => <MessageListPane source={{ kind: 'all' }} />,
+  validateSearch: parseCategorySearch,
+  component: function AllMailList() {
+    const { category } = useSearch({ from: '/a/$archiveId/' })
+    return <MessageListPane source={category ? { kind: 'category', category } : { kind: 'all' }} />
+  },
 })
 
 const folderRoute = createRoute({
@@ -272,8 +290,10 @@ const routeTree = rootRoute.addChildren([
     webhooksSettingsRoute,
     aliasesSettingsRoute,
     smtpSettingsRoute,
+    categoriesSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,
+    aboutSettingsRoute,
   ]),
   archiveRoute.addChildren([
     allMailRoute,

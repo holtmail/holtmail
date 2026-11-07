@@ -6,7 +6,7 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { Fragment, useId, useMemo } from 'react'
 
 import { formatAddress, senderLabel } from '../lib/address.ts'
-import { aliasSearch, aliasTrust, shownFrom } from '../lib/aliases.ts'
+import { aliasProviderName, aliasSearch, aliasTrust, shownFrom } from '../lib/aliases.ts'
 import { formatFullDate, formatListDate } from '../lib/format.ts'
 import { addressPeople, personFor } from '../lib/people.ts'
 import { previewOf } from '../lib/text.ts'
@@ -59,15 +59,6 @@ function AddressLine({
   )
 }
 
-const providerNames: Record<string, string> = {
-  simplelogin: 'SimpleLogin',
-  addy: 'addy.io',
-  relay: 'Firefox Relay',
-  fastmail: 'Fastmail',
-  duck: 'DuckDuckGo',
-  apple: 'Apple',
-}
-
 function AliasLine({ alias, archiveId }: { alias: MessageAlias; archiveId: string }) {
   const t = strings.reader
   const trust = aliasTrust(alias)
@@ -84,9 +75,7 @@ function AliasLine({ alias, archiveId }: { alias: MessageAlias; archiveId: strin
         >
           {alias.alias}
         </Link>
-        <span className="text-xs text-fg-subtle">
-          {t.via(providerNames[alias.provider] ?? alias.provider)}
-        </span>
+        <span className="text-xs text-fg-subtle">{t.via(aliasProviderName(alias.provider))}</span>
         {trust === 'claimed' ? (
           <Badge variant="warning" title={t.aliasClaimedHint}>
             {t.aliasClaimed}

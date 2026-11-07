@@ -62,6 +62,8 @@ describe('auth helpers', () => {
     expect(authErrorMessage(new ApiError(401, 'wrong email or password'))).toBe(
       'Wrong email or password.',
     )
+    const lagging = 'Some messages are still being read. Try again when search has caught up.'
+    expect(authErrorMessage(new ApiError(409, lagging))).toBe(lagging)
     expect(authErrorMessage(new ApiError(500, 'sign-in failed'))).toBe(
       'Something went wrong. Try again.',
     )

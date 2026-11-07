@@ -43,6 +43,20 @@ export function filterAliases(aliases: readonly Alias[], filter: AliasFilter): A
   })
 }
 
+const providerNames: Record<string, string> = {
+  simplelogin: 'SimpleLogin',
+  addy: 'addy.io',
+  relay: 'Firefox Relay',
+  fastmail: 'Fastmail',
+  duck: 'DuckDuckGo',
+  apple: 'Apple',
+}
+
+/** The display name of an alias service, or its id when unknown. */
+export function aliasProviderName(id: string): string {
+  return providerNames[id] ?? id
+}
+
 export function shownFrom(message: {
   from: readonly Address[]
   alias?: MessageAlias | null

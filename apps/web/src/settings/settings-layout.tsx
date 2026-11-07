@@ -9,8 +9,10 @@ import {
   BookOpenIcon,
   GlobeIcon,
   InboxIcon,
+  InfoIcon,
   ListChecksIcon,
   type LucideIcon,
+  ShapesIcon,
   ShieldCheckIcon,
   UserIcon,
   UsersIcon,
@@ -37,8 +39,10 @@ interface Section {
     | '/settings/webhooks'
     | '/settings/aliases'
     | '/settings/smtp'
+    | '/settings/categories'
     | '/settings/reading'
     | '/settings/profile'
+    | '/settings/about'
   label: string
   icon: LucideIcon
   managers: boolean
@@ -53,8 +57,10 @@ const sections: Section[] = [
   { to: '/settings/webhooks', label: t.webhooks, icon: WebhookIcon, managers: true },
   { to: '/settings/aliases', label: t.aliases, icon: VenetianMaskIcon, managers: true },
   { to: '/settings/smtp', label: t.smtp, icon: InboxIcon, managers: true },
+  { to: '/settings/categories', label: t.categories, icon: ShapesIcon, managers: true },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
+  { to: '/settings/about', label: t.about, icon: InfoIcon, managers: false },
 ]
 
 export function SettingsLayout() {

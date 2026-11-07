@@ -10,7 +10,9 @@ export interface ListController {
 
 export interface InsightController {
   copyCode: () => boolean
+  openLink: () => boolean
   unsubscribe: () => boolean
+  category: () => boolean
 }
 
 export interface MailContextValue {

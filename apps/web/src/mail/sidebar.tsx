@@ -3,6 +3,7 @@ import {
   accountsQuery,
   type Archive,
   archivesQuery,
+  categoriesQuery,
   type Folder,
   foldersQuery,
   labelsQuery,
@@ -24,6 +25,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
+  BellIcon,
   CalendarIcon,
   ChevronsUpDownIcon,
   FilePenIcon,
@@ -34,7 +36,11 @@ import {
   PlusIcon,
   type LucideIcon,
   MailIcon,
+  NewspaperIcon,
+  ShapesIcon,
   SendIcon,
+  UserIcon,
+  UsersRoundIcon,
   ShieldAlertIcon,
   StarIcon,
   Trash2Icon,
@@ -44,6 +50,7 @@ import { useMemo } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
 import { accountState } from '../lib/accounts.ts'
+import { categoryLabel, isCategory, sidebarCounts } from '../lib/categories.ts'
 import { groupFolders } from '../lib/folders.ts'
 import { formatCount } from '../lib/format.ts'
 import { orderLabels } from '../lib/labels.ts'
@@ -52,6 +59,7 @@ import { runningTasks } from '../lib/tasks.ts'
 import { StatusDot } from '../manage/account-list.tsx'
 import { strings } from '../strings.ts'
 import { useMail } from './context.ts'
+import { StillReading } from './still-reading.tsx'
 
 const roleIcons: Record<string, LucideIcon> = {
   inbox: InboxIcon,
@@ -112,6 +120,7 @@ function Count({ value, unread = 0 }: { value: number; unread?: number }) {
 export function Sidebar({
   folderId,
   label,
+  category,
   isAllMail,
   isPeople,
   isCalendar,
@@ -119,6 +128,7 @@ export function Sidebar({
 }: {
   folderId?: string
   label?: string
+  category?: string
   isAllMail: boolean
   isPeople: boolean
   isCalendar: boolean
@@ -214,6 +224,8 @@ export function Sidebar({
           </section>
         ))}
         <Labels archiveId={archiveId} current={label} onNavigate={onNavigate} />
+        <Categories archiveId={archiveId} current={category} onNavigate={onNavigate} />
+        <StillReading archiveId={archiveId} className="mt-2 px-4" />
       </div>
       <Sources accounts={accounts.data ?? []} archiveId={archiveId} onNavigate={onNavigate} />
     </div>
@@ -259,6 +271,61 @@ function Labels({
             </Link>
           </li>
         ))}
+      </ul>
+    </section>
+  )
+}
+
+const kindIcons: Record<string, LucideIcon> = {
+  personal: UserIcon,
+  list: UsersRoundIcon,
+  bulk: NewspaperIcon,
+  notification: BellIcon,
+}
+
+function Categories({
+  archiveId,
+  current,
+  onNavigate,
+}: {
+  archiveId: string
+  current?: string
+  onNavigate?: () => void
+}) {
+  const categories = useQuery({ ...categoriesQuery(archiveId), retry: false })
+  const counts = useMemo(
+    () => (categories.data ? sidebarCounts(categories.data) : { kinds: [], topics: [] }),
+    [categories.data],
+  )
+  const entries = [...counts.kinds, ...counts.topics].flatMap((entry) =>
+    isCategory(entry.id) ? [{ ...entry, id: entry.id }] : [],
+  )
+  if (entries.length === 0) return null
+  return (
+    <section aria-label={strings.categories.heading} className="mt-4">
+      <h2 className="flex h-8 items-center px-4 text-xs text-fg-subtle">
+        {strings.categories.heading}
+      </h2>
+      <ul>
+        {entries.map((entry) => {
+          const Icon = kindIcons[entry.id] ?? ShapesIcon
+          return (
+            <li key={entry.id}>
+              <Link
+                to="/a/$archiveId"
+                params={{ archiveId }}
+                search={{ category: entry.id }}
+                aria-current={entry.id === current ? 'page' : undefined}
+                className={cn(itemClass, 'pl-4')}
+                onClick={onNavigate}
+              >
+                <Icon />
+                <span className="truncate">{categoryLabel(entry.id)}</span>
+                <Count value={entry.count} />
+              </Link>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

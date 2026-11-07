@@ -8,6 +8,7 @@
 - [Email aliases](ALIASES.md) — recognising forwarded mail, the alias list and managing aliases at their services
 - [Conversations](CONVERSATIONS.md) — design of Chats, a messenger view of the archive: chats, topics, bubbles, marks and identity
 - [Message insights](INSIGHTS.md) — codes, action links, reservations, unsubscribe and categories read out of each message for the reader card, with trust and the domain data file
+- [Native clients](CLIENTS.md) — Tauri apps and PWA around the SPA: devices, live stream, Web Push with autopush-rs, contacts and calendars over DAV with edits held from native apps, offline subset
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 - [Release notes](RELEASES.md) — what changes for people on upgrade: new operators, changed meaning, one-time rebuilds

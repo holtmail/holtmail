@@ -569,7 +569,112 @@ The design is in [INSIGHTS.md](INSIGHTS.md).
 - [x] API `GET /api/insights/data`; new Settings → About page and route with versions and UT1 attribution
 - [x] Integration: signed manifest from nginx to the containerised server under `insights-test-data`, second fetch `304`
 
+#### Native clients (planned 2026-11-06)
+
+The design is in [CLIENTS.md](CLIENTS.md). Tauri 2 shells load the SPA from the user's server. Web Push everywhere, with autopush-rs as a replaceable relay for future native apps. No paid developer accounts at first: PWA plus DAV on every platform, the desktop shell as an unsigned preview, Linux fully. Contacts and calendars are served over DAV with edits from native apps held in Holtmail; write-through and replies come after. Each phase ends with `mise run check`, its module docs, a VERIFY entry and a Log line; migrations take the next free number at merge.
+
+#### Phase 43: spike (throwaway, about 3 days)
+
+- [ ] Desktop: runtime remote capability (`dynamic-acl`), async host handshake, navigation guard, `openAuth` for OIDC and Google OAuth, the body iframe cannot reach IPC
+- [ ] Mobile shell builds only: Tauri Android and iOS load a remote origin, the handshake works on Android; `aws-lc-rs`, `sqlx`, `tantivy` build for both
+- [ ] iOS Home Screen PWA: install, permission, a push with the app closed; Android Chrome PWA the same
+- [ ] GNOME Online Accounts prefill under Flatpak
+- [ ] Outcome written into CLIENTS.md
+
+#### Phase 44: devices and meta
+
+- [ ] AGENTS.md: client composition root, `apps/shell` outside the root workspace, `deploy/autopush`
+- [ ] `auth`/`store`/`store-sqlite`: devices, scopes (`read`, `notify`, `dav:read`, `dav:write`), enrolment codes bound to the user, pairing, sliding device sessions, revoke
+- [ ] API: Bearer in `require_session`, bearer exempt in `guard_writes`; `GET /api/meta` (minimal without a session); SPA CSP and headers, theme script to a file
+- [ ] Web: Settings → Devices (list, rename, revoke, QR pairing)
+- [ ] Integration suite `devices`
+
+#### Phase 45: live stream
+
+- [ ] Store: `changes` log written with ingest, pim-sync and people; `changes_since` with conformance cases; ingest `live` flag
+- [ ] API: `GET /api/live` with resume, reset, heartbeat, per-event grant checks, close on revoke, proxy headers
+- [ ] Web: `useLiveEvents` replaces the polling in `use-live-archive.ts`; `refetchInterval` only while the stream is down
+- [ ] Deployment docs: proxy buffering; integration suite `live`
+
+#### Phase 46: host contract and PWA
+
+- [ ] `@holtmail/host`: contract, `./web`, `./testing`; `HostProvider` in `apps/web`
+- [ ] PWA manifest and icons; service worker that shows a notification for every push and re-registers on open; `navigator.setAppBadge`
+- [ ] Capability-gated UI; Settings → This device (notification rules)
+
+#### Phase 47: push out
+
+- [ ] `webpush::vapid`; VAPID key at first start in `holtmail-secret`, never rotated silently
+- [ ] `notify` + `notify-webpush` with conformance (2 KiB payload); `notify-policy` with the defaults from CLIENTS.md; coalescing and `Topic`
+- [ ] Durable queue, allowlist (`relays`, `distributors`), 404/410 drop, 413 resend without preview, `/api/notify/summary`, `seen_seq` badge
+- [ ] Server-side calendar reminders, off for devices with a DAV account
+- [ ] Integration suite `notify`: ntfy container, a decrypting fake receiver, an iOS-PWA-shaped subscription, a backfill sends no push
+
+#### Phase 48: desktop shell
+
+- [ ] `client` (HTTP, SSE), `keystore` + `keystore-os` with conformance
+- [ ] `apps/shell`: launcher, profiles, enrolment, cookie renewal, navigation and download guards, tray or menu bar, single instance, `holtmail://` links, autostart, notifications with focus suppression and actions, badge, native menu
+- [ ] `@holtmail/host/tauri`; shared native strings; updater
+- [ ] Releases: Flathub manifest, .deb, .rpm, AppImage; unsigned macOS and Windows preview builds with the Gatekeeper and SmartScreen steps documented
+- [ ] VERIFY: three engines, screen readers, a notification within 5 s of an IDLE delivery
+
+#### Phase 49: relay seam
+
+- [ ] `deploy/autopush`: autoendpoint with the Redis backend at a pinned tag, Valkey, docs for self-hosting
+- [ ] Integration suite `relay`: autoendpoint with the `stub` router receives from `notify-webpush`, ciphertext unchanged, unregistered endpoint answers 410 and the subscription is dropped
+
+#### Phase 50: phones through the PWA
+
+- [ ] ICS feed tokens; app passwords; `.mobileconfig` (CalDAV, CardDAV for People) offered from the PWA
+- [ ] DAVx5 hand-off on Android; `.ics` add-to-calendar links on invitation cards
+- [ ] VERIFY: iOS and Android push with the PWA closed, badge, lock-screen previews, Calendar and Contacts accounts
+
+#### Phase 51: DAV with held edits
+
+- [ ] Store: migration with `write_mode`, `items.dav_name`, `item_versions.origin` and `change_id`, `item_changes` (user, device, patch, base); `record_change`, `effective`, `open_changes`, `changes_of`, `resolve_change`; upstream-changed and upstream-deleted flags; conformance cases
+- [ ] `pim-edit`: validation, classes (`noop`, `personal`, `reply`, `edit`, `create`, `delete`), rebase, field diff, with hand-written fixtures from each client's habits
+- [ ] pim-sync post-batch step: convergence, rebase, conflicts
+- [ ] `dav-serve` CalDAV and CardDAV: discovery, reads, sync-tokens from the `changes` log, `valid-sync-token`, privileges from mode × role × scope, overlay serving, ETag and 412 rules, `max-resource-size`, deduplicated read-only From mail, read-only People; WebDAV-Push through `notify`
+- [ ] Held replies linked to the invitation, applied when a client-sent REPLY is archived; held RSVP notice; no `calendar-auto-schedule`
+- [ ] Web: Local edit marks, timeline entries, Settings → Edits (modes, open changes, Keep mine, Take theirs, Discard); API `/api/pim/changes`; first-held-edit and conflict notices
+- [ ] Integration suite `dav`: `collection-dav` as client, edits, upstream conflict on Radicale, reply linked; VERIFY Apple 412, iOS RSVP buttons, DAVx5, Thunderbird, Evolution, iOS single address book
+
+#### Phase 52: offline subset
+
+- [ ] `/api/archives/{id}/changes` (410 on a pruned cursor), `/app/manifest.json`
+- [ ] `blob-encrypted`; `replica` pulling changes into a local store, blobs and index, with budget and pruning
+- [ ] Shell: SPA cache, offline origin over the embedded `holtmail-api`, wipe, settings UI
+- [ ] Integration suite `changes`; VERIFY an airplane-mode launch, reading and search
+
+#### Phase 53: write-through for contacts and calendars
+
+- [ ] `CollectionWriter` with fake and conformance; writers in `collection-dav`, then `collection-jmap`, then `collection-graph` (field patches)
+- [ ] `pim-writeback`: FIFO per collection, chain heads only, idempotent creates, 412 → conflict, refusal → rejected, backoff
+- [ ] `write_through` mode with `write:pim` and the per-account switch; writable People routed to the primary card
+- [ ] Integration suite `writeback` against Radicale and Stalwart
+
+#### Phase 54: replies and scheduling
+
+- [ ] `submit` contract with `submit-smtp`; iMIP REPLY from held replies with `In-Reply-To`
+- [ ] `respond` for Graph and JMAP; From mail writable for replies
+- [ ] `calendar-auto-schedule` with `Schedule-Tag`, `If-Schedule-Tag-Match` and the organizer path, only when every writable calendar has a route
+
 #### Later
+
+- [ ] With an Apple membership: native iOS app, NSE, `holtmail-relay` + `relay-autopush`, APNs on a project-run autopush, TestFlight with a demo server, macOS notarisation and a Homebrew cask
+- [ ] With Android verification: native Android (`fdroid` UnifiedPush, then `play` with FCM through the relay)
+- [ ] Windows signing and winget
+- [ ] Mail write: `Source::set_flags`/`append`, outbox, Reply action
+- [ ] Android SyncAdapter; iOS ContactProvider extension; widgets; Spotlight over the offline subset
+
+### Later
+
+- [ ] Write: `submit` contract and implementations, `CollectionWriter`, `Source::set_flags`/`append`, scopes and per-account opt-in, `Idempotency-Key`, outbox, Reply and RSVP actions, DAV `PUT`/`DELETE`
+- [ ] Android SyncAdapter; iOS ContactProvider extension
+- [ ] macOS APNs through the relay; WNS for Windows; KUnifiedPush on Linux
+- [ ] Widgets, Spotlight over the offline subset
+
+### Later
 
 - [ ] `holtmail-barcode` contract with `barcode-rxing` (Aztec, PDF417, QR, Data Matrix), off by default, as a walk step on the blocking pool
 - [ ] `holtmail-bcbp` (fuzzed, proptest) producing `BoardingPass` from barcodes, pkpass barcode messages and text; year resolution within `[sent_at − 30 d, sent_at + 330 d]`

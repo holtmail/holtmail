@@ -124,6 +124,13 @@ pub trait Mailboxes: Send + Sync {
         let _ = (id, body);
         false
     }
+
+    /// Derived categories of `archive` may be stale: an override or a trust list changed. Wakes
+    /// the stage-B pass and returns without waiting for it; repeated calls may be coalesced. The
+    /// default does nothing.
+    fn insights_changed(&self, archive: ArchiveId) {
+        let _ = archive;
+    }
 }
 
 /// Whether and how an account is watched for changes on its server.
@@ -567,6 +574,11 @@ pub enum MailboxError {
     /// The request cannot work as given: wrong settings, rejected sign-in, an unknown file.
     #[error("{0}")]
     Invalid(String),
+    /// The request is valid but cannot run until the server catches up, such as a deletion
+    /// review whose query needs insights that are still being computed. Answered with 409; the
+    /// message says what to wait for.
+    #[error("{0}")]
+    Conflict(String),
     /// Something failed on the server's side.
     #[error("{0}")]
     Backend(String),

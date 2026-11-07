@@ -135,7 +135,8 @@ pub(crate) async fn finish(
         .finish_oauth(&request.pasted_url)
         .await
         .map_err(refused)?;
-    Ok(Json(account_dto(&state, done.account)))
+    crate::categories::seed_trust(&state, &done.account).await?;
+    Ok(Json(account_dto(&state, done.account).await?))
 }
 
 fn back_to(path: &str, pairs: &[(&str, &str)]) -> Response {
@@ -173,6 +174,7 @@ pub(crate) async fn callback(State(state): AppState, RawQuery(query): RawQuery) 
         .unwrap_or_else(|| DEFAULT_RETURN.to_owned());
     match state.mailboxes.finish_oauth(&answer).await {
         Ok(done) => {
+            let _ = crate::categories::seed_trust(&state, &done.account).await;
             let id: AccountId = done.account.id;
             back_to(
                 &done.return_to,

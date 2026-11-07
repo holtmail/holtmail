@@ -56,6 +56,7 @@ pub(crate) async fn check(
     let read = matches!(*request.method(), Method::GET | Method::HEAD);
     let archive = match parts.as_slice() {
         ["me", ..] => return next.run(request).await,
+        ["insights", "data"] if read => return next.run(request).await,
         [
             "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth" | "ledger"
             | "deletions" | "webhooks" | "smtp" | "alias-providers" | "alias-services",

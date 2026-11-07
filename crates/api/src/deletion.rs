@@ -94,7 +94,7 @@ pub struct DeletionConfirmRequest {
     path = "/api/archives/{id}/deletions",
     params(("id" = String, Path, description = "Archive id")),
     request_body = DeletionRequest,
-    responses((status = 200, description = "What would be deleted; nothing is deleted yet", body = DeletionReviewDto), (status = 400, description = "Neither or both of query and message_ids, a query that does not parse or is empty, nothing found, or more than 100000 messages", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 200, description = "What would be deleted; nothing is deleted yet", body = DeletionReviewDto), (status = 400, description = "Neither or both of query and message_ids, a query that does not parse or is empty, nothing found, or more than 100000 messages", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto), (status = 409, description = "The query uses insight operators (category:, has:code ..., is:newsletter ...) while some messages are still being read", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn review(
     State(state): AppState,

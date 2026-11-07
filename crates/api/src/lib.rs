@@ -9,10 +9,12 @@
 mod access;
 mod aliases;
 mod calendar;
+mod categories;
 mod deletion;
 mod dto;
 mod export;
 mod insights;
+mod insights_data;
 mod ledger;
 mod mailboxes;
 mod manage;
@@ -28,6 +30,7 @@ mod routes;
 mod session;
 mod smtp;
 mod tasks;
+mod unsubscribe;
 mod webhooks;
 
 use std::sync::Arc;
@@ -47,8 +50,12 @@ use utoipa::OpenApi;
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 pub use aliases::{AliasProvider, Aliases, NewService, ServiceChange};
+pub use categories::trusted_authserv_preset;
 use dto::*;
 pub use insights::{InsightProgress, InsightsConfig};
+pub use insights_data::{
+    DataOrigin, DataOutcome, DataSnapshot, DataStatus, DataUpdates, LoadedDataFile,
+};
 pub use mailboxes::{
     AccountChange, AccountDetails, AccountStatus, ConnectionChange, ContactsCalendars,
     ContactsCalendarsChange, ContactsCalendarsRun, ContactsProtocol, ImageProxy, ImapConnection,
@@ -147,6 +154,16 @@ pub fn router(state: ApiState) -> Router {
             "/api/archives/{id}/insights/status",
             get(insights::insights_status),
         )
+        .route("/api/insights/data", get(insights_data::insights_data))
+        .route("/api/archives/{id}/categories", get(categories::categories))
+        .route(
+            "/api/archives/{id}/category-overrides",
+            get(categories::list_category_overrides).put(categories::put_category_override),
+        )
+        .route(
+            "/api/archives/{id}/category-overrides/{override}",
+            delete(categories::delete_category_override),
+        )
         .route("/api/archives/{id}/export", get(export::export))
         .route(
             "/api/archives/{id}/contacts/export",
@@ -160,6 +177,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/messages/{id}/body", get(routes::get_body))
         .route("/api/messages/{id}/raw", get(routes::get_raw))
         .route("/api/messages/{id}/pdf", get(routes::get_pdf))
+        .route(
+            "/api/messages/{id}/unsubscribe",
+            post(unsubscribe::unsubscribe),
+        )
         .route(
             "/api/messages/{id}/attachments/{ordinal}",
             get(routes::get_attachment),
@@ -321,6 +342,11 @@ pub fn openapi_json() -> String {
         routes::list_messages,
         routes::search,
         insights::insights_status,
+        insights_data::insights_data,
+        categories::categories,
+        categories::list_category_overrides,
+        categories::put_category_override,
+        categories::delete_category_override,
         export::export,
         export::export_contacts,
         export::export_calendar,
@@ -328,6 +354,7 @@ pub fn openapi_json() -> String {
         routes::get_body,
         routes::get_raw,
         routes::get_pdf,
+        unsubscribe::unsubscribe,
         routes::get_attachment,
         routes::get_thumbnail,
         remote::get_remote,
@@ -460,10 +487,36 @@ pub fn openapi_json() -> String {
         insights::TrustStateDto,
         insights::ConfidenceDto,
         insights::InsightDto,
+        insights::ReservationDto,
+        insights::TimeDto,
+        insights::MoneyDto,
+        insights::PassStyleDto,
+        insights::BoardingPassDto,
+        insights::BoardingLegDto,
+        insights::PassDateDto,
+        insights::LinkActionDto,
         insights::OneClickReasonDto,
         insights::OneClickDto,
         insights::UnsubscribeDto,
+        insights::UnsubscribeRequestDto,
+        insights::UnsubscribeOutcomeDto,
+        unsubscribe::UnsubscribeConfirmRequest,
+        unsubscribe::UnsubscribeResultDto,
+        unsubscribe::UnsubscribeRefusalDto,
         insights::InsightsStatusDto,
+        insights_data::InsightsDataDto,
+        insights_data::DataFileDto,
+        insights_data::DataOriginDto,
+        insights_data::DataUpdatesDto,
+        insights_data::DataOutcomeDto,
+        insights::CategorySourceDto,
+        insights::CategoryKindDto,
+        insights::CategoryTopicDto,
+        insights::HeldBackDto,
+        categories::CategoryCountDto,
+        categories::CategoriesDto,
+        categories::CategoryOverrideDto,
+        categories::CategoryOverrideRequest,
         ThreadDto,
         ErrorDto,
         UserDto,

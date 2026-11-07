@@ -41,14 +41,25 @@ pub(crate) fn name(raw: &str, what: &str) -> ApiResult<String> {
 pub(crate) fn refused(error: MailboxError) -> ApiError {
     match error {
         MailboxError::Invalid(message) => ApiError::bad_request(message),
+        MailboxError::Conflict(message) => ApiError(StatusCode::CONFLICT, message),
         MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
     }
 }
 
-pub(crate) fn account_dto(state: &ApiState, account: Account) -> AccountDto {
+fn bare_account_dto(state: &ApiState, account: Account) -> AccountDto {
     let status = state.mailboxes.status(account.id);
     let details = state.mailboxes.details(&account);
     AccountDto::new(account, status, details)
+}
+
+/// The account as owners and admins see it, trust list and suggestion included.
+pub(crate) async fn account_dto(state: &ApiState, account: Account) -> ApiResult<AccountDto> {
+    let lists = state.store.trusted_authserv_ids(account.archive_id).await?;
+    let (ids, suggested) = crate::categories::account_trust(state, &account, &lists).await?;
+    let mut dto = bare_account_dto(state, account);
+    dto.trusted_authserv_ids = ids;
+    dto.suggested_authserv_id = suggested;
+    Ok(dto)
 }
 
 pub(crate) async fn archive(state: &ApiState, raw: &str) -> ApiResult<ArchiveId> {
@@ -75,25 +86,33 @@ pub(crate) async fn list_accounts(
     let archive: ArchiveId = id(&raw, "archive")?;
     let accounts = state.store.list_accounts(archive).await?;
     let manages = crate::access::manages(&user);
-    Ok(Json(
-        accounts
-            .into_iter()
-            .map(|a| {
-                let mut dto = account_dto(&state, a);
-                if !manages {
-                    dto.connection = None;
-                    dto.jmap = None;
-                    dto.watch = None;
-                    if let Some(c) = dto.contacts_calendars.as_mut() {
-                        c.contacts_url = None;
-                        c.calendars_url = None;
-                        c.caldav_offer = None;
-                    }
-                }
-                dto
-            })
-            .collect(),
-    ))
+    let lists = if manages {
+        state.store.trusted_authserv_ids(archive).await?
+    } else {
+        Default::default()
+    };
+    let mut out = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let trust = if manages {
+            crate::categories::account_trust(&state, &account, &lists).await?
+        } else {
+            (None, None)
+        };
+        let mut dto = bare_account_dto(&state, account);
+        (dto.trusted_authserv_ids, dto.suggested_authserv_id) = trust;
+        if !manages {
+            dto.connection = None;
+            dto.jmap = None;
+            dto.watch = None;
+            if let Some(c) = dto.contacts_calendars.as_mut() {
+                c.contacts_url = None;
+                c.calendars_url = None;
+                c.caldav_offer = None;
+            }
+        }
+        out.push(dto);
+    }
+    Ok(Json(out))
 }
 
 #[utoipa::path(
@@ -157,7 +176,11 @@ pub(crate) async fn add_imap_account(
         )
         .await
         .map_err(refused)?;
-    Ok((StatusCode::CREATED, Json(account_dto(&state, account))))
+    crate::categories::seed_trust(&state, &account).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(account_dto(&state, account).await?),
+    ))
 }
 
 fn jmap_auth(raw: Option<String>) -> ApiResult<String> {
@@ -215,7 +238,11 @@ pub(crate) async fn add_jmap_account(
         )
         .await
         .map_err(refused)?;
-    Ok((StatusCode::CREATED, Json(account_dto(&state, account))))
+    crate::categories::seed_trust(&state, &account).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(account_dto(&state, account).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -233,7 +260,10 @@ pub(crate) async fn sync_account(
         return Err(ApiError::bad_request("an import account has no server"));
     }
     state.mailboxes.sync(&account).await.map_err(refused)?;
-    Ok((StatusCode::ACCEPTED, Json(account_dto(&state, account))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(account_dto(&state, account).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -270,7 +300,10 @@ pub(crate) async fn import_file(
         .import(&account, path)
         .await
         .map_err(refused)?;
-    Ok((StatusCode::ACCEPTED, Json(account_dto(&state, account))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(account_dto(&state, account).await?),
+    ))
 }
 
 async fn import_account(state: &ApiState, archive: ArchiveId, name: &str) -> ApiResult<Account> {
@@ -372,6 +405,7 @@ pub(crate) async fn delete_archive(
                 archive_id,
                 folder_id: None,
                 label: None,
+                category: None,
                 after,
                 limit: 500,
             })
@@ -441,6 +475,16 @@ pub(crate) async fn update_account(
     let mut account = account(&state, &raw).await?;
     if request.password.as_deref() == Some("") {
         return Err(ApiError::bad_request("the password is empty"));
+    }
+    let trusted = request
+        .trusted_authserv_ids
+        .as_deref()
+        .map(crate::categories::trusted_ids)
+        .transpose()?;
+    if trusted.is_some() && account.kind == AccountKind::Import {
+        return Err(ApiError::bad_request(
+            "an import account has no server; set [insights] import_authserv_ids instead",
+        ));
     }
     let change = AccountChange {
         connection: request.connection.map(|c| ConnectionChange {
@@ -514,7 +558,17 @@ pub(crate) async fn update_account(
         account.enabled = enabled;
     }
     state.store.update_account(&account).await?;
-    Ok(Json(account_dto(&state, account)))
+    if let Some(ids) = trusted {
+        let lists = state.store.trusted_authserv_ids(account.archive_id).await?;
+        if lists.get(&account.id) != Some(&ids) {
+            state
+                .store
+                .set_trusted_authserv_ids(account.id, &ids)
+                .await?;
+            state.mailboxes.insights_changed(account.archive_id);
+        }
+    }
+    Ok(Json(account_dto(&state, account).await?))
 }
 
 #[utoipa::path(

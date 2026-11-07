@@ -55,6 +55,15 @@ pub trait Operations: Send + Sync {
     /// webhook.
     async fn test_webhook(&self, id: WebhookId) -> Result<(), MailboxError>;
 
+    /// Brings the insights of `message` up to date before a decision that reads them. When it
+    /// returns `Ok`, the message's insights row carries the runner's current `extract_fp`
+    /// (recomputed from the stored bytes, one blob read, when it was missing or stale) and, when
+    /// that row has outcome ok or partial, its stage-B row exists with the current `derive_fp`
+    /// (recomputed in place, no blob read, when it was missing or stale). Anything it changes
+    /// is queued for reindexing and the server's walk is woken. Does nothing when both are
+    /// current or the server runs no insights. `Invalid` for an unknown message.
+    async fn fresh_insights(&self, message: MessageId) -> Result<(), MailboxError>;
+
     /// The SMTP listener as configured and what it took since the server started; `None` when
     /// the config has none.
     fn smtp(&self) -> Option<SmtpStatus>;

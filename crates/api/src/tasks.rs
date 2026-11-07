@@ -40,7 +40,9 @@ pub(crate) async fn cancel_task(
         .mailboxes
         .cancel_task(&id)
         .map_err(|error| match error {
-            MailboxError::Invalid(message) => ApiError(StatusCode::CONFLICT, message),
+            MailboxError::Invalid(message) | MailboxError::Conflict(message) => {
+                ApiError(StatusCode::CONFLICT, message)
+            }
             MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
         })?;
     Ok(StatusCode::NO_CONTENT)
@@ -73,10 +75,7 @@ pub(crate) async fn set_image_proxy(
         .mailboxes
         .set_image_proxy(proxy)
         .await
-        .map_err(|error| match error {
-            MailboxError::Invalid(message) => ApiError::bad_request(message),
-            MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
-        })?;
+        .map_err(crate::manage::refused)?;
     Ok(Json(proxy.into()))
 }
 
@@ -103,10 +102,7 @@ pub(crate) async fn set_sync_schedule(
         .mailboxes
         .set_sync_schedule(request.minutes)
         .await
-        .map_err(|error| match error {
-            MailboxError::Invalid(message) => ApiError::bad_request(message),
-            MailboxError::Backend(message) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, message),
-        })?;
+        .map_err(crate::manage::refused)?;
     Ok(Json(schedule_dto(schedule)))
 }
 

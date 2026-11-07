@@ -132,6 +132,13 @@ pub struct AccountDto {
     pub contacts_calendars: Option<ContactsCalendarsDto>,
     /// Which folders are watched for changes; `null` for import accounts and for members.
     pub watch: Option<WatchDto>,
+    /// The authentication servers whose `Authentication-Results` fields decide sender trust for
+    /// mail found in this account, in order; `null` for import accounts and for members.
+    pub trusted_authserv_ids: Option<Vec<String>>,
+    /// The authserv-id that stamps nearly all of this account's recent mail, offered for
+    /// `trusted_authserv_ids` while that list is empty; never used for trust on its own. `null`
+    /// when there is none, for import accounts and for members.
+    pub suggested_authserv_id: Option<String>,
 }
 
 /// Whether and where an account's contacts and calendars are archived.
@@ -510,6 +517,10 @@ pub struct AccountUpdateRequest {
     pub contacts_interval_minutes: Option<Option<u64>>,
     /// Which folders are watched for changes.
     pub watch: Option<WatchDto>,
+    /// Replaces the trusted authentication servers: at most 16 ids, each 1 to 255 printable
+    /// ASCII characters without spaces, trimmed, duplicates (ignoring case) dropped, order kept.
+    /// Trust them only when the server strips forged fields with its id. Not for import accounts.
+    pub trusted_authserv_ids: Option<Vec<String>>,
 }
 
 fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
@@ -597,9 +608,15 @@ pub struct MessageSummary {
     /// In search results: the words were found only in text inside its attachments. Always
     /// `false` in folder and label lists.
     pub attachment_match: bool,
-    /// The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`
-    /// is left out for members and on the archive's own mail.
+    /// The kinds of insight found in it (`code`, `link`, `unsubscribe`, `reservation`, `order`,
+    /// `invoice`, `parcel`, `pass`), never their values. `code` is left out for members and on the
+    /// archive's own mail, `link` on own mail.
     pub insight_kinds: Vec<String>,
+    /// The effective kind (`personal`, `list`, `bulk`, `notification`); `null` until categories
+    /// are derived.
+    pub kind: Option<String>,
+    /// The one topic a list row shows, the first in taxonomy order; never `health`.
+    pub topic: Option<String>,
 }
 
 /// One page of a message list.
@@ -760,6 +777,10 @@ pub struct ListParams {
     pub folder: Option<String>,
     /// Only messages carrying this label, compared exactly.
     pub label: Option<String>,
+    /// Only messages of this kind (`personal`, `list`, `bulk`, `notification`) or topic
+    /// (`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`).
+    /// `health` lists nothing when the server turns it off.
+    pub category: Option<String>,
     /// `next` from the previous page.
     pub after: Option<String>,
     /// Page size, at most 500; 50 by default.
@@ -976,6 +997,8 @@ impl AccountDto {
                 mode: w.mode.as_str().to_owned(),
                 folders: w.folders,
             }),
+            trusted_authserv_ids: None,
+            suggested_authserv_id: None,
         }
     }
 }
@@ -1036,6 +1059,11 @@ impl MessageSummary {
             labels: extras.map(|e| e.labels.clone()).unwrap_or_default(),
             attachment_match: false,
             insight_kinds,
+            kind: extras.and_then(|e| e.kind).map(|k| k.name().to_owned()),
+            topic: extras
+                .and_then(|e| e.topic)
+                .filter(|t| *t != holtmail_category::Topic::Health)
+                .map(|t| t.name().to_owned()),
         }
     }
 }

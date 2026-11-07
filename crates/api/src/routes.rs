@@ -5,9 +5,11 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId};
+use holtmail_core::{ArchiveId, FolderId, MessageId, ThreadId, Timestamp};
 use holtmail_index::SortOrder;
-use holtmail_store::{Derived, DerivedKind, InsightView, Message, MessageQuery, PageCursor, User};
+use holtmail_store::{
+    Derived, DerivedKind, InsightView, Message, MessageQuery, PageCursor, UnsubscribeRequest, User,
+};
 
 use crate::dto::*;
 use crate::insights::Viewer;
@@ -117,7 +119,7 @@ pub(crate) async fn list_labels(
     get,
     path = "/api/archives/{id}/messages",
     params(("id" = String, Path, description = "Archive id"), ListParams),
-    responses((status = 200, body = MessagePage), (status = 400, description = "A malformed cursor", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "Malformed archive or folder id", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+    responses((status = 200, body = MessagePage), (status = 400, description = "A malformed cursor or an unknown category", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not allowed", body = ErrorDto), (status = 404, description = "Malformed archive or folder id", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
 pub(crate) async fn list_messages(
     State(state): AppState,
@@ -131,12 +133,25 @@ pub(crate) async fn list_messages(
         .as_deref()
         .map(|f| id::<FolderId>(f, "folder"))
         .transpose()?;
+    let category = crate::categories::filter(params.category.as_deref())?;
+    if category
+        == Some(holtmail_store::CategoryFilter::Topic(
+            holtmail_category::Topic::Health,
+        ))
+        && state.insights.as_ref().is_some_and(|c| !c.health)
+    {
+        return Ok(Json(MessagePage {
+            items: Vec::new(),
+            next: None,
+        }));
+    }
     let page = state
         .store
         .list_messages(&MessageQuery {
             archive_id: archive,
             folder_id,
             label: params.label.filter(|l| !l.is_empty()),
+            category,
             after: params.after.map(PageCursor),
             limit: params.limit.unwrap_or(50),
         })
@@ -234,9 +249,16 @@ async fn detail(
     raw: &[u8],
     viewer: &Viewer,
     insight: Option<&InsightView>,
+    last: &HashMap<String, UnsubscribeRequest>,
 ) -> ApiResult<MessageDetail> {
-    let insights =
-        crate::insights::message_insights(state.insights.as_ref(), insight, &message, viewer);
+    let insights = crate::insights::message_insights(
+        state.insights.as_ref(),
+        insight,
+        &message,
+        viewer,
+        last,
+        Timestamp::now(),
+    );
     let parsed = holtmail_mime::parse(raw).ok();
     let attachments = state.store.attachments(message.id).await?;
     let locations = state.store.locations(message.id).await?;
@@ -321,8 +343,10 @@ pub(crate) async fn get_message(
     let (message, bytes) = load(&state, &raw).await?;
     let viewer = Viewer::new(&state, &user, message.archive_id).await?;
     let insight = crate::insights::view(&state, message.id).await?;
+    let last =
+        crate::insights::last_requests(&state, &viewer, message.archive_id, insight.iter()).await?;
     Ok(Json(
-        detail(&state, message, &bytes, &viewer, insight.as_ref()).await?,
+        detail(&state, message, &bytes, &viewer, insight.as_ref(), &last).await?,
     ))
 }
 
@@ -345,6 +369,8 @@ pub(crate) async fn get_thread(
     let viewer = Viewer::new(&state, &user, first.archive_id).await?;
     let ids: Vec<MessageId> = messages.iter().map(|m| m.id).collect();
     let views = crate::insights::views(&state, &ids).await?;
+    let last =
+        crate::insights::last_requests(&state, &viewer, first.archive_id, views.values()).await?;
     let mut out = Vec::with_capacity(messages.len());
     for message in messages {
         let insight = views.get(&message.id);
@@ -353,7 +379,7 @@ pub(crate) async fn get_thread(
             .get(&message.blob_id)
             .await?
             .ok_or_else(|| ApiError::not_found("message bytes"))?;
-        out.push(detail(&state, message, &bytes, &viewer, insight).await?);
+        out.push(detail(&state, message, &bytes, &viewer, insight, &last).await?);
     }
     Ok(Json(ThreadDto {
         id: thread.to_string(),

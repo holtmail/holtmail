@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -9,8 +9,9 @@ use holtmail_api::{InsightProgress, TaskKind, TaskLevel, TaskState};
 use holtmail_blob::BlobStore;
 use holtmail_core::{ArchiveId, MessageId};
 use holtmail_ingest::Ingest;
+use holtmail_insights::Deriver;
 use holtmail_mime::ParsedMessage;
-use holtmail_store::{Store, StoreError};
+use holtmail_store::{CategoryPolicy, Store, StoreError};
 use tokio::sync::Notify;
 
 use crate::tasks::{NewTask, TaskHandle, Tasks};
@@ -58,12 +59,34 @@ pub(crate) trait Step: Send + Sync {
 
     /// Records that the message's bytes cannot be read or parsed, so it is not listed again.
     async fn unusable(&self, message: MessageId, why: Unusable) -> anyhow::Result<()>;
+
+    /// Called after the index commit that follows each page, so work that must outlive a crash
+    /// only once the index holds it can be recorded as done here.
+    async fn committed(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
-/// Message insights under the runner's current fingerprint.
+/// Message insights under the runner's current fingerprint. A message whose insights it wrote
+/// was queued for reindexing before the write and leaves the queue only after the commit that
+/// made its rebuilt document searchable, under the sequence read before that rebuild, so a crash
+/// before the commit leaves it for the [`IndexStep`].
 pub(crate) struct InsightsStep {
-    pub ingest: Ingest,
-    pub fingerprint: String,
+    ingest: Ingest,
+    fingerprint: String,
+    store: Arc<dyn Store>,
+    done: Mutex<Vec<(MessageId, u64)>>,
+}
+
+impl InsightsStep {
+    pub(crate) fn new(ingest: Ingest, fingerprint: String, store: Arc<dyn Store>) -> Self {
+        Self {
+            ingest,
+            fingerprint,
+            store,
+            done: Mutex::default(),
+        }
+    }
 }
 
 #[async_trait]
@@ -79,6 +102,7 @@ impl Step for InsightsStep {
         after: Option<MessageId>,
         limit: u32,
     ) -> Result<Vec<MessageId>, StoreError> {
+        self.done.lock().expect("done lock").clear();
         store
             .messages_needing_insights(archive, &self.fingerprint, after, limit)
             .await
@@ -89,10 +113,15 @@ impl Step for InsightsStep {
             .ingest
             .insights_for(item.message, &item.raw, &item.parsed)
             .await?;
-        Ok(if written {
-            StepOutcome::Written
-        } else {
-            StepOutcome::Unchanged
+        Ok(match written {
+            Some(seq) => {
+                self.done
+                    .lock()
+                    .expect("done lock")
+                    .push((item.message, seq));
+                StepOutcome::Written
+            }
+            None => StepOutcome::Unchanged,
         })
     }
 
@@ -100,6 +129,91 @@ impl Step for InsightsStep {
         match why {
             Unusable::Unreadable => self.ingest.mark_insights_unreadable(message).await?,
             Unusable::Unparsable => self.ingest.mark_insights_unparsable(message).await?,
+        }
+        Ok(())
+    }
+
+    async fn committed(&self) -> anyhow::Result<()> {
+        let done = std::mem::take(&mut *self.done.lock().expect("done lock"));
+        if !done.is_empty() {
+            self.store.dequeue_reindex(&done).await?;
+        }
+        Ok(())
+    }
+}
+
+/// Index documents that are behind their message's categories or insights, from the store's
+/// reindex queue. A message leaves the queue only after the commit that made its new document
+/// searchable, and only under the sequence it was read with, so a re-queue in between keeps it
+/// queued and a crash before the commit leaves it for the next run.
+pub(crate) struct IndexStep {
+    ingest: Ingest,
+    store: Arc<dyn Store>,
+    seqs: Mutex<HashMap<MessageId, u64>>,
+    done: Mutex<Vec<(MessageId, u64)>>,
+}
+
+impl IndexStep {
+    pub(crate) fn new(ingest: Ingest, store: Arc<dyn Store>) -> Self {
+        Self {
+            ingest,
+            store,
+            seqs: Mutex::default(),
+            done: Mutex::default(),
+        }
+    }
+
+    fn finish(&self, message: MessageId) {
+        let seq = self.seqs.lock().expect("seqs lock").remove(&message);
+        if let Some(seq) = seq {
+            self.done.lock().expect("done lock").push((message, seq));
+        }
+    }
+}
+
+#[async_trait]
+impl Step for IndexStep {
+    fn name(&self) -> &'static str {
+        "index"
+    }
+
+    async fn pending(
+        &self,
+        store: &dyn Store,
+        archive: ArchiveId,
+        after: Option<MessageId>,
+        limit: u32,
+    ) -> Result<Vec<MessageId>, StoreError> {
+        let queued = store.reindex_queue(archive, after, limit).await?;
+        self.done.lock().expect("done lock").clear();
+        let mut seqs = self.seqs.lock().expect("seqs lock");
+        seqs.clear();
+        Ok(queued
+            .into_iter()
+            .map(|(id, seq)| {
+                seqs.insert(id, seq);
+                id
+            })
+            .collect())
+    }
+
+    async fn apply(&self, item: &WalkItem) -> anyhow::Result<StepOutcome> {
+        self.ingest
+            .reindex_parsed(item.message, &item.parsed)
+            .await?;
+        self.finish(item.message);
+        Ok(StepOutcome::Written)
+    }
+
+    async fn unusable(&self, message: MessageId, _why: Unusable) -> anyhow::Result<()> {
+        self.finish(message);
+        Ok(())
+    }
+
+    async fn committed(&self) -> anyhow::Result<()> {
+        let done = std::mem::take(&mut *self.done.lock().expect("done lock"));
+        if !done.is_empty() {
+            self.store.dequeue_reindex(&done).await?;
         }
         Ok(())
     }
@@ -114,7 +228,7 @@ impl WalkWake {
         self.0.notify_one();
     }
 
-    async fn wait(&self) {
+    pub(crate) async fn wait(&self) {
         self.0.notified().await;
     }
 }
@@ -145,6 +259,7 @@ pub(crate) struct Walk {
     steps: Vec<Arc<dyn Step>>,
     tasks: Arc<Tasks>,
     progress: Option<Arc<InsightProgress>>,
+    derive: Option<(Arc<Deriver>, CategoryPolicy)>,
     page: u32,
     pause: Duration,
 }
@@ -164,6 +279,7 @@ impl Walk {
             steps,
             tasks,
             progress: None,
+            derive: None,
             page: PAGE,
             pause: PAUSE,
         }
@@ -171,6 +287,12 @@ impl Walk {
 
     pub(crate) fn with_progress(mut self, progress: Arc<InsightProgress>) -> Self {
         self.progress = Some(progress);
+        self
+    }
+
+    /// Runs the stage-B pass after every run, in [`run`].
+    pub(crate) fn with_derive(mut self, deriver: Arc<Deriver>, policy: CategoryPolicy) -> Self {
+        self.derive = Some((deriver, policy));
         self
     }
 
@@ -245,6 +367,9 @@ impl Walk {
                     }
                 }
                 self.ingest.commit().await?;
+                for step in &self.steps {
+                    step.committed().await?;
+                }
                 if let Some(progress) = &self.progress {
                     progress.advance(page.len() as u64);
                 }
@@ -392,11 +517,22 @@ fn is_gone(error: &anyhow::Error) -> bool {
     )
 }
 
-/// Runs the walk now, then again on every wake.
+/// Runs the walk and then the stage-B pass now, then both again on every wake. When the pass
+/// queued messages for reindexing, the walk runs again at once to index them.
 pub(crate) async fn run(walk: Arc<Walk>, wake: Arc<WalkWake>) {
     loop {
         walk.run_logged().await;
-        wake.wait().await;
+        let queued = match &walk.derive {
+            Some((deriver, policy)) => {
+                crate::derive::derive_logged(&*walk.store, deriver, *policy)
+                    .await
+                    .changed
+            }
+            None => 0,
+        };
+        if queued == 0 {
+            wake.wait().await;
+        }
     }
 }
 

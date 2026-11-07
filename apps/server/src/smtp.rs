@@ -50,6 +50,11 @@ pub struct SmtpConfig {
     /// Which recipients are taken and where their mail goes.
     #[serde(default, rename = "route")]
     pub routes: Vec<RouteConfig>,
+    /// The authserv-ids whose `Authentication-Results` are trusted for mail received here; none
+    /// by default. Set it only to the authserv-id of the MTA in front of Holtmail, and only when
+    /// that MTA removes forged fields carrying its own id (RFC 8601 §5).
+    #[serde(default)]
+    pub trusted_authserv_ids: Vec<String>,
 }
 
 /// One `[[smtp.route]]`.

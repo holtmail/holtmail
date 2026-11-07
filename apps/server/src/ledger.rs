@@ -83,6 +83,7 @@ pub async fn verify(
                         archive_id: archive.id,
                         folder_id: None,
                         label: None,
+                        category: None,
                         after: cursor,
                         limit: 200,
                     })

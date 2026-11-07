@@ -11,6 +11,22 @@ run = [
   "bun run check",
 ]
 
+[tasks.release-features]
+description = "Fail when the release image's build of holtmail-server (the Dockerfile's default FEATURES) enables a test-only feature"
+run = """
+set -eu
+grep -qx 'ARG FEATURES=""' Dockerfile || { echo "the Dockerfile's FEATURES default is not empty" >&2; exit 1; }
+tree=$(cargo tree -e normal,build -p holtmail-server --locked --prefix none -f '{p} {f}')
+if printf '%s\n' "$tree" | grep -E '^holtmail-[^ ]+ .*(insights-test-data|test-networks|test-key)'; then
+  echo "the release build enables a test-only feature" >&2
+  exit 1
+fi
+"""
+
+[tasks.categories-snapshot]
+description = "Rebuild the bundled Wikidata category file from Wikidata; review target/categories-report.txt and the diff"
+run = "cargo run --release -p holtmail-category-builder -- wikidata --previous crates/category-domains/data/wikidata-categories.tsv.gz --out crates/category-domains/data/wikidata-categories.tsv.gz --report target/categories-report.txt"
+
 [tasks.it]
 description = "Integration tests against the servers in tests/integration/compose.yaml; `mise run it -- imap` runs one area"
 run = "bash tests/integration/it.sh"

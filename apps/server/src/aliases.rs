@@ -407,6 +407,7 @@ pub async fn detect_all(
                     archive_id: archive.id,
                     folder_id: None,
                     label: None,
+                    category: None,
                     after,
                     limit: 500,
                 })
@@ -455,6 +456,11 @@ pub async fn detect_if_needed(runner: Runner) {
                 seconds = started.elapsed().as_secs(),
                 "aliases detected"
             );
+            if changed > 0
+                && let Some(insights) = &services.insights
+            {
+                insights.changed();
+            }
             for archive in archives {
                 runner.refresh_people(archive);
             }

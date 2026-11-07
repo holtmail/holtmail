@@ -1489,4 +1489,11 @@ impl Mailboxes for Runner {
             None => false,
         }
     }
+
+    fn insights_changed(&self, archive: ArchiveId) {
+        if let Some(insights) = &self.0.services.insights {
+            tracing::debug!(%archive, "categories may be stale");
+            insights.changed();
+        }
+    }
 }

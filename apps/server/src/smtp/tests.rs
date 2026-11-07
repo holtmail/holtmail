@@ -128,6 +128,7 @@ async fn archives_journaled_and_forwarded_mail() {
             archive_id: archive,
             folder_id: None,
             label: None,
+            category: None,
             after: None,
             limit: 10,
         })

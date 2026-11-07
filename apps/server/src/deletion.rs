@@ -16,6 +16,9 @@ const MAX_REVIEWS: usize = 20;
 const SAMPLE: usize = 20;
 const SEARCH_PAGE: u32 = 1_000;
 const DELETE_BATCH: usize = 200;
+const STILL_READING: &str =
+    "Some messages are still being read. Try again when search has caught up.";
+const INSIGHTS_OFF: &str = "Searching by what messages contain or by category needs insights, which are off on this server.";
 
 struct Pending {
     review: DeletionReview,
@@ -43,7 +46,49 @@ fn backend(error: impl std::fmt::Display) -> MailboxError {
     MailboxError::Backend(error.to_string())
 }
 
+/// Whether the insight and category fields of `archive`'s index documents may be behind the
+/// store: messages still need insights, categories rows were derived under another stage-B
+/// fingerprint than the current one, messages are queued for reindexing, or the index is being
+/// rebuilt.
+async fn insights_behind(
+    services: &Services,
+    insights: &crate::insights::Insights,
+    archive: ArchiveId,
+) -> Result<bool, MailboxError> {
+    let store = &*services.store;
+    if store
+        .count_needing_insights(archive, &insights.api.fingerprint)
+        .await
+        .map_err(backend)?
+        > 0
+        || store.count_reindex_queue(archive).await.map_err(backend)? > 0
+        || store
+            .setting(crate::REINDEX_SETTING)
+            .await
+            .map_err(backend)?
+            .is_some()
+    {
+        return Ok(true);
+    }
+    let ctx = insights
+        .deriver
+        .context(store, archive)
+        .await
+        .map_err(backend)?;
+    Ok(store
+        .count_needing_derive(archive, ctx.derive_fp())
+        .await
+        .map_err(backend)?
+        > 0)
+}
+
 impl Reviews {
+    /// Builds a review of what `selection` would delete from `archive` and keeps it for its
+    /// confirmation. A search that uses insight or category operators is refused with
+    /// [`MailboxError::Conflict`] while those index fields may be behind the store, so a review
+    /// never selects from a lagging index, and with [`MailboxError::Invalid`] when the server
+    /// computes no insights, since rows left from when it did are not kept up to date; other
+    /// searches are never refused for either.
     pub async fn review(
         &self,
         services: &Services,
@@ -86,6 +131,16 @@ impl Reviews {
                     return Err(invalid(
                         "Enter a search; deleting a whole archive is done by removing the archive.",
                     ));
+                }
+                if parsed.reads_insights() {
+                    let insights = services
+                        .insights
+                        .as_ref()
+                        .ok_or_else(|| invalid(INSIGHTS_OFF))?;
+                    if insights_behind(services, insights, archive).await? {
+                        insights.wake.signal();
+                        return Err(MailboxError::Conflict(STILL_READING.into()));
+                    }
                 }
                 let mut ids = Vec::new();
                 let mut offset = 0;

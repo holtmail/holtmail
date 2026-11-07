@@ -228,6 +228,12 @@ impl Config {
                 .context("HOLTMAIL_INSIGHTS is true or false")?;
         }
         config.insights.check()?;
+        if let Some(smtp) = &config.smtp {
+            crate::insights::check_authserv_ids(
+                "smtp.trusted_authserv_ids",
+                &smtp.trusted_authserv_ids,
+            )?;
+        }
         anyhow::ensure!(
             (1..=64).contains(&config.watch.parallel_syncs),
             "watch.parallel_syncs is between 1 and 64"
@@ -416,6 +422,9 @@ pub struct Services {
     pub alias_sync_minutes: u64,
     /// The insights runner and what the API serves of it; `None` when insights are off.
     pub insights: Option<crate::insights::Insights>,
+    /// The category data release loader and updater; `None` when insights are off or `domains`
+    /// is not among the sources.
+    pub category_data: Option<Arc<crate::category_data::Updater>>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -548,7 +557,28 @@ impl Services {
         ));
         oauth.set_hooks(hooks.clone());
         let detectors = crate::aliases::detectors(&config.aliases)?;
-        let insights = crate::insights::Insights::open(&config.insights)?;
+        let smtp_authserv_ids = config
+            .smtp
+            .as_ref()
+            .map_or(&[][..], |smtp| &smtp.trusted_authserv_ids[..]);
+        let insights = crate::insights::Insights::open(
+            &config.insights,
+            smtp_authserv_ids,
+            &config.tls_roots,
+        )?;
+        let category_data = match &insights {
+            Some(insights) => {
+                crate::category_data::Updater::open(
+                    &config.insights,
+                    insights,
+                    &config.data_dir,
+                    &config.tls_roots,
+                    store.clone(),
+                )
+                .await?
+            }
+            None => None,
+        };
         let aliases = holtmail_aliases::AliasManager::new(
             store.clone(),
             secrets.clone(),
@@ -571,17 +601,20 @@ impl Services {
             aliases,
             alias_sync_minutes: config.aliases.sync_interval_minutes,
             insights,
+            category_data,
         })
     }
 
     /// The ingest pipeline over these services, with attachment text, aliases and, when on,
-    /// insights.
+    /// insights and their categories.
     pub fn ingest(&self) -> Ingest {
         let ingest = Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
             .with_extractor(self.extractor.clone())
             .with_alias_detectors(self.detectors.clone());
         match &self.insights {
-            Some(insights) => ingest.with_insights(insights.runner.clone()),
+            Some(insights) => ingest
+                .with_insights(insights.runner.clone())
+                .with_categories(insights.deriver.clone(), insights.policy()),
             None => ingest,
         }
     }

@@ -3,9 +3,11 @@
 mod accounts;
 mod aliases;
 mod backup;
+mod category_data;
 mod config;
 mod dav;
 mod deletion;
+mod derive;
 mod export;
 mod image_proxy;
 mod import;
@@ -1364,6 +1366,9 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         runner.clone(),
         services.alias_sync_minutes,
     ));
+    if let Some(updater) = &services.category_data {
+        tokio::spawn(category_data::run(updater.clone()));
+    }
     tokio::spawn(watch::run(runner.clone()));
     tokio::spawn(push::run(runner.clone()));
     tokio::spawn(runner.clone().find_caldav_offers(None));
@@ -1399,10 +1404,14 @@ fn walk(
 ) -> Option<(Arc<walk::Walk>, Arc<walk::WalkWake>)> {
     let insights = services.insights.as_ref()?;
     let ingest = services.ingest();
-    let steps: Vec<Arc<dyn walk::Step>> = vec![Arc::new(walk::InsightsStep {
-        ingest: ingest.clone(),
-        fingerprint: insights.api.fingerprint.clone(),
-    })];
+    let steps: Vec<Arc<dyn walk::Step>> = vec![
+        Arc::new(walk::InsightsStep::new(
+            ingest.clone(),
+            insights.api.fingerprint.clone(),
+            services.store.clone(),
+        )),
+        Arc::new(walk::IndexStep::new(ingest.clone(), services.store.clone())),
+    ];
     let walk = walk::Walk::new(
         services.store.clone(),
         services.blobs.clone(),
@@ -1410,8 +1419,9 @@ fn walk(
         steps,
         runner.task_list().clone(),
     )
-    .with_progress(insights.api.progress.clone());
-    Some((Arc::new(walk), Arc::new(walk::WalkWake::default())))
+    .with_progress(insights.api.progress.clone())
+    .with_derive(insights.deriver.clone(), insights.policy());
+    Some((Arc::new(walk), insights.wake.clone()))
 }
 
 /// The setting that says the search index must be rebuilt from the store, set when an index of an
@@ -1446,6 +1456,7 @@ async fn reindex(
                     archive_id: archive.id,
                     folder_id: None,
                     label: None,
+                    category: None,
                     after,
                     limit: 500,
                 })
@@ -1549,6 +1560,7 @@ pub(crate) async fn read_invitations(
                     archive_id: archive.id,
                     folder_id: None,
                     label: None,
+                    category: None,
                     after,
                     limit: 500,
                 })
@@ -1646,6 +1658,7 @@ pub(crate) async fn refresh_directory_text(
                     archive_id: archive.id,
                     folder_id: None,
                     label: None,
+                    category: None,
                     after,
                     limit: 500,
                 })

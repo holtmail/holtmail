@@ -3,7 +3,7 @@ use holtmail_api::{
     DeletionReview, DeletionSelection, LedgerStatus, MailboxError, Operations, Task, TaskKind,
     TaskLevel, TaskState, VerifyLedger,
 };
-use holtmail_core::{ArchiveId, UserId, WebhookId};
+use holtmail_core::{ArchiveId, MessageId, UserId, WebhookId};
 use holtmail_store::Webhook;
 
 use crate::mailboxes::Runner;
@@ -190,6 +190,49 @@ impl Operations for Runner {
         self.services().hooks.test(id).await.map_err(backend)
     }
 
+    async fn fresh_insights(&self, message: MessageId) -> Result<(), MailboxError> {
+        let services = self.services();
+        let Some(insights) = &services.insights else {
+            return Ok(());
+        };
+        let store = &*services.store;
+        let archive = store
+            .get_message(message)
+            .await
+            .map_err(backend)?
+            .ok_or_else(|| MailboxError::Invalid("There is no such message.".into()))?
+            .archive_id;
+        let ingest = self.ingester();
+        let mut queued = false;
+        let view = store.insight_view(message).await.map_err(backend)?;
+        if view
+            .as_ref()
+            .is_none_or(|v| v.insights.fingerprint != insights.api.fingerprint)
+        {
+            queued |= ingest.refresh_insights(message).await.map_err(|error| {
+                tracing::warn!(%message, "recomputing message insights failed");
+                backend(error)
+            })?;
+        }
+        let ctx = insights
+            .deriver
+            .context(store, archive)
+            .await
+            .map_err(backend)?;
+        let categories = store
+            .insight_view(message)
+            .await
+            .map_err(backend)?
+            .and_then(|v| v.categories);
+        if categories.is_none_or(|c| c.row.write.derive_fp != ctx.derive_fp()) {
+            queued |= ingest.derive_categories(message).await.map_err(backend)?;
+        }
+        if queued {
+            insights.changed();
+        }
+        Ok(())
+    }
+
     fn smtp(&self) -> Option<holtmail_api::SmtpStatus> {
         use std::sync::atomic::Ordering;
         let listener = self.services().smtp.get()?;
@@ -219,5 +262,87 @@ impl Operations for Runner {
             failed: counters.failed.load(Ordering::Relaxed),
             last_received_at: *counters.last_received_at.lock().expect("counters lock"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use bytes::Bytes;
+    use holtmail_ingest::{Ingest, Placement};
+
+    use super::*;
+
+    const NEWS: &[u8] = b"From: News <news@news.example.com>\r\nTo: ada@example.org\r\nSubject: Issue 1\r\nMessage-ID: <fresh1@news.example.com>\r\nDate: Mon, 10 Mar 2025 09:00:00 +0000\r\nList-Unsubscribe: <https://news.example.com/u/1>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nThree new features.\r\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn fresh_insights_recomputes_stale_rows_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let config: crate::config::Config =
+            toml::from_str(&format!("data_dir = {:?}", dir.path())).unwrap();
+        let services = Arc::new(crate::config::Services::open(&config).await.unwrap());
+        let schedule = Arc::new(
+            crate::schedule::Schedule::open(None, services.store.clone())
+                .await
+                .unwrap(),
+        );
+        let runner =
+            crate::mailboxes::Runner::open(services.clone(), dir.path().join("uploads"), schedule)
+                .await
+                .unwrap();
+        let store = services.store.clone();
+        let insights = services.insights.as_ref().unwrap();
+        let archive = store.create_archive("Mail").await.unwrap().id;
+        let bare = Ingest::new(
+            services.blobs.clone(),
+            store.clone(),
+            services.index.clone(),
+        );
+        let id = bare
+            .ingest(archive, Bytes::from_static(NEWS), &Placement::default())
+            .await
+            .unwrap()
+            .message_id;
+        assert!(store.insight_view(id).await.unwrap().is_none());
+
+        runner.fresh_insights(id).await.unwrap();
+        let ctx = insights.deriver.context(&*store, archive).await.unwrap();
+        let view = store.insight_view(id).await.unwrap().unwrap();
+        assert_eq!(view.insights.fingerprint, insights.api.fingerprint);
+        let write = view.categories.unwrap().row.write;
+        assert_eq!(write.derive_fp, ctx.derive_fp());
+        assert_eq!(store.count_reindex_queue(archive).await.unwrap(), 1);
+        let computed_at = view.insights.computed_at;
+
+        let mut stale = write.clone();
+        stale.derive_fp = "derive-old".into();
+        store
+            .set_message_categories(&[stale], insights.policy())
+            .await
+            .unwrap();
+        runner.fresh_insights(id).await.unwrap();
+        let view = store.insight_view(id).await.unwrap().unwrap();
+        assert_eq!(
+            view.insights.computed_at, computed_at,
+            "insights were current"
+        );
+        assert_eq!(
+            view.categories.unwrap().row.write.derive_fp,
+            ctx.derive_fp()
+        );
+
+        let mut old = view.insights.clone();
+        old.fingerprint = "fp-old".into();
+        old.items = r#"{"v":1,"items":[]}"#.into();
+        store.set_message_insights(id, &old).await.unwrap();
+        store.invalidate_derived(&[id]).await.unwrap();
+        runner.fresh_insights(id).await.unwrap();
+        let view = store.insight_view(id).await.unwrap().unwrap();
+        assert_eq!(view.insights.fingerprint, insights.api.fingerprint);
+        assert!(view.insights.items.contains("unsubscribe"));
+        assert!(view.categories.is_some());
+
+        assert!(runner.fresh_insights(MessageId::new()).await.is_err());
     }
 }

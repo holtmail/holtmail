@@ -7,6 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
+[features]
+insights-test-data = ["holtmail-category-domains/test-key", "holtmail-fetch-http/test-networks"]
+
 [[bin]]
 name = "holtmail"
 path = "src/main.rs"
@@ -26,6 +29,10 @@ holtmail-auth.workspace = true
 holtmail-blob.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-blob-s3.workspace = true
+holtmail-category.workspace = true
+holtmail-category-data.workspace = true
+holtmail-category-domains.workspace = true
+holtmail-category-signals.workspace = true
 holtmail-collection.workspace = true
 holtmail-webpush.workspace = true
 holtmail-collection-dav.workspace = true
@@ -51,6 +58,10 @@ holtmail-hooks.workspace = true
 holtmail-ingest.workspace = true
 holtmail-insight.workspace = true
 holtmail-insight-code.workspace = true
+holtmail-insight-links.workspace = true
+holtmail-insight-parcel.workspace = true
+holtmail-insight-pass.workspace = true
+holtmail-insight-schemaorg.workspace = true
 holtmail-insight-unsubscribe.workspace = true
 holtmail-insights.workspace = true
 holtmail-mime.workspace = true
@@ -90,6 +101,8 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+holtmail-category = { workspace = true, features = ["testing"] }
+ed25519-dalek.workspace = true
 holtmail-fetch = { workspace = true, features = ["testing"] }
 holtmail-oauth = { workspace = true, features = ["testing"] }
 holtmail-store = { workspace = true, features = ["testing"] }

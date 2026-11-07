@@ -125,13 +125,70 @@ export type InsightStatus = Schemas['InsightStatusDto']
 export type Insight = Schemas['InsightDto']
 export type CodeInsight = Extract<Insight, { type: 'code' }>
 export type UnsubscribeInsight = Extract<Insight, { type: 'unsubscribe' }>
+export type ActionInsight = Extract<Insight, { type: 'action' }>
+export type ParcelInsight = Extract<Insight, { type: 'parcel' }>
+export type ReservationInsight = Extract<Insight, { type: 'reservation' }>
+export type OrderInsight = Extract<Insight, { type: 'order' }>
+export type InvoiceInsight = Extract<Insight, { type: 'invoice' }>
+export type PassInsight = Extract<Insight, { type: 'pass' }>
+export type Reservation = Schemas['ReservationDto']
+export type ReservationKind = Reservation['kind']
+export type FlightReservation = Extract<Reservation, { kind: 'flight' }>
+export type LodgingReservation = Extract<Reservation, { kind: 'lodging' }>
+export type TrainReservation = Extract<Reservation, { kind: 'train' }>
+export type BusReservation = Extract<Reservation, { kind: 'bus' }>
+export type EventReservation = Extract<Reservation, { kind: 'event' }>
+export type FoodReservation = Extract<Reservation, { kind: 'food' }>
+export type RentalCarReservation = Extract<Reservation, { kind: 'rental_car' }>
+export type InsightTime = Schemas['TimeDto']
+export type Money = Schemas['MoneyDto']
+export type PassStyle = Schemas['PassStyleDto']
+export type BoardingPass = Schemas['BoardingPassDto']
+export type BoardingLeg = Schemas['BoardingLegDto']
+export type PassDate = Schemas['PassDateDto']
+export type LinkAction = Schemas['LinkActionDto']
 export type InsightConfidence = Schemas['ConfidenceDto']
 export type Trust = Schemas['TrustDto']
 export type TrustState = Schemas['TrustStateDto']
 export type Unsubscribe = Schemas['UnsubscribeDto']
 export type OneClick = Schemas['OneClickDto']
 export type OneClickReason = Schemas['OneClickReasonDto']
+export type UnsubscribeRequest = Schemas['UnsubscribeRequestDto']
+export type UnsubscribeOutcome = Schemas['UnsubscribeOutcomeDto']
+export type UnsubscribeResult = Schemas['UnsubscribeResultDto']
+export type UnsubscribeRefusal = Schemas['UnsubscribeRefusalDto']
 export type InsightsStatus = Schemas['InsightsStatusDto']
+export type InsightsData = Schemas['InsightsDataDto']
+export type DataFile = Schemas['DataFileDto']
+export type DataOrigin = Schemas['DataOriginDto']
+export type DataUpdates = Schemas['DataUpdatesDto']
+export type DataOutcome = Schemas['DataOutcomeDto']
+export type MessageKind = 'personal' | 'list' | 'bulk' | 'notification'
+export type Topic =
+  | 'purchases'
+  | 'travel'
+  | 'finance'
+  | 'health'
+  | 'social'
+  | 'jobs'
+  | 'events'
+  | 'government'
+export type OverrideScope = 'address' | 'domain'
+export type CategorySource = Schemas['CategorySourceDto']
+export type CategoryKind = Schemas['CategoryKindDto']
+export type CategoryTopic = Schemas['CategoryTopicDto']
+export type HeldBack = Schemas['HeldBackDto']
+export type Categories = Schemas['CategoriesDto']
+export type CategoryCount = Schemas['CategoryCountDto']
+export type CategoryOverride = Schemas['CategoryOverrideDto']
+export type CategoryOverrideRequest = Omit<
+  Schemas['CategoryOverrideRequest'],
+  'scope' | 'kind' | 'topics'
+> & {
+  scope: OverrideScope
+  kind?: MessageKind | null
+  topics?: Topic[] | null
+}
 
 /** What a calendar request shows: a span in Unix milliseconds, the calendars to show (all when
  * absent, none when empty) and whether removed events are shown. */
@@ -305,6 +362,39 @@ export const addJmapAccount = async (archiveId: string, request: JmapAccountRequ
 
 export const updateAccount = async (id: string, request: AccountUpdateRequest) =>
   unwrap(await client.PATCH('/api/accounts/{id}', { ...archivePath(id), body: request }))
+
+/** Replaces the account's trusted authentication servers; owners and admins only. */
+export const setTrustedAuthservIds = async (id: string, ids: readonly string[]) =>
+  updateAccount(id, { trusted_authserv_ids: [...ids] })
+
+/** Stores an override, replacing the one with the same scope and key; owners and admins only. */
+export const putCategoryOverride = async (archiveId: string, request: CategoryOverrideRequest) =>
+  unwrap(
+    await client.PUT('/api/archives/{id}/category-overrides', {
+      ...archivePath(archiveId),
+      body: request,
+    }),
+  )
+
+export const deleteCategoryOverride = async (archiveId: string, overrideId: string) =>
+  done(
+    await client.DELETE('/api/archives/{id}/category-overrides/{override}', {
+      params: { path: { id: archiveId, override: overrideId } },
+      headers: json,
+    }),
+  )
+
+/**
+ * Sends the one-click unsubscribe request stored with the message; owners and admins only. A 400
+ * means one-click is not available, a 429 carries `retryAfter` after a failed request.
+ */
+export const unsubscribe = async (messageId: string) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/unsubscribe', {
+      ...archivePath(messageId),
+      body: { confirm: true },
+    }),
+  )
 
 export const deleteAccount = async (id: string) =>
   done(await client.DELETE('/api/accounts/{id}', { ...archivePath(id), headers: json }))
@@ -739,16 +829,63 @@ export const insightsStatusQuery = (archiveId: string) =>
       ),
   })
 
-export const messagesInfiniteQuery = (archiveId: string, folderId?: string, label?: string) =>
+/** The server's version and the category data files it uses; every signed-in user may read it. */
+export const insightsDataQuery = () =>
+  queryOptions({
+    queryKey: ['insights-data'],
+    queryFn: async ({ signal }) => unwrap(await client.GET('/api/insights/data', { signal })),
+  })
+
+/** The categories of an archive with counts; `health` only with `includeHealth`. */
+export const categoriesQuery = (archiveId: string, includeHealth = false) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'categories', includeHealth],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/categories', {
+          params: {
+            path: { id: archiveId },
+            query: includeHealth ? { include: 'health' } : {},
+          },
+          signal,
+        }),
+      ),
+  })
+
+export const categoryOverridesQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'category-overrides'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/category-overrides', {
+          ...archivePath(archiveId),
+          signal,
+        }),
+      ),
+  })
+
+export const messagesInfiniteQuery = (
+  archiveId: string,
+  folderId?: string,
+  label?: string,
+  category?: MessageKind | Topic,
+) =>
   infiniteQueryOptions({
-    queryKey: ['archives', archiveId, 'messages', folderId ?? null, label ?? null],
+    queryKey: [
+      'archives',
+      archiveId,
+      'messages',
+      folderId ?? null,
+      label ?? null,
+      category ?? null,
+    ],
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) =>
       unwrap(
         await client.GET('/api/archives/{id}/messages', {
           params: {
             path: { id: archiveId },
-            query: { folder: folderId, label, after: pageParam, limit: pageSize },
+            query: { folder: folderId, label, category, after: pageParam, limit: pageSize },
           },
           signal,
         }),

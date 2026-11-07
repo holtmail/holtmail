@@ -260,6 +260,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/categories': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['categories']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/category-overrides': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_category_overrides']
+    put: operations['put_category_override']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/category-overrides/{override}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_category_override']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/collections': {
     parameters: {
       query?: never
@@ -564,6 +612,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/insights/data': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** @description The server's version and the category data files it uses. Every signed-in user may read it. With insights off it answers 200 with no files and updates disabled, so the About page still shows the version. */
+    get: operations['insights_data']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/items/{id}': {
     parameters: {
       query?: never
@@ -814,6 +879,22 @@ export interface paths {
     get: operations['get_remote']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/unsubscribe': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['unsubscribe']
     delete?: never
     options?: never
     head?: never
@@ -1215,10 +1296,21 @@ export interface components {
       oauth_provider?: string | null
       status: components['schemas']['AccountStatusDto']
       /**
+       * @description The authserv-id that stamps nearly all of this account's recent mail, offered for
+       *     `trusted_authserv_ids` while that list is empty; never used for trust on its own. `null`
+       *     when there is none, for import accounts and for members.
+       */
+      suggested_authserv_id?: string | null
+      /**
        * Format: int64
        * @description Its own minutes between syncs, 0 for only on request; `null` follows the server's.
        */
       sync_interval_minutes?: number | null
+      /**
+       * @description The authentication servers whose `Authentication-Results` fields decide sender trust for
+       *     mail found in this account, in order; `null` for import accounts and for members.
+       */
+      trusted_authserv_ids?: string[] | null
       watch?: components['schemas']['WatchDto'] | null
     }
     /** @description What is happening to an account now and how its last sync or import ended. */
@@ -1279,6 +1371,12 @@ export interface components {
        *     Missing keeps it.
        */
       sync_interval_minutes?: number | null
+      /**
+       * @description Replaces the trusted authentication servers: at most 16 ids, each 1 to 255 printable
+       *     ASCII characters without spaces, trimmed, duplicates (ignoring case) dropped, order kept.
+       *     Trust them only when the server strips forged fields with its id. Not for import accounts.
+       */
+      trusted_authserv_ids?: string[] | null
       watch?: components['schemas']['WatchDto'] | null
     }
     /** @description One mailbox of an address header. */
@@ -1460,6 +1558,28 @@ export interface components {
       /** @description Where to download it. */
       url: string
     }
+    /** @description One leg of a boarding pass. */
+    BoardingLegDto: {
+      /** @description The operating airline's IATA code. */
+      carrier?: string | null
+      date?: components['schemas']['PassDateDto'] | null
+      /** @description The flight number without the airline code. */
+      flight?: string | null
+      /** @description Departure airport, IATA code. */
+      from: string
+      seat?: string | null
+      /** @description Arrival airport, IATA code. */
+      to: string
+    }
+    /** @description Boarding details of a pass. */
+    BoardingPassDto: {
+      /** @description The legs, in travel order. */
+      legs: components['schemas']['BoardingLegDto'][]
+      /** @description The passenger's name, display text. */
+      passenger?: string | null
+      /** @description The booking reference. */
+      pnr?: string | null
+    }
     /** @description One instance of an event in a span, its copies folded together. */
     CalendarOccurrenceDto: {
       all_day: boolean
@@ -1548,6 +1668,85 @@ export interface components {
       name: boolean
       note: boolean
       switch: boolean
+    }
+    /** @description The taxonomy of an archive with message counts, in taxonomy order, zeros included. */
+    CategoriesDto: {
+      /** @description `personal`, `list`, `bulk`, `notification`. */
+      kinds: components['schemas']['CategoryCountDto'][]
+      /**
+       * @description `purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`;
+       *     `health` only when asked for and turned on.
+       */
+      topics: components['schemas']['CategoryCountDto'][]
+    }
+    /** @description How many messages have one kind or topic. */
+    CategoryCountDto: {
+      /** Format: int64 */
+      count: number
+      /** @description The kind or topic name. */
+      id: string
+    }
+    /** @description The kind of a message: who sent it and how. */
+    CategoryKindDto: {
+      /** @description `personal`, `list`, `bulk` or `notification`. */
+      id: string
+      /** @description An override set it. */
+      overridden: boolean
+      source: components['schemas']['CategorySourceDto']
+    }
+    /** @description A user's choice of kind, topics or both for every message of a sender. */
+    CategoryOverrideDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds when it was first made.
+       */
+      created_at: number
+      /** @description The user who first made it. */
+      created_by: string
+      id: string
+      /** @description The address, or the registrable domain, lowercase with an A-label domain. */
+      key: string
+      /** @description The kind it sets; `null` keeps the derived kind. */
+      kind?: string | null
+      /** @description `address` or `domain`. */
+      scope: string
+      /**
+       * @description The topics it sets, replacing the derived ones; `null` keeps the derived topics.
+       *     Sensitive topics apply only to aligned messages.
+       */
+      topics?: string[] | null
+    }
+    /** @description An override to store. It replaces the override with the same scope and key. */
+    CategoryOverrideRequest: {
+      /**
+       * @description An address, or a domain whose registrable domain is used (an address is accepted there
+       *     and its domain taken). Normalised: lowercase, A-label domain, no trailing dot.
+       */
+      key: string
+      /** @description A kind name; missing or `null` keeps the derived kind. */
+      kind?: string | null
+      /** @description `address` or `domain`. */
+      scope: string
+      /**
+       * @description Topic names, possibly empty; missing or `null` keeps the derived topics. At least one of
+       *     `kind` and `topics` is needed.
+       */
+      topics?: string[] | null
+    }
+    /**
+     * @description Which layer decided a kind or topic. A higher layer wins: `override` over `content` over
+     *     `domain` over `headers`.
+     * @enum {string}
+     */
+    CategorySourceDto: 'override' | 'content' | 'domain' | 'headers'
+    /** @description One topic of a message: what it is about. */
+    CategoryTopicDto: {
+      held_back?: components['schemas']['HeldBackDto'] | null
+      /** @description `purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events` or `government`. */
+      id: string
+      /** @description An override set it. */
+      overridden: boolean
+      source: components['schemas']['CategorySourceDto']
     }
     /** @description One difference between a version and the one before it. */
     ChangeDto: {
@@ -1767,6 +1966,48 @@ export interface components {
       name?: string | null
       note?: string | null
       prefix?: string | null
+    }
+    /** @description One category data table the server uses. */
+    DataFileDto: {
+      /** @description The attribution to show with the data, when its licence asks for one. */
+      attribution?: string | null
+      /** @description The published file name. */
+      file: string
+      /** @description The SPDX identifier of the data licence. */
+      license: string
+      /** @description The table name: `wikidata` or `ut1`. */
+      name: string
+      origin: components['schemas']['DataOriginDto']
+      /**
+       * Format: int64
+       * @description The rows loaded.
+       */
+      rows: number
+      /** @description The table's version. */
+      version: string
+    }
+    /**
+     * @description Where a data file came from.
+     * @enum {string}
+     */
+    DataOriginDto: 'bundled' | 'downloaded'
+    /**
+     * @description The outcome of the last check for new category data.
+     * @enum {string}
+     */
+    DataOutcomeDto: 'updated' | 'not_modified' | 'refused' | 'failed'
+    /** @description Whether the server looks for new category data. */
+    DataUpdatesDto: {
+      /** @description The downloaded tables the server uses, by name. */
+      data_sources: string[]
+      /** @description `[insights.categories] update`, and the server runs the check. */
+      enabled: boolean
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the last check; `null` before the first.
+       */
+      last_checked_at?: number | null
+      last_outcome?: components['schemas']['DataOutcomeDto'] | null
     }
     /** @description Confirms a review. */
     DeletionConfirmRequest: {
@@ -2005,6 +2246,11 @@ export interface components {
        */
       unread: number
     }
+    /**
+     * @description Why a topic of an override does not apply to this message.
+     * @enum {string}
+     */
+    HeldBackDto: 'not_verified'
     /** @description The outbound proxy for remote images. */
     ImageProxyDto: {
       /** @description `scheme://host:port`, without credentials; `null` without a proxy. */
@@ -2081,18 +2327,160 @@ export interface components {
           /** @enum {string} */
           type: 'unsubscribe'
         }
+      | {
+          action: components['schemas']['LinkActionDto']
+          confidence: components['schemas']['ConfidenceDto']
+          /** @description A destination label is mixed-script or confusable (UTS 39). */
+          confusable: boolean
+          /** @description Where it leads after unwrapping; equal to `url` when nothing was unwrapped. */
+          destination: string
+          /**
+           * @description The destination's registrable domain is not the sender's: the claimed real sender of
+           *     an alias message once categories are derived, the `From` domain before.
+           */
+          destination_differs_from_sender: boolean
+          /** @description The destination's host to show: Unicode, or the A-label form when `confusable`. */
+          display_host: string
+          forwarded: boolean
+          /** @description The anchor's label, display text. */
+          label?: string | null
+          /** Format: int32 */
+          score: number
+          /** @description The anchor text reads as a host whose registrable domain is not the destination's. */
+          text_domain_mismatch: boolean
+          /** @description A known opaque click tracker remains in `destination`. */
+          tracked: boolean
+          /** @enum {string} */
+          type: 'action'
+          /** @description The link as found in the message. */
+          url: string
+          /** @description The unwrapping service, such as `outlook.com`. */
+          via?: string | null
+        }
+      | {
+          /** @description The carrier id, such as `ups`. */
+          carrier: string
+          /** @description The carrier's check digit was verified. */
+          check_digit: boolean
+          confidence: components['schemas']['ConfidenceDto']
+          forwarded: boolean
+          /** @description The tracking number as the carrier prints it. */
+          number: string
+          /** Format: int32 */
+          score: number
+          /** @description The display host of `track_url`. */
+          track_host?: string | null
+          /** @description The carrier's tracking page, built from its template, never from the message. */
+          track_url?: string | null
+          /** @enum {string} */
+          type: 'parcel'
+        }
+      | {
+          confidence: components['schemas']['ConfidenceDto']
+          forwarded: boolean
+          reservation: components['schemas']['ReservationDto']
+          /** Format: int32 */
+          score: number
+          /** @enum {string} */
+          type: 'reservation'
+        }
+      | {
+          confidence: components['schemas']['ConfidenceDto']
+          forwarded: boolean
+          /** @description The seller, display text. */
+          merchant?: string | null
+          /** @description The order number. */
+          number?: string | null
+          /** Format: int32 */
+          score: number
+          /** @description The status as the sender names it, display text. */
+          status?: string | null
+          total?: components['schemas']['MoneyDto'] | null
+          /** @enum {string} */
+          type: 'order'
+          /** @description The order's page; `null` when it has no host. */
+          url?: string | null
+          /** @description The display host of `url`: Unicode, or the A-label form when confusable. */
+          url_host?: string | null
+        }
+      | {
+          confidence: components['schemas']['ConfidenceDto']
+          /** @description The due date, `YYYY-MM-DD`. */
+          due?: string | null
+          forwarded: boolean
+          /** @description The invoice number. */
+          number?: string | null
+          /** @description Who is to be paid, display text. */
+          payee?: string | null
+          /** Format: int32 */
+          score: number
+          total?: components['schemas']['MoneyDto'] | null
+          /** @enum {string} */
+          type: 'invoice'
+          /** @description The invoice's page; `null` when it has no host. */
+          url?: string | null
+          /** @description The display host of `url`. */
+          url_host?: string | null
+        }
+      | {
+          /**
+           * Format: int32
+           * @description The pass attachment's position among the message's attachments, counting from 0.
+           */
+          attachment: number
+          boarding?: components['schemas']['BoardingPassDto'] | null
+          confidence: components['schemas']['ConfidenceDto']
+          /** @description What the pass is, display text. */
+          description: string
+          forwarded: boolean
+          /** @description The issuer, display text. */
+          organization: string
+          relevant?: components['schemas']['TimeDto'] | null
+          /** Format: int32 */
+          score: number
+          /** @description The pass signature was verified. Always `false` for now. */
+          signature_checked: boolean
+          style: components['schemas']['PassStyleDto']
+          /** @enum {string} */
+          type: 'pass'
+        }
     /**
      * @description How current a message's insights are.
      * @enum {string}
      */
     InsightStatusDto: 'ready' | 'pending' | 'outdated' | 'partial' | 'unparsable' | 'unreadable'
-    /** @description Progress of computing insights in an archive. */
+    /** @description The server's version and the category data it uses, for Settings → About. */
+    InsightsDataDto: {
+      /** @description The loaded tables, sorted by name. Empty when insights or the domain categorizer are off. */
+      files: components['schemas']['DataFileDto'][]
+      /** @description The server's version. */
+      holtmail_version: string
+      updates: components['schemas']['DataUpdatesDto']
+    }
+    /**
+     * @description Progress of computing insights in an archive. The web shows "Some messages are still being
+     *     read (N left)" with N = `pending + categorize + reindex` while N is above zero.
+     */
     InsightsStatusDto: {
+      /**
+       * Format: int64
+       * @description Messages whose categories were derived under older settings (category data, trusted
+       *     authserv-ids, own addresses, the `health` flag): `category:` and `is:` searches may use
+       *     the old values until they are derived again. Counted apart from `pending` and `reindex`.
+       */
+      categorize: number
       /**
        * Format: int64
        * @description Messages with no insights or with insights from older extractors.
        */
       pending: number
+      /**
+       * Format: int64
+       * @description Messages whose search entry is behind their categories or insights: `category:`, `has:`
+       *     and `is:` searches may miss them until they are indexed again. Counted apart from
+       *     `pending`; a message can be in both.
+       */
+      reindex: number
       /** @description The server is computing insights now. */
       running: boolean
     }
@@ -2405,6 +2793,22 @@ export interface components {
        */
       started_at: number
     }
+    /**
+     * @description What an action link does.
+     * @enum {string}
+     */
+    LinkActionDto:
+      | 'verify'
+      | 'confirm'
+      | 'activate'
+      | 'reset_password'
+      | 'sign_in'
+      | 'magic_link'
+      | 'view_order'
+      | 'track'
+      | 'check_in'
+      | 'wallet_save'
+      | 'view'
     /** @description A folder a message is in. */
     LocationDto: {
       flags: string[]
@@ -2525,9 +2929,16 @@ export interface components {
     MessageInsightsDto: {
       /** @description `Likely` and `Certain` items, and `Possible` ones the server is set to show. */
       items: components['schemas']['InsightDto'][]
+      kind?: components['schemas']['CategoryKindDto'] | null
       /** @description The `From` is one of the archive's own addresses: an account's or an alias's. */
       own: boolean
       status: components['schemas']['InsightStatusDto']
+      /**
+       * @description The effective topics in taxonomy order, with the override topics the trust gate kept off
+       *     marked `held_back`. `health` is left out when the server turns it off.
+       */
+      topics: components['schemas']['CategoryTopicDto'][]
+      /** @description `unknown` until categories are derived. */
       trust: components['schemas']['TrustDto']
       unsubscribe?: components['schemas']['UnsubscribeDto'] | null
     }
@@ -2561,10 +2972,16 @@ export interface components {
       from: components['schemas']['AddressDto'][]
       id: string
       /**
-       * @description The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`
-       *     is left out for members and on the archive's own mail.
+       * @description The kinds of insight found in it (`code`, `link`, `unsubscribe`, `reservation`, `order`,
+       *     `invoice`, `parcel`, `pass`), never their values. `code` is left out for members and on the
+       *     archive's own mail, `link` on own mail.
        */
       insight_kinds: string[]
+      /**
+       * @description The effective kind (`personal`, `list`, `bulk`, `notification`); `null` until categories
+       *     are derived.
+       */
+      kind?: string | null
       /** @description Its labels, sorted. */
       labels: string[]
       preview: string
@@ -2578,6 +2995,23 @@ export interface components {
       thread_count: number
       thread_id: string
       to: components['schemas']['AddressDto'][]
+      /** @description The one topic a list row shows, the first in taxonomy order; never `health`. */
+      topic?: string | null
+    }
+    /** @description An exact amount of money. Never a float. */
+    MoneyDto: {
+      /**
+       * @description The decimal amount with exactly `exponent` fraction digits, such as `1234.50`, `-3.000` or
+       *     `1200`. A string, since amounts can exceed what a JSON number holds exactly.
+       */
+      amount: string
+      /** @description The ISO 4217 code. */
+      currency: string
+      /**
+       * Format: int32
+       * @description Fraction digits of the currency: 0 for JPY, 2 for USD, 3 for KWD.
+       */
+      exponent: number
     }
     /** @description Connects an account at an alias service. */
     NewAliasServiceRequest: {
@@ -2689,6 +3123,26 @@ export interface components {
       /** @description Lowercase `PARTSTAT`, such as `accepted`, `declined`, `tentative`, `needs-action`. */
       status?: string | null
     }
+    /** @description A flight date on a pass: a full `YYYY-MM-DD` date, or month and day when no year is known. */
+    PassDateDto:
+      | string
+      | {
+          /**
+           * Format: int32
+           * @description 1–31.
+           */
+          day: number
+          /**
+           * Format: int32
+           * @description 1–12.
+           */
+          month: number
+        }
+    /**
+     * @description The style of a wallet pass.
+     * @enum {string}
+     */
+    PassStyleDto: 'boarding_pass' | 'event_ticket' | 'coupon' | 'store_card' | 'generic'
     /** @description A password change. */
     PasswordRequest: {
       current: string
@@ -2987,6 +3441,117 @@ export interface components {
      * @enum {string}
      */
     RemoteMode: 'block' | 'proxy' | 'direct'
+    /**
+     * @description A reservation, tagged by `kind`. Every `url` comes with its `url_host`, the display host
+     *     (Unicode, or the A-label form when confusable); a URL without a host is left out.
+     */
+    ReservationDto:
+      | {
+          arrival?: components['schemas']['TimeDto'] | null
+          /** @description IATA code. */
+          arrival_airport: string
+          /** @description The airline's IATA code. */
+          carrier?: string | null
+          departure: components['schemas']['TimeDto']
+          /** @description IATA code. */
+          departure_airport: string
+          /** @description The flight number without the airline code. */
+          flight_number?: string | null
+          /** @enum {string} */
+          kind: 'flight'
+          /** @description Passenger names, at most 9. */
+          passengers: string[]
+          /** @description The booking reference. */
+          reservation_number?: string | null
+          /** @description Seats, at most 9. */
+          seats: string[]
+          url?: string | null
+          url_host?: string | null
+        }
+      | {
+          address?: string | null
+          checkin: components['schemas']['TimeDto']
+          checkout?: components['schemas']['TimeDto'] | null
+          guests: string[]
+          /** @enum {string} */
+          kind: 'lodging'
+          name: string
+          /** @description The booking reference. */
+          reservation_number: string
+          url?: string | null
+          url_host?: string | null
+        }
+      | {
+          arrival?: components['schemas']['TimeDto'] | null
+          arrival_station?: string | null
+          departure: components['schemas']['TimeDto']
+          departure_station: string
+          /** @enum {string} */
+          kind: 'train'
+          /** @description The train number. */
+          number?: string | null
+          passengers: string[]
+          /** @description The booking reference. */
+          reservation_number?: string | null
+          seats: string[]
+          url?: string | null
+          url_host?: string | null
+        }
+      | {
+          arrival?: components['schemas']['TimeDto'] | null
+          arrival_station?: string | null
+          departure: components['schemas']['TimeDto']
+          departure_station: string
+          /** @enum {string} */
+          kind: 'bus'
+          /** @description The bus number. */
+          number?: string | null
+          passengers: string[]
+          /** @description The booking reference. */
+          reservation_number?: string | null
+          seats: string[]
+          url?: string | null
+          url_host?: string | null
+        }
+      | {
+          end?: components['schemas']['TimeDto'] | null
+          /** @enum {string} */
+          kind: 'event'
+          name: string
+          /** @description The booking reference. */
+          reservation_number?: string | null
+          start: components['schemas']['TimeDto']
+          /** @description Ticket numbers or seats. */
+          tickets: string[]
+          url?: string | null
+          url_host?: string | null
+          venue?: string | null
+        }
+      | {
+          /** @enum {string} */
+          kind: 'food'
+          name: string
+          /** Format: int32 */
+          party_size?: number | null
+          /** @description The booking reference. */
+          reservation_number?: string | null
+          start: components['schemas']['TimeDto']
+          url?: string | null
+          url_host?: string | null
+        }
+      | {
+          company?: string | null
+          dropoff?: components['schemas']['TimeDto'] | null
+          dropoff_location?: string | null
+          /** @enum {string} */
+          kind: 'rental_car'
+          pickup: components['schemas']['TimeDto']
+          pickup_location?: string | null
+          /** @description The booking reference. */
+          reservation_number: string
+          url?: string | null
+          url_host?: string | null
+        }
     /** @description A weekday of a rule, with its ordinal: `{ ordinal: -1, weekday: "FR" }` is the last Friday. */
     RuleDayDto: {
       /** Format: int32 */
@@ -3157,7 +3722,16 @@ export interface components {
       id: string
       messages: components['schemas']['MessageDetail'][]
     }
-    /** @description The sender trust of a message. Always `unknown` for now. */
+    /** @description A time as the message wrote it. Never converted to UTC or to the server's zone. */
+    TimeDto: {
+      /** @description Wall-clock time as written, `YYYY-MM-DDTHH:MM:SS`. */
+      local: string
+      /** @description The offset written with it, such as `+01:00`; `null` for a time written without one. */
+      offset?: string | null
+      /** @description The IANA zone name, when the message gave one. */
+      zone?: string | null
+    }
+    /** @description The sender trust of a message, from its derived categories row. */
     TrustDto: {
       /** @description The aligned domain, for `aligned`. */
       domain?: string | null
@@ -3170,13 +3744,56 @@ export interface components {
      * @enum {string}
      */
     TrustStateDto: 'aligned' | 'relayed' | 'unverified' | 'unknown'
+    /**
+     * @description The user's consent to one one-click unsubscribe request. Any URL in the body is ignored: the
+     *     server only uses the link stored with the message.
+     */
+    UnsubscribeConfirmRequest: {
+      /** @description Must be `true`. */
+      confirm: boolean
+    }
     /** @description How to leave the list a message came from. */
     UnsubscribeDto: {
       http?: string | null
       https?: string | null
+      last_request?: components['schemas']['UnsubscribeRequestDto'] | null
       /** @description A `mailto:` URI, opened by the reader's own mail program. */
       mailto?: string | null
       one_click: components['schemas']['OneClickDto']
+    }
+    /**
+     * @description How a one-click unsubscribe request ended.
+     * @enum {string}
+     */
+    UnsubscribeOutcomeDto: 'accepted' | 'redirected' | 'refused' | 'http_error' | 'network'
+    /** @description Why a one-click unsubscribe was not sent. */
+    UnsubscribeRefusalDto: {
+      error: string
+      reason?: components['schemas']['OneClickReasonDto'] | null
+    }
+    /** @description One recorded one-click unsubscribe request. */
+    UnsubscribeRequestDto: {
+      outcome: components['schemas']['UnsubscribeOutcomeDto']
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      requested_at: number
+      /**
+       * Format: int32
+       * @description The HTTP status, when the list answered.
+       */
+      status?: number | null
+    }
+    /** @description What a one-click unsubscribe did. */
+    UnsubscribeResultDto: {
+      /**
+       * @description Nothing was sent: this is the stored request for the same list, accepted or redirected
+       *     less than 24 hours ago.
+       */
+      repeated: boolean
+      /** @description The request, as recorded. */
+      request: components['schemas']['UnsubscribeRequestDto']
     }
     /** @description A user who can sign in. */
     UserDto: {
@@ -4824,6 +5441,266 @@ export interface operations {
       }
     }
   }
+  categories: {
+    parameters: {
+      query?: {
+        /** @description `health` adds the health topic, when the server has it turned on. */
+        include?: string
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CategoriesDto']
+        }
+      }
+      /** @description An unknown `include` value */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive, or the server computes no insights */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_category_overrides: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Address overrides first, then by key */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CategoryOverrideDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive, or the server computes no insights */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_category_override: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CategoryOverrideRequest']
+      }
+    }
+    responses: {
+      /** @description Stored, replacing the override with the same scope and key; the counts and lists follow at once */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CategoryOverrideDto']
+        }
+      }
+      /** @description Nothing to change, an unknown scope, kind or topic, or a key that is not an address or domain */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive, or the server computes no insights */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_category_override: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+        /** @description Override id */
+        override: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed; the messages it matched get their derived categories back */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or override in it, or the server computes no insights */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_collections: {
     parameters: {
       query?: never
@@ -5067,6 +5944,15 @@ export interface operations {
       }
       /** @description No such archive */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The query uses insight operators (category:, has:code ..., is:newsletter ...) while some messages are still being read */
+      409: {
         headers: {
           [name: string]: unknown
         }
@@ -5464,6 +6350,12 @@ export interface operations {
         folder?: string
         /** @description Only messages carrying this label, compared exactly. */
         label?: string
+        /**
+         * @description Only messages of this kind (`personal`, `list`, `bulk`, `notification`) or topic
+         *     (`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`).
+         *     `health` lists nothing when the server turns it off.
+         */
+        category?: string
         /** @description `next` from the previous page. */
         after?: string
         /** @description Page size, at most 500; 50 by default. */
@@ -5486,7 +6378,7 @@ export interface operations {
           'application/json': components['schemas']['MessagePage']
         }
       }
-      /** @description A malformed cursor */
+      /** @description A malformed cursor or an unknown category */
       400: {
         headers: {
           [name: string]: unknown
@@ -5497,6 +6389,15 @@ export interface operations {
       }
       /** @description Not signed in */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not allowed */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -6043,6 +6944,43 @@ export interface operations {
       }
       /** @description Not an owner or admin */
       403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  insights_data: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['InsightsDataDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
         headers: {
           [name: string]: unknown
         }
@@ -6868,6 +7806,87 @@ export interface operations {
       }
       /** @description The remote server could not be reached */
       502: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  unsubscribe: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UnsubscribeConfirmRequest']
+      }
+    }
+    responses: {
+      /** @description Sent and recorded; or, with `repeated`, nothing sent and the stored request for the same list returned, because it was accepted or redirected less than 24 hours ago */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UnsubscribeResultDto']
+        }
+      }
+      /** @description The body does not confirm, or one-click is not available for this message (`reason`) */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UnsubscribeRefusalDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message, or the server computes no insights */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A request for the same list failed less than a minute ago; `Retry-After` gives the seconds to wait */
+      429: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
         headers: {
           [name: string]: unknown
         }

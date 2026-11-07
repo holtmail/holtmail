@@ -1880,6 +1880,323 @@
         }
       }
     },
+    "/api/archives/{id}/categories": {
+      "get": {
+        "tags": ["categories"],
+        "operationId": "categories",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "description": "`health` adds the health topic, when the server has it turned on.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoriesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown `include` value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/category-overrides": {
+      "get": {
+        "tags": ["categories"],
+        "operationId": "list_category_overrides",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Address overrides first, then by key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryOverrideDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["categories"],
+        "operationId": "put_category_override",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryOverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Stored, replacing the override with the same scope and key; the counts and lists follow at once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryOverrideDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Nothing to change, an unknown scope, kind or topic, or a key that is not an address or domain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/archives/{id}/category-overrides/{override}": {
+      "delete": {
+        "tags": ["categories"],
+        "operationId": "delete_category_override",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Archive id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "override",
+            "in": "path",
+            "description": "Override id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed; the messages it matched get their derived categories back"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such archive or override in it, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/archives/{id}/collections": {
       "get": {
         "tags": ["pim"],
@@ -2218,6 +2535,16 @@
           },
           "404": {
             "description": "No such archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The query uses insight operators (category:, has:code ..., is:newsletter ...) while some messages are still being read",
             "content": {
               "application/json": {
                 "schema": {
@@ -2775,6 +3102,15 @@
             }
           },
           {
+            "name": "category",
+            "in": "query",
+            "description": "Only messages of this kind (`personal`, `list`, `bulk`, `notification`) or topic\n(`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`).\n`health` lists nothing when the server turns it off.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "after",
             "in": "query",
             "description": "`next` from the previous page.",
@@ -2806,7 +3142,7 @@
             }
           },
           "400": {
-            "description": "A malformed cursor",
+            "description": "A malformed cursor or an unknown category",
             "content": {
               "application/json": {
                 "schema": {
@@ -2817,6 +3153,16 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
             "content": {
               "application/json": {
                 "schema": {
@@ -3548,6 +3894,44 @@
           },
           "403": {
             "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/insights/data": {
+      "get": {
+        "tags": ["insights_data"],
+        "description": "The server's version and the category data files it uses. Every signed-in user may read it. With insights off it answers 200 with no files and updates disabled, so the About page still shows the version.",
+        "operationId": "insights_data",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsDataDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -4530,6 +4914,105 @@
           },
           "502": {
             "description": "The remote server could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/unsubscribe": {
+      "post": {
+        "tags": ["unsubscribe"],
+        "operationId": "unsubscribe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Message id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Sent and recorded; or, with `repeated`, nothing sent and the stored request for the same list returned, because it was accepted or redirected less than 24 hours ago",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not confirm, or one-click is not available for this message (`reason`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeRefusalDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an owner or admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message, or the server computes no insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A request for the same list failed less than a minute ago; `Retry-After` gives the seconds to wait",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -6355,11 +6838,22 @@
           "status": {
             "$ref": "#/components/schemas/AccountStatusDto"
           },
+          "suggested_authserv_id": {
+            "type": ["string", "null"],
+            "description": "The authserv-id that stamps nearly all of this account's recent mail, offered for\n`trusted_authserv_ids` while that list is empty; never used for trust on its own. `null`\nwhen there is none, for import accounts and for members."
+          },
           "sync_interval_minutes": {
             "type": ["integer", "null"],
             "format": "int64",
             "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's.",
             "minimum": 0
+          },
+          "trusted_authserv_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "The authentication servers whose `Authentication-Results` fields decide sender trust for\nmail found in this account, in order; `null` for import accounts and for members."
           },
           "watch": {
             "oneOf": [
@@ -6489,6 +6983,13 @@
             "format": "int64",
             "description": "Its own minutes between syncs, 0 for only on request; `null` follows the server's again.\nMissing keeps it.",
             "minimum": 0
+          },
+          "trusted_authserv_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces the trusted authentication servers: at most 16 ids, each 1 to 255 printable\nASCII characters without spaces, trimmed, duplicates (ignoring case) dropped, order kept.\nTrust them only when the server strips forged fields with its id. Not for import accounts."
           },
           "watch": {
             "oneOf": [
@@ -6925,6 +7426,64 @@
           }
         }
       },
+      "BoardingLegDto": {
+        "type": "object",
+        "description": "One leg of a boarding pass.",
+        "required": ["from", "to"],
+        "properties": {
+          "carrier": {
+            "type": ["string", "null"],
+            "description": "The operating airline's IATA code."
+          },
+          "date": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PassDateDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flight": {
+            "type": ["string", "null"],
+            "description": "The flight number without the airline code."
+          },
+          "from": {
+            "type": "string",
+            "description": "Departure airport, IATA code."
+          },
+          "seat": {
+            "type": ["string", "null"]
+          },
+          "to": {
+            "type": "string",
+            "description": "Arrival airport, IATA code."
+          }
+        }
+      },
+      "BoardingPassDto": {
+        "type": "object",
+        "description": "Boarding details of a pass.",
+        "required": ["legs"],
+        "properties": {
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BoardingLegDto"
+            },
+            "description": "The legs, in travel order."
+          },
+          "passenger": {
+            "type": ["string", "null"],
+            "description": "The passenger's name, display text."
+          },
+          "pnr": {
+            "type": ["string", "null"],
+            "description": "The booking reference."
+          }
+        }
+      },
       "CalendarOccurrenceDto": {
         "type": "object",
         "description": "One instance of an event in a span, its copies folded together.",
@@ -7123,6 +7682,159 @@
           },
           "switch": {
             "type": "boolean"
+          }
+        }
+      },
+      "CategoriesDto": {
+        "type": "object",
+        "description": "The taxonomy of an archive with message counts, in taxonomy order, zeros included.",
+        "required": ["kinds", "topics"],
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryCountDto"
+            },
+            "description": "`personal`, `list`, `bulk`, `notification`."
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryCountDto"
+            },
+            "description": "`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events`, `government`;\n`health` only when asked for and turned on."
+          }
+        }
+      },
+      "CategoryCountDto": {
+        "type": "object",
+        "description": "How many messages have one kind or topic.",
+        "required": ["id", "count"],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string",
+            "description": "The kind or topic name."
+          }
+        }
+      },
+      "CategoryKindDto": {
+        "type": "object",
+        "description": "The kind of a message: who sent it and how.",
+        "required": ["id", "source", "overridden"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "`personal`, `list`, `bulk` or `notification`."
+          },
+          "overridden": {
+            "type": "boolean",
+            "description": "An override set it."
+          },
+          "source": {
+            "$ref": "#/components/schemas/CategorySourceDto"
+          }
+        }
+      },
+      "CategoryOverrideDto": {
+        "type": "object",
+        "description": "A user's choice of kind, topics or both for every message of a sender.",
+        "required": ["id", "scope", "key", "created_at", "created_by"],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds when it was first made."
+          },
+          "created_by": {
+            "type": "string",
+            "description": "The user who first made it."
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "The address, or the registrable domain, lowercase with an A-label domain."
+          },
+          "kind": {
+            "type": ["string", "null"],
+            "description": "The kind it sets; `null` keeps the derived kind."
+          },
+          "scope": {
+            "type": "string",
+            "description": "`address` or `domain`."
+          },
+          "topics": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "The topics it sets, replacing the derived ones; `null` keeps the derived topics.\nSensitive topics apply only to aligned messages."
+          }
+        }
+      },
+      "CategoryOverrideRequest": {
+        "type": "object",
+        "description": "An override to store. It replaces the override with the same scope and key.",
+        "required": ["scope", "key"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "An address, or a domain whose registrable domain is used (an address is accepted there\nand its domain taken). Normalised: lowercase, A-label domain, no trailing dot."
+          },
+          "kind": {
+            "type": ["string", "null"],
+            "description": "A kind name; missing or `null` keeps the derived kind."
+          },
+          "scope": {
+            "type": "string",
+            "description": "`address` or `domain`."
+          },
+          "topics": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "Topic names, possibly empty; missing or `null` keeps the derived topics. At least one of\n`kind` and `topics` is needed."
+          }
+        }
+      },
+      "CategorySourceDto": {
+        "type": "string",
+        "description": "Which layer decided a kind or topic. A higher layer wins: `override` over `content` over\n`domain` over `headers`.",
+        "enum": ["override", "content", "domain", "headers"]
+      },
+      "CategoryTopicDto": {
+        "type": "object",
+        "description": "One topic of a message: what it is about.",
+        "required": ["id", "source", "overridden"],
+        "properties": {
+          "held_back": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HeldBackDto",
+                "description": "Set on a topic of the override that the trust gate kept off this message; such a topic\ndoes not apply to it. Absent on topics that apply."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "`purchases`, `travel`, `finance`, `health`, `social`, `jobs`, `events` or `government`."
+          },
+          "overridden": {
+            "type": "boolean",
+            "description": "An override set it."
+          },
+          "source": {
+            "$ref": "#/components/schemas/CategorySourceDto"
           }
         }
       },
@@ -7508,6 +8220,86 @@
           },
           "prefix": {
             "type": ["string", "null"]
+          }
+        }
+      },
+      "DataFileDto": {
+        "type": "object",
+        "description": "One category data table the server uses.",
+        "required": ["name", "file", "version", "rows", "license", "origin"],
+        "properties": {
+          "attribution": {
+            "type": ["string", "null"],
+            "description": "The attribution to show with the data, when its licence asks for one."
+          },
+          "file": {
+            "type": "string",
+            "description": "The published file name."
+          },
+          "license": {
+            "type": "string",
+            "description": "The SPDX identifier of the data licence."
+          },
+          "name": {
+            "type": "string",
+            "description": "The table name: `wikidata` or `ut1`."
+          },
+          "origin": {
+            "$ref": "#/components/schemas/DataOriginDto"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The rows loaded.",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string",
+            "description": "The table's version."
+          }
+        }
+      },
+      "DataOriginDto": {
+        "type": "string",
+        "description": "Where a data file came from.",
+        "enum": ["bundled", "downloaded"]
+      },
+      "DataOutcomeDto": {
+        "type": "string",
+        "description": "The outcome of the last check for new category data.",
+        "enum": ["updated", "not_modified", "refused", "failed"]
+      },
+      "DataUpdatesDto": {
+        "type": "object",
+        "description": "Whether the server looks for new category data.",
+        "required": ["enabled", "data_sources"],
+        "properties": {
+          "data_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The downloaded tables the server uses, by name."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "`[insights.categories] update`, and the server runs the check."
+          },
+          "last_checked_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix milliseconds of the last check; `null` before the first."
+          },
+          "last_outcome": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DataOutcomeDto",
+                "description": "What the last check found; `null` before the first."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -8036,6 +8828,11 @@
           }
         }
       },
+      "HeldBackDto": {
+        "type": "string",
+        "description": "Why a topic of an override does not apply to this message.",
+        "enum": ["not_verified"]
+      },
       "ImageProxyDto": {
         "type": "object",
         "description": "The outbound proxy for remote images.",
@@ -8191,6 +8988,335 @@
                 "enum": ["unsubscribe"]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A link the reader can act on. The flags are computed when the response is built, from the\nstored hosts and the Public Suffix List the server runs with.",
+            "required": [
+              "action",
+              "url",
+              "destination",
+              "display_host",
+              "tracked",
+              "text_domain_mismatch",
+              "destination_differs_from_sender",
+              "confusable",
+              "confidence",
+              "score",
+              "forwarded",
+              "type"
+            ],
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/LinkActionDto"
+              },
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "confusable": {
+                "type": "boolean",
+                "description": "A destination label is mixed-script or confusable (UTS 39)."
+              },
+              "destination": {
+                "type": "string",
+                "description": "Where it leads after unwrapping; equal to `url` when nothing was unwrapped."
+              },
+              "destination_differs_from_sender": {
+                "type": "boolean",
+                "description": "The destination's registrable domain is not the sender's: the claimed real sender of\nan alias message once categories are derived, the `From` domain before."
+              },
+              "display_host": {
+                "type": "string",
+                "description": "The destination's host to show: Unicode, or the A-label form when `confusable`."
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "label": {
+                "type": ["string", "null"],
+                "description": "The anchor's label, display text."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "text_domain_mismatch": {
+                "type": "boolean",
+                "description": "The anchor text reads as a host whose registrable domain is not the destination's."
+              },
+              "tracked": {
+                "type": "boolean",
+                "description": "A known opaque click tracker remains in `destination`."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["action"]
+              },
+              "url": {
+                "type": "string",
+                "description": "The link as found in the message."
+              },
+              "via": {
+                "type": ["string", "null"],
+                "description": "The unwrapping service, such as `outlook.com`."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A parcel tracking number.",
+            "required": [
+              "carrier",
+              "number",
+              "check_digit",
+              "confidence",
+              "score",
+              "forwarded",
+              "type"
+            ],
+            "properties": {
+              "carrier": {
+                "type": "string",
+                "description": "The carrier id, such as `ups`."
+              },
+              "check_digit": {
+                "type": "boolean",
+                "description": "The carrier's check digit was verified."
+              },
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "number": {
+                "type": "string",
+                "description": "The tracking number as the carrier prints it."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "track_host": {
+                "type": ["string", "null"],
+                "description": "The display host of `track_url`."
+              },
+              "track_url": {
+                "type": ["string", "null"],
+                "description": "The carrier's tracking page, built from its template, never from the message."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["parcel"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A reservation from schema.org markup, one flight leg, stay, trip, event, table or car.",
+            "required": ["reservation", "confidence", "score", "forwarded", "type"],
+            "properties": {
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "reservation": {
+                "$ref": "#/components/schemas/ReservationDto"
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": ["reservation"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An order.",
+            "required": ["confidence", "score", "forwarded", "type"],
+            "properties": {
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "merchant": {
+                "type": ["string", "null"],
+                "description": "The seller, display text."
+              },
+              "number": {
+                "type": ["string", "null"],
+                "description": "The order number."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "status": {
+                "type": ["string", "null"],
+                "description": "The status as the sender names it, display text."
+              },
+              "total": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MoneyDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": ["order"]
+              },
+              "url": {
+                "type": ["string", "null"],
+                "description": "The order's page; `null` when it has no host."
+              },
+              "url_host": {
+                "type": ["string", "null"],
+                "description": "The display host of `url`: Unicode, or the A-label form when confusable."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An invoice.",
+            "required": ["confidence", "score", "forwarded", "type"],
+            "properties": {
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "due": {
+                "type": ["string", "null"],
+                "description": "The due date, `YYYY-MM-DD`."
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "number": {
+                "type": ["string", "null"],
+                "description": "The invoice number."
+              },
+              "payee": {
+                "type": ["string", "null"],
+                "description": "Who is to be paid, display text."
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "total": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MoneyDto",
+                    "description": "The amount due."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": ["invoice"]
+              },
+              "url": {
+                "type": ["string", "null"],
+                "description": "The invoice's page; `null` when it has no host."
+              },
+              "url_host": {
+                "type": ["string", "null"],
+                "description": "The display host of `url`."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A wallet pass attachment.",
+            "required": [
+              "style",
+              "organization",
+              "description",
+              "attachment",
+              "signature_checked",
+              "confidence",
+              "score",
+              "forwarded",
+              "type"
+            ],
+            "properties": {
+              "attachment": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The pass attachment's position among the message's attachments, counting from 0.",
+                "minimum": 0
+              },
+              "boarding": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/BoardingPassDto",
+                    "description": "The boarding details of a boarding pass."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "confidence": {
+                "$ref": "#/components/schemas/ConfidenceDto"
+              },
+              "description": {
+                "type": "string",
+                "description": "What the pass is, display text."
+              },
+              "forwarded": {
+                "type": "boolean"
+              },
+              "organization": {
+                "type": "string",
+                "description": "The issuer, display text."
+              },
+              "relevant": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto",
+                    "description": "When the pass is relevant."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "score": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "signature_checked": {
+                "type": "boolean",
+                "description": "The pass signature was verified. Always `false` for now."
+              },
+              "style": {
+                "$ref": "#/components/schemas/PassStyleDto"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["pass"]
+              }
+            }
           }
         ],
         "description": "One item found in a message, tagged by `type`."
@@ -8200,15 +9326,48 @@
         "description": "How current a message's insights are.",
         "enum": ["ready", "pending", "outdated", "partial", "unparsable", "unreadable"]
       },
+      "InsightsDataDto": {
+        "type": "object",
+        "description": "The server's version and the category data it uses, for Settings → About.",
+        "required": ["holtmail_version", "files", "updates"],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataFileDto"
+            },
+            "description": "The loaded tables, sorted by name. Empty when insights or the domain categorizer are off."
+          },
+          "holtmail_version": {
+            "type": "string",
+            "description": "The server's version."
+          },
+          "updates": {
+            "$ref": "#/components/schemas/DataUpdatesDto"
+          }
+        }
+      },
       "InsightsStatusDto": {
         "type": "object",
-        "description": "Progress of computing insights in an archive.",
-        "required": ["pending", "running"],
+        "description": "Progress of computing insights in an archive. The web shows \"Some messages are still being\nread (N left)\" with N = `pending + categorize + reindex` while N is above zero.",
+        "required": ["pending", "reindex", "categorize", "running"],
         "properties": {
+          "categorize": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages whose categories were derived under older settings (category data, trusted\nauthserv-ids, own addresses, the `health` flag): `category:` and `is:` searches may use\nthe old values until they are derived again. Counted apart from `pending` and `reindex`.",
+            "minimum": 0
+          },
           "pending": {
             "type": "integer",
             "format": "int64",
             "description": "Messages with no insights or with insights from older extractors.",
+            "minimum": 0
+          },
+          "reindex": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages whose search entry is behind their categories or insights: `category:`, `has:`\nand `is:` searches may miss them until they are indexed again. Counted apart from\n`pending`; a message can be in both.",
             "minimum": 0
           },
           "running": {
@@ -8829,6 +9988,23 @@
           }
         }
       },
+      "LinkActionDto": {
+        "type": "string",
+        "description": "What an action link does.",
+        "enum": [
+          "verify",
+          "confirm",
+          "activate",
+          "reset_password",
+          "sign_in",
+          "magic_link",
+          "view_order",
+          "track",
+          "check_in",
+          "wallet_save",
+          "view"
+        ]
+      },
       "LocationDto": {
         "type": "object",
         "description": "A folder a message is in.",
@@ -9151,7 +10327,7 @@
       "MessageInsightsDto": {
         "type": "object",
         "description": "What was found in a message.",
-        "required": ["status", "trust", "own", "items"],
+        "required": ["status", "trust", "own", "topics", "items"],
         "properties": {
           "items": {
             "type": "array",
@@ -9160,6 +10336,17 @@
             },
             "description": "`Likely` and `Certain` items, and `Possible` ones the server is set to show."
           },
+          "kind": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CategoryKindDto",
+                "description": "The effective kind; `null` until categories are derived."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "own": {
             "type": "boolean",
             "description": "The `From` is one of the archive's own addresses: an account's or an alias's."
@@ -9167,8 +10354,16 @@
           "status": {
             "$ref": "#/components/schemas/InsightStatusDto"
           },
+          "topics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryTopicDto"
+            },
+            "description": "The effective topics in taxonomy order, with the override topics the trust gate kept off\nmarked `held_back`. `health` is left out when the server turns it off."
+          },
           "trust": {
-            "$ref": "#/components/schemas/TrustDto"
+            "$ref": "#/components/schemas/TrustDto",
+            "description": "`unknown` until categories are derived."
           },
           "unsubscribe": {
             "oneOf": [
@@ -9262,7 +10457,11 @@
             "items": {
               "type": "string"
             },
-            "description": "The kinds of insight found in it (`code`, `unsubscribe`, ...), never their values. `code`\nis left out for members and on the archive's own mail."
+            "description": "The kinds of insight found in it (`code`, `link`, `unsubscribe`, `reservation`, `order`,\n`invoice`, `parcel`, `pass`), never their values. `code` is left out for members and on the\narchive's own mail, `link` on own mail."
+          },
+          "kind": {
+            "type": ["string", "null"],
+            "description": "The effective kind (`personal`, `list`, `bulk`, `notification`); `null` until categories\nare derived."
           },
           "labels": {
             "type": "array",
@@ -9296,6 +10495,31 @@
             "items": {
               "$ref": "#/components/schemas/AddressDto"
             }
+          },
+          "topic": {
+            "type": ["string", "null"],
+            "description": "The one topic a list row shows, the first in taxonomy order; never `health`."
+          }
+        }
+      },
+      "MoneyDto": {
+        "type": "object",
+        "description": "An exact amount of money. Never a float.",
+        "required": ["amount", "currency", "exponent"],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "The decimal amount with exactly `exponent` fraction digits, such as `1234.50`, `-3.000` or\n`1200`. A string, since amounts can exceed what a JSON number holds exactly."
+          },
+          "currency": {
+            "type": "string",
+            "description": "The ISO 4217 code."
+          },
+          "exponent": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Fraction digits of the currency: 0 for JPY, 2 for USD, 3 for KWD.",
+            "minimum": 0
           }
         }
       },
@@ -9514,6 +10738,37 @@
             "description": "Lowercase `PARTSTAT`, such as `accepted`, `declined`, `tentative`, `needs-action`."
           }
         }
+      },
+      "PassDateDto": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": ["month", "day"],
+            "properties": {
+              "day": {
+                "type": "integer",
+                "format": "int32",
+                "description": "1–31.",
+                "minimum": 0
+              },
+              "month": {
+                "type": "integer",
+                "format": "int32",
+                "description": "1–12.",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "A flight date on a pass: a full `YYYY-MM-DD` date, or month and day when no year is known."
+      },
+      "PassStyleDto": {
+        "type": "string",
+        "description": "The style of a wallet pass.",
+        "enum": ["boarding_pass", "event_ticket", "coupon", "store_card", "generic"]
       },
       "PasswordRequest": {
         "type": "object",
@@ -10124,6 +11379,362 @@
         "description": "What to do with remote images in an HTML body.",
         "enum": ["block", "proxy", "direct"]
       },
+      "ReservationDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "One flight leg.",
+            "required": [
+              "departure_airport",
+              "arrival_airport",
+              "departure",
+              "passengers",
+              "seats",
+              "kind"
+            ],
+            "properties": {
+              "arrival": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arrival_airport": {
+                "type": "string",
+                "description": "IATA code."
+              },
+              "carrier": {
+                "type": ["string", "null"],
+                "description": "The airline's IATA code."
+              },
+              "departure": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "departure_airport": {
+                "type": "string",
+                "description": "IATA code."
+              },
+              "flight_number": {
+                "type": ["string", "null"],
+                "description": "The flight number without the airline code."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["flight"]
+              },
+              "passengers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Passenger names, at most 9."
+              },
+              "reservation_number": {
+                "type": ["string", "null"],
+                "description": "The booking reference."
+              },
+              "seats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Seats, at most 9."
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A hotel or other lodging.",
+            "required": ["reservation_number", "name", "checkin", "guests", "kind"],
+            "properties": {
+              "address": {
+                "type": ["string", "null"]
+              },
+              "checkin": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "checkout": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "guests": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["lodging"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "reservation_number": {
+                "type": "string",
+                "description": "The booking reference."
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A train trip.",
+            "required": ["departure_station", "departure", "passengers", "seats", "kind"],
+            "properties": {
+              "arrival": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arrival_station": {
+                "type": ["string", "null"]
+              },
+              "departure": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "departure_station": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["train"]
+              },
+              "number": {
+                "type": ["string", "null"],
+                "description": "The train number."
+              },
+              "passengers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reservation_number": {
+                "type": ["string", "null"],
+                "description": "The booking reference."
+              },
+              "seats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A bus trip.",
+            "required": ["departure_station", "departure", "passengers", "seats", "kind"],
+            "properties": {
+              "arrival": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arrival_station": {
+                "type": ["string", "null"]
+              },
+              "departure": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "departure_station": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["bus"]
+              },
+              "number": {
+                "type": ["string", "null"],
+                "description": "The bus number."
+              },
+              "passengers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reservation_number": {
+                "type": ["string", "null"],
+                "description": "The booking reference."
+              },
+              "seats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An event ticket.",
+            "required": ["name", "start", "tickets", "kind"],
+            "properties": {
+              "end": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["event"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "reservation_number": {
+                "type": ["string", "null"],
+                "description": "The booking reference."
+              },
+              "start": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "tickets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Ticket numbers or seats."
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              },
+              "venue": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A restaurant table.",
+            "required": ["name", "start", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["food"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "party_size": {
+                "type": ["integer", "null"],
+                "format": "int32",
+                "minimum": 0
+              },
+              "reservation_number": {
+                "type": ["string", "null"],
+                "description": "The booking reference."
+              },
+              "start": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A rental car.",
+            "required": ["reservation_number", "pickup", "kind"],
+            "properties": {
+              "company": {
+                "type": ["string", "null"]
+              },
+              "dropoff": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TimeDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dropoff_location": {
+                "type": ["string", "null"]
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["rental_car"]
+              },
+              "pickup": {
+                "$ref": "#/components/schemas/TimeDto"
+              },
+              "pickup_location": {
+                "type": ["string", "null"]
+              },
+              "reservation_number": {
+                "type": "string",
+                "description": "The booking reference."
+              },
+              "url": {
+                "type": ["string", "null"]
+              },
+              "url_host": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        ],
+        "description": "A reservation, tagged by `kind`. Every `url` comes with its `url_host`, the display host\n(Unicode, or the A-label form when confusable); a URL without a host is left out."
+      },
       "RuleDayDto": {
         "type": "object",
         "description": "A weekday of a rule, with its ordinal: `{ ordinal: -1, weekday: \"FR\" }` is the last Friday.",
@@ -10509,9 +12120,28 @@
           }
         }
       },
+      "TimeDto": {
+        "type": "object",
+        "description": "A time as the message wrote it. Never converted to UTC or to the server's zone.",
+        "required": ["local"],
+        "properties": {
+          "local": {
+            "type": "string",
+            "description": "Wall-clock time as written, `YYYY-MM-DDTHH:MM:SS`."
+          },
+          "offset": {
+            "type": ["string", "null"],
+            "description": "The offset written with it, such as `+01:00`; `null` for a time written without one."
+          },
+          "zone": {
+            "type": ["string", "null"],
+            "description": "The IANA zone name, when the message gave one."
+          }
+        }
+      },
       "TrustDto": {
         "type": "object",
-        "description": "The sender trust of a message. Always `unknown` for now.",
+        "description": "The sender trust of a message, from its derived categories row.",
         "required": ["state"],
         "properties": {
           "domain": {
@@ -10532,6 +12162,17 @@
         "description": "Whether the sender is who the message says.",
         "enum": ["aligned", "relayed", "unverified", "unknown"]
       },
+      "UnsubscribeConfirmRequest": {
+        "type": "object",
+        "description": "The user's consent to one one-click unsubscribe request. Any URL in the body is ignored: the\nserver only uses the link stored with the message.",
+        "required": ["confirm"],
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be `true`."
+          }
+        }
+      },
       "UnsubscribeDto": {
         "type": "object",
         "description": "How to leave the list a message came from.",
@@ -10543,12 +12184,85 @@
           "https": {
             "type": ["string", "null"]
           },
+          "last_request": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UnsubscribeRequestDto",
+                "description": "The latest one-click request for the same list in this archive, from any message; left\nout when there is none, and always for members."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mailto": {
             "type": ["string", "null"],
             "description": "A `mailto:` URI, opened by the reader's own mail program."
           },
           "one_click": {
             "$ref": "#/components/schemas/OneClickDto"
+          }
+        }
+      },
+      "UnsubscribeOutcomeDto": {
+        "type": "string",
+        "description": "How a one-click unsubscribe request ended.",
+        "enum": ["accepted", "redirected", "refused", "http_error", "network"]
+      },
+      "UnsubscribeRefusalDto": {
+        "type": "object",
+        "description": "Why a one-click unsubscribe was not sent.",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OneClickReasonDto",
+                "description": "Why one-click is not available, as `UnsubscribeDto.one_click.reason` gives it; `null`\nwhen the body did not confirm."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UnsubscribeRequestDto": {
+        "type": "object",
+        "description": "One recorded one-click unsubscribe request.",
+        "required": ["outcome", "requested_at"],
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/UnsubscribeOutcomeDto"
+          },
+          "requested_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          },
+          "status": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "The HTTP status, when the list answered.",
+            "minimum": 0
+          }
+        }
+      },
+      "UnsubscribeResultDto": {
+        "type": "object",
+        "description": "What a one-click unsubscribe did.",
+        "required": ["request", "repeated"],
+        "properties": {
+          "repeated": {
+            "type": "boolean",
+            "description": "Nothing was sent: this is the stored request for the same list, accepted or redirected\nless than 24 hours ago."
+          },
+          "request": {
+            "$ref": "#/components/schemas/UnsubscribeRequestDto",
+            "description": "The request, as recorded."
           }
         }
       },

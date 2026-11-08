@@ -1,0 +1,28 @@
+From: Mail Delivery System <MAILER-DAEMON@mx.example.com>
+To: ada@example.com
+Subject: Delayed Mail (still being retried)
+Date: Fri, 14 Mar 2025 12:00:00 +0000
+Message-ID: <20250314120000.7F8E9D0@mx.example.com>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="delay"
+
+--delay
+Content-Type: text/plain; charset=us-ascii
+
+Your message could not be delivered for 4 hours. It will be retried until it
+is 5 days old.
+
+--delay
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.example.com
+Original-Envelope-Id: <minutes-4@example.com>
+
+Final-Recipient: rfc822; erin@slow.example.org
+Action: delayed
+Status: 4.4.1
+Diagnostic-Code: X-Postfix; connect to slow.example.org[192.0.2.30]:25:
+    Connection timed out
+Will-Retry-Until: Wed, 19 Mar 2025 08:00:00 +0000
+
+--delay--

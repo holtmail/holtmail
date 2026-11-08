@@ -1,0 +1,45 @@
+From: postmaster@relay.example.net
+To: ada@example.com
+Subject: Delivery Status Notification
+Date: Sat, 15 Mar 2025 09:30:00 +0000
+Message-ID: <report-15@relay.example.net>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=global-delivery-status; boundary="multi"
+
+--multi
+Content-Type: text/plain; charset=utf-8
+
+Report on your message to three recipients.
+
+--multi
+Content-Type: message/global-delivery-status
+
+Reporting-MTA: dns; relay.example.net
+Original-Envelope-Id: newsletter-5@example.com
+
+Final-Recipient: rfc822; frank@example.org
+Action: delivered
+Status: 2.0.0
+
+Original-Recipient: rfc822; team@example.org
+Final-Recipient: rfc822; grace@example.org
+Action: expanded
+Status: 2.0.0
+
+Final-Recipient: utf-8; j\x{00F6}rg@example.org
+Action: failed
+Status: 5.2.2
+Diagnostic-Code: smtp; 552 5.2.2 Mailbox full
+
+Final-Recipient: rfc822; heidi@example.org
+Action: relayed
+Status: 2.0.0
+
+--multi
+Content-Type: message/global-headers
+
+From: Ada Lovelace <ada@example.com>
+Subject: Newsletter
+Message-ID: <newsletter-5@example.com>
+
+--multi--

@@ -7,6 +7,10 @@ use bytes::Bytes;
 pub use holtmail_core::Address;
 use mail_parser::{AddressList, HeaderForm, MessageParser, MessagePart};
 
+mod dsn;
+
+pub use dsn::{Dsn, DsnAction, DsnRecipient, parse_dsn, parse_unstructured_bounce};
+
 /// Characters kept in [`ParsedMessage::preview`].
 pub const PREVIEW_CHARS: usize = 200;
 
@@ -47,6 +51,16 @@ pub struct ParsedMessage {
     /// attached to it, in document order, inline or not: text parts converted to UTF-8 from their
     /// charset, others transfer-decoded only.
     pub calendars: Vec<Bytes>,
+}
+
+impl ParsedMessage {
+    /// How many header fields of the message itself have this name, ignoring letter case.
+    pub fn field_count(&self, name: &str) -> usize {
+        self.headers
+            .iter()
+            .filter(|field| field.name.trim().eq_ignore_ascii_case(name))
+            .count()
+    }
 }
 
 /// One header field.

@@ -1,0 +1,27 @@
+Return-Path: <>
+From: Mail Administrator <Postmaster@legacy.example.net>
+To: ada@example.com
+Subject: Returned mail: see transcript for details
+Date: Sun, 16 Mar 2025 07:00:00 +0000
+Message-ID: <legacy-bounce-1@legacy.example.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="legacy"
+
+--legacy
+Content-Type: text/plain; charset=us-ascii
+
+The original message was received but could not be delivered:
+   ----- The following addresses had permanent fatal errors -----
+judy@example.org
+
+--legacy
+Content-Type: message/rfc822
+
+From: Ada Lovelace <ada@example.com>
+To: judy@example.org
+Subject: Old friends
+Message-ID: <old-friends-6@example.com>
+
+Long time no see.
+
+--legacy--

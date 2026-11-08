@@ -1,0 +1,41 @@
+From: "Me Myself" <me@example.net>
+To: "Ada Replies" <replies@example.com>, "Team" <team@example.org>,
+ "Bob Builder" <bob@example.org>
+Cc: "Carol" <carol@example.org>
+Subject: =?utf-8?Q?Re:_Plans_for_the_caf=C3=A9?=
+Date: Mon, 26 Oct 2026 09:30:00 +0000
+Message-ID: <ID>
+In-Reply-To: <plans-3@example.com>
+References: <plans-1@example.com> <plans-2@example.com> <plans-3@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="BOUNDARY-0"
+
+
+--BOUNDARY-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Friday works.
+
+On Mon, 26 Oct 2026 at 07:33 UTC, Ada Lovelace <ada@example.com> wrote:
+> Shall we meet at the cafe on Friday?
+>
+>> Earlier thoughts
+
+--BOUNDARY-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html>
+<html><head><meta charset=3D"utf-8"></head><body>
+<p>Friday works.</p>
+<div class=3D"holtmail-quote"><p>On Mon, 26 Oct 2026 at 07:33 UTC, Ada Love=
+lace &lt;ada@example.com&gt; wrote:</p>
+<blockquote type=3D"cite">
+<p>Shall we meet at the <b>cafe</b> on Friday?</p><img src=3D"https://image=
+s.example.com/map.png">
+</blockquote></div>
+</body></html>
+
+--BOUNDARY-0--

@@ -1,0 +1,55 @@
+Return-Path: <>
+From: MAILER-DAEMON@mx.example.com (Mail Delivery System)
+To: ada@example.com
+Subject: Undelivered Mail Returned to Sender
+Date: Tue, 11 Mar 2025 10:00:05 +0000
+Message-ID: <20250311100005.4A1B2C3@mx.example.com>
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="4A1B2C3.1741687205/mx.example.com"
+
+This is a MIME-encapsulated message.
+
+--4A1B2C3.1741687205/mx.example.com
+Content-Description: Notification
+Content-Type: text/plain; charset=us-ascii
+
+This is the mail system at host mx.example.com.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients.
+
+<nobody@example.org>: host mx.example.org[192.0.2.10] said: 550 5.1.1
+    <nobody@example.org>: Recipient address rejected: User unknown (in reply
+    to RCPT TO command)
+
+--4A1B2C3.1741687205/mx.example.com
+Content-Description: Delivery report
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.example.com
+X-Postfix-Queue-ID: 4A1B2C3
+X-Postfix-Sender: rfc822; ada@example.com
+Arrival-Date: Tue, 11 Mar 2025 10:00:01 +0000 (UTC)
+
+Final-Recipient: rfc822; nobody@example.org
+Original-Recipient: rfc822;nobody@example.org
+Action: failed
+Status: 5.1.1
+Remote-MTA: dns; mx.example.org
+Diagnostic-Code: smtp; 550 5.1.1 <nobody@example.org>: Recipient address
+    rejected: User unknown
+
+--4A1B2C3.1741687205/mx.example.com
+Content-Description: Undelivered Message Headers
+Content-Type: text/rfc822-headers
+
+Return-Path: <ada@example.com>
+From: Ada Lovelace <ada@example.com>
+To: nobody@example.org
+Subject: Harbour figures
+Date: Tue, 11 Mar 2025 10:00:00 +0000
+Message-ID: <figures-2@example.com>
+
+--4A1B2C3.1741687205/mx.example.com--

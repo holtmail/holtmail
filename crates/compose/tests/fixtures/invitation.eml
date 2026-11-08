@@ -1,0 +1,21 @@
+From: "Cleo Vance" <cleo@example.org>
+To: ada.alias@example.com
+Subject: Invitation: Weekly sync
+Date: Fri, 20 Nov 2026 08:00:00 +0000
+Message-ID: <invite-2@example.org>
+References: <invite-1@example.org>
+MIME-Version: 1.0
+Content-Type: text/calendar; method=REQUEST; charset=utf-8
+
+BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:weekly-sync@example.org
+DTSTAMP:20261120T080000Z
+DTSTART:20261201T090000Z
+SUMMARY:Weekly sync
+ORGANIZER;CN=Cleo Vance:mailto:cleo@example.org
+ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ada.alias@example.com
+END:VEVENT
+END:VCALENDAR

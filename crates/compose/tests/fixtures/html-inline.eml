@@ -1,0 +1,59 @@
+From: "Ada Lovelace" <ada@example.com>
+Reply-To: <replies@example.com>
+To: <bob@example.org>
+Subject: Logo
+Date: Mon, 26 Oct 2026 09:30:00 +0000
+Message-ID: <ID>
+Auto-Submitted: auto-generated
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="BOUNDARY-0"
+
+
+--BOUNDARY-0
+Content-Type: multipart/related;
+ boundary="BOUNDARY-1"
+
+
+--BOUNDARY-1
+Content-Type: multipart/alternative;
+ boundary="BOUNDARY-2"
+
+
+--BOUNDARY-2
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Our new logo:
+Brand page
+
+--BOUNDARY-2
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html>
+<html><head><meta charset=3D"utf-8"></head><body>
+<p>Our <b>new</b> logo: <img src=3D"cid:logo@example.com" alt=3D"logo"></p>=
+<p><a href=3D"https://example.com/brand">Brand page</a></p>
+</body></html>
+
+--BOUNDARY-2--
+
+--BOUNDARY-1
+Content-Type: image/png
+Content-Disposition: inline
+Content-ID: <logo@example.com>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgpub3QgcmVhbGx5
+
+--BOUNDARY-1--
+
+--BOUNDARY-0
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''%C3%9Cbersicht%202026.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgaW52ZW50ZWQ=
+
+--BOUNDARY-0--

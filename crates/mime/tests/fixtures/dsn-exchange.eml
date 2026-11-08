@@ -1,0 +1,63 @@
+From: Microsoft Outlook <postmaster@contoso.example.com>
+To: <ada@example.com>
+Date: Wed, 12 Mar 2025 08:15:30 +0000
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="_000_exchange_report_"
+Content-Language: en-US
+Message-ID: <4c2f8e1a-0b7d-4a55-9e21-ndr@contoso.example.com>
+In-Reply-To: <budget-7@example.com>
+References: <budget-7@example.com>
+Subject: Undeliverable: Budget review
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+
+--_000_exchange_report_
+Content-Type: multipart/alternative; differences=Content-Type;
+	boundary="_001_exchange_body_"
+
+--_001_exchange_body_
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+Delivery has failed to these recipients or groups:
+
+Carol Reed (carol@contoso.example.com)
+The email address you entered couldn't be found.
+
+--_001_exchange_body_
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><p>Delivery has failed to these recipients or groups:</p></body=
+></html>
+
+--_001_exchange_body_--
+
+--_000_exchange_report_
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns;AM0PR01MB0001.eurprd01.prod.contoso.example.com
+Received-From-MTA: dns;AM0PR01MB0002.eurprd01.prod.contoso.example.com
+Arrival-Date: Wed, 12 Mar 2025 08:15:28 +0000
+
+Original-Recipient: rfc822;carol@contoso.example.com
+Final-Recipient: rfc822;carol@contoso.example.com
+Action: failed
+Status: 5.1.10
+Diagnostic-Code: smtp;550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not
+ found by SMTP address lookup
+X-Display-Name: Carol Reed
+
+--_000_exchange_report_
+Content-Type: message/rfc822
+
+From: Ada Lovelace <ada@example.com>
+To: Carol Reed <carol@contoso.example.com>
+Subject: Budget review
+Date: Wed, 12 Mar 2025 08:15:00 +0000
+Message-ID: <budget-7@example.com>
+Content-Type: text/plain; charset=utf-8
+
+Can we review the budget on Thursday?
+
+--_000_exchange_report_--

@@ -1,0 +1,61 @@
+From: "Me Myself" <me@example.net>
+To: <dana@example.org>
+Subject: =?utf-8?Q?Fwd:_Plans_for_the_caf=C3=A9?=
+Date: Mon, 26 Oct 2026 09:30:00 +0000
+Message-ID: <ID>
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="BOUNDARY-0"
+
+
+--BOUNDARY-0
+Content-Type: multipart/alternative;
+ boundary="BOUNDARY-1"
+
+
+--BOUNDARY-1
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+
+
+---------- Forwarded message ----------
+From: Ada Lovelace <ada@example.com>
+Date: Mon, 26 Oct 2026 at 07:33 UTC
+Subject: Re: AW: Plans for the caf=C3=A9
+To: Team <team@example.org>, Bob Builder <bob@example.org>, me@example.net
+Cc: Carol <carol@example.org>, ME-Alias@Example.net
+
+Shall we meet at the cafe on Friday?
+
+> Earlier thoughts
+--BOUNDARY-1
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html>
+<html><head><meta charset=3D"utf-8"></head><body>
+<p><br></p>
+<div class=3D"holtmail-forward"><p>---------- Forwarded message ----------<=
+br>
+From: Ada Lovelace &lt;ada@example.com&gt;<br>
+Date: Mon, 26 Oct 2026 at 07:33 UTC<br>
+Subject: Re: AW: Plans for the caf=C3=A9<br>
+To: Team &lt;team@example.org&gt;, Bob Builder &lt;bob@example.org&gt;, me@=
+example.net<br>
+Cc: Carol &lt;carol@example.org&gt;, ME-Alias@Example.net<br>
+</p>
+<p>Shall we meet at the <b>cafe</b> on Friday?</p><img src=3D"https://image=
+s.example.com/map.png">
+</div>
+</body></html>
+
+--BOUNDARY-1--
+
+--BOUNDARY-0
+Content-Type: text/plain
+Content-Disposition: attachment; filename="agenda.txt"
+Content-Transfer-Encoding: 7bit
+
+1. Coffee
+--BOUNDARY-0--

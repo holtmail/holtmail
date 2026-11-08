@@ -1,0 +1,41 @@
+From: "Ada Quill" <ada.alias@example.com>
+To: "Cleo Vance" <cleo@example.org>
+Subject: Accepted: Weekly sync
+Date: Mon, 26 Oct 2026 09:30:00 +0000
+Message-ID: <ID>
+In-Reply-To: <invite-2@example.org>
+References: <invite-1@example.org> <invite-2@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="BOUNDARY-0"
+
+
+--BOUNDARY-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Ada Quill accepted "Weekly sync".
+
+When: 2026-12-01 09:00 UTC
+
+See you there
+
+--BOUNDARY-0
+Content-Type: text/calendar; method="REPLY"; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Holtmail//iMIP//EN
+METHOD:REPLY
+BEGIN:VEVENT
+UID:weekly-sync@example.org
+DTSTAMP:20261121T093000Z
+SEQUENCE:0
+ORGANIZER;CN=Cleo Vance:mailto:cleo@example.org
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:ada.alias@example.com
+COMMENT:See you there
+END:VEVENT
+END:VCALENDAR
+
+--BOUNDARY-0--

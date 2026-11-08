@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-compose"
+description = "Turning drafts, replies and forwards into RFC 5322 bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+holtmail-core.workspace = true
+holtmail-mime.workspace = true
+holtmail-sanitize.workspace = true
+idna.workspace = true
+mail-builder.workspace = true
+mail-parser.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

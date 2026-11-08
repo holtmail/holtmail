@@ -1,0 +1,58 @@
+From: "Me Myself" <me@example.net>
+To: <dana@example.org>
+Subject: =?utf-8?Q?Fwd:_Plans_for_the_caf=C3=A9?=
+Date: Mon, 26 Oct 2026 09:30:00 +0000
+Message-ID: <ID>
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="BOUNDARY-0"
+
+
+--BOUNDARY-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+FYI
+
+--BOUNDARY-0
+Content-Type: message/rfc822
+Content-Disposition: attachment;
+ filename*=UTF-8''Plans%20for%20the%20caf%C3%A9.eml
+Content-Transfer-Encoding: 7bit
+
+From: "Ada Lovelace" <ada@example.com>
+Reply-To: Ada Replies <replies@example.com>
+To: Team <team@example.org>, Bob Builder <bob@example.org>, me@example.net
+Cc: Carol <carol@example.org>, ME-Alias@Example.net
+Mail-Followup-To: dev@lists.example.org
+List-Post: <mailto:dev@lists.example.org>
+Subject: Re: AW: Plans for the =?utf-8?q?caf=C3=A9?=
+Date: Mon, 26 Oct 2026 07:33:20 +0000
+Message-ID: <ID>
+In-Reply-To: <plans-2@example.com>
+References: <plans-1@example.com> <plans-2@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY-1"
+
+--BOUNDARY-1
+Content-Type: multipart/alternative; boundary="BOUNDARY-2"
+
+--BOUNDARY-2
+Content-Type: text/plain; charset=utf-8
+
+Shall we meet at the cafe on Friday?
+
+> Earlier thoughts
+--BOUNDARY-2
+Content-Type: text/html; charset=utf-8
+
+<p onclick="steal()">Shall we meet at the <b>cafe</b> on Friday?</p><img src="https://images.example.com/map.png"><script>alert(1)</script>
+--BOUNDARY-2--
+--BOUNDARY-1
+Content-Type: text/plain; name="agenda.txt"
+Content-Disposition: attachment; filename="agenda.txt"
+
+1. Coffee
+--BOUNDARY-1--
+
+--BOUNDARY-0--

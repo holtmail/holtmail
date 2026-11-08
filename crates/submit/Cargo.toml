@@ -1,0 +1,18 @@
+[package]
+name = "holtmail-submit"
+description = "The contract for handing prebuilt messages to a submission server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

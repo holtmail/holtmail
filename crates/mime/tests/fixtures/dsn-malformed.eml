@@ -1,0 +1,28 @@
+From: MAILER-DAEMON@broken.example.net
+To: ada@example.com
+Subject: failure notice
+Message-ID: <broken-1@broken.example.net>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="bad"
+
+--bad
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: base64
+
+this is not base64 at all !!!
+--bad
+Content-Type: message/delivery-status
+
+  folded line without a field
+no colon here
+Reporting-MTA:
+Final-Recipient: ;
+Action: bounced
+Status: 5.1
+Diagnostic-Code:
+: value without a name
+
+Final-Recipient: rfc822; <ivan@example.org>
+Action: Failed
+Status: 5.7.1 (blocked)
+Diagnostic-Code: smtp; 554 5.7.1 rejected

@@ -1,0 +1,27 @@
+[package]
+name = "holtmail-submit-jmap"
+description = "Handing prebuilt messages to a JMAP server with EmailSubmission"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-submit.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+holtmail-core = { workspace = true, features = ["testing"] }
+holtmail-submit = { workspace = true, features = ["testing"] }
+axum.workspace = true
+base64.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true

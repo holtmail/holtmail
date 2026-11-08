@@ -15,6 +15,9 @@ pub const DOVECOT_PASSWORD: &str = "it-imap-password";
 pub const GREENMAIL_IMAP: u16 = 42143;
 /// GreenMail: IMAP over TLS with GreenMail's own self-signed certificate.
 pub const GREENMAIL_IMAPS: u16 = 42993;
+/// GreenMail: plain SMTP without sign-in; it takes mail for any address and files it for the
+/// user of that address.
+pub const GREENMAIL_SMTP: u16 = 42587;
 
 /// `127.0.0.1:<port>`.
 pub fn local(port: u16) -> String {

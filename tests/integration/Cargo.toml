@@ -27,6 +27,8 @@ holtmail-secret.workspace = true
 holtmail-secret-local.workspace = true
 holtmail-source.workspace = true
 holtmail-source-imap.workspace = true
+holtmail-submit.workspace = true
+holtmail-submit-smtp.workspace = true
 image.workspace = true
 object_store.workspace = true
 reqwest = { workspace = true, features = ["cookies", "json"] }

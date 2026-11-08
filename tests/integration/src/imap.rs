@@ -126,6 +126,31 @@ impl Seeder {
         lines
     }
 
+    /// The full bytes of every message in `folder`, in UID order.
+    pub async fn bodies(&mut self, folder: &str) -> Vec<Vec<u8>> {
+        use tokio::io::AsyncReadExt;
+        self.ok(&format!("SELECT {}", quote(folder))).await;
+        let tag = self.send("UID FETCH 1:* (BODY.PEEK[])").await;
+        let mut bodies = Vec::new();
+        loop {
+            let line = self.line().await;
+            if line.starts_with(&format!("{tag} ")) {
+                assert!(line.contains(" OK"), "FETCH failed: {line}");
+                return bodies;
+            }
+            let Some(size) = line
+                .strip_suffix('}')
+                .and_then(|l| l.rsplit_once('{'))
+                .and_then(|(_, n)| n.parse::<usize>().ok())
+            else {
+                continue;
+            };
+            let mut body = vec![0; size];
+            self.stream.read_exact(&mut body).await.expect("read");
+            bodies.push(body);
+        }
+    }
+
     /// Signs out and closes the connection.
     pub async fn logout(mut self) {
         let _ = self.command("LOGOUT").await;

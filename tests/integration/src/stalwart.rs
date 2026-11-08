@@ -14,6 +14,9 @@ pub const STALWART_HTTPS: u16 = 43443;
 pub const STALWART_IMAP: u16 = 43143;
 /// IMAP over TLS.
 pub const STALWART_IMAPS: u16 = 43993;
+/// SMTP submission with STARTTLS and a certificate for `localhost`; users sign in with
+/// [`STALWART_PASSWORD`] and send as their own address.
+pub const STALWART_SUBMISSION: u16 = 43587;
 /// The password of every user [`create_user`] makes.
 pub const STALWART_PASSWORD: &str = "it-stalwart-password";
 /// The recovery administrator from `compose.yaml`, which manages users while the server runs.
@@ -231,6 +234,29 @@ impl Seeder {
             .as_str()
             .unwrap_or_else(|| panic!("no email id in {imported}"))
             .to_owned()
+    }
+
+    /// The emails in the mailbox `id` with their `messageId`, `keywords`, `size`, `subject` and
+    /// `mailboxIds`.
+    pub async fn emails(&self, mailbox: &str) -> Vec<Value> {
+        let found = self
+            .jmap
+            .ok(
+                MAIL,
+                "Email/query",
+                json!({ "accountId": self.mail, "filter": { "inMailbox": mailbox } }),
+            )
+            .await;
+        let got = self
+            .jmap
+            .ok(
+                MAIL,
+                "Email/get",
+                json!({ "accountId": self.mail, "ids": found["ids"],
+                        "properties": ["messageId", "keywords", "size", "subject", "mailboxIds"] }),
+            )
+            .await;
+        got["list"].as_array().cloned().unwrap_or_default()
     }
 
     /// Applies `patch` (such as `{"keywords/$seen": true}`) to the email `id`.

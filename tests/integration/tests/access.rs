@@ -2,7 +2,7 @@
 //! `holtmail openapi`, so a new route without an expectation fails this test) asked by the owner,
 //! an admin, a member for an archive granted to them and for one that is not, and without a
 //! session, against an instance with mail, attachments, remote images, threads, contacts, events,
-//! people and overrides in both archives. Each answer must be the expected one and one the
+//! people, overrides, a transport, an identity, drafts and outbox messages in both archives. Each answer must be the expected one and one the
 //! OpenAPI description declares for that operation.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -12,7 +12,7 @@ use base64::Engine;
 use holtmail_integration::api::{OWNER_EMAIL, OWNER_PASSWORD, id};
 use holtmail_integration::data::{Message, mbox, vcard};
 use holtmail_integration::images::{self, Images, SOCKS_PORT, Served};
-use holtmail_integration::services::{DOVECOT, DOVECOT_PASSWORD};
+use holtmail_integration::services::{DOVECOT, DOVECOT_PASSWORD, GREENMAIL_SMTP};
 use holtmail_integration::{Api, Holtmail, LogScanner, Options, require_it, stalwart, unique};
 use holtmail_sanitize::remote_key;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, ORIGIN};
@@ -133,12 +133,18 @@ struct Seeded {
     undo: BTreeMap<&'static str, Vec<String>>,
     import_account: String,
     imap_account: String,
+    imap_inbox: String,
+    imap_message: String,
     subjects: Vec<String>,
+    transport: String,
+    identity: String,
 }
 
 struct World {
     holtmail: Holtmail,
     owner: Api,
+    owner_id: String,
+    instance_transport: String,
     granted: Seeded,
     other: Seeded,
     users: BTreeMap<String, String>,
@@ -329,10 +335,38 @@ async fn seed(owner: &Api, name: &str, tag: &str, images: &Images) -> (Seeded, S
         .to_owned();
 
     let user = DOVECOT.user("access");
-    let seeder = DOVECOT.seeder(&user).await;
+    let mut seeder = DOVECOT.seeder(&user).await;
+    let on_server = Message::new(&user).subject(&unique("Access on the server"));
+    seeder.append("INBOX", &[], None, &on_server.bytes()).await;
     seeder.logout().await;
     let imap_account = owner.add_imap(&archive, DOVECOT.account(&user)).await;
     owner.settle(&archive, &imap_account).await;
+    owner
+        .request(
+            Method::PUT,
+            &format!("/api/accounts/{imap_account}/capabilities"),
+            Some(&json!({ "capabilities": ["mail.flags"] })),
+        )
+        .await
+        .ok();
+    let imap_inbox = owner
+        .folders(&archive)
+        .await
+        .into_iter()
+        .find(|f| f["account_id"] == imap_account.as_str() && f["role"] == "inbox")
+        .map(|f| id(&f))
+        .expect("the IMAP inbox");
+    let imap_message = owner
+        .get(&format!(
+            "/api/archives/{archive}/messages?folder={imap_inbox}"
+        ))
+        .await
+        .ok()["items"][0]["id"]
+        .as_str()
+        .expect("the message on the server")
+        .to_owned();
+    let transport = greenmail_transport(owner, &archive).await;
+    let identity = sending_identity(owner, &archive, &transport).await;
 
     (
         Seeded {
@@ -350,10 +384,49 @@ async fn seed(owner: &Api, name: &str, tag: &str, images: &Images) -> (Seeded, S
             undo,
             import_account,
             imap_account,
-            subjects: vec![first.subject, reply.subject],
+            imap_inbox,
+            imap_message,
+            subjects: vec![first.subject, reply.subject, on_server.subject],
+            transport,
+            identity,
         },
         user,
     )
+}
+
+async fn greenmail_transport(owner: &Api, archive: &str) -> String {
+    let created = owner
+        .post(
+            &format!("/api/archives/{archive}/transports"),
+            json!({
+                "name": unique("GreenMail"),
+                "kind": "smtp",
+                "host": "127.0.0.1",
+                "port": GREENMAIL_SMTP,
+                "security": "none",
+                "allowed_from": ["*@example.com"],
+            }),
+        )
+        .await
+        .ok();
+    id(&created)
+}
+
+async fn sending_identity(owner: &Api, archive: &str, transport: &str) -> String {
+    let created = owner
+        .post(
+            &format!("/api/archives/{archive}/identities"),
+            json!({
+                "address": format!("{}@example.com", unique("access-sender")),
+                "name": "Access Sender",
+                "transport": transport,
+                "active": true,
+            }),
+        )
+        .await
+        .ok();
+    assert_eq!(created["active"], true, "{created}");
+    id(&created)
 }
 
 async fn world() -> World {
@@ -388,9 +461,30 @@ async fn world() -> World {
             .ok();
         users.insert(email.to_owned(), id(&created["user"]));
     }
+    let owner_id = owner.get("/api/session").await.ok()["user"]["id"]
+        .as_str()
+        .expect("the owner's id")
+        .to_owned();
+    let instance_transport = owner
+        .post(
+            "/api/transports",
+            json!({
+                "name": "Company relay",
+                "kind": "smtp",
+                "host": "127.0.0.1",
+                "port": GREENMAIL_SMTP,
+                "security": "none",
+                "allowed_from": ["*@example.com"],
+            }),
+        )
+        .await
+        .ok();
+    let instance_transport = id(&instance_transport);
     World {
         holtmail,
         owner,
+        owner_id,
+        instance_transport,
         granted,
         other,
         users,
@@ -436,6 +530,57 @@ impl World {
         };
         let manages = matches!(who, Who::Owner | Who::Admin);
         match (method.as_str(), template) {
+            (
+                _,
+                "/api/collections/{id}/items"
+                | "/api/collections/{id}/write-mode"
+                | "/api/collections/{id}/organizing",
+            ) => {
+                let item = self
+                    .owner
+                    .get(&format!("/api/items/{}", s.contact))
+                    .await
+                    .ok();
+                let collection = item["item"]["collection_id"]
+                    .as_str()
+                    .expect("a collection");
+                let body = match (method.as_str(), template) {
+                    ("GET", _) => Body::Empty,
+                    ("PUT", _) => Body::Json(json!({ "mode": "read_only" })),
+                    _ => Body::Json(json!({ "contact": { "full_name": "Access Example" } })),
+                };
+                (template.replace("{id}", collection), body)
+            }
+            ("GET", "/api/items/{id}/edit") => (fill("/api/items/{contact}/edit"), Body::Empty),
+            ("PUT", "/api/items/{id}/content") => (
+                fill("/api/items/{contact}/content"),
+                Body::Json(json!({ "contact": { "full_name": "Access Example" } })),
+            ),
+            ("DELETE", "/api/items/{id}") => (fill("/api/items/{contact}"), Body::NoneAsJson),
+            ("GET", "/api/items/{id}/rsvp") => (fill("/api/items/{event_item}/rsvp"), Body::Empty),
+            ("GET", "/api/messages/{id}/rsvp") => {
+                (fill("/api/messages/{message}/rsvp"), Body::Empty)
+            }
+            ("POST", "/api/items/{id}/rsvp") => (
+                fill("/api/items/{event_item}/rsvp"),
+                Body::Json(json!({ "answer": "accepted" })),
+            ),
+            ("POST", "/api/messages/{id}/rsvp") => (
+                fill("/api/messages/{message}/rsvp"),
+                Body::Json(json!({ "answer": "accepted" })),
+            ),
+            ("POST", "/api/pim/changes/{id}/resolve") => (
+                format!("/api/pim/changes/{}/resolve", uuid::Uuid::now_v7()),
+                Body::Json(json!({ "action": "discard" })),
+            ),
+            ("GET", "/api/pim/changes/{id}/diff") => (
+                format!("/api/pim/changes/{}/diff", uuid::Uuid::now_v7()),
+                Body::Empty,
+            ),
+            ("PUT", "/api/people/{id}/card") => (
+                fill("/api/people/{person}/card"),
+                Body::Json(json!({ "contact": { "full_name": "Access Example" } })),
+            ),
             ("GET", "/api/archives/{id}/calendar") => (
                 fill("/api/archives/{archive}/calendar?from=1772323200000&to=1775001600000"),
                 Body::Empty,
@@ -498,6 +643,33 @@ impl World {
                 ),
                 Body::Empty,
             ),
+            ("GET" | "PUT", "/api/accounts/{id}/capabilities") => (
+                format!("/api/accounts/{}/capabilities", s.import_account),
+                if method == Method::PUT {
+                    Body::Json(json!({ "capabilities": [] }))
+                } else {
+                    Body::Empty
+                },
+            ),
+            (_, t) if t.starts_with("/api/alias-services/{id}") => {
+                let path = t.replace("{id}", &uuid::Uuid::now_v7().to_string());
+                let body = match method.as_str() {
+                    "GET" => Body::Empty,
+                    "DELETE" => Body::NoneAsJson,
+                    _ => Body::Json(json!({ "name": "Renamed" })),
+                };
+                (path, body)
+            }
+            ("GET", t) if t.starts_with("/api/drafts/{id}") => (
+                t.replace("{id}", &self.throwaway_draft(a).await.0),
+                Body::Empty,
+            ),
+            ("GET", "/api/outbox/{id}") => {
+                (format!("/api/outbox/{}", self.queued(a).await), Body::Empty)
+            }
+            ("GET", "/api/accounts/{id}/mail-changes" | "/api/accounts/{id}/retention") => {
+                (template.replace("{id}", &s.imap_account), Body::Empty)
+            }
             ("GET", t) => (t.to_owned(), Body::Empty),
             ("POST", "/api/setup") => (
                 "/api/setup".to_owned(),
@@ -648,6 +820,17 @@ impl World {
                 let target = self.throwaway_user().await;
                 (format!("/api/users/{target}"), Body::NoneAsJson)
             }
+            ("POST", "/api/devices") => (
+                "/api/devices".to_owned(),
+                Body::Json(json!({ "name": "Access phone", "protocols": ["jmap"] })),
+            ),
+            ("PATCH", "/api/devices/{id}") => (
+                "/api/devices/nothing".to_owned(),
+                Body::Json(json!({ "name": "Renamed" })),
+            ),
+            ("DELETE", "/api/devices/{id}") => {
+                ("/api/devices/nothing".to_owned(), Body::NoneAsJson)
+            }
             ("PATCH", "/api/me") => (
                 "/api/me".to_owned(),
                 Body::Json(json!({ "name": "Access Example" })),
@@ -745,8 +928,259 @@ impl World {
                 format!("/api/webhooks/{}/test", self.throwaway_webhook().await),
                 Body::Json(json!({})),
             ),
+            ("POST", "/api/archives/{id}/alias-services") => (
+                format!("/api/archives/{a}/alias-services"),
+                Body::Json(
+                    json!({ "provider": "simplelogin", "base_url": "http://127.0.0.1:9", "key": "it-not-a-key" }),
+                ),
+            ),
+            ("POST", "/api/archives/{id}/aliases") => (
+                format!("/api/archives/{a}/aliases"),
+                Body::Json(json!({
+                    "address": format!("{}@example.net", unique("hand-alias")),
+                    "provider": "apple",
+                })),
+            ),
+            ("PATCH" | "DELETE", "/api/archives/{id}/aliases/{address}") => {
+                let address = if manages {
+                    self.throwaway_alias(a).await
+                } else {
+                    format!("{}@example.net", unique("someone-else"))
+                };
+                let path = format!("/api/archives/{a}/aliases/{address}");
+                if method == Method::DELETE {
+                    (path, Body::NoneAsJson)
+                } else {
+                    (path, Body::Json(json!({ "note": "changed" })))
+                }
+            }
+            ("POST", "/api/push/dav/{id}") => (
+                format!("/api/push/dav/{}", uuid::Uuid::now_v7().simple()),
+                Body::Octet(b"invented push payload".to_vec()),
+            ),
+            ("PUT", "/api/archives/{id}/default-identity") => (
+                format!("/api/archives/{a}/default-identity"),
+                Body::Json(json!({ "identity": s.identity })),
+            ),
+            ("POST", "/api/archives/{id}/drafts") => (
+                format!("/api/archives/{a}/drafts"),
+                Body::Json(json!({ "payload": { "subject": "Access draft" } })),
+            ),
+            ("POST", "/api/archives/{id}/identities") => (
+                format!("/api/archives/{a}/identities"),
+                Body::Json(json!({
+                    "address": format!("{}@example.com", unique("access-identity")),
+                    "transport": s.transport,
+                })),
+            ),
+            ("POST", "/api/archives/{id}/transports") => (
+                format!("/api/archives/{a}/transports"),
+                Body::Json(json!({
+                    "name": unique("Relay"),
+                    "kind": "smtp",
+                    "host": "127.0.0.1",
+                    "port": GREENMAIL_SMTP,
+                    "security": "none",
+                    "allowed_from": ["*@example.com"],
+                })),
+            ),
+            ("PUT", "/api/archives/{id}/alias-strategies") => (
+                format!("/api/archives/{a}/alias-strategies"),
+                Body::Json(json!({ "scope": "service", "key": "simplelogin", "strategy": null })),
+            ),
+            ("POST", "/api/drafts/{id}/reverse-alias") => {
+                let (draft, version) = self.throwaway_draft(a).await;
+                (
+                    format!("/api/drafts/{draft}/reverse-alias"),
+                    Body::Json(
+                        json!({ "version": version, "recipient": "access-recipient@example.org" }),
+                    ),
+                )
+            }
+            ("PUT", "/api/drafts/{id}") => {
+                let (draft, version) = self.throwaway_draft(a).await;
+                (
+                    format!("/api/drafts/{draft}"),
+                    Body::Json(json!({ "version": version, "payload": { "subject": "Changed" } })),
+                )
+            }
+            ("DELETE", "/api/drafts/{id}") => (
+                format!("/api/drafts/{}", self.throwaway_draft(a).await.0),
+                Body::NoneAsJson,
+            ),
+            ("POST", "/api/drafts/{id}/attachments") => (
+                format!(
+                    "/api/drafts/{}/attachments?name=notes.txt&content_type=text/plain",
+                    self.throwaway_draft(a).await.0
+                ),
+                Body::Octet(b"Bring the plans.".to_vec()),
+            ),
+            ("POST", "/api/drafts/{id}/send") => (
+                format!("/api/drafts/{}/send", self.throwaway_draft(a).await.0),
+                Body::Json(json!({})),
+            ),
+            ("DELETE", "/api/identities/{id}") => (
+                format!(
+                    "/api/identities/{}",
+                    self.throwaway_identity(a, &s.transport).await
+                ),
+                Body::NoneAsJson,
+            ),
+            ("PATCH", "/api/identities/{id}") => (
+                format!("/api/identities/{}", s.identity),
+                Body::Json(json!({ "name": "Access Sender" })),
+            ),
+            ("PUT", "/api/identities/{id}/users") => (
+                format!("/api/identities/{}/users", s.identity),
+                Body::Json(json!({ "users": [self.owner_id] })),
+            ),
+            ("POST", "/api/messages/{id}/changes") => (
+                format!("/api/messages/{}/changes", s.imap_message),
+                Body::Json(json!({ "op": { "kind": "flags", "add": [unique("$Access")] } })),
+            ),
+            ("POST", "/api/mail/changes") => (
+                "/api/mail/changes".to_owned(),
+                Body::Json(json!({
+                    "messages": [s.imap_message],
+                    "op": { "kind": "flags", "add": [unique("$Access")] },
+                })),
+            ),
+            ("POST", "/api/messages/{id}/restore") => (
+                format!("/api/messages/{m}/restore"),
+                Body::Json(json!({ "folder": s.imap_inbox })),
+            ),
+            ("POST", "/api/mail-changes/{id}/retry" | "/api/mail-changes/{id}/dismiss") => (
+                template.replace("{id}", &uuid::Uuid::now_v7().to_string()),
+                Body::Json(json!({})),
+            ),
+            ("PUT", "/api/accounts/{id}/retention") => (
+                format!("/api/accounts/{}/retention", s.imap_account),
+                Body::Json(json!({ "days": null })),
+            ),
+            ("POST", "/api/messages/{id}/reply") => (
+                format!("/api/messages/{m}/reply"),
+                Body::Json(json!({ "kind": "sender" })),
+            ),
+            ("POST", "/api/messages/{id}/forward") => (
+                format!("/api/messages/{m}/forward"),
+                Body::Json(json!({ "kind": "inline" })),
+            ),
+            ("POST", "/api/outbox/{id}/cancel" | "/api/outbox/{id}/undo") => (
+                template.replace("{id}", &self.queued(a).await),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/outbox/{id}/retry" | "/api/outbox/{id}/resend") => (
+                template.replace("{id}", &self.cancelled(a).await),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/transports") => (
+                "/api/transports".to_owned(),
+                Body::Json(json!({
+                    "name": unique("Shared relay"),
+                    "kind": "smtp",
+                    "host": "127.0.0.1",
+                    "port": GREENMAIL_SMTP,
+                    "security": "none",
+                    "allowed_from": ["*@example.com"],
+                })),
+            ),
+            ("DELETE", "/api/transports/{id}") => (
+                format!(
+                    "/api/transports/{}",
+                    greenmail_transport(&self.owner, a).await
+                ),
+                Body::NoneAsJson,
+            ),
+            ("PATCH", "/api/transports/{id}") => (
+                format!("/api/transports/{}", s.transport),
+                Body::Json(json!({ "limits": { "per_hour": 1000 } })),
+            ),
+            ("POST", "/api/transports/{id}/check") => (
+                format!("/api/transports/{}/check", s.transport),
+                Body::Json(json!({})),
+            ),
+            ("PUT", "/api/transports/{id}/grants") => (
+                format!("/api/transports/{}/grants", self.instance_transport),
+                Body::Json(json!({ "archives": [] })),
+            ),
+            ("PUT" | "DELETE", "/api/users/{id}/grants/{archive}") => {
+                let target = self.throwaway_user().await;
+                let path = format!("/api/users/{target}/grants/{a}");
+                if method == Method::PUT {
+                    (path, Body::Json(json!({ "role": "reader" })))
+                } else {
+                    (path, Body::NoneAsJson)
+                }
+            }
             (method, template) => panic!("no request for {method} {template}"),
         }
+    }
+
+    async fn throwaway_alias(&self, archive: &str) -> String {
+        let address = format!("{}@example.net", unique("doomed-alias"));
+        self.owner
+            .post(
+                &format!("/api/archives/{archive}/aliases"),
+                json!({ "address": address, "provider": "apple" }),
+            )
+            .await
+            .ok();
+        address
+    }
+
+    async fn throwaway_draft(&self, archive: &str) -> (String, u64) {
+        let draft = self
+            .owner
+            .post(
+                &format!("/api/archives/{archive}/drafts"),
+                json!({ "payload": {
+                    "to": [{ "address": "access-recipient@example.org" }],
+                    "subject": unique("Access plans"),
+                    "text": "Shall we meet on Thursday?",
+                } }),
+            )
+            .await
+            .ok();
+        (
+            id(&draft),
+            draft["version"].as_u64().expect("a draft version"),
+        )
+    }
+
+    async fn throwaway_identity(&self, archive: &str, transport: &str) -> String {
+        let created = self
+            .owner
+            .post(
+                &format!("/api/archives/{archive}/identities"),
+                json!({
+                    "address": format!("{}@example.com", unique("doomed-identity")),
+                    "transport": transport,
+                }),
+            )
+            .await
+            .ok();
+        id(&created)
+    }
+
+    /// A message the owner queued; it waits out the undo window.
+    async fn queued(&self, archive: &str) -> String {
+        let (draft, _) = self.throwaway_draft(archive).await;
+        let entry = self
+            .owner
+            .post(&format!("/api/drafts/{draft}/send"), json!({}))
+            .await
+            .ok();
+        assert_eq!(entry["state"], "queued", "{entry}");
+        id(&entry)
+    }
+
+    async fn cancelled(&self, archive: &str) -> String {
+        let entry = self.queued(archive).await;
+        self.owner
+            .post(&format!("/api/outbox/{entry}/cancel"), json!({}))
+            .await
+            .ok();
+        entry
     }
 
     async fn throwaway_webhook(&self) -> String {
@@ -784,6 +1218,16 @@ type Expected = [u16; 5];
 const READ: Expected = [200, 200, 200, 404, 401];
 const MANAGE_READ: Expected = [200, 200, 403, 403, 401];
 const PUBLIC: Expected = [200, 200, 200, 200, 200];
+const MANAGE_ONLY: Expected = [200, 200, 403, 403, 401];
+const MANAGE_WRITE: Expected = [204, 204, 403, 403, 401];
+/// Needs a `sender` grant: the owner has every right, an admin without a grant and a reader
+/// member are refused.
+const SEND: Expected = [204, 403, 403, 404, 401];
+/// Needs an `editor` grant and the account's capability: the owner has every right, an admin
+/// without a grant and a reader member are refused.
+const WRITE_MAIL: Expected = [200, 403, 403, 404, 401];
+/// The owner's own draft: nobody else sees it.
+const OWN: Expected = [200, 404, 404, 404, 401];
 
 fn expectations() -> BTreeMap<(String, String), Expected> {
     let rows: &[(&str, &str, Expected)] = &[
@@ -856,6 +1300,11 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
         ("GET", "/api/items/{id}", READ),
         ("GET", "/api/items/{id}/versions/{number}/raw", READ),
         ("PATCH", "/api/me", [200, 200, 200, 200, 401]),
+        ("GET", "/api/devices", [200, 200, 200, 200, 401]),
+        ("GET", "/api/devices/setup", [200, 200, 200, 200, 401]),
+        ("POST", "/api/devices", [201, 201, 201, 201, 401]),
+        ("PATCH", "/api/devices/{id}", [404, 404, 404, 404, 401]),
+        ("DELETE", "/api/devices/{id}", [404, 404, 404, 404, 401]),
         ("POST", "/api/me/password", [200, 200, 200, 200, 401]),
         ("GET", "/api/messages/{id}", READ),
         ("GET", "/api/messages/{id}/attachments/{ordinal}", READ),
@@ -918,6 +1367,198 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
         ("POST", "/api/users", [201, 201, 403, 403, 401]),
         ("PATCH", "/api/users/{id}", [200, 200, 403, 403, 401]),
         ("DELETE", "/api/users/{id}", [204, 204, 403, 403, 401]),
+        ("GET", "/api/accounts/{id}/capabilities", MANAGE_ONLY),
+        ("PUT", "/api/accounts/{id}/capabilities", MANAGE_ONLY),
+        ("GET", "/api/alias-providers", MANAGE_READ),
+        (
+            "DELETE",
+            "/api/alias-services/{id}",
+            [404, 404, 403, 403, 401],
+        ),
+        (
+            "PATCH",
+            "/api/alias-services/{id}",
+            [404, 404, 403, 403, 401],
+        ),
+        (
+            "POST",
+            "/api/alias-services/{id}/aliases",
+            [404, 404, 403, 403, 401],
+        ),
+        (
+            "GET",
+            "/api/alias-services/{id}/options",
+            [404, 404, 403, 403, 401],
+        ),
+        (
+            "POST",
+            "/api/alias-services/{id}/sync",
+            [404, 404, 403, 403, 401],
+        ),
+        (
+            "POST",
+            "/api/archives/{id}/alias-services",
+            [400, 400, 403, 403, 401],
+        ),
+        ("GET", "/api/archives/{id}/aliases", READ),
+        ("GET", "/api/archives/{id}/alias-strategies", READ),
+        (
+            "PUT",
+            "/api/archives/{id}/alias-strategies",
+            [200, 200, 403, 403, 401],
+        ),
+        (
+            "POST",
+            "/api/archives/{id}/aliases",
+            [201, 201, 403, 403, 401],
+        ),
+        (
+            "PATCH",
+            "/api/archives/{id}/aliases/{address}",
+            [200, 200, 403, 403, 401],
+        ),
+        (
+            "DELETE",
+            "/api/archives/{id}/aliases/{address}",
+            [204, 204, 403, 403, 401],
+        ),
+        ("POST", "/api/push/dav/{id}", [410, 410, 410, 410, 410]),
+        ("GET", "/api/audit", [200, 403, 403, 403, 401]),
+        ("PUT", "/api/users/{id}/grants/{archive}", MANAGE_WRITE),
+        ("DELETE", "/api/users/{id}/grants/{archive}", MANAGE_WRITE),
+        ("GET", "/api/transports", MANAGE_READ),
+        ("POST", "/api/transports", [201, 201, 403, 403, 401]),
+        (
+            "PUT",
+            "/api/transports/{id}/grants",
+            [200, 200, 404, 404, 401],
+        ),
+        ("GET", "/api/archives/{id}/transports", READ),
+        (
+            "POST",
+            "/api/archives/{id}/transports",
+            [201, 201, 403, 404, 401],
+        ),
+        ("PATCH", "/api/transports/{id}", [200, 200, 403, 404, 401]),
+        ("DELETE", "/api/transports/{id}", [204, 204, 403, 404, 401]),
+        (
+            "POST",
+            "/api/transports/{id}/check",
+            [200, 200, 403, 404, 401],
+        ),
+        ("GET", "/api/archives/{id}/identities", READ),
+        (
+            "POST",
+            "/api/archives/{id}/identities",
+            [201, 201, 403, 404, 401],
+        ),
+        (
+            "GET",
+            "/api/archives/{id}/identities/suggestions",
+            [200, 200, 403, 404, 401],
+        ),
+        ("PATCH", "/api/identities/{id}", [200, 200, 403, 404, 401]),
+        ("DELETE", "/api/identities/{id}", [204, 204, 403, 404, 401]),
+        (
+            "PUT",
+            "/api/identities/{id}/users",
+            [200, 200, 403, 404, 401],
+        ),
+        ("PUT", "/api/archives/{id}/default-identity", SEND),
+        ("GET", "/api/archives/{id}/drafts", READ),
+        (
+            "POST",
+            "/api/archives/{id}/drafts",
+            [201, 403, 403, 404, 401],
+        ),
+        ("GET", "/api/drafts/{id}", OWN),
+        ("PUT", "/api/drafts/{id}", OWN),
+        ("DELETE", "/api/drafts/{id}", [204, 404, 404, 404, 401]),
+        ("GET", "/api/drafts/{id}/versions", OWN),
+        ("POST", "/api/drafts/{id}/attachments", OWN),
+        ("POST", "/api/drafts/{id}/send", [201, 404, 404, 404, 401]),
+        (
+            "POST",
+            "/api/drafts/{id}/reverse-alias",
+            [400, 404, 404, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/messages/{id}/reply",
+            [201, 403, 403, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/messages/{id}/forward",
+            [201, 403, 403, 404, 401],
+        ),
+        ("GET", "/api/archives/{id}/outbox", READ),
+        ("GET", "/api/outbox/{id}", [200, 200, 404, 404, 401]),
+        ("POST", "/api/outbox/{id}/undo", [200, 403, 404, 404, 401]),
+        ("POST", "/api/outbox/{id}/cancel", [200, 200, 404, 404, 401]),
+        ("POST", "/api/outbox/{id}/retry", [409, 403, 404, 404, 401]),
+        ("POST", "/api/outbox/{id}/resend", [201, 403, 404, 404, 401]),
+        ("POST", "/api/messages/{id}/changes", WRITE_MAIL),
+        ("POST", "/api/mail/changes", WRITE_MAIL),
+        (
+            "POST",
+            "/api/messages/{id}/restore",
+            [403, 403, 403, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/mail-changes/{id}/retry",
+            [404, 404, 404, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/mail-changes/{id}/dismiss",
+            [404, 404, 404, 404, 401],
+        ),
+        ("GET", "/api/accounts/{id}/mail-changes", READ),
+        (
+            "POST",
+            "/api/collections/{id}/items",
+            [403, 403, 403, 404, 401],
+        ),
+        ("GET", "/api/collections/{id}/write-mode", READ),
+        (
+            "PUT",
+            "/api/collections/{id}/write-mode",
+            [200, 200, 403, 404, 401],
+        ),
+        ("GET", "/api/items/{id}/edit", READ),
+        ("PUT", "/api/items/{id}/content", [403, 403, 403, 404, 401]),
+        ("DELETE", "/api/items/{id}", [403, 403, 403, 404, 401]),
+        // The seeded event comes from an imported file and the seeded message holds no
+        // invitation, so every reader learns there is nothing to answer.
+        (
+            "GET",
+            "/api/collections/{id}/organizing",
+            [422, 422, 422, 404, 401],
+        ),
+        ("GET", "/api/items/{id}/rsvp", [422, 422, 422, 404, 401]),
+        ("GET", "/api/messages/{id}/rsvp", [422, 422, 422, 404, 401]),
+        ("POST", "/api/items/{id}/rsvp", [422, 422, 422, 404, 401]),
+        ("POST", "/api/messages/{id}/rsvp", [422, 422, 422, 404, 401]),
+        ("GET", "/api/pim/changes", [200, 200, 200, 200, 401]),
+        (
+            "POST",
+            "/api/pim/changes/{id}/resolve",
+            [404, 404, 404, 404, 401],
+        ),
+        (
+            "GET",
+            "/api/pim/changes/{id}/diff",
+            [404, 404, 404, 404, 401],
+        ),
+        ("PUT", "/api/people/{id}/card", [409, 409, 409, 404, 401]),
+        ("GET", "/api/accounts/{id}/retention", READ),
+        (
+            "PUT",
+            "/api/accounts/{id}/retention",
+            [200, 200, 403, 404, 401],
+        ),
     ];
     rows.iter()
         .map(|(m, p, e)| ((m.to_string(), p.to_string()), *e))
@@ -977,6 +1618,7 @@ async fn every_route_answers_each_role_as_documented() {
     let mut undeclared = Vec::new();
     let mut asked = 0;
     let ends_sessions = |p: &str| p == "/api/logout" || p == "/api/me/password";
+    let needs_recent_sign_in = |p: &str| p == "/api/devices";
     let ordered: Vec<_> = expected
         .iter()
         .filter(|((_, p), _)| !ends_sessions(p))
@@ -986,7 +1628,9 @@ async fn every_route_answers_each_role_as_documented() {
         let method: Method = method.parse().expect("a method");
         for (index, (who, client)) in clients.iter().enumerate() {
             let fresh;
-            let client = if ends_sessions(template) && *who != Who::Anonymous {
+            let client = if (ends_sessions(template) || needs_recent_sign_in(template))
+                && *who != Who::Anonymous
+            {
                 fresh = Client::new(&base, *who).await;
                 &fresh
             } else {

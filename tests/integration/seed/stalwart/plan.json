@@ -41,6 +41,12 @@
             "bind": { "[::]:8080": true },
             "protocol": "http",
             "useTls": false
+          },
+          "submission": {
+            "name": "submission",
+            "bind": { "[::]:587": true },
+            "protocol": "smtp",
+            "tlsImplicit": false
           }
         }
       },

@@ -28,6 +28,50 @@ pub(crate) fn decode(name: &str) -> String {
     out
 }
 
+/// Encodes a mailbox name: printable ASCII stays, `&` becomes `&-`, anything else goes in
+/// `&...-` as modified base64 of UTF-16.
+pub(crate) fn encode(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut run: Vec<u16> = Vec::new();
+    for c in name.chars() {
+        if (' '..='~').contains(&c) {
+            flush(&mut out, &mut run);
+            if c == '&' {
+                out.push_str("&-");
+            } else {
+                out.push(c);
+            }
+        } else {
+            let mut units = [0u16; 2];
+            run.extend_from_slice(c.encode_utf16(&mut units));
+        }
+    }
+    flush(&mut out, &mut run);
+    out
+}
+
+fn flush(out: &mut String, run: &mut Vec<u16>) {
+    if run.is_empty() {
+        return;
+    }
+    out.push('&');
+    let mut bits = 0u32;
+    let mut count = 0;
+    for byte in run.drain(..).flat_map(u16::to_be_bytes) {
+        bits = (bits << 8) | u32::from(byte);
+        count += 8;
+        while count >= 6 {
+            count -= 6;
+            out.push(char::from(ALPHABET[((bits >> count) & 63) as usize]));
+        }
+        bits &= (1 << count) - 1;
+    }
+    if count > 0 {
+        out.push(char::from(ALPHABET[((bits << (6 - count)) & 63) as usize]));
+    }
+    out.push('-');
+}
+
 fn decode_utf16(encoded: &str) -> Option<String> {
     let mut bits = 0u32;
     let mut count = 0;
@@ -56,7 +100,24 @@ fn decode_utf16(encoded: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::decode;
+    use super::{decode, encode};
+
+    #[test]
+    fn encodes_mailbox_names() {
+        for name in [
+            "INBOX",
+            "Tom & Jerry",
+            "Отправленные",
+            "日本語",
+            "Projects/Été",
+            "😀 ok",
+        ] {
+            assert_eq!(decode(&encode(name)), name);
+        }
+        assert_eq!(encode("Отправленные"), "&BB4EQgQ,BEAEMAQyBDsENQQ9BD0ESwQ1-");
+        assert_eq!(encode("Tom & Jerry"), "Tom &- Jerry");
+        assert_eq!(encode("Projects/Été"), "Projects/&AMk-t&AOk-");
+    }
 
     #[test]
     fn decodes_mailbox_names() {

@@ -10,7 +10,7 @@ let ingest = Ingest::new(blobs, store, index) // Arc<dyn BlobStore>, Arc<dyn Sto
     .with_alias_detectors(detectors) // Vec<Arc<dyn AliasDetector>>, optional
     .with_insights(runner) // Arc<holtmail_insights::Runner>, optional
     .with_categories(deriver, policy); // Arc<holtmail_insights::Deriver>, CategoryPolicy, optional
-let done = ingest.ingest(archive, raw, &Placement { folder, uid, flags, labels, received_at }).await?;
+let done = ingest.ingest(archive, raw, &Placement { folder, uid, flags, labels, received_at, live }).await?;
 ingest.commit().await?; // once per batch
 ingest.reindex(message).await?; // after folders, flags or labels change
 ingest.refresh_alias(message).await?; // detect the alias again; true when it changed
@@ -20,6 +20,10 @@ ingest.derive_categories(message).await?; // stage B again in place; true when a
 ```
 
 `Ingested { message_id, thread_id, created }`; `created` is `false` when the archive already had these bytes.
+
+`Placement::live` marks a message that arrived while its folder was followed (a watch, an incremental poll, an SMTP delivery), not a backfill, an import or a rebuild. Ingest itself does nothing with it; observers do.
+
+`Ingest::with_observer(observer)` adds an `Observer`, told about every message `ingest` adds (`added(archive, message, raw, parsed, placement)`), after it is stored, its alias recorded and its location and labels set, before categories and the index. Bytes the archive already had are not reported. Observers run in the order they were added and handle their own errors, so they never fail ingest. `apps/server` uses one to match provider copies of sent mail and bounces against the outbox.
 
 ## What `ingest` does
 
@@ -40,12 +44,13 @@ Ingesting the same bytes again only adds or updates the location and refreshes t
 let done = ingest.ingest_item(IncomingItem { collection, remote_id, kind, format, raw, etag, seen_at }).await?;
 ingest.rebuild_item(item).await?; // the item's PimIndex again: latest raw version (read in its stored format), or every version merged for items from mail; then derive_item
 ingest.derive_item(item).await?;  // its calendar instances and search document from the stored PimIndex
+ingest.derive_served(item, Some((&bytes, format))).await?; // the same from the bytes an open change serves; None: rebuild_item
 let index = holtmail_ingest::pim_index(&normalized, version); // what the store lists items by
 ```
 
 `ingest_item` reads the raw object in its `format` (`holtmail_pim::Format`: vCard, iCalendar, or the JSON of Graph or JMAP, stored as the version's content type) with [`holtmail-pim`](../../pim/docs/README.md), stores a picture embedded in a vCard as a blob of its own (the same picture in many cards is one blob), stores the raw bytes unchanged, then calls `PimStore::record_version` with the normalized fields. A version is added only when the bytes differ from the item's latest; bytes that cannot be read are archived as an unreadable version. It returns the store's `RecordedVersion`. The item's key is the vCard or iCalendar `UID`.
 
-Whenever an item's normalized fields change (a new version, `rebuild_item`, a new version from mail), `derive_item(item)` rebuilds what is derived from them: its part of the calendar (`holtmail_calendar::series` stored through `CalendarStore::replace_series`: its group of copies by `UID`, rank fields and instances, see [`holtmail-calendar`](../../calendar/docs/README.md)) and its search document (`item_document(summary)`: events and contacts as `ItemDocument`s, `put_items`; tasks, other items and unreadable ones are removed with `remove_items`). Like messages, item documents become searchable after `Ingest::commit`; `holtmail-pim-sync`, the server's import and `reindex` commit after their items. `MAIL_COLLECTION` now lives in `holtmail-calendar` and is re-exported here.
+Whenever an item's normalized fields change (a new version, `rebuild_item`, a new version from mail), `derive_item(item)` rebuilds what is derived from them: its part of the calendar (`holtmail_calendar::series` stored through `CalendarStore::replace_series`: its group of copies by `UID`, rank fields and instances, see [`holtmail-calendar`](../../calendar/docs/README.md)) and its search document (`item_document(summary)`: events and contacts as `ItemDocument`s, `put_items`; tasks, other items and unreadable ones are removed with `remove_items`). Like messages, item documents become searchable after `Ingest::commit`; `holtmail-pim-sync`, the server's import and `reindex` commit after their items. `derive_served(item, served)` makes derived data follow what is served for an item with an open edit (CLIENTS.md, "Derived data follows what is served"): the `PimIndex` is read from the served bytes and numbered as the item's latest version, so a newer upstream version still replaces it, then `derive_item`; with `None` it is `rebuild_item`. Archived versions never change. `blobs()` hands out the blob store, for callers that read versions next to ingest. `MAIL_COLLECTION` now lives in `holtmail-calendar` and is re-exported here.
 
 ## Invitations in mail
 

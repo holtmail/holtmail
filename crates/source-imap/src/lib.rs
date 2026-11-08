@@ -1,9 +1,10 @@
-//! A [`Source`] for IMAP servers.
+//! A [`Source`] and a [`MailboxWriter`](holtmail_source::MailboxWriter) for IMAP servers.
 
 mod labels;
 mod stream;
 mod utf7;
 mod watch;
+mod writer;
 
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -22,6 +23,7 @@ use holtmail_source::{
 use holtmail_store::FolderRole;
 use serde::{Deserialize, Serialize};
 use stream::ImapStream;
+pub use writer::ImapWriter;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long one `IDLE` lasts before it is renewed. RFC 2177 allows 29 minutes; NAT gateways and
@@ -76,6 +78,7 @@ impl ImapSettings {
 }
 
 /// An IMAP account.
+#[derive(Clone)]
 pub struct ImapSource {
     settings: ImapSettings,
     credentials: Credentials,
@@ -143,6 +146,9 @@ struct SignedIn {
     gmail: bool,
     idle: bool,
     notify: bool,
+    condstore: bool,
+    uidplus: bool,
+    moves: bool,
 }
 
 impl ImapSource {
@@ -216,6 +222,9 @@ impl ImapSource {
             gmail,
             idle: capabilities.has_str("IDLE"),
             notify: capabilities.has_str("NOTIFY"),
+            condstore,
+            uidplus: capabilities.has_str("UIDPLUS"),
+            moves: capabilities.has_str("MOVE"),
         })
     }
 }
@@ -243,6 +252,7 @@ impl Source for ImapSource {
             gmail,
             idle,
             notify,
+            ..
         } = self.sign_in().await?;
         if !idle {
             let _ = timed(self.timeout, session.logout()).await;
@@ -612,3 +622,5 @@ fn convert(error: async_imap::error::Error) -> SourceError {
 mod tests;
 #[cfg(test)]
 mod tests_watch;
+#[cfg(test)]
+mod tests_writer;

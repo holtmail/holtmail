@@ -19,6 +19,7 @@ holtmail-insights.workspace = true
 holtmail-mime.workspace = true
 holtmail-pim.workspace = true
 holtmail-store.workspace = true
+async-trait.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -27,7 +28,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 holtmail-alias-simplelogin.workspace = true
-async-trait.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-category.workspace = true
 holtmail-category-signals.workspace = true

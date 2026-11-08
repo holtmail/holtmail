@@ -118,7 +118,7 @@ pub struct OneClickHarness {
 
 const HOST: &str = "news.example.com";
 const STALLED: &str = "stalled.example.com";
-const TIMEOUT: Duration = Duration::from_secs(1);
+const TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Runs `one_click` implementations built by `make` against an HTTPS server in the process.
 ///

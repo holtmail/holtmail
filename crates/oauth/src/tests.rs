@@ -332,3 +332,101 @@ async fn google_contacts_and_calendars_add_dav_scopes() {
         "Microsoft contacts and calendars come through Graph"
     );
 }
+
+#[test]
+fn asks_microsoft_for_sending_and_google_for_nothing_more() {
+    let imap = Client::thunderbird(Provider::Microsoft);
+    let sending = imap.with_send(Access::Imap);
+    assert!(sending.scope.contains("IMAP.AccessAsUser.All"));
+    assert!(
+        sending
+            .scope
+            .ends_with(" https://outlook.office.com/SMTP.Send")
+    );
+    assert_eq!(
+        sending.with_send(Access::Imap),
+        sending,
+        "a scope was added twice"
+    );
+    let graph = imap
+        .for_access(Access::GraphPim)
+        .unwrap()
+        .with_send(Access::GraphPim);
+    assert!(graph.scope.contains("Calendars.Read"));
+    assert!(
+        graph
+            .scope
+            .ends_with(" https://graph.microsoft.com/Mail.Send")
+    );
+    let authorize = graph.authorize(None).unwrap();
+    assert!(query(&authorize.url)["scope"].contains("Mail.Send"));
+
+    let google = Client::thunderbird(Provider::Google);
+    assert_eq!(google.with_send(Access::Imap), google);
+    assert!(Provider::Google.sends_without_consent(Access::ImapDav));
+    assert!(!Provider::Microsoft.sends_without_consent(Access::Imap));
+    assert_eq!(Provider::Google.send_scope(Access::Imap), None);
+}
+
+#[test]
+fn asks_microsoft_graph_for_writing_and_nobody_else() {
+    let graph = Client::thunderbird(Provider::Microsoft)
+        .for_access(Access::Graph)
+        .unwrap();
+    let writing = graph.with_write(Access::Graph).with_send(Access::Graph);
+    assert!(
+        writing
+            .scope
+            .contains(" https://graph.microsoft.com/Mail.ReadWrite")
+    );
+    assert!(
+        writing
+            .scope
+            .ends_with(" https://graph.microsoft.com/Mail.Send")
+    );
+    assert_eq!(writing.with_write(Access::Graph), writing);
+    let imap = Client::thunderbird(Provider::Microsoft);
+    assert_eq!(imap.with_write(Access::Imap), imap);
+    assert_eq!(Provider::Google.write_scope(Access::Imap), None);
+    assert_eq!(
+        Provider::Microsoft.write_scope(Access::GraphPim),
+        Some("https://graph.microsoft.com/Mail.ReadWrite")
+    );
+}
+
+#[test]
+fn asks_microsoft_graph_for_writing_contacts_and_calendars_only_with_them() {
+    let pim = Client::thunderbird(Provider::Microsoft)
+        .for_access(Access::GraphPim)
+        .unwrap();
+    let writing = pim.with_pim_write(Access::GraphPim);
+    assert!(
+        writing
+            .scope
+            .contains("https://graph.microsoft.com/Contacts.ReadWrite")
+    );
+    assert!(
+        writing
+            .scope
+            .contains("https://graph.microsoft.com/Calendars.ReadWrite")
+    );
+    assert_eq!(writing.with_pim_write(Access::GraphPim), writing);
+    let graph = Client::thunderbird(Provider::Microsoft)
+        .for_access(Access::Graph)
+        .unwrap();
+    assert_eq!(graph.with_pim_write(Access::Graph), graph);
+    let google = Client::own(Provider::Google, "own-id", None, "http://localhost/oauth")
+        .for_access(Access::ImapDav)
+        .unwrap();
+    assert!(google.scope.contains("auth/calendar.readonly"));
+    let writing = google.with_pim_write(Access::ImapDav);
+    assert!(
+        writing
+            .scope
+            .split(' ')
+            .any(|s| s == "https://www.googleapis.com/auth/calendar")
+    );
+    assert!(!writing.scope.contains("calendar.readonly"));
+    assert!(writing.scope.contains("auth/carddav"));
+    assert_eq!(writing.with_pim_write(Access::ImapDav), writing);
+}

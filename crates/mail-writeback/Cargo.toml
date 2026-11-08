@@ -1,0 +1,33 @@
+[package]
+name = "holtmail-mail-writeback"
+description = "Sends held changes to messages on their servers: flags, labels, moves, deletes and appends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-access.workspace = true
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-source.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-source = { workspace = true, features = ["testing"] }
+holtmail-store = { workspace = true, features = ["testing"] }
+holtmail-store-sqlite.workspace = true
+bytes.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

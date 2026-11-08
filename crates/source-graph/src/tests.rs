@@ -5,7 +5,10 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, patch, post};
+use base64::Engine;
+use holtmail_source::testing::{MailboxProbe, Probed, WriteFolders, writer_conformance};
+use holtmail_source::{Flag, MailboxWriter};
 use serde_json::json;
 
 use super::*;
@@ -42,6 +45,8 @@ struct Fake {
     throttle: u32,
     throttled: u32,
     requests: Vec<String>,
+    clock: i64,
+    next_id: u64,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -49,6 +54,43 @@ type Shared = Arc<Mutex<Fake>>;
 impl Fake {
     fn base(&self) -> String {
         format!("http://127.0.0.1:{}/v1.0", self.port)
+    }
+
+    fn folder_id(&self, id_or_name: &str) -> Option<String> {
+        self.folders
+            .iter()
+            .find(|f| f.id == id_or_name || f.well_known.as_deref() == Some(id_or_name))
+            .map(|f| f.id.clone())
+    }
+
+    fn path_id(&self, path: &str) -> Option<String> {
+        let mut parent: Option<String> = None;
+        for name in path.split('/') {
+            parent = Some(
+                self.folders
+                    .iter()
+                    .find(|f| f.name == name && f.parent == parent && !f.search)?
+                    .id
+                    .clone(),
+            );
+        }
+        parent
+    }
+
+    fn arrive(&mut self, folder: &str, raw: Vec<u8>) -> FakeMessage {
+        self.clock += 1;
+        self.next_id += 1;
+        let message = FakeMessage {
+            id: format!("AAMkNew-{}", self.next_id),
+            folder: folder.to_owned(),
+            received: time::format_utc(self.clock),
+            read: false,
+            flagged: false,
+            draft: false,
+            raw,
+        };
+        self.bump(folder);
+        message
     }
 
     fn bump(&mut self, folder: &str) {
@@ -77,6 +119,16 @@ impl Fake {
         }
         out
     }
+}
+
+fn message_json(m: &FakeMessage) -> Value {
+    json!({
+        "id": m.id,
+        "receivedDateTime": m.received,
+        "isRead": m.read,
+        "isDraft": m.draft,
+        "flag": { "flagStatus": if m.flagged { "flagged" } else { "notFlagged" } },
+    })
 }
 
 fn gate(fake: &Shared, headers: &HeaderMap, path: &str) -> Option<Response> {
@@ -231,15 +283,7 @@ async fn delta(
         .messages
         .iter()
         .filter(|m| m.folder == folder)
-        .map(|m| {
-            json!({
-                "id": m.id,
-                "receivedDateTime": m.received,
-                "isRead": m.read,
-                "isDraft": m.draft,
-                "flag": { "flagStatus": if m.flagged { "flagged" } else { "notFlagged" } },
-            })
-        })
+        .map(message_json)
         .collect();
     items.push(json!({ "id": "gone-before", "@removed": { "reason": "deleted" } }));
     let mut answer = paged(&fake, items, skip(&query), |n| {
@@ -260,6 +304,160 @@ async fn value(State(fake): State<Shared>, headers: HeaderMap, Path(id): Path<St
         Some(m) => ([("content-type", "message/rfc822")], m.raw.clone()).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+fn within(filter: &str, received: &str) -> bool {
+    let at = time::parse_utc(received).unwrap();
+    filter.split(" and ").all(|clause| {
+        let mut parts = clause.split(' ');
+        assert_eq!(parts.next(), Some("receivedDateTime"), "{filter}");
+        let op = parts.next().unwrap();
+        let bound = time::parse_utc(parts.next().unwrap()).unwrap();
+        match op {
+            "ge" => at >= bound,
+            "lt" => at < bound,
+            other => panic!("unexpected operator {other}"),
+        }
+    })
+}
+
+async fn messages(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(folder): Path<String>,
+    Query(query): Query<Map<String, String>>,
+) -> Response {
+    if let Some(refused) = gate(&fake, &headers, "messages") {
+        return refused;
+    }
+    let fake = fake.lock().unwrap();
+    let Some(folder) = fake.folder_id(&folder) else {
+        return (StatusCode::NOT_FOUND, "ErrorItemNotFound").into_response();
+    };
+    assert_eq!(
+        query.get("$select").map(String::as_str),
+        Some(writer::WRITE_FIELDS)
+    );
+    let filter = query.get("$filter").expect("a lookup is filtered").clone();
+    let items: Vec<Value> = fake
+        .messages
+        .iter()
+        .filter(|m| m.folder == folder && within(&filter, &m.received))
+        .map(message_json)
+        .collect();
+    let base = format!("{}/me/mailFolders/{folder}/messages", fake.base());
+    axum::Json(paged(&fake, items, skip(&query), |n| {
+        Url::parse_with_params(
+            &base,
+            [
+                ("$filter", filter.as_str()),
+                ("$select", writer::WRITE_FIELDS),
+                ("$skip", &n.to_string()),
+            ],
+        )
+        .unwrap()
+        .to_string()
+    }))
+    .into_response()
+}
+
+async fn upload(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(folder): Path<String>,
+    body: String,
+) -> Response {
+    if let Some(refused) = gate(&fake, &headers, "upload") {
+        return refused;
+    }
+    assert_eq!(
+        headers.get("content-type").and_then(|v| v.to_str().ok()),
+        Some("text/plain")
+    );
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(body.trim())
+        .expect("the MIME body is base64");
+    let mut fake = fake.lock().unwrap();
+    let Some(folder) = fake.folder_id(&folder) else {
+        return (StatusCode::NOT_FOUND, "ErrorItemNotFound").into_response();
+    };
+    let mut message = fake.arrive(&folder, raw);
+    message.read = true;
+    message.draft = true;
+    let out = message_json(&message);
+    fake.messages.push(message);
+    (StatusCode::CREATED, axum::Json(out)).into_response()
+}
+
+async fn update(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    axum::Json(body): axum::Json<Value>,
+) -> Response {
+    if let Some(refused) = gate(&fake, &headers, "patch") {
+        return refused;
+    }
+    let mut fake = fake.lock().unwrap();
+    let Some(message) = fake.messages.iter_mut().find(|m| m.id == id) else {
+        return (StatusCode::NOT_FOUND, "ErrorItemNotFound").into_response();
+    };
+    for key in body.as_object().unwrap().keys() {
+        assert!(
+            key == "isRead" || key == "flag",
+            "unexpected patch of {key}"
+        );
+    }
+    if let Some(read) = body.get("isRead").and_then(Value::as_bool) {
+        message.read = read;
+    }
+    if let Some(status) = body.pointer("/flag/flagStatus").and_then(Value::as_str) {
+        message.flagged = status == "flagged";
+    }
+    let out = message_json(message);
+    let folder = message.folder.clone();
+    fake.bump(&folder);
+    axum::Json(out).into_response()
+}
+
+async fn move_message(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    axum::Json(body): axum::Json<Value>,
+) -> Response {
+    if let Some(refused) = gate(&fake, &headers, "move") {
+        return refused;
+    }
+    let mut fake = fake.lock().unwrap();
+    let Some(target) = body
+        .get("destinationId")
+        .and_then(Value::as_str)
+        .and_then(|d| fake.folder_id(d))
+    else {
+        return (StatusCode::BAD_REQUEST, "ErrorInvalidIdMalformed").into_response();
+    };
+    let Some(message) = fake.messages.iter_mut().find(|m| m.id == id) else {
+        return (StatusCode::NOT_FOUND, "ErrorItemNotFound").into_response();
+    };
+    let from = std::mem::replace(&mut message.folder, target.clone());
+    let out = message_json(message);
+    fake.bump(&from);
+    fake.bump(&target);
+    (StatusCode::CREATED, axum::Json(out)).into_response()
+}
+
+async fn purge(State(fake): State<Shared>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+    if let Some(refused) = gate(&fake, &headers, "purge") {
+        return refused;
+    }
+    let mut fake = fake.lock().unwrap();
+    let Some(at) = fake.messages.iter().position(|m| m.id == id) else {
+        return (StatusCode::NOT_FOUND, "ErrorItemNotFound").into_response();
+    };
+    let message = fake.messages.remove(at);
+    fake.bump(&message.folder);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 struct Server {
@@ -288,6 +486,7 @@ fn folder_of(id: &str, name: &str, parent: Option<&str>, well_known: Option<&str
 async fn server() -> Server {
     let fake: Shared = Arc::new(Mutex::new(Fake {
         page: 2,
+        clock: 1_790_000_000,
         ..Fake::default()
     }));
     {
@@ -335,6 +534,13 @@ async fn server() -> Server {
         .route("/v1.0/me/mailFolders/{id}/childFolders", get(child_folders))
         .route("/v1.0/me/mailFolders/{id}/messages/delta", get(delta))
         .route("/v1.0/me/messages/{id}/$value", get(value))
+        .route(
+            "/v1.0/me/mailFolders/{id}/messages",
+            get(messages).post(upload),
+        )
+        .route("/v1.0/me/messages/{id}", patch(update))
+        .route("/v1.0/me/messages/{id}/move", post(move_message))
+        .route("/v1.0/me/messages/{id}/permanentDelete", post(purge))
         .with_state(fake.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -355,6 +561,55 @@ impl Server {
 
     fn requests(&self) -> usize {
         self.fake.lock().unwrap().requests.len()
+    }
+
+    fn writer(&self) -> GraphWriter {
+        self.source().writer()
+    }
+
+    fn message(&self, path: &str, uid_of: u64) -> FakeMessage {
+        let fake = self.fake.lock().unwrap();
+        let folder = fake.path_id(path).unwrap();
+        fake.messages
+            .iter()
+            .find(|m| m.folder == folder && uid_key(m) == uid_of)
+            .cloned()
+            .expect("the message is there")
+    }
+}
+
+fn uid_key(m: &FakeMessage) -> u64 {
+    uid(&m.id, time::parse_utc(&m.received))
+}
+
+#[async_trait]
+impl MailboxProbe for Server {
+    async fn deliver(&self, path: &str, raw: &[u8]) -> u64 {
+        let mut fake = self.fake.lock().unwrap();
+        let folder = fake.path_id(path).expect("the folder exists");
+        let message = fake.arrive(&folder, raw.to_vec());
+        let key = uid_key(&message);
+        fake.messages.push(message);
+        key
+    }
+
+    async fn messages(&self, path: &str) -> Vec<Probed> {
+        let fake = self.fake.lock().unwrap();
+        let folder = fake.path_id(path).expect("the folder exists");
+        let mut out: Vec<Probed> = fake
+            .messages
+            .iter()
+            .filter(|m| m.folder == folder)
+            .map(|m| Probed {
+                uid: uid_key(m),
+                flags: flags(&message_json(m)),
+                labels: None,
+                modseq: None,
+                raw: Bytes::from(m.raw.clone()),
+            })
+            .collect();
+        out.sort_by_key(|p| p.uid);
+        out
     }
 }
 
@@ -551,5 +806,186 @@ async fn trusts_extra_roots_only_when_given() {
     assert!(matches!(
         session.folders().await,
         Err(SourceError::Connection(_))
+    ));
+}
+
+#[tokio::test]
+async fn writer_keeps_the_contract() {
+    let s = server().await;
+    let writer = s.writer();
+    writer_conformance(
+        &writer,
+        &s,
+        WriteFolders {
+            folder: "Inbox",
+            target: "Inbox/Projects",
+            all: None,
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn refuses_what_graph_cannot_do_before_any_request() {
+    let s = server().await;
+    let writer = s.writer();
+    let a = s.deliver("Inbox", &mail(10)).await;
+    let before = s.requests();
+    for flag in [
+        Flag::Answered,
+        Flag::Draft,
+        Flag::Keyword("$Forwarded".into()),
+    ] {
+        assert!(matches!(
+            writer
+                .set_flags("Inbox", &[a], &[], std::slice::from_ref(&flag), None)
+                .await,
+            Err(SourceError::Unsupported(_))
+        ));
+        assert!(matches!(
+            writer
+                .append(
+                    "Inbox",
+                    &mail(11),
+                    std::slice::from_ref(&flag),
+                    holtmail_core::Timestamp::now()
+                )
+                .await,
+            Err(SourceError::Unsupported(_))
+        ));
+    }
+    assert!(matches!(
+        writer
+            .set_flags("Inbox", &[a], &[Flag::Seen], &[], Some(3))
+            .await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert!(matches!(
+        writer.set_labels(&[a], &["Work".into()], &[]).await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert!(matches!(
+        writer.delete("Inbox", &[a], false).await,
+        Err(SourceError::Unsupported(_))
+    ));
+    let huge = vec![b'x'; 3 * 1024 * 1024 + 1];
+    assert!(matches!(
+        writer
+            .append("Inbox", &huge, &[], holtmail_core::Timestamp::now())
+            .await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert_eq!(s.requests(), before, "a refused write reached Graph");
+}
+
+#[tokio::test]
+async fn moved_messages_keep_their_uid_and_sync_sees_them() {
+    let s = server().await;
+    let writer = s.writer();
+    let mut session = s.source().connect().await.unwrap();
+    session.select("Inbox").await.unwrap();
+    let uids = session.uids().await.unwrap();
+    let moved = writer
+        .move_to("Inbox", &uids[..2], "Junk Email")
+        .await
+        .unwrap();
+    assert_eq!(
+        moved.uids,
+        vec![(uids[0], Some(uids[0])), (uids[1], Some(uids[1]))],
+        "immutable ids keep the derived UID"
+    );
+    session.select("Junk Email").await.unwrap();
+    assert_eq!(session.uids().await.unwrap(), uids[..2]);
+    session.select("Inbox").await.unwrap();
+    assert_eq!(session.uids().await.unwrap(), uids[2..]);
+}
+
+#[tokio::test]
+async fn sets_only_what_changes_and_finds_messages_sharing_a_second() {
+    let s = server().await;
+    let writer = s.writer();
+    let (a, b) = {
+        let mut fake = s.fake.lock().unwrap();
+        let mut first = fake.arrive("AAMkInbox", mail(20));
+        let mut second = fake.arrive("AAMkInbox", mail(21));
+        second.received = first.received.clone();
+        first.read = true;
+        let keys = (uid_key(&first), uid_key(&second));
+        fake.messages.push(first);
+        fake.messages.push(second);
+        keys
+    };
+    assert_ne!(a, b);
+    let before = s.fake.lock().unwrap().requests.clone();
+    let result = writer
+        .set_flags("Inbox", &[a, b], &[Flag::Seen, Flag::Flagged], &[], None)
+        .await
+        .unwrap();
+    let mut both = vec![a, b];
+    both.sort_unstable();
+    assert_eq!(result.updated, both);
+    let requests = s.fake.lock().unwrap().requests[before.len()..].to_vec();
+    assert_eq!(
+        requests.iter().filter(|r| *r == "messages").count(),
+        1,
+        "one lookup per received second"
+    );
+    assert_eq!(requests.iter().filter(|r| *r == "patch").count(), 2);
+    assert!(s.message("Inbox", a).read && s.message("Inbox", a).flagged);
+    assert!(s.message("Inbox", b).read && s.message("Inbox", b).flagged);
+
+    let before = s.requests();
+    writer
+        .set_flags("Inbox", &[a, b], &[Flag::Seen], &[], None)
+        .await
+        .unwrap();
+    assert!(
+        !s.fake.lock().unwrap().requests[before..]
+            .iter()
+            .any(|r| r == "patch"),
+        "an unchanged message was patched"
+    );
+}
+
+#[tokio::test]
+async fn appends_mime_with_its_flags_and_purges_for_good() {
+    let s = server().await;
+    let writer = s.writer();
+    let uid_of = writer
+        .append(
+            "Sent Items",
+            &mail(30),
+            &[Flag::Flagged],
+            holtmail_core::Timestamp::now(),
+        )
+        .await
+        .unwrap()
+        .expect("the UID is reported");
+    let stored = s.message("Sent Items", uid_of);
+    assert_eq!(stored.raw, mail(30));
+    assert!(!stored.read, "an upload starts read; the flags say unread");
+    assert!(stored.flagged);
+
+    let mut session = s.source().connect().await.unwrap();
+    session.select("Sent Items").await.unwrap();
+    assert!(session.uids().await.unwrap().contains(&uid_of));
+
+    writer.delete("Sent Items", &[uid_of], true).await.unwrap();
+    assert!(s.fake.lock().unwrap().requests.iter().any(|r| r == "purge"));
+    session.select("Sent Items").await.unwrap();
+    assert!(!session.uids().await.unwrap().contains(&uid_of));
+}
+
+#[tokio::test]
+async fn a_write_with_a_wrong_token_is_auth() {
+    let s = server().await;
+    let wrong = GraphSource::new(&s.settings, Credentials::AccessToken("expired".into()))
+        .unwrap()
+        .writer();
+    assert!(matches!(
+        wrong
+            .set_flags("Inbox", &[1], &[Flag::Seen], &[], None)
+            .await,
+        Err(SourceError::Auth(_))
     ));
 }

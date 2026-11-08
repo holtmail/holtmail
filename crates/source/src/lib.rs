@@ -11,9 +11,14 @@
 //!
 //! A source is read-only. It never changes, moves, deletes or marks messages on the server; for
 //! IMAP that means `EXAMINE` and `BODY.PEEK[]`, so archiving leaves unread mail unread.
+//! Changing the mailbox is the job of a separate [`MailboxWriter`], handed out only for accounts
+//! whose owner allowed it.
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+mod writer;
+
+pub use writer::*;
 
 use std::ops::RangeInclusive;
 
@@ -120,6 +125,14 @@ pub enum SourceError {
     /// The account's settings are incomplete or invalid.
     #[error("invalid account settings: {0}")]
     Config(String),
+    /// The server or this implementation cannot do what was asked, such as a keyword on a server
+    /// without keywords. Nothing was changed. Retrying will not help.
+    #[error("not supported: {0}")]
+    Unsupported(String),
+    /// A folder the operation names does not exist on the server. Nothing was changed. Retrying
+    /// will not help until it exists.
+    #[error("missing on the server: {0}")]
+    Missing(String),
 }
 
 impl SourceError {
@@ -238,7 +251,7 @@ pub trait SourceSession: Send {
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{FakeSource, watch_conformance};
+    use super::testing::{FakeSource, WriteFolders, watch_conformance, writer_conformance};
     use super::*;
 
     #[test]
@@ -268,6 +281,81 @@ mod tests {
         source.enable_watch();
         watch_conformance(&source, &source, "INBOX", "Archive").await;
         assert_eq!(source.watches(), 1);
+    }
+
+    fn write_server() -> FakeSource {
+        let source = FakeSource::new();
+        source.add_folder("INBOX", Some(FolderRole::Inbox));
+        source.add_folder("Archive", None);
+        source.add_folder("All Mail", Some(FolderRole::All));
+        source
+    }
+
+    #[tokio::test]
+    async fn the_fake_writer_keeps_the_writer_contract() {
+        let source = write_server();
+        writer_conformance(
+            &source.writer(),
+            &source,
+            WriteFolders {
+                folder: "INBOX",
+                target: "Archive",
+                all: Some("All Mail"),
+            },
+        )
+        .await;
+
+        let limited = write_server();
+        limited.set_write_caps(MailboxWriteCaps {
+            flags: vec![Flag::Seen, Flag::Flagged],
+            keywords: false,
+            conditional: false,
+            labels: false,
+            move_uids: false,
+            append_uid: false,
+            mark_deleted: false,
+        });
+        writer_conformance(
+            &limited.writer(),
+            &limited,
+            WriteFolders {
+                folder: "INBOX",
+                target: "Archive",
+                all: None,
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn writes_show_in_sessions_and_wake_watches() {
+        let source = write_server();
+        source.enable_watch();
+        let uid = source.deliver("INBOX", b"Subject: one\r\n\r\nHi\r\n", &[]);
+        let mut watch = source.watch(&["INBOX".into()]).await.unwrap().unwrap();
+        source
+            .writer()
+            .set_flags("INBOX", &[uid], &[Flag::Seen], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(
+            watch.next().await.unwrap().folders,
+            Some(vec!["INBOX".to_owned()])
+        );
+        let mut session = source.connect().await.unwrap();
+        session.select("INBOX").await.unwrap();
+        let flags = session.flags(1..=u64::MAX, None).await.unwrap();
+        assert_eq!(flags[0].flags, vec!["\\Seen".to_owned()]);
+
+        source.fail_writes(Some("cut"));
+        assert!(matches!(
+            source.writer().delete("INBOX", &[uid], true).await,
+            Err(SourceError::Connection(_))
+        ));
+        assert_eq!(source.writes(), 2);
+        source.fail_writes(None);
+        assert!(!SourceError::Missing("x".into()).is_transient());
+        assert!(!SourceError::Unsupported("x".into()).is_transient());
     }
 
     #[tokio::test]

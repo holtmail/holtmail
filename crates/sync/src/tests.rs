@@ -723,3 +723,133 @@ async fn never_brings_back_a_deleted_message() {
         }
     }
 }
+
+#[derive(Default)]
+struct Arrivals(std::sync::Mutex<Vec<(Option<String>, bool)>>);
+
+#[async_trait::async_trait]
+impl holtmail_ingest::Observer for Arrivals {
+    async fn added(
+        &self,
+        _: holtmail_core::ArchiveId,
+        _: holtmail_core::MessageId,
+        _: &[u8],
+        parsed: &holtmail_mime::ParsedMessage,
+        placement: &Placement,
+    ) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((parsed.message_id.clone(), placement.live));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_mail_after_a_finished_sync_is_live() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture().await;
+    let arrivals = Arc::new(Arrivals::default());
+    let ingest = Ingest::new(
+        Arc::new(FsBlobStore::open(dir.path().join("blobs")).await.unwrap()),
+        f.store.clone(),
+        f.index.clone(),
+    )
+    .with_observer(arrivals.clone());
+    let syncer = Syncer::new(f.store.clone(), ingest);
+    f.server.deliver("INBOX", &mail(1), &[]);
+    let options = SyncOptions::default();
+    syncer
+        .sync_account(&f.account, &f.server, &options)
+        .await
+        .unwrap();
+    f.server.deliver("INBOX", &mail(2), &[]);
+    f.server.deliver("Sent", &mail(3), &[]);
+    syncer
+        .sync_account(&f.account, &f.server, &options)
+        .await
+        .unwrap();
+    assert_eq!(
+        *arrivals.0.lock().unwrap(),
+        [
+            (Some("1@example.com".into()), false),
+            (Some("2@example.com".into()), true),
+            (Some("3@example.com".into()), true),
+        ],
+        "a folder synced empty before is followed, so its first message is live"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn confirms_held_flag_changes_and_lets_the_server_win() {
+    let f = fixture().await;
+    let uid = f.server.deliver("INBOX", &mail(1), &[]);
+    let other = f.server.deliver("INBOX", &mail(2), &[]);
+    f.sync().await;
+    let folders = f.store.list_folders(f.account.archive_id).await.unwrap();
+    let inbox = folders
+        .iter()
+        .find(|s| s.folder.path == "INBOX")
+        .unwrap()
+        .folder
+        .id;
+    let change = |uid: u64, flag: &str| holtmail_store::NewMailChange {
+        account_id: f.account.id,
+        folder_id: inbox,
+        message_id: None,
+        uid: Some(uid),
+        op: holtmail_store::MailOp::Flags {
+            add: vec![flag.into()],
+            remove: Vec::new(),
+        },
+        origin: holtmail_store::MailChangeOrigin::User,
+        user_id: None,
+        device_id: None,
+        outbox_id: None,
+        at: Timestamp::from_millis(Timestamp::now().as_millis() - 60_000),
+    };
+    let seen = f
+        .store
+        .enqueue_mail_change(&change(uid, "\\Seen"))
+        .await
+        .unwrap();
+    let flagged = f
+        .store
+        .enqueue_mail_change(&change(other, "\\Flagged"))
+        .await
+        .unwrap();
+    let sent_at = Timestamp::from_millis(Timestamp::now().as_millis() - 30_000);
+    for _ in 0..2 {
+        let claimed = f
+            .store
+            .claim_mail_change(f.account.id, sent_at)
+            .await
+            .unwrap()
+            .unwrap();
+        f.store
+            .mark_mail_change_sent(claimed.id, None, sent_at)
+            .await
+            .unwrap();
+    }
+    f.server.set_flags("INBOX", uid, &["\\Seen"]);
+
+    let report = f.sync().await;
+    assert_eq!(f.folder(&report, "INBOX").flags_changed, 1);
+    let state = |id| {
+        let store = f.store.clone();
+        async move { store.get_mail_change(id).await.unwrap().unwrap().state }
+    };
+    assert_eq!(state(seen.id).await, MailChangeState::Applied);
+    assert_eq!(
+        state(flagged.id).await,
+        MailChangeState::SupersededByServer,
+        "the server shows no flag after the change was sent"
+    );
+    assert_eq!(f.find(Clause::Flag("\\Seen".into())).await.len(), 1);
+    let reads = f.server.flag_reads().len();
+    f.sync().await;
+    assert_eq!(
+        f.server.flag_reads().len(),
+        reads,
+        "nothing left to confirm"
+    );
+}

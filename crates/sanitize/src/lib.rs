@@ -94,6 +94,43 @@ pub fn sanitize(html: &str, options: &Options) -> Sanitized {
     }
 }
 
+/// Cleans HTML written in the compose editor before it is sent.
+///
+/// Removes scripts, event handlers, forms, frames, objects, comments, `javascript:` and relative
+/// URLs, and `data:` anywhere except `<img src>` with an image type. Keeps the same formatting and
+/// layout as [`sanitize`], links as written (no `target` or `rel` is added), `cid:` references to
+/// inline parts unchanged, and remote images, backgrounds and style URLs as they are: what the
+/// sender quotes is sent as it was received.
+pub fn outgoing(html: &str) -> String {
+    let mut builder = Builder::default();
+    builder
+        .add_tags(EXTRA_TAGS)
+        .rm_clean_content_tags(&["style"])
+        .add_generic_attributes(GENERIC_ATTRIBUTES)
+        .add_tag_attributes("font", &["face", "size"])
+        .add_tag_attributes("td", &["colspan", "rowspan", "nowrap", "background"])
+        .add_tag_attributes("th", &["colspan", "rowspan", "nowrap", "background"])
+        .add_tag_attributes("table", &["cellpadding", "cellspacing", "background"])
+        .add_tag_attributes("img", &["src", "alt", "width", "height"])
+        .add_tag_attributes("blockquote", &["type"])
+        .add_url_schemes(&["cid", "data"])
+        .url_relative(UrlRelative::Custom(Box::new(protocol_relative)))
+        .link_rel(None)
+        .strip_comments(true)
+        .attribute_filter(|element, attribute, value| {
+            let lower = value.trim().to_ascii_lowercase();
+            let data = lower.starts_with("data:");
+            match attribute {
+                "src" | "background" if data => (element == "img"
+                    && lower.starts_with("data:image/"))
+                .then_some(Cow::Borrowed(value)),
+                "href" if data || lower.starts_with("cid:") => None,
+                _ => Some(Cow::Borrowed(value)),
+            }
+        });
+    builder.clean(html).to_string()
+}
+
 #[derive(Clone)]
 struct Pass {
     remote: Remote,
@@ -514,5 +551,37 @@ mod tests {
         assert!(page.contains("img-src https://mail.example.com data: cid:;"));
         assert!(!page.contains("https: http:"));
         assert!(document("", true, "").contains("https: http:"));
+    }
+
+    #[test]
+    fn outgoing_keeps_formatting_links_cid_and_remote_images() {
+        let html = outgoing(
+            "<p onclick=\"x()\"><b>Hi</b> <a href=\"https://example.com/a\">link</a></p>\
+             <img src=\"cid:logo@example.com\"><img src=\"https://example.org/p.png\">\
+             <blockquote type=\"cite\" style=\"color:red\">quoted</blockquote>\
+             <script>alert(1)</script><form><input name=\"q\"></form><!-- note -->\
+             <a href=\"javascript:alert(1)\">bad</a><a href=\"/relative\">rel</a>\
+             <img src=\"data:text/html,x\"><img src=\"data:image/png;base64,AAAA\">",
+        );
+        assert!(html.contains("<b>Hi</b>"));
+        assert!(html.contains("<a href=\"https://example.com/a\">link</a>"));
+        assert!(html.contains("src=\"cid:logo@example.com\""));
+        assert!(html.contains("src=\"https://example.org/p.png\""));
+        assert!(html.contains("<blockquote type=\"cite\" style=\"color:red\">"));
+        assert!(html.contains("src=\"data:image/png;base64,AAAA\""));
+        for gone in [
+            "onclick",
+            "script",
+            "alert",
+            "<form",
+            "<input",
+            "note",
+            "/relative",
+            "data:text",
+        ] {
+            assert!(!html.contains(gone), "{gone} in {html}");
+        }
+        assert!(!html.contains("target="));
+        assert!(!html.contains("noopener"));
     }
 }

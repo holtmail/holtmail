@@ -18,6 +18,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 holtmail-blob-fs.workspace = true
 holtmail-index.workspace = true
 holtmail-index-tantivy.workspace = true

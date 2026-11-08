@@ -7,7 +7,11 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use holtmail_source::testing::{MailRemote, watch_conformance};
+use holtmail_source::testing::{
+    MailRemote, MailboxProbe, Probed, WriteFolders, watch_conformance, writer_conformance,
+};
+use holtmail_source::{Flag, MailboxWriter};
+use serde_json::Map;
 
 use super::*;
 
@@ -38,6 +42,10 @@ struct Fake {
     no_events: bool,
     silent: bool,
     event_queries: Vec<String>,
+    uploads: HashMap<String, Vec<u8>>,
+    created: u32,
+    sets: Vec<Value>,
+    interfere: usize,
 }
 
 impl Fake {
@@ -139,6 +147,13 @@ fn email_json(email: &Email, properties: &[String]) -> Value {
         let value = match property.as_str() {
             "blobId" => json!(email.blob),
             "receivedAt" => json!(email.received),
+            "mailboxIds" => Value::Object(
+                email
+                    .mailboxes
+                    .iter()
+                    .map(|m| (m.clone(), json!(true)))
+                    .collect(),
+            ),
             "keywords" => Value::Object(
                 email
                     .keywords
@@ -185,10 +200,21 @@ async fn api(State(fake): State<Shared>, headers: HeaderMap, body: String) -> Re
             }
             "Email/query" => {
                 let mailbox = args["filter"]["inMailbox"].as_str().unwrap();
+                let bound = |key: &str| {
+                    args["filter"]
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .map(|t| time::parse_utc(t).unwrap())
+                };
+                let (after, before) = (bound("after"), bound("before"));
                 let mut found: Vec<&Email> = fake
                     .emails
                     .iter()
                     .filter(|e| e.mailboxes.iter().any(|m| m == mailbox))
+                    .filter(|e| {
+                        let at = time::parse_utc(&e.received).unwrap();
+                        after.is_none_or(|a| at >= a) && before.is_none_or(|b| at < b)
+                    })
                     .collect();
                 found.sort_by(|a, b| a.received.cmp(&b.received).then(a.id.cmp(&b.id)));
                 let position = args["position"].as_u64().unwrap_or(0) as usize;
@@ -237,12 +263,154 @@ async fn api(State(fake): State<Shared>, headers: HeaderMap, body: String) -> Re
                     json!(["Email/get", { "accountId": "u1", "state": fake.state(), "list": list, "notFound": [] }, id])
                 }
             }
+            "Email/set" => {
+                seen.push((name.clone(), 0));
+                fake.sets.push(args.clone());
+                email_set(&mut fake, args, id)
+            }
+            "Email/import" => {
+                seen.push((name.clone(), 0));
+                email_import(&mut fake, args, id)
+            }
             _ => json!(["error", { "type": "unknownMethod" }, id]),
         };
         results.push(answer);
     }
     fake.requests.push(seen);
     axum::Json(json!({ "methodResponses": results, "sessionState": "1" })).into_response()
+}
+
+fn email_set(fake: &mut Fake, args: &Value, id: Value) -> Value {
+    if fake.interfere > 0 && args.get("ifInState").is_some() {
+        fake.interfere -= 1;
+        let email = fake.emails.iter_mut().find(|e| e.id == "M0006").unwrap();
+        if email.keywords.iter().any(|k| k == "$flagged") {
+            email.keywords.retain(|k| k != "$flagged");
+        } else {
+            email.keywords.push("$flagged".into());
+        }
+    }
+    let old = fake.state();
+    if let Some(expected) = args.get("ifInState").and_then(Value::as_str)
+        && expected != old
+    {
+        return json!(["error", { "type": "stateMismatch" }, id]);
+    }
+    let mut updated = Map::new();
+    let mut not_updated = Map::new();
+    if let Some(update) = args.get("update").and_then(Value::as_object) {
+        for (email_id, patch) in update {
+            let known: Vec<String> = fake.mailboxes.iter().map(|m| m.0.clone()).collect();
+            let Some(email) = fake.emails.iter_mut().find(|e| &e.id == email_id) else {
+                not_updated.insert(email_id.clone(), json!({ "type": "notFound" }));
+                continue;
+            };
+            let mut next = email.clone();
+            for (path, value) in patch.as_object().unwrap() {
+                let (property, key) = path.split_once('/').unwrap();
+                let list = match property {
+                    "keywords" => {
+                        assert_eq!(key, key.to_ascii_lowercase(), "keywords go lowercase");
+                        &mut next.keywords
+                    }
+                    "mailboxIds" => {
+                        assert!(known.iter().any(|k| k == key), "an unknown mailbox");
+                        &mut next.mailboxes
+                    }
+                    other => panic!("patch of {other}"),
+                };
+                list.retain(|k| k != key);
+                if value == &json!(true) {
+                    list.push(key.to_owned());
+                }
+            }
+            if next.mailboxes.is_empty() {
+                not_updated.insert(email_id.clone(), json!({ "type": "invalidProperties" }));
+                continue;
+            }
+            *email = next;
+            updated.insert(email_id.clone(), Value::Null);
+        }
+    }
+    let mut destroyed = Vec::new();
+    let mut not_destroyed = Map::new();
+    for email_id in args
+        .get("destroy")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let before = fake.emails.len();
+        fake.emails
+            .retain(|e| Some(e.id.as_str()) != email_id.as_str());
+        if fake.emails.len() < before {
+            destroyed.push(email_id.clone());
+        } else {
+            not_destroyed.insert(
+                email_id.as_str().unwrap().to_owned(),
+                json!({ "type": "notFound" }),
+            );
+        }
+    }
+    json!(["Email/set", {
+        "accountId": "u1",
+        "oldState": old,
+        "newState": fake.state(),
+        "updated": updated,
+        "notUpdated": not_updated,
+        "destroyed": destroyed,
+        "notDestroyed": not_destroyed,
+    }, id])
+}
+
+fn email_import(fake: &mut Fake, args: &Value, id: Value) -> Value {
+    let mut created = Map::new();
+    for (key, spec) in args["emails"].as_object().unwrap() {
+        let raw = fake.uploads[spec["blobId"].as_str().unwrap()].clone();
+        fake.created += 1;
+        let email = Email {
+            id: format!("I{:04}", fake.created),
+            blob: spec["blobId"].as_str().unwrap().to_owned(),
+            mailboxes: spec["mailboxIds"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect(),
+            keywords: spec["keywords"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect(),
+            received: spec["receivedAt"].as_str().unwrap().to_owned(),
+            raw,
+        };
+        created.insert(
+            key.clone(),
+            json!({ "id": email.id, "blobId": email.blob, "threadId": "T1", "size": email.raw.len() }),
+        );
+        fake.emails.push(email);
+    }
+    json!(["Email/import", { "accountId": "u1", "newState": fake.state(), "created": created }, id])
+}
+
+async fn upload(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(account): Path<String>,
+    body: Bytes,
+) -> Response {
+    if !authorized(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    assert_eq!(account, "u1");
+    let mut fake = fake.lock().unwrap();
+    let blob = format!("U{:04}", fake.uploads.len() + 1);
+    let size = body.len();
+    fake.uploads.insert(blob.clone(), body.to_vec());
+    axum::Json(json!({ "accountId": "u1", "blobId": blob, "type": "message/rfc822", "size": size }))
+        .into_response()
 }
 
 async fn download(
@@ -330,6 +498,7 @@ async fn serve(max_objects: usize, max_calls: usize) -> (Shared, String) {
         .route("/jmap/session", get(session))
         .route("/jmap/api/", post(api))
         .route("/jmap/download/{account}/{blob}/{name}", get(download))
+        .route("/jmap/upload/{account}/", post(upload))
         .route("/jmap/events/", get(events))
         .with_state(fake.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -781,4 +950,220 @@ async fn an_unchanged_account_is_told_by_its_email_state() {
         None,
         "a flag moves the state"
     );
+}
+
+struct Probe(Shared);
+
+#[async_trait]
+impl MailboxProbe for Probe {
+    async fn deliver(&self, path: &str, raw: &[u8]) -> u64 {
+        let mut fake = self.0.lock().unwrap();
+        let mailbox = fake
+            .mailboxes
+            .iter()
+            .find(|m| path == folder_path(&fake.mailboxes, &m.0))
+            .map(|m| m.0.clone())
+            .unwrap();
+        fake.created += 1;
+        let n = fake.created;
+        let received = time::format_utc(holtmail_core::Timestamp::from_secs(
+            1_793_000_000 + i64::from(n) * 7,
+        ));
+        let email = Email {
+            id: format!("D{n:04}"),
+            blob: format!("DB{n:04}"),
+            mailboxes: vec![mailbox],
+            keywords: Vec::new(),
+            received: received.clone(),
+            raw: raw.to_vec(),
+        };
+        let uid = uid(&email.id, time::parse_utc(&received));
+        fake.emails.push(email);
+        uid
+    }
+
+    async fn messages(&self, path: &str) -> Vec<Probed> {
+        let fake = self.0.lock().unwrap();
+        let mut out: Vec<Probed> = fake
+            .emails
+            .iter()
+            .filter(|e| {
+                e.mailboxes
+                    .iter()
+                    .any(|m| folder_path(&fake.mailboxes, m) == path)
+            })
+            .map(|e| Probed {
+                uid: uid(&e.id, time::parse_utc(&e.received)),
+                flags: flags(&email_json(e, &["keywords".to_owned()])),
+                labels: None,
+                modseq: None,
+                raw: Bytes::from(e.raw.clone()),
+            })
+            .collect();
+        out.sort_by_key(|m| m.uid);
+        out
+    }
+}
+
+fn folder_path(mailboxes: &[(String, String, Option<String>, Option<String>)], id: &str) -> String {
+    let by_id: HashMap<String, (String, Option<String>)> = mailboxes
+        .iter()
+        .map(|(id, name, parent, _)| (id.clone(), (name.clone(), parent.clone())))
+        .collect();
+    path(id, &by_id).unwrap()
+}
+
+#[tokio::test]
+async fn the_writer_keeps_the_writer_contract() {
+    for (max_objects, max_calls) in [(500, 16), (1, 1)] {
+        let (fake, url) = serve(max_objects, max_calls).await;
+        let writer = password_source(&url).writer();
+        writer_conformance(
+            &writer,
+            &Probe(fake.clone()),
+            WriteFolders {
+                folder: "Work/2025",
+                target: "Archive",
+                all: None,
+            },
+        )
+        .await;
+        let fake = fake.lock().unwrap();
+        assert!(
+            fake.sets
+                .iter()
+                .any(|s| s.get("ifInState").is_some() && s.get("destroy").is_some()),
+            "deletes are guarded by the state they were planned at"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_moved_or_imported_message_is_found_under_its_uid_by_sync() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    let writer = source.writer();
+    let mut session = source.connect().await.unwrap();
+    session.select("Inbox").await.unwrap();
+    let inbox = session.uids().await.unwrap();
+
+    let moved = writer
+        .move_to("Inbox", &inbox[..2], "Archive")
+        .await
+        .unwrap();
+    assert_eq!(
+        moved.uids,
+        inbox[..2]
+            .iter()
+            .map(|u| (*u, Some(*u)))
+            .collect::<Vec<_>>()
+    );
+    session.select("Archive").await.unwrap();
+    assert_eq!(session.uids().await.unwrap(), inbox[..2].to_vec());
+
+    let raw = mail(77);
+    let date = holtmail_core::Timestamp::from_secs(1_793_000_123);
+    let appended = writer
+        .append("Archive", &raw, &[Flag::Seen], date)
+        .await
+        .unwrap()
+        .unwrap();
+    session.select("Archive").await.unwrap();
+    assert!(session.uids().await.unwrap().contains(&appended));
+    let fetched = session.fetch(&[appended]).await.unwrap();
+    assert_eq!(fetched[0].raw, Bytes::from(raw));
+    assert_eq!(fetched[0].flags, ["\\Seen"]);
+    assert_eq!(fetched[0].received_at, Some(date));
+    assert!(fake.lock().unwrap().uploads.len() == 1);
+}
+
+#[tokio::test]
+async fn deleting_from_one_mailbox_keeps_the_email_in_the_others() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    let mut session = source.connect().await.unwrap();
+    session.select("Work/2025").await.unwrap();
+    let shared = session.uids().await.unwrap();
+    assert_eq!(shared.len(), 1);
+
+    source
+        .writer()
+        .delete("Work/2025", &shared, true)
+        .await
+        .unwrap();
+    let fake = fake.lock().unwrap();
+    let email = fake.emails.iter().find(|e| e.id == "M0002").unwrap();
+    assert_eq!(email.mailboxes, ["mb-in"], "still in the Inbox");
+    assert!(fake.sets.iter().all(|s| s.get("destroy").is_none()));
+}
+
+#[tokio::test]
+async fn a_change_planned_on_an_old_state_is_planned_again() {
+    let (fake, url) = serve(50, 4).await;
+    let source = password_source(&url);
+    let mut session = source.connect().await.unwrap();
+    session.select("Inbox").await.unwrap();
+    let target = session.uids().await.unwrap()[0];
+
+    fake.lock().unwrap().interfere = 2;
+    let moved = source
+        .writer()
+        .move_to("Inbox", &[target], "Archive")
+        .await
+        .unwrap();
+    assert_eq!(moved.uids, [(target, Some(target))]);
+    assert_eq!(
+        fake.lock().unwrap().sets.len(),
+        3,
+        "two refused, one applied"
+    );
+    session.select("Archive").await.unwrap();
+    assert_eq!(session.uids().await.unwrap(), vec![target]);
+
+    fake.lock().unwrap().interfere = usize::MAX;
+    assert!(matches!(
+        source.writer().delete("Archive", &[target], true).await,
+        Err(SourceError::Connection(_))
+    ));
+    assert!(
+        fake.lock()
+            .unwrap()
+            .emails
+            .iter()
+            .any(|e| e.mailboxes == ["mb-arch"])
+    );
+}
+
+#[tokio::test]
+async fn refuses_what_jmap_cannot_do_before_asking_the_server() {
+    let (fake, url) = serve(50, 4).await;
+    let writer = password_source(&url).writer();
+    let before = fake.lock().unwrap().requests.len();
+    assert!(matches!(
+        writer
+            .set_flags("Inbox", &[1], &[Flag::Seen], &[], Some(3))
+            .await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert!(matches!(
+        writer
+            .set_flags(
+                "Inbox",
+                &[1],
+                &[Flag::Keyword("\\Deleted".into())],
+                &[],
+                None
+            )
+            .await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert!(matches!(
+        writer.set_labels(&[1], &["Work".into()], &[]).await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert!(matches!(
+        writer.delete("Inbox", &[1], false).await,
+        Err(SourceError::Unsupported(_))
+    ));
+    assert_eq!(fake.lock().unwrap().requests.len(), before);
 }

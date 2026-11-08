@@ -12,6 +12,7 @@ holtmail-core.workspace = true
 holtmail-source.workspace = true
 holtmail-store.workspace = true
 async-trait.workspace = true
+base64.workspace = true
 bytes.workspace = true
 futures.workspace = true
 reqwest.workspace = true
@@ -23,6 +24,7 @@ url.workspace = true
 
 [dev-dependencies]
 holtmail-core = { workspace = true, features = ["testing"] }
+holtmail-source = { workspace = true, features = ["testing"] }
 axum.workspace = true
 tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "time"] }
 

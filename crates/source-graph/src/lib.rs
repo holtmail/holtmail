@@ -10,10 +10,14 @@
 //! a message is never used. `isRead`, `flag` and `isDraft` become `\Seen`, `\Flagged` and
 //! `\Draft`.
 //!
+//! [`GraphSource::writer`] changes the mailbox: `isRead` and `flag`, moves, permanent deletes
+//! and MIME uploads; see [`GraphWriter`].
+//!
 //! Throttling (`429`) and short outages (`503`, `504`) are waited out as `Retry-After` says.
 
 mod http;
 mod time;
+mod writer;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ops::RangeInclusive;
@@ -32,6 +36,7 @@ use serde_json::Value;
 use url::Url;
 
 use http::{Answer, Http, Scope};
+pub use writer::GraphWriter;
 
 /// Where Microsoft Graph answers, for accounts in the global cloud.
 pub const GRAPH_URL: &str = "https://graph.microsoft.com/v1.0";
@@ -111,6 +116,16 @@ impl GraphSource {
         })
     }
 
+    /// A [`holtmail_source::MailboxWriter`] for the same mailbox, with the same token and trusted
+    /// roots. Writing needs a token with `Mail.ReadWrite`; with `Mail.Read` alone every write
+    /// fails with `Auth`.
+    pub fn writer(&self) -> GraphWriter {
+        GraphWriter {
+            base: self.base.clone(),
+            http: self.http.clone(),
+        }
+    }
+
     /// The address of the signed-in mailbox: its primary SMTP address, else its user principal
     /// name. `None` when Graph names neither. Needs `User.Read`.
     pub async fn address(&self) -> Result<Option<String>, SourceError> {
@@ -139,6 +154,7 @@ impl Source for GraphSource {
             http: self.http.clone(),
             folders: None,
             selected: None,
+            roles: true,
         }))
     }
 }
@@ -183,6 +199,7 @@ struct GraphSession {
     http: Http,
     folders: Option<Vec<Folder>>,
     selected: Option<Selected>,
+    roles: bool,
 }
 
 /// One page of a collection: its items, and the next page or the delta link.
@@ -297,7 +314,11 @@ impl GraphSession {
 
     async fn load_folders(&mut self) -> Result<&[Folder], SourceError> {
         if self.folders.is_none() {
-            let roles = self.roles().await?;
+            let roles = if self.roles {
+                self.roles().await?
+            } else {
+                HashMap::new()
+            };
             let query = [
                 ("includeHiddenFolders", "true"),
                 ("$top", "250"),

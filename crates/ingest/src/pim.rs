@@ -210,6 +210,34 @@ impl Ingest {
         Ok(())
     }
 
+    /// Makes what is derived from an item follow what is served for it: with `served` (the bytes
+    /// of an open change on top of the item, in `format`), its normalized fields, calendar part
+    /// and search document are read from those bytes, numbered as its latest version so a newer
+    /// upstream version still wins; with `None`, everything is rebuilt from its stored versions
+    /// as [`Ingest::rebuild_item`] does. Archived versions never change. `NotFound` for an
+    /// unknown item.
+    pub async fn derive_served(
+        &self,
+        item: ItemId,
+        served: Option<(&[u8], holtmail_pim::Format)>,
+    ) -> Result<(), IngestError> {
+        let Some((raw, format)) = served else {
+            return self.rebuild_item(item).await;
+        };
+        let stored = self
+            .store
+            .get_item(item)
+            .await?
+            .ok_or(StoreError::NotFound("item"))?;
+        let kind = holtmail_pim::ItemKind::parse(stored.item.kind.as_str())
+            .unwrap_or(holtmail_pim::ItemKind::Other);
+        let normalized = holtmail_pim::normalize_as(format, kind, raw);
+        self.store
+            .set_pim_index(item, &pim_index(&normalized, stored.item.versions))
+            .await?;
+        self.derive_item(item).await
+    }
+
     /// Rebuilds the normalized fields of an item: from the raw bytes of its latest version, or,
     /// for an item read from mail, from every version merged by [`holtmail_pim::merge`]; then
     /// what is derived from them, as [`Ingest::derive_item`] does.

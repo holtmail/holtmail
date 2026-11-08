@@ -14,6 +14,9 @@
 mod http;
 mod time;
 mod watch;
+mod writer;
+
+pub use writer::JmapWriter;
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
@@ -104,6 +107,7 @@ pub fn session_url(input: &str) -> Result<String, SourceError> {
 }
 
 /// A JMAP account.
+#[derive(Clone)]
 pub struct JmapSource {
     settings: JmapSettings,
     http: Http,
@@ -209,6 +213,8 @@ struct JmapSession {
     account: String,
     max_objects: usize,
     max_calls: usize,
+    max_set: usize,
+    upload_url: Option<String>,
     mailboxes: Option<Vec<Mailbox>>,
     selected: Option<Selected>,
     event_source_url: Option<String>,
@@ -266,6 +272,11 @@ impl JmapSession {
             .and_then(Value::as_str)
             .map(|_| resolve("eventSourceUrl"))
             .transpose()?;
+        let upload_url = session
+            .get("uploadUrl")
+            .and_then(Value::as_str)
+            .map(|_| resolve("uploadUrl"))
+            .transpose()?;
         Ok(Self {
             api_url: resolve("apiUrl")?,
             download_url: resolve("downloadUrl")?,
@@ -275,6 +286,8 @@ impl JmapSession {
             account,
             max_objects: limit(&core, "maxObjectsInGet", MAX_OBJECTS, MAX_OBJECTS),
             max_calls: limit(&core, "maxCallsInRequest", MAX_CALLS, MAX_CALLS),
+            max_set: limit(&core, "maxObjectsInSet", MAX_OBJECTS, MAX_OBJECTS),
+            upload_url,
             mailboxes: None,
             selected: None,
         })
@@ -282,6 +295,23 @@ impl JmapSession {
 
     /// Sends the calls in one request and returns their answers in order.
     async fn call(&self, calls: Vec<(&str, Value)>) -> Result<Vec<Value>, SourceError> {
+        self.answers(calls)
+            .await?
+            .into_iter()
+            .map(|answer| {
+                answer.map_err(|kind| {
+                    SourceError::Protocol(format!("the JMAP server refused a request: {kind}"))
+                })
+            })
+            .collect()
+    }
+
+    /// Sends the calls in one request and returns each answer, or the type of the method-level
+    /// error the server gave for it, in order.
+    async fn answers(
+        &self,
+        calls: Vec<(&str, Value)>,
+    ) -> Result<Vec<Result<Value, String>>, SourceError> {
         let count = calls.len();
         let body = json!({
             "using": [CORE, MAIL],
@@ -304,17 +334,17 @@ impl JmapSession {
             let Some(index) = id.as_str().and_then(|id| id.parse::<usize>().ok()) else {
                 continue;
             };
-            if name == "error" {
-                let kind = args
+            let answer = if name == "error" {
+                Err(args
                     .get("type")
                     .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                return Err(SourceError::Protocol(format!(
-                    "the JMAP server refused a request: {kind}"
-                )));
-            }
+                    .unwrap_or("unknown")
+                    .to_owned())
+            } else {
+                Ok(args.clone())
+            };
             if let Some(slot) = out.get_mut(index) {
-                *slot = Some(args.clone());
+                *slot = Some(answer);
             }
         }
         out.into_iter()
@@ -325,7 +355,18 @@ impl JmapSession {
     /// `Email/get` for `ids`, at most `maxObjectsInGet` per call and `maxCallsInRequest` calls
     /// per request. Ids the server no longer has are left out.
     async fn emails(&self, ids: &[String], properties: &[&str]) -> Result<Vec<Value>, SourceError> {
+        Ok(self.emails_with_state(ids, properties).await?.0)
+    }
+
+    /// [`Self::emails`] with the `Email` state of the first answer, which is never newer than
+    /// what the answers show.
+    async fn emails_with_state(
+        &self,
+        ids: &[String],
+        properties: &[&str],
+    ) -> Result<(Vec<Value>, Option<String>), SourceError> {
         let mut out = Vec::with_capacity(ids.len());
+        let mut state = None;
         for request in ids.chunks(self.max_objects * self.max_calls) {
             let calls = request
                 .chunks(self.max_objects)
@@ -337,10 +378,16 @@ impl JmapSession {
                 })
                 .collect();
             for answer in self.call(calls).await? {
+                if state.is_none() {
+                    state = answer
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                }
                 out.extend(list(&answer)?);
             }
         }
-        Ok(out)
+        Ok((out, state))
     }
 
     async fn load_mailboxes(&mut self) -> Result<&[Mailbox], SourceError> {

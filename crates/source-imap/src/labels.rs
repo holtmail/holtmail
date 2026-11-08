@@ -34,6 +34,32 @@ pub(crate) fn label_names<'a>(raw: impl IntoIterator<Item = &'a str>) -> Vec<Str
     names
 }
 
+/// Whether a readable label name stands for a mailbox (Inbox, Sent, Drafts, Trash, Spam, in
+/// any case, or a raw `\` system name): changing it would move or delete the message.
+pub(crate) fn acts_as_folder(name: &str) -> bool {
+    name.starts_with('\\')
+        || ["Inbox", "Sent", "Drafts", "Trash", "Spam"]
+            .iter()
+            .any(|system| name.eq_ignore_ascii_case(system))
+}
+
+/// The `X-GM-LABELS` value for a readable label name, the mirror of [`label_name`]: the names
+/// Gmail gives its system labels become `\Inbox` and the like, any other name is encoded in
+/// modified UTF-7 and quoted.
+pub(crate) fn label_value(name: &str) -> String {
+    let system = match name {
+        "Inbox" => "\\Inbox",
+        "Sent" => "\\Sent",
+        "Important" => "\\Important",
+        "Starred" => "\\Starred",
+        "Drafts" => "\\Draft",
+        "Trash" => "\\Trash",
+        "Spam" => "\\Spam",
+        _ => return crate::writer::quote(&utf7::encode(name)),
+    };
+    system.to_owned()
+}
+
 fn unescape(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut chars = raw.chars();
@@ -73,6 +99,20 @@ mod tests {
         assert_eq!(label_name(r"back\\slash"), r"back\slash");
         assert_eq!(label_name("&BBIEMAQ2BD0EPgQ1-"), "Важное");
         assert_eq!(label_name("Fish &- Chips"), "Fish & Chips");
+    }
+
+    #[test]
+    fn values_mirror_names() {
+        assert_eq!(label_value("Inbox"), "\\Inbox");
+        assert_eq!(label_value("Drafts"), "\\Draft");
+        assert_eq!(
+            label_value("Projects/Важное"),
+            "\"Projects/&BBIEMAQ2BD0EPgQ1-\""
+        );
+        assert_eq!(label_value(r#"Say "hi""#), r#""Say \"hi\"""#);
+        for name in ["Inbox", "Drafts", "Starred"] {
+            assert_eq!(label_name(&label_value(name)), name);
+        }
     }
 
     #[test]

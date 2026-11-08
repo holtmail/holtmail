@@ -261,6 +261,31 @@ impl Http {
         Self::json(response, &host).await
     }
 
+    /// Posts `body` as `content_type` and reads the JSON answer, as an upload does.
+    pub(crate) async fn post_bytes(
+        &self,
+        url: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Result<Value, SourceError> {
+        let (builder, host) = self.request(reqwest::Method::POST, url)?;
+        let response = Self::send(
+            builder
+                .header(ACCEPT, "application/json")
+                .header(CONTENT_TYPE, content_type)
+                .body(body),
+            &host,
+        )
+        .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(SourceError::Protocol(format!(
+                "{host} has no upload address where its session names one"
+            )));
+        }
+        Self::check(response.status(), &host)?;
+        Self::json(response, &host).await
+    }
+
     /// An open `text/event-stream` answer from `url`, read as it arrives; the client's overall
     /// timeout does not apply, so the caller watches for silence itself.
     pub(crate) async fn stream(&self, url: &str) -> Result<reqwest::Response, SourceError> {

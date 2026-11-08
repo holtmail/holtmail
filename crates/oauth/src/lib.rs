@@ -127,6 +127,51 @@ impl Provider {
             (Self::Google, Access::GraphPim) => None,
         }
     }
+
+    /// The scope a sign-in for `access` adds to also send mail, or `None` when its scopes
+    /// already cover sending or there is no such access: Microsoft needs `SMTP.Send` for SMTP
+    /// beside IMAP and `Mail.Send` for Graph; Google's mail scope covers SMTP.
+    pub fn send_scope(self, access: Access) -> Option<&'static str> {
+        match (self, access) {
+            (Self::Microsoft, Access::Imap) => Some("https://outlook.office.com/SMTP.Send"),
+            (Self::Microsoft, Access::Graph | Access::GraphPim) => {
+                Some("https://graph.microsoft.com/Mail.Send")
+            }
+            _ => None,
+        }
+    }
+
+    /// The scope a sign-in for `access` adds to also change mail on the server (flags, moves,
+    /// deletes, appends), or `None` when its scopes already cover that: Microsoft Graph needs
+    /// `Mail.ReadWrite`; Microsoft's IMAP scope and Google's mail scope already write.
+    pub fn write_scope(self, access: Access) -> Option<&'static str> {
+        match (self, access) {
+            (Self::Microsoft, Access::Graph | Access::GraphPim) => {
+                Some("https://graph.microsoft.com/Mail.ReadWrite")
+            }
+            _ => None,
+        }
+    }
+
+    /// The scopes a sign-in for `access` adds to also change contacts and calendars upstream
+    /// (`pim.edit`), or `None` when its scopes already cover that or it reads none: Microsoft
+    /// Graph needs `Contacts.ReadWrite` and `Calendars.ReadWrite`; Google's CalDAV needs
+    /// `auth/calendar` in place of `auth/calendar.readonly` (its CardDAV scope already writes).
+    pub fn pim_write_scope(self, access: Access) -> Option<&'static str> {
+        match (self, access) {
+            (Self::Microsoft, Access::GraphPim) => Some(
+                "https://graph.microsoft.com/Contacts.ReadWrite https://graph.microsoft.com/Calendars.ReadWrite",
+            ),
+            (Self::Google, Access::ImapDav) => Some("https://www.googleapis.com/auth/calendar"),
+            _ => None,
+        }
+    }
+
+    /// Whether a sign-in for `access` without [`Provider::send_scope`] already lets Holtmail
+    /// send mail through the account.
+    pub fn sends_without_consent(self, access: Access) -> bool {
+        self == Self::Google && matches!(access, Access::Imap | Access::ImapDav)
+    }
 }
 
 /// What a sign-in grants access to. The scopes differ, and a token for one is refused by the
@@ -260,6 +305,51 @@ impl Client {
             scope,
             ..self.clone()
         })
+    }
+
+    /// The same client also asking for [`Provider::send_scope`] of `access`; unchanged when the
+    /// provider needs none. A refresh token granted with it is refreshed with it too.
+    pub fn with_send(&self, access: Access) -> Self {
+        match self.provider.send_scope(access) {
+            Some(extra) if !self.scope.split(' ').any(|s| s == extra) => Self {
+                scope: format!("{} {extra}", self.scope),
+                ..self.clone()
+            },
+            _ => self.clone(),
+        }
+    }
+
+    /// The same client also asking for [`Provider::write_scope`] of `access`; unchanged when
+    /// the provider needs none. A refresh token granted with it is refreshed with it too.
+    pub fn with_write(&self, access: Access) -> Self {
+        match self.provider.write_scope(access) {
+            Some(extra) if !self.scope.split(' ').any(|s| s == extra) => Self {
+                scope: format!("{} {extra}", self.scope),
+                ..self.clone()
+            },
+            _ => self.clone(),
+        }
+    }
+
+    /// The same client also asking for [`Provider::pim_write_scope`] of `access`; unchanged
+    /// when the provider needs none. A refresh token granted with it is refreshed with it too.
+    pub fn with_pim_write(&self, access: Access) -> Self {
+        let Some(extra) = self.provider.pim_write_scope(access) else {
+            return self.clone();
+        };
+        let mut scopes: Vec<&str> = self.scope.split(' ').collect();
+        for wanted in extra.split(' ') {
+            if !scopes.contains(&wanted) {
+                scopes.push(wanted);
+            }
+        }
+        if scopes.contains(&"https://www.googleapis.com/auth/calendar") {
+            scopes.retain(|s| *s != "https://www.googleapis.com/auth/calendar.readonly");
+        }
+        Self {
+            scope: scopes.join(" "),
+            ..self.clone()
+        }
     }
 
     /// Whether this is Thunderbird's client rather than one the owner registered.

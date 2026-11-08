@@ -17,6 +17,10 @@
 //! With a minimum age, a folder's sync stops before its first message that is too young, so the
 //! UID cursor never passes a message that was not archived yet.
 //!
+//! Held and sending flags and labels changes (`mail_changes`) of a folder's messages are
+//! confirmed after its flags are taken in: their flags are read once more and handed to the
+//! store with the time taken before the read, so the server wins when it shows something else.
+//!
 //! On Gmail, labels shown as folders are skipped while the all-mail folder is synced: their
 //! messages arrive once, from all mail, with their labels attached.
 
@@ -28,8 +32,12 @@ use holtmail_ingest::{Ingest, IngestError, Placement};
 use holtmail_source::{
     FolderStatus, RemoteFlags, RemoteFolder, RemoteMessage, Source, SourceError, SourceSession,
 };
-use holtmail_store::{Account, FolderCursor, FolderRole, Store, StoreError};
+use holtmail_store::{
+    Account, FolderCursor, FolderRole, MailChangeQuery, MailChangeState, Store, StoreError,
+};
 use serde::Serialize;
+
+const CONFIRM_LIMIT: u32 = 500;
 
 /// Which folders to archive and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,6 +284,8 @@ impl Syncer {
         )
         .await?;
         self.store.set_cursor(folder, &cursor).await?;
+        self.confirm_changes(account, session, folder, &on_server, report)
+            .await?;
 
         let failures = self.store.failures(folder).await?;
         let retry: BTreeSet<u64> = failures
@@ -289,6 +299,7 @@ impl Syncer {
             .map(|f| f.uid)
             .collect();
         let last = cursor.last_uid.unwrap_or(0);
+        let live = cursor.synced_at.is_some();
         let fresh = |uid: u64| {
             if status.uids_ascend {
                 uid > last
@@ -333,6 +344,7 @@ impl Syncer {
                     flags: message.flags,
                     labels: message.labels,
                     received_at: message.received_at,
+                    live,
                 };
                 match self
                     .ingest
@@ -459,6 +471,57 @@ impl Syncer {
             self.ingest.commit().await.map_err(ingest_error)?;
         }
         cursor.highest_modseq = status.highest_modseq;
+        Ok(())
+    }
+
+    /// Reads the flags (and labels) of the folder's messages with held or sending flags or
+    /// labels changes and tells the store what they are now, so a change the server shows is
+    /// applied and one it contradicts after it was sent is superseded: the server wins. The
+    /// time passed along is taken before the read.
+    async fn confirm_changes(
+        &self,
+        account: &Account,
+        session: &mut dyn SourceSession,
+        folder: FolderId,
+        on_server: &BTreeSet<u64>,
+        report: &mut FolderReport,
+    ) -> Result<(), SyncError> {
+        let open = self
+            .store
+            .list_mail_changes(&MailChangeQuery {
+                account: account.id,
+                states: vec![MailChangeState::Held, MailChangeState::Sending],
+                limit: CONFIRM_LIMIT,
+            })
+            .await?;
+        let uids: BTreeSet<u64> = open
+            .iter()
+            .filter(|c| c.new.folder_id == folder && c.new.op.needs_confirmation())
+            .filter_map(|c| c.new.uid)
+            .filter(|uid| on_server.contains(uid))
+            .collect();
+        if uids.is_empty() {
+            return Ok(());
+        }
+        let read_at = Timestamp::now();
+        let mut changed = false;
+        for uid in uids {
+            for seen in session.flags(uid..=uid, None).await? {
+                if seen.uid != uid {
+                    continue;
+                }
+                self.store
+                    .confirm_mail_flags(folder, uid, &seen.flags, seen.labels.as_deref(), read_at)
+                    .await?;
+                if self.apply(folder, seen).await? {
+                    report.flags_changed += 1;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.ingest.commit().await.map_err(ingest_error)?;
+        }
         Ok(())
     }
 

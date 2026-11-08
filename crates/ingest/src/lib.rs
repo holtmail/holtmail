@@ -9,6 +9,7 @@ mod pim;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use holtmail_alias::{AliasDetector, Header, Mail};
 use holtmail_blob::{BlobError, BlobId, BlobStore};
@@ -46,6 +47,26 @@ pub struct Placement {
     pub labels: Option<Vec<String>>,
     /// When the server received it.
     pub received_at: Option<Timestamp>,
+    /// It arrived while the folder was being followed (a watch, an incremental poll, a
+    /// delivery), not in a backfill, an import or a rebuild.
+    pub live: bool,
+}
+
+/// Told about every message [`Ingest::ingest`] adds to an archive, after it is stored and
+/// located and before it is indexed.
+#[async_trait]
+pub trait Observer: Send + Sync {
+    /// `message` was just added to `archive` with these bytes, as parsed, placed as
+    /// `placement` says. Not called for bytes the archive already had. Whatever the observer
+    /// does never fails ingest: it handles and logs its own errors.
+    async fn added(
+        &self,
+        archive: ArchiveId,
+        message: MessageId,
+        raw: &[u8],
+        parsed: &ParsedMessage,
+        placement: &Placement,
+    );
 }
 
 /// What [`Ingest::ingest`] did.
@@ -89,6 +110,7 @@ pub struct Ingest {
     detectors: Vec<Arc<dyn AliasDetector>>,
     insights: Option<Arc<Runner>>,
     categories: Option<(Arc<Deriver>, CategoryPolicy)>,
+    observers: Vec<Arc<dyn Observer>>,
 }
 
 impl Ingest {
@@ -106,7 +128,20 @@ impl Ingest {
             detectors: Vec::new(),
             insights: None,
             categories: None,
+            observers: Vec::new(),
         }
+    }
+
+    /// The blob store it writes bytes to.
+    pub fn blobs(&self) -> Arc<dyn BlobStore> {
+        self.blobs.clone()
+    }
+
+    /// The same pipeline, also telling `observer` about every message it adds, in the order
+    /// observers were added.
+    pub fn with_observer(mut self, observer: Arc<dyn Observer>) -> Self {
+        self.observers.push(observer);
+        self
     }
 
     /// The same pipeline, also computing message insights with `runner` and recording them with
@@ -340,7 +375,7 @@ impl Ingest {
             }
             return Err(IngestError::Deleted);
         }
-        let blob_id = self.blobs.put(raw).await?;
+        let blob_id = self.blobs.put(raw.clone()).await?;
 
         let inserted = match self.store.find_by_blob(archive, &blob_id).await? {
             Some(message_id) => {
@@ -403,6 +438,13 @@ impl Ingest {
         }
         if let Some(labels) = &placement.labels {
             self.store.set_labels(inserted.message_id, labels).await?;
+        }
+        if inserted.created {
+            for observer in &self.observers {
+                observer
+                    .added(archive, inserted.message_id, &raw, &parsed, placement)
+                    .await;
+            }
         }
         self.categorize(inserted.message_id, archive).await;
         let alias = if inserted.created {
@@ -932,7 +974,72 @@ mod tests {
             flags: flags.iter().map(|s| s.to_string()).collect(),
             labels: None,
             received_at: None,
+            live: false,
         }
+    }
+
+    type Heard = (MessageId, bool, Option<String>, usize);
+
+    #[derive(Default)]
+    struct Seen(std::sync::Mutex<Vec<Heard>>);
+
+    #[async_trait]
+    impl Observer for Seen {
+        async fn added(
+            &self,
+            _: ArchiveId,
+            message: MessageId,
+            raw: &[u8],
+            parsed: &ParsedMessage,
+            placement: &Placement,
+        ) {
+            self.0.lock().unwrap().push((
+                message,
+                placement.live,
+                parsed.message_id.clone(),
+                raw.len(),
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn observers_hear_of_added_messages_only() {
+        let f = fixture().await;
+        let seen = Arc::new(Seen::default());
+        let ingest = f.ingest.clone().with_observer(seen.clone());
+        let live = Placement {
+            live: true,
+            ..in_inbox(&f, 1, &[])
+        };
+        let first = ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &live)
+            .await
+            .unwrap();
+        ingest
+            .ingest(f.archive, Bytes::from_static(ROOT), &in_inbox(&f, 2, &[]))
+            .await
+            .unwrap();
+        let reply = ingest
+            .ingest(f.archive, Bytes::from_static(REPLY), &in_inbox(&f, 3, &[]))
+            .await
+            .unwrap();
+        assert_eq!(
+            *seen.0.lock().unwrap(),
+            [
+                (
+                    first.message_id,
+                    true,
+                    Some("l1@example.com".into()),
+                    ROOT.len()
+                ),
+                (
+                    reply.message_id,
+                    false,
+                    Some("r1@example.org".into()),
+                    REPLY.len()
+                ),
+            ]
+        );
     }
 
     async fn find(f: &Fixture, clauses: Vec<Clause>) -> Vec<MessageId> {

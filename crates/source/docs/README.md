@@ -4,7 +4,7 @@ The contract for reading mail from an account's server. IMAP, Microsoft Graph an
 
 ## Read-only
 
-A source never changes the server: no flags set, nothing moved, expunged or appended. For IMAP this means `EXAMINE` instead of `SELECT` and `BODY.PEEK[]` instead of `BODY[]`, so archiving does not mark mail as read.
+A source never changes the server: no flags set, nothing moved, expunged or appended. For IMAP this means `EXAMINE` instead of `SELECT` and `BODY.PEEK[]` instead of `BODY[]`, so archiving does not mark mail as read. Changing the mailbox is the job of a separate [`MailboxWriter`](#mailboxwriter), which the server hands out only for accounts whose owner turned the matching capability on ([WRITE.md](../../../docs/WRITE.md#mailbox-changes)).
 
 ## Traits
 
@@ -55,7 +55,34 @@ pub trait SourceSession: Send {
 
 A watch is a hint to sync: it never archives anything and never says what changed in detail, so a missed or spurious notice can only make archiving later or a run useless.
 
-## Credentials
+## MailboxWriter
+
+```rust
+#[async_trait]
+pub trait MailboxWriter: Send + Sync {
+    fn capabilities(&self) -> MailboxWriteCaps;
+    async fn set_flags(&self, folder: &str, uids: &[u64], add: &[Flag], remove: &[Flag],
+                       unchanged_since: Option<u64>) -> Result<FlagResult, SourceError>;
+    async fn set_labels(&self, uids: &[u64], add: &[String], remove: &[String]) -> Result<(), SourceError>;
+    async fn move_to(&self, folder: &str, uids: &[u64], target: &str) -> Result<Moved, SourceError>;
+    async fn append(&self, folder: &str, raw: &[u8], flags: &[Flag], date: Timestamp)
+                    -> Result<Option<u64>, SourceError>;
+    async fn delete(&self, folder: &str, uids: &[u64], expunge: bool) -> Result<(), SourceError>;
+}
+```
+
+Every method works on its own connection or request and may run from several tasks at once. A call that fails with `Unsupported` or `Missing` changed nothing; any other failure may leave the call partly applied (some messages changed and others not, or a flags change with only its added flags set, or a copy-and-expunge move with the message in both folders). Every method except `append` is idempotent, so calling again with the same arguments finishes the job; JMAP, Graph and IMAP writers all rely on this. UIDs are those the account's `Source` reports for the folder.
+
+| Item | Guarantees |
+| --- | --- |
+| `Flag` | `Seen`, `Answered`, `Flagged`, `Draft` or `Keyword(name)`; `as_imap()` spells it as IMAP does, `parse(name)` matches the four system flags ignoring ASCII case and keeps anything else (`\Deleted` included) as a keyword, `is(name)` compares ignoring ASCII case |
+| `MailboxWriteCaps { flags, keywords, conditional, labels, move_uids, append_uid, mark_deleted }` | Fixed for the writer's lifetime. `flags` lists the system flags it can set (Graph: `Seen`, `Flagged`), `keywords` whether it takes keywords, `conditional` whether `set_flags` takes `unchanged_since`, `labels` whether `set_labels` works, `move_uids` and `append_uid` whether new UIDs are reported, `mark_deleted` whether `delete` can mark without expunging. Moving, expunging and appending always work. `full()` is everything; `supports(flag)` answers for one flag |
+| `set_flags` | Idempotent: adding a flag a message has or removing one it lacks changes nothing and still lists the UID in `FlagResult.updated` (ascending). A flag in both lists ends up removed. UIDs not in the folder are ignored and listed nowhere. With `unchanged_since`, a message whose mod-sequence is above it is left alone and listed in `FlagResult.modified`. `Unsupported` before changing anything for a flag outside `supports` or `unchanged_since` without `conditional`; `Missing` for an unknown folder |
+| `set_labels` | Labels by readable name on UIDs of the account's `All` folder; idempotent, remove wins, unknown UIDs ignored. `Unsupported` without `labels`, `Missing` without an `All` folder |
+| `move_to` | Bytes and flags move along and the message leaves `folder`. `Moved.uids` pairs each moved UID with its new UID when reported, ascending; UIDs not in `folder` are left out, so moving again is harmless. `Missing` when either folder is unknown. Without a server-side move a failure between copy and expunge can leave the message in both folders, never in neither |
+| `append` | Stores `raw` unchanged with the flags and `date` as received time. Not idempotent. Returns the new UID when the server tells it, always with `append_uid`. `Unsupported` for an unsupported flag, `Missing` for an unknown folder |
+| `delete` | With `expunge` the messages are removed for good; without, marked `\Deleted` and still listed (needs `mark_deleted`, else `Unsupported`). Idempotent, unknown UIDs ignored, `Missing` for an unknown folder. Moving to Trash is `move_to` |
+
 
 ```rust
 pub enum Credentials {
@@ -74,12 +101,20 @@ How a source signs in: a password or app password, or an OAuth 2.0 access token 
 | `Connection` | Unreachable or connection broke | Yes, later |
 | `Protocol` | Unexpected answer or refused command | Yes, later |
 | `Config` | Account settings incomplete | No |
+| `Unsupported` | The server or writer cannot do this (a keyword on Graph, `unchanged_since` without `CONDSTORE`); nothing changed | No |
+| `Missing` | A folder the call names does not exist; nothing changed | No, until it exists |
 
 `SourceError::is_transient()` says which ones are worth retrying.
 
 ## Testing
 
 With the `testing` feature, `holtmail_source::testing::FakeSource` is a mail server in memory: add folders, mark one as a label folder, deliver messages (with labels, as Gmail's All Mail holds them, or with a received time, `deliver_received`), change their flags and labels as another client would, expunge them, renumber a folder (new `UIDVALIDITY`), make a folder's UIDs not ascend with arrival (`mark_unordered`) and deliver at a chosen UID (`deliver_at`), turn mod-sequences on (`enable_condstore`), keep a per-folder state that every delivery, flag change and expunge moves on (`track_changes`), count folder listings (`listings`), reject sign-in, and inspect which UIDs were fetched and which flag reads were made. `enable_watch` makes `watch` answer with a watch that reports the folders every delivery, flag change, expunge and renumbering touches; `break_watches` ends running watches with a `Connection` error (and fails new ones) until it is called with `None`; `reject_watch_sign_in` fails new watches with `Auth`; `watches` counts the watches started.
+
+`FakeSource::writer()` is a `MailboxWriter` (`FakeWriter`) on the same server: its changes show in sessions, move mod-sequences and wake watches. `set_write_caps` makes it report and keep to other capabilities (`MailboxWriteCaps::full()` by default), `fail_writes` makes every call fail with `Connection` before changing anything, and `writes` counts the calls. `FakeSource` also implements `testing::MailboxProbe`.
+
+## Conformance for writers
+
+An implementation runs `holtmail_source::testing::writer_conformance(&writer, &probe, WriteFolders { folder, target, all }).await` against its in-process fake server. `probe` implements `testing::MailboxProbe`, which fills and reads the same server without the writer: `deliver(path, raw)` (an MTA's delivery, returns the UID) and `messages(path)` (every message as `Probed { uid, flags, labels, modseq, raw }`, ascending; `modseq` is required for a conditional writer). `folder` and `target` are two existing folders, which may hold other mail; `all` is the account's `All` folder and is needed when the writer has `labels`. The suite delivers messages with a `Message-ID` of their own on `example.com` and checks: `set_flags` with unknown UIDs, ascending `updated`, idempotency, removal, remove winning, no UIDs; keywords and system flags refused with `Unsupported` exactly when the capabilities say so, without changing anything; `unchanged_since` updating an unchanged message and reporting a changed one in `modified` (or `Unsupported` without `conditional`); labels added, kept once and removed (or `Unsupported`); a move keeping bytes and flags, leaving the folder, reporting the new UID with `move_uids` and being harmless twice; an append storing the exact bytes and flags and reporting the UID with `append_uid`; marking deleted (or `Unsupported`) and expunging, harmless twice; and `Missing` for unknown folders. `FakeWriter` passes it with full and with Graph-like capabilities.
 
 ## Conformance for watches
 

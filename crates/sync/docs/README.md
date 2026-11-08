@@ -27,10 +27,14 @@ Gmail accounts archived before labels existed keep the location rows of their la
 2. When the cursor holds a source state (`FolderCursor::state`, a Graph delta link) and the source answers `unchanged_since(state)` with a token, nothing changed: the token is saved, `synced_at` set, and the folder is done without listing, fetching or a flag read. Otherwise the stored state is dropped (and saved as dropped) before anything else, so an interrupted sync never skips unfinished work. Sources without state (IMAP, JMAP) always go on.
 3. List the folder's UIDs. Archived UIDs missing from the server are marked removed: the message stays in the archive, only its location records when it left. Its search document is refreshed.
 4. Fetch UIDs above the cursor, plus earlier failures that have been tried fewer than `max_attempts` times, in batches of `batch`. When the folder says its UIDs do not ascend with arrival (`FolderStatus::uids_ascend` is `false`, as on JMAP), fetch instead every UID on the server that has no live location in the folder yet, except those that failed `max_attempts` times; the cursor then only bounds the flag reads.
-5. Take in flag and label changes of messages archived before (UIDs up to the cursor), see below, and save the cursor.
+5. Take in flag and label changes of messages archived before (UIDs up to the cursor), see below, and save the cursor. Then confirm held changes (below).
 6. Ingest each new message; with `min_age`, stop at the first one that is too young (see above). Bytes that are not a message are recorded as a failure with the reason and the sync moves on; one broken message never stops a folder from advancing.
 7. Save the cursor and commit the index after every batch, so an interrupted sync resumes where it stopped.
 8. At the end, store the source's `state()` with the cursor only when nothing was left behind: nothing deferred by `min_age` and no failure on the server that will be retried. Otherwise the state stays empty and the next sync lists the folder again, so a message waiting for its age or a retry is never skipped by an "unchanged" answer.
+
+## Live arrivals
+
+A message is ingested with `Placement::live` when its folder had finished a sync before (`FolderCursor::synced_at` set when the run started): the folder is being followed, so the message is new mail, not a backfill. A first sync, and the rest of a first sync that was interrupted, are not live; a folder that was empty at its first sync is followed from then on. Test: `only_mail_after_a_finished_sync_is_live`.
 
 ## Flag changes
 
@@ -39,6 +43,10 @@ Messages read, flagged or relabelled in another client after archiving are updat
 - **With mod-sequences** (`CONDSTORE`, the folder reports `HIGHESTMODSEQ`): when it moved past the cursor's `highest_modseq`, one `flags(1..=last_uid, changed_since)` returns only what changed. An unchanged mod-sequence costs nothing.
 - **Without**: every archived UID's flags are read again once per `flag_scan_interval` (a day by default), `flag_batch` UIDs per command, and `flags_checked_at` records when. Between scans nothing is read, so a change shows up within a day.
 - A folder synced for the first time records the current mod-sequence and time: its messages were just fetched with fresh flags. A folder archived by an older Holtmail (no `flags_checked_at` yet), a server that starts reporting mod-sequences, or one that reports a lower one than saved gets one full read first.
+
+## Confirming held changes
+
+After the flag changes, the folder's messages with a `held` or `sending` flags or labels change in `mail_changes` (written by the API and sent by `mail-writeback`) get one more flag read each, `flags(uid..=uid, None)`, and what it shows goes to `MailChangeStore::confirm_mail_flags` with the time taken before the read, and into the archive like any flag change. A change the server shows is `applied`; a change sent before the read that the server contradicts is `superseded_by_server`: the server wins. Folders without open changes cost one store query; at most 500 open changes per account are looked at per sync, and the rest are settled by `mail-writeback` after a while.
 
 A connection that breaks inside a folder ends that folder with `error` set and continues with the next one. Rejected credentials end the whole sync with `SyncError::Source(SourceError::Auth)`. Failures of Holtmail's own storage end it with `Store` or `Ingest`.
 

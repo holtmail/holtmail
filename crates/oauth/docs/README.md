@@ -25,6 +25,14 @@ Thunderbird's Microsoft client declares Graph scopes too (`User.Read`, `MailboxF
 
 `Provider::for_address` knows `gmail.com`, `googlemail.com` (Google) and `outlook.com`, `hotmail.com`, `live.com`, `msn.com`, `office365.com` (Microsoft); custom domains hosted by either return `None`. `parse` reads `as_str` back; `name()` is `Google` or `Microsoft`.
 
+### Sending
+
+`Provider::send_scope(access)` is the scope a sign-in adds to also send mail: Microsoft `https://outlook.office.com/SMTP.Send` for `Imap` (SMTP submission with XOAUTH2 beside IMAP) and `https://graph.microsoft.com/Mail.Send` for `Graph` and `GraphPim`; `None` for Google, whose `https://mail.google.com/` already covers SMTP (`sends_without_consent(access)` is `true` for Google's `Imap` and `ImapDav`). `Client::with_send(access)` appends it once; a refresh token granted with it must be refreshed with the same scopes, so the caller remembers whether a sign-in asked for it.
+
+`Provider::write_scope(access)` is the scope a sign-in adds to also change mail on the server (flags, moves, deletes, appends): Microsoft `https://graph.microsoft.com/Mail.ReadWrite` for `Graph` and `GraphPim`; `None` otherwise, since Microsoft's IMAP scope and Google's mail scope already allow writing. `Client::with_write(access)` appends it once; like the send scope, the caller remembers whether a sign-in asked for it and refreshes with the same scopes.
+
+`Provider::pim_write_scope(access)` are the scopes a sign-in adds to also change contacts and calendars upstream (`pim.edit`): Microsoft `https://graph.microsoft.com/Contacts.ReadWrite https://graph.microsoft.com/Calendars.ReadWrite` for `GraphPim`; Google `https://www.googleapis.com/auth/calendar` for `ImapDav` (its CardDAV scope already writes, its read scope for calendars does not); `None` otherwise. `Client::with_pim_write(access)` appends each once and drops `auth/calendar.readonly` once `auth/calendar` is asked for; the caller remembers whether a sign-in asked for them and refreshes with the same scopes.
+
 ## Clients
 
 ```rust

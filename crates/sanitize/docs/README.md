@@ -7,6 +7,7 @@ Makes message HTML safe to show in the reader. Built on [`ammonia`](https://docs
 ```rust
 pub fn sanitize(html: &str, options: &Options) -> Sanitized;
 pub fn document(body: &str, allow_remote: bool, inline_origin: &str) -> String;
+pub fn outgoing(html: &str) -> String;
 pub fn remote_images(html: &str) -> Vec<String>;
 pub fn remote_key(url: &str) -> String;
 ```
@@ -31,3 +32,7 @@ pub fn remote_key(url: &str) -> String;
 ## What `document` adds
 
 A full page with `<meta charset="utf-8">`, `referrer: no-referrer`, `<base target="_blank">` and a Content Security Policy: `default-src 'none'`, images only from `inline_origin`, `data:` and `cid:`, inline styles only, no forms, no base changes. With `allow_remote`, `http:` and `https:` are added for images, styles and fonts.
+
+## The outgoing profile
+
+`outgoing(html)` cleans HTML written in the compose editor before `holtmail-compose` sends it. It removes the same things as `sanitize` (scripts, event handlers, forms and inputs, frames, objects, comments, `javascript:` and relative URLs, `data:` except in `<img src>` with an image type) and keeps the same formatting, plus `type` on `<blockquote>` for quoted replies. Unlike `sanitize` it changes nothing else: links stay as written without `target` or `rel`, `cid:` references to inline parts stay `cid:`, and remote images, backgrounds and style URLs stay as they are, so quoted HTML is sent as it was received.

@@ -1,6 +1,6 @@
 [package]
 name = "holtmail-source-imap"
-description = "Reading mail from IMAP servers"
+description = "Reading and changing mail on IMAP servers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,6 +14,7 @@ holtmail-store.workspace = true
 async-imap.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+chrono.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -4,8 +4,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use holtmail_core::TlsRoots;
 use holtmail_source::SourceError;
-use reqwest::header::{ACCEPT, HeaderMap, RETRY_AFTER};
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, RETRY_AFTER};
+use reqwest::{Method, RequestBuilder, StatusCode};
 use serde_json::Value;
 use url::{Host, Url};
 
@@ -39,6 +39,14 @@ pub(crate) fn allowed(url: &Url) -> bool {
 pub(crate) enum Scope {
     Mailbox,
     Item,
+}
+
+/// What a write sends.
+pub(crate) enum Body {
+    Empty,
+    Json(Value),
+    /// A MIME message in base64, as Graph takes it with `Content-Type: text/plain`.
+    Mime(String),
 }
 
 /// The answer to a request whose `404` or `410` the caller handles.
@@ -145,36 +153,63 @@ impl Http {
         Ok(url)
     }
 
-    fn request(&self, url: Url, json: bool) -> RequestBuilder {
-        let builder = self.client.get(url).bearer_auth(&self.token);
+    fn request(&self, method: &Method, url: Url, json: bool, body: &Body) -> RequestBuilder {
+        let get = method == Method::GET;
+        let builder = self
+            .client
+            .request(method.clone(), url)
+            .bearer_auth(&self.token);
         let builder = if json {
             builder.header(ACCEPT, "application/json")
         } else {
             builder
         };
+        let builder = match body {
+            Body::Empty if get => builder,
+            Body::Empty => builder.body(Vec::new()),
+            Body::Json(value) => builder
+                .header(CONTENT_TYPE, "application/json")
+                .body(value.to_string()),
+            Body::Mime(encoded) => builder
+                .header(CONTENT_TYPE, "text/plain")
+                .body(encoded.clone()),
+        };
         builder.header("Prefer", "IdType=\"ImmutableId\", odata.maxpagesize=500")
     }
 
-    /// Sends a GET, waiting and trying again while Graph throttles (`429`) or is briefly
-    /// unavailable (`503`, `504`), as long as `Retry-After` says or with a growing pause.
-    async fn send(&self, url: Url, json: bool) -> Result<(reqwest::Response, String), SourceError> {
+    /// Sends a request, waiting and trying again while Graph throttles (`429`) or, when
+    /// `repeatable`, is briefly unavailable (`503`, `504`), as long as `Retry-After` says or
+    /// with a growing pause. A throttled request was not carried out, so trying it again is
+    /// always safe; an unavailable one may have been.
+    async fn send(
+        &self,
+        method: &Method,
+        url: Url,
+        json: bool,
+        body: &Body,
+        repeatable: bool,
+    ) -> Result<(reqwest::Response, String), SourceError> {
         let host = host(&url);
         let mut attempt = 0;
         loop {
-            let response = self.request(url.clone(), json).send().await.map_err(|e| {
-                SourceError::Connection(if e.is_timeout() {
-                    format!("{host} did not answer in time")
-                } else {
-                    format!("{host} could not be reached")
-                })
-            })?;
+            let response = self
+                .request(method, url.clone(), json, body)
+                .send()
+                .await
+                .map_err(|e| {
+                    SourceError::Connection(if e.is_timeout() {
+                        format!("{host} did not answer in time")
+                    } else {
+                        format!("{host} could not be reached")
+                    })
+                })?;
             let status = response.status();
-            let busy = matches!(
-                status,
-                StatusCode::TOO_MANY_REQUESTS
-                    | StatusCode::SERVICE_UNAVAILABLE
-                    | StatusCode::GATEWAY_TIMEOUT
-            );
+            let busy = status == StatusCode::TOO_MANY_REQUESTS
+                || repeatable
+                    && matches!(
+                        status,
+                        StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT
+                    );
             if !busy {
                 return Ok((response, host));
             }
@@ -224,7 +259,9 @@ impl Http {
         scope: Scope,
         json: bool,
     ) -> Result<Answer<reqwest::Response>, SourceError> {
-        let (response, host) = self.send(url, json).await?;
+        let (response, host) = self
+            .send(&Method::GET, url, json, &Body::Empty, true)
+            .await?;
         if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
             return Ok(Answer::Missing);
         }
@@ -255,5 +292,28 @@ impl Http {
         read_limited(response, MAX_DOWNLOAD, &host, "a download")
             .await
             .map(Answer::Found)
+    }
+
+    /// Sends a write. `404` and `410` are [`Answer::Missing`]; a `403` is `Auth`, since it
+    /// means the token lacks `Mail.ReadWrite`. The answer's JSON, `None` when it has no body.
+    pub(crate) async fn write(
+        &self,
+        method: Method,
+        url: Url,
+        body: Body,
+        repeatable: bool,
+    ) -> Result<Answer<Option<Value>>, SourceError> {
+        let (response, host) = self.send(&method, url, true, &body, repeatable).await?;
+        if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+            return Ok(Answer::Missing);
+        }
+        Self::check(response.status(), &host, Scope::Mailbox)?;
+        let body = read_limited(response, MAX_JSON, &host, "the answer").await?;
+        if body.iter().all(u8::is_ascii_whitespace) {
+            return Ok(Answer::Found(None));
+        }
+        serde_json::from_slice(&body)
+            .map(|value| Answer::Found(Some(value)))
+            .map_err(|_| SourceError::Protocol(format!("{host} did not answer with JSON")))
     }
 }

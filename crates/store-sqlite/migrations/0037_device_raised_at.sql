@@ -1,0 +1,1 @@
+ALTER TABLE devices ADD COLUMN raised_at INTEGER;

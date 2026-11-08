@@ -61,6 +61,8 @@ pub struct Collection {
     pub created_at: Timestamp,
     /// When it was noticed gone from the source; it stays readable.
     pub removed_at: Option<Timestamp>,
+    /// Whether devices and the web app may change it, and whether changes go upstream.
+    pub write_mode: crate::WriteMode,
 }
 
 /// Fields of a collection to create or update.
@@ -149,6 +151,16 @@ pub struct Item {
     pub removed_at: Option<Timestamp>,
     /// How many versions are stored; the latest has this number.
     pub versions: u32,
+    /// The href a client created it under, kept for good once the upstream id is known;
+    /// `None` for items that came from upstream.
+    pub dav_name: Option<String>,
+}
+
+impl Item {
+    /// The name it is served under: its DAV name, else its source id.
+    pub fn href(&self) -> &str {
+        self.dav_name.as_deref().unwrap_or(&self.remote_id)
+    }
 }
 
 /// One stored version of an item: raw bytes exactly as the source gave them.
@@ -170,6 +182,10 @@ pub struct ItemVersion {
     pub photo_blob_id: Option<BlobId>,
     /// For a version read from mail: its iTIP method and the fields it is ordered by.
     pub mail: Option<MailVersionInfo>,
+    /// Whether a source showed it or a writeback recorded it.
+    pub origin: crate::VersionOrigin,
+    /// For a writeback version: the change that was sent.
+    pub change_id: Option<holtmail_core::ItemChangeId>,
 }
 
 /// What a calendar object found in mail says about itself, and the fields that order it among

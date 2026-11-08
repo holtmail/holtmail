@@ -4,12 +4,17 @@ mod aliases;
 mod calendar;
 mod categories;
 mod deletion;
+mod devices;
 mod insights;
+mod item_changes;
 mod ledger;
+mod mail_changes;
 mod people;
 mod pim;
 mod rows;
+mod send;
 mod webhooks;
+mod write;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -186,6 +191,33 @@ impl ArchiveStore for SqliteStore {
         .await
         .map_err(backend)?;
         blobs.extend(versions);
+        let outgoing: Vec<String> = sqlx::query_scalar(
+            "SELECT blob_id FROM outbox WHERE archive_id = ?1
+             UNION SELECT b.blob_id FROM draft_blobs b JOIN drafts d ON d.id = b.draft_id
+             WHERE d.archive_id = ?1",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        blobs.extend(outgoing);
+        let appends: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT c.blob_id FROM mail_changes c JOIN accounts a ON a.id = c.account_id
+             WHERE a.archive_id = ?1 AND c.blob_id IS NOT NULL",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        blobs.extend(appends);
+        let edits: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT blob_id FROM item_changes WHERE archive_id = ?1 AND blob_id IS NOT NULL",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        blobs.extend(edits);
         let linked: Vec<String> = sqlx::query_scalar(
             "SELECT DISTINCT l.key FROM message_remote_images l JOIN messages m ON m.id = l.message_id
              WHERE m.archive_id = ?1",
@@ -195,6 +227,17 @@ impl ArchiveStore for SqliteStore {
         .await
         .map_err(backend)?;
         for statement in [
+            "DELETE FROM mail_changes WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM item_change_messages WHERE change_id IN (SELECT id FROM item_changes WHERE archive_id = ?1)",
+            "DELETE FROM deferred_replies WHERE archive_id = ?1",
+            "DELETE FROM item_changes WHERE archive_id = ?1",
+            "DELETE FROM changes WHERE archive_id = ?1",
+            "DELETE FROM outbox WHERE archive_id = ?1",
+            "DELETE FROM drafts WHERE archive_id = ?1",
+            "DELETE FROM identity_defaults WHERE archive_id = ?1",
+            "DELETE FROM identities WHERE archive_id = ?1",
+            "DELETE FROM transport_grants WHERE archive_id = ?1",
+            "DELETE FROM transports WHERE archive_id = ?1",
             "DELETE FROM deleted_locations WHERE folder_id IN
              (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.archive_id = ?1)",
             "DELETE FROM deleted_blobs WHERE archive_id = ?1",
@@ -208,6 +251,7 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM folders WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM account_runs WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM account_authserv WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
+            "DELETE FROM account_capabilities WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM person_emails WHERE archive_id = ?1",
             "DELETE FROM person_collections WHERE person_id IN (SELECT id FROM people WHERE archive_id = ?1)",
             "DELETE FROM people WHERE archive_id = ?1",
@@ -216,6 +260,8 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM message_aliases WHERE archive_id = ?1",
             "DELETE FROM aliases WHERE archive_id = ?1",
             "DELETE FROM alias_services WHERE archive_id = ?1",
+            "DELETE FROM alias_strategies WHERE archive_id = ?1",
+            "DELETE FROM reverse_aliases WHERE archive_id = ?1",
             "DELETE FROM item_version_messages WHERE item_id IN (SELECT id FROM items WHERE archive_id = ?1)",
             "DELETE FROM occurrences WHERE archive_id = ?1",
             "DELETE FROM event_series WHERE archive_id = ?1",
@@ -374,6 +420,7 @@ impl ArchiveStore for SqliteStore {
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
         for statement in [
+            "DELETE FROM mail_changes WHERE account_id = ?1",
             "DELETE FROM sync_failures WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM folder_cursors WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
             "DELETE FROM locations WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
@@ -381,7 +428,10 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM folders WHERE account_id = ?1",
             "DELETE FROM account_runs WHERE account_id = ?1",
             "DELETE FROM account_authserv WHERE account_id = ?1",
-            "UPDATE collections SET account_id = NULL WHERE account_id = ?1",
+            "DELETE FROM account_capabilities WHERE account_id = ?1",
+            "UPDATE collections SET account_id = NULL, write_mode = 'read_only' WHERE account_id = ?1",
+            "UPDATE transports SET account_id = NULL WHERE account_id = ?1",
+            "UPDATE identities SET account_id = NULL WHERE account_id = ?1",
         ] {
             sqlx::query(statement)
                 .bind(&id)
@@ -867,6 +917,28 @@ impl MessageStore for SqliteStore {
             extras.labels.sort();
         }
         Ok(out)
+    }
+
+    async fn messages_by_rfc_id(
+        &self,
+        archive: ArchiveId,
+        ids: &[String],
+    ) -> Result<Vec<Message>, StoreError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        sqlx::query(
+            "SELECT * FROM messages WHERE archive_id = ?1
+             AND rfc_message_id IN (SELECT value FROM json_each(?2)) ORDER BY date, id",
+        )
+        .bind(archive.to_string())
+        .bind(json(&ids)?)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?
+        .iter()
+        .map(message)
+        .collect()
     }
 
     async fn thread_messages(&self, thread: ThreadId) -> Result<Vec<Message>, StoreError> {
@@ -1599,11 +1671,16 @@ impl UserStore for SqliteStore {
         let user = user.to_string();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
-        sqlx::query("DELETE FROM archive_grants WHERE user_id = ?")
-            .bind(&user)
-            .execute(&mut *tx)
-            .await
-            .map_err(backend)?;
+        let kept = json(&archives.iter().map(ToString::to_string).collect::<Vec<_>>())?;
+        sqlx::query(
+            "DELETE FROM archive_grants WHERE user_id = ?
+             AND archive_id NOT IN (SELECT value FROM json_each(?))",
+        )
+        .bind(&user)
+        .bind(&kept)
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
         for archive in archives {
             sqlx::query(
                 "INSERT OR IGNORE INTO archive_grants (user_id, archive_id)
@@ -1671,6 +1748,19 @@ impl UserStore for SqliteStore {
         .map_err(backend)?
         .map(|row| user(&row))
         .transpose()
+    }
+
+    async fn session_started_at(
+        &self,
+        hash: &SessionHash,
+    ) -> Result<Option<Timestamp>, StoreError> {
+        let started: Option<i64> =
+            sqlx::query_scalar("SELECT created_at FROM sessions WHERE token_hash = ?")
+                .bind(&hash[..])
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(backend)?;
+        Ok(started.map(Timestamp::from_millis))
     }
 
     async fn delete_session(&self, hash: &SessionHash) -> Result<(), StoreError> {
@@ -1977,7 +2067,11 @@ async fn blob_used(
          UNION ALL SELECT 1 FROM remote_images WHERE blob_id = ?1
          UNION ALL SELECT 1 FROM derived WHERE blob_id = ?1
          UNION ALL SELECT 1 FROM item_versions WHERE blob_id = ?1
-         UNION ALL SELECT 1 FROM item_versions WHERE photo_blob_id = ?1 LIMIT 1",
+         UNION ALL SELECT 1 FROM item_versions WHERE photo_blob_id = ?1
+         UNION ALL SELECT 1 FROM outbox WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM draft_blobs WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM mail_changes WHERE blob_id = ?1
+         UNION ALL SELECT 1 FROM item_changes WHERE blob_id = ?1 LIMIT 1",
     )
     .bind(blob)
     .fetch_optional(&mut **tx)
@@ -2103,6 +2197,14 @@ impl InventoryStore for SqliteStore {
                                       ORDER BY blob_id LIMIT ?2)
                  UNION SELECT * FROM (SELECT DISTINCT photo_blob_id FROM item_versions
                                       WHERE photo_blob_id > ?1 ORDER BY photo_blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM outbox WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM draft_blobs WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM mail_changes WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
+                 UNION SELECT * FROM (SELECT DISTINCT blob_id FROM item_changes WHERE blob_id > ?1
+                                      ORDER BY blob_id LIMIT ?2)
              ) ORDER BY blob_id LIMIT ?2",
         )
         .bind(after)

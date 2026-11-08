@@ -10,13 +10,18 @@ mod aliases;
 mod calendar;
 mod categories;
 mod deletion;
+mod devices;
 mod insights;
+mod item_changes;
 mod ledger;
+mod mail_changes;
 mod people;
 mod pim;
+mod send;
 mod types;
 mod unsubscribe;
 mod webhooks;
+mod write;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -34,13 +39,18 @@ pub use aliases::*;
 pub use calendar::*;
 pub use categories::*;
 pub use deletion::*;
+pub use devices::*;
 pub use insights::*;
+pub use item_changes::*;
 pub use ledger::*;
+pub use mail_changes::*;
 pub use people::*;
 pub use pim::*;
+pub use send::*;
 pub use types::*;
 pub use unsubscribe::*;
 pub use webhooks::*;
+pub use write::*;
 
 /// Why a store operation failed.
 #[derive(Debug, thiserror::Error)]
@@ -78,9 +88,9 @@ pub trait ArchiveStore: Send + Sync {
 
     /// Removes the archive with its accounts, folders, messages, attachments, labels, sync state,
     /// grants, people and their splits and joins, the insights and categories of its messages, its
-    /// category overrides, the trusted authserv-ids of its accounts, collections with their items and versions, the remote copies no remaining message
+    /// category overrides, the trusted authserv-ids of its accounts, its transports, identities, drafts and outbox, the grants of instance transports to it, collections with their items and versions, the remote copies no remaining message
     /// links to, and what was derived from blobs that are no longer used. Returns the blobs that no
-    /// message, attachment, item version, remote copy or derived record references any more, so
+    /// message, attachment, item version, remote copy, outbox message, draft or derived record references any more, so
     /// the caller can delete them. Enters the deletion in the ledger as one `archive_deleted`
     /// entry, in the same transaction; earlier entries stay.
     /// `NotFound` when the archive does not exist.
@@ -101,8 +111,8 @@ pub trait ArchiveStore: Send + Sync {
     /// Replaces every field of the account except `id`, `archive_id`, `kind` and `created_at`.
     async fn update_account(&self, account: &Account) -> Result<(), StoreError>;
 
-    /// Removes the account with its folders, locations, sync state and trusted authserv-ids. Its messages stay in the
-    /// archive, and so do its collections, which no longer name an account. `NotFound` when the
+    /// Removes the account with its folders, locations, sync state, capabilities and trusted authserv-ids. Its messages stay in the
+    /// archive, and so do its collections, transports and identities, which no longer name an account. `NotFound` when the
     /// account does not exist.
     async fn delete_account(&self, id: AccountId) -> Result<(), StoreError>;
 
@@ -167,6 +177,14 @@ pub trait MessageStore: Send + Sync {
 
     /// Messages of the thread, oldest first.
     async fn thread_messages(&self, thread: ThreadId) -> Result<Vec<Message>, StoreError>;
+
+    /// The archive's messages whose `Message-ID` is one of `ids` (without angle brackets,
+    /// compared exactly), oldest first; empty for no ids.
+    async fn messages_by_rfc_id(
+        &self,
+        archive: ArchiveId,
+        ids: &[String],
+    ) -> Result<Vec<Message>, StoreError>;
 
     /// Records that the message is in the folder with this UID and flags at `seen_at`.
     ///
@@ -317,14 +335,15 @@ pub trait UserStore: Send + Sync {
     /// `Invalid` when another user has the email, compared without regard to letter case.
     async fn update_user(&self, user: &User) -> Result<(), StoreError>;
 
-    /// Removes the user with their sessions and grants. `NotFound` when the user does not exist.
+    /// Removes the user with their sessions, grants, devices, drafts, identity grants and default identities. `NotFound` when the user does not exist.
     async fn delete_user(&self, id: UserId) -> Result<(), StoreError>;
 
     /// The archives the user was granted, oldest archive first. Empty for an unknown user.
     async fn grants(&self, user: UserId) -> Result<Vec<ArchiveId>, StoreError>;
 
-    /// Replaces the user's grants with `archives`; unknown archives are skipped. `NotFound` when
-    /// the user does not exist.
+    /// Replaces the user's grants with `archives`; unknown archives are skipped. Archives that stay
+    /// granted keep their [`GrantRole`]; new ones are granted as [`GrantRole::Reader`]. `NotFound`
+    /// when the user does not exist.
     async fn set_grants(&self, user: UserId, archives: &[ArchiveId]) -> Result<(), StoreError>;
 
     /// The user's PHC password hash; `None` when the user has no password. `NotFound` when the
@@ -350,6 +369,11 @@ pub trait UserStore: Send + Sync {
         hash: &SessionHash,
         now: Timestamp,
     ) -> Result<Option<User>, StoreError>;
+
+    /// When the session started, or `None` when there is no such session. An expired session
+    /// that has not been removed still answers.
+    async fn session_started_at(&self, hash: &SessionHash)
+    -> Result<Option<Timestamp>, StoreError>;
 
     /// Ends the session. Idempotent.
     async fn delete_session(&self, hash: &SessionHash) -> Result<(), StoreError>;
@@ -586,7 +610,8 @@ pub trait PimStore: Send + Sync {
 pub trait PeopleStore: Send + Sync {
     /// Every address of the archive's mail with its counts, and the owner's addresses. Empty
     /// for an archive without mail or an unknown one. A reverse alias recorded with a sender
-    /// (see [`AliasStore::set_message_alias`]) counts as that sender, with the sender's name; the
+    /// (see [`AliasStore::set_message_alias`]) counts as that sender, with the sender's name, and
+    /// one recorded by [`AliasStore::put_reverse_alias`] counts as its contact; the
     /// archive's aliases (known or seen in mail) are among the owner's addresses.
     async fn mail_addresses(&self, archive: ArchiveId) -> Result<MailAddresses, StoreError>;
 
@@ -616,7 +641,7 @@ pub trait PeopleStore: Send + Sync {
     ) -> Result<Vec<(String, PersonId)>, StoreError>;
 
     /// The archive's mail with any of `emails` (compared without regard to letter case) in
-    /// `From`, `To`, `Cc` or `Bcc`, or a reverse alias recorded for one of them: counts, years, at most `threads` conversations and at most
+    /// `From`, `To`, `Cc` or `Bcc`, or a reverse alias recorded for one of them (from mail or [`AliasStore::put_reverse_alias`]): counts, years, at most `threads` conversations and at most
     /// `attachments` attachments. Empty for no addresses.
     async fn correspondence(
         &self,
@@ -696,7 +721,7 @@ pub trait CalendarStore: Send + Sync {
 #[async_trait]
 pub trait InventoryStore: Send + Sync {
     /// Up to `limit` blobs that some record references: a message, an attachment, an item
-    /// version or its picture, a saved remote image or a derived file. Each blob is listed once, in ascending order of id, starting after
+    /// version or its picture, a saved remote image, an outbox message, a kept draft version, an append waiting in the mail changes, the bytes of a contact or calendar change, or a derived file. Each blob is listed once, in ascending order of id, starting after
     /// `after` (from the first when `None`), so paging with the last id of each page visits every
     /// referenced blob exactly once. A page shorter than `limit` is the last one.
     async fn referenced_blobs(
@@ -727,6 +752,11 @@ pub trait Store:
     + AliasStore
     + InsightStore
     + CategoryStore
+    + WriteStore
+    + SendStore
+    + MailChangeStore
+    + ItemChangeStore
+    + DeviceStore
 {
 }
 
@@ -750,5 +780,10 @@ impl<T> Store for T where
         + AliasStore
         + InsightStore
         + CategoryStore
+        + WriteStore
+        + SendStore
+        + MailChangeStore
+        + ItemChangeStore
+        + DeviceStore
 {
 }

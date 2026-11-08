@@ -11,6 +11,18 @@ pub mod tls;
 
 pub use tls::{InvalidRoots, TlsRoots};
 
+/// The block one client usually owns: an IPv4 address as itself, also when written as an
+/// IPv4-mapped IPv6 address, and an IPv6 address as its /64. Limits per client count by this.
+pub fn address_block(ip: std::net::IpAddr) -> std::net::IpAddr {
+    match ip.to_canonical() {
+        std::net::IpAddr::V6(v6) => {
+            let [a, b, c, d, ..] = v6.segments();
+            std::net::IpAddr::V6(std::net::Ipv6Addr::new(a, b, c, d, 0, 0, 0, 0))
+        }
+        v4 => v4,
+    }
+}
+
 /// A string that is not a valid id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("not a valid id")]
@@ -111,6 +123,127 @@ id!(
     /// An account at an alias service, connected to an archive.
     AliasServiceId
 );
+id!(
+    /// A way out for mail: a submission server or an account's own connection.
+    TransportId
+);
+id!(
+    /// An address people may send as, with its name, signature and transport.
+    IdentityId
+);
+id!(
+    /// A message being written, kept with its earlier versions.
+    DraftId
+);
+id!(
+    /// A message in the outbox, from queueing until it is sent, given up or cancelled.
+    OutboxId
+);
+id!(
+    /// A change to a message on its account's server, from the moment it is held until it is
+    /// applied, overruled by the server or given up.
+    MailChangeId
+);
+id!(
+    /// A change to a contact or calendar item made by a device or the web app, from the moment
+    /// it is held until it is applied, superseded, refused or discarded. Never deleted.
+    ItemChangeId
+);
+id!(
+    /// One client installation a user set up, such as a phone's mail app.
+    DeviceId
+);
+
+/// A protocol a device may sign in over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceProtocol {
+    /// IMAP.
+    Imap,
+    /// SMTP submission.
+    Smtp,
+    /// JMAP.
+    Jmap,
+    /// CalDAV and CardDAV.
+    Dav,
+    /// Holtmail's own HTTP API.
+    Api,
+}
+
+impl DeviceProtocol {
+    /// Every protocol, in a fixed order.
+    pub const ALL: [DeviceProtocol; 5] = [Self::Imap, Self::Smtp, Self::Jmap, Self::Dav, Self::Api];
+
+    /// The lowercase name used in storage and the API.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Imap => "imap",
+            Self::Smtp => "smtp",
+            Self::Jmap => "jmap",
+            Self::Dav => "dav",
+            Self::Api => "api",
+        }
+    }
+
+    /// The protocol named by [`DeviceProtocol::as_str`], or `None`.
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == name)
+    }
+
+    /// Whether the protocol serves one mail archive, so a device using it needs one.
+    pub fn needs_mail_archive(self) -> bool {
+        matches!(self, Self::Imap | Self::Smtp)
+    }
+}
+
+/// What a device may do. A scope never adds a right the user lacks; `rules` is never given to a
+/// device, so it is not here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum DeviceScope {
+    /// Reading archives.
+    #[serde(rename = "read")]
+    Read,
+    /// Flags, folders, deleting and appending on mail servers.
+    #[serde(rename = "write:mail")]
+    WriteMail,
+    /// Sending mail.
+    #[serde(rename = "send:mail")]
+    SendMail,
+    /// Changing contacts and calendars and answering invitations.
+    #[serde(rename = "write:pim")]
+    WritePim,
+    /// Receiving notifications.
+    #[serde(rename = "notify")]
+    Notify,
+}
+
+impl DeviceScope {
+    /// Every scope, in a fixed order.
+    pub const ALL: [DeviceScope; 5] = [
+        Self::Read,
+        Self::WriteMail,
+        Self::SendMail,
+        Self::WritePim,
+        Self::Notify,
+    ];
+
+    /// The name used in storage and the API: `read`, `write:mail`, `send:mail`, `write:pim` or
+    /// `notify`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::WriteMail => "write:mail",
+            Self::SendMail => "send:mail",
+            Self::WritePim => "write:pim",
+            Self::Notify => "notify",
+        }
+    }
+
+    /// The scope named by [`DeviceScope::as_str`], or `None`.
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == name)
+    }
+}
 
 /// A person derived from contacts and mail in an archive.
 ///

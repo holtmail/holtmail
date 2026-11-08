@@ -4,7 +4,7 @@ Small types that several contracts share, so that ids and times mean the same th
 
 ## Ids
 
-`ArchiveId`, `AccountId`, `FolderId`, `MessageId`, `ThreadId`, `UserId`, and for contacts and calendars `CollectionId` (an address book or a calendar) `ItemId` (a contact, event or task with all its versions) and `PersonOverrideId` (a split or join of people made by hand).
+`ArchiveId`, `AccountId`, `FolderId`, `MessageId`, `ThreadId`, `UserId`, and for contacts and calendars `CollectionId` (an address book or a calendar) `ItemId` (a contact, event or task with all its versions) and `PersonOverrideId` (a split or join of people made by hand). `WebhookId` and `AliasServiceId` name a webhook and an alias service account. For writing (see [WRITE.md](../../../docs/WRITE.md)): `TransportId` (a way out for mail), `IdentityId` (an address people send as), `DraftId` (a message being written) `OutboxId` (a message in the outbox) `MailChangeId` (a change to a message on its server, held until it is applied) and `ItemChangeId` (a change to a contact or calendar item from a device or the web app). For serving (see [SERVE.md](../../../docs/SERVE.md)): `DeviceId` (one client installation a user set up).
 
 - UUIDv7: ids created later sort after ids created earlier, so lists ordered by id are ordered by creation.
 - `new()` creates an id without asking the database, which keeps every store implementation free to pick its storage.
@@ -14,6 +14,14 @@ Small types that several contracts share, so that ids and times mean the same th
 `PersonId` names a person derived from contacts and mail (see [`holtmail-people`](../../people/docs/README.md)). It is not created but computed: `PersonId::from_hash(bytes)` makes a UUIDv8 from 16 bytes of a hash, so the same group of contacts and addresses gets the same id in every rebuild. It displays, parses and serializes like the others.
 
 `EventGroupId` names the copies of one calendar event in an archive: every event item with the same iCalendar `UID` (see [`holtmail-calendar`](../../calendar/docs/README.md)). Like `PersonId` it is computed with `EventGroupId::from_hash(bytes)`, so the same archive and `UID` always give the same id.
+
+## Device protocols and scopes
+
+`DeviceProtocol` (`imap`, `smtp`, `jmap`, `dav`, `api`) and `DeviceScope` (`read`, `write:mail`, `send:mail`, `write:pim`, `notify`) are shared by the device store and the `holtmail-device` contract. Both name themselves through `as_str`, `parse` and serde. `DeviceProtocol::needs_mail_archive` is true for IMAP and SMTP, which serve one archive per device. A scope never adds a right the user lacks.
+
+## Client addresses
+
+`address_block(ip)` is the block one client usually owns: an IPv4 address as itself, also when IPv4-mapped, and an IPv6 address as its /64. Limits per client count by it.
 
 ## Timestamp
 

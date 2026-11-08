@@ -1739,6 +1739,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-access"
+version = "0.0.0"
+dependencies = [
+ "holtmail-core",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "holtmail-alias"
 version = "0.0.0"
 dependencies = [
@@ -1857,9 +1870,11 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "axum",
+ "blake3",
  "bytes",
  "chrono",
  "futures",
+ "holtmail-access",
  "holtmail-alias",
  "holtmail-alias-simplelogin",
  "holtmail-aliases",
@@ -1868,7 +1883,11 @@ dependencies = [
  "holtmail-blob-fs",
  "holtmail-calendar",
  "holtmail-category",
+ "holtmail-collection",
+ "holtmail-compose",
  "holtmail-core",
+ "holtmail-device",
+ "holtmail-device-local",
  "holtmail-export",
  "holtmail-extract-basic",
  "holtmail-fetch",
@@ -1880,15 +1899,24 @@ dependencies = [
  "holtmail-insight-unsubscribe",
  "holtmail-insights",
  "holtmail-links",
+ "holtmail-mail-writeback",
  "holtmail-mime",
+ "holtmail-outbox",
  "holtmail-people",
  "holtmail-pim",
+ "holtmail-pim-edit",
+ "holtmail-pim-sync",
  "holtmail-query",
  "holtmail-recur",
+ "holtmail-route",
  "holtmail-sanitize",
  "holtmail-secret",
+ "holtmail-serve-net",
  "holtmail-store",
  "holtmail-store-sqlite",
+ "holtmail-submission",
+ "holtmail-submission-outbox",
+ "holtmail-submit",
  "holtmail-thumbnail",
  "serde",
  "serde_json",
@@ -2088,9 +2116,12 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "calcard",
+ "chrono",
  "futures",
  "holtmail-collection",
  "holtmail-core",
+ "holtmail-pim",
  "reqwest",
  "serde_json",
  "tokio",
@@ -2105,6 +2136,9 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "calcard",
+ "chrono",
+ "chrono-tz",
  "futures",
  "holtmail-collection",
  "holtmail-core",
@@ -2128,6 +2162,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-compose"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "holtmail-core",
+ "holtmail-mime",
+ "holtmail-sanitize",
+ "idna",
+ "mail-builder",
+ "mail-parser 1.0.1",
+ "proptest",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
 name = "holtmail-core"
 version = "0.0.0"
 dependencies = [
@@ -2139,6 +2189,34 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "uuid",
+]
+
+[[package]]
+name = "holtmail-device"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "holtmail-core",
+ "holtmail-device",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-device-local"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "getrandom 0.4.3",
+ "holtmail-auth",
+ "holtmail-core",
+ "holtmail-device",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2466,6 +2544,8 @@ dependencies = [
  "holtmail-secret-local",
  "holtmail-source",
  "holtmail-source-imap",
+ "holtmail-submit",
+ "holtmail-submit-smtp",
  "image",
  "object_store",
  "reqwest",
@@ -2521,6 +2601,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-mail-writeback"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "holtmail-access",
+ "holtmail-blob",
+ "holtmail-blob-fs",
+ "holtmail-core",
+ "holtmail-source",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "holtmail-mime"
 version = "0.0.0"
 dependencies = [
@@ -2555,6 +2656,29 @@ dependencies = [
  "reqwest",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "holtmail-outbox"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "holtmail-blob",
+ "holtmail-blob-fs",
+ "holtmail-core",
+ "holtmail-mime",
+ "holtmail-route",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "holtmail-submit",
+ "mail-builder",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2597,11 +2721,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-pim-edit"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "calcard",
+ "chrono",
+ "holtmail-collection",
+ "holtmail-pim",
+ "holtmail-recur",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "holtmail-pim-sync"
 version = "0.0.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "holtmail-blob",
+ "holtmail-blob-fs",
+ "holtmail-collection",
+ "holtmail-core",
+ "holtmail-index",
+ "holtmail-index-tantivy",
+ "holtmail-ingest",
+ "holtmail-pim",
+ "holtmail-pim-edit",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "holtmail-pim-writeback"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-collection",
  "holtmail-core",
@@ -2611,10 +2776,20 @@ dependencies = [
  "holtmail-pim",
  "holtmail-store",
  "holtmail-store-sqlite",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "holtmail-proxy-protocol"
+version = "0.0.0"
+dependencies = [
+ "holtmail-proxy-protocol",
+ "proptest",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2662,6 +2837,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-route"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "holtmail-sanitize"
 version = "0.0.0"
 dependencies = [
@@ -2686,6 +2870,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-serve-net"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "holtmail-core",
+ "holtmail-proxy-protocol",
+ "ipnet",
+ "rcgen",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+]
+
+[[package]]
+name = "holtmail-serve-submit"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bytes",
+ "holtmail-core",
+ "holtmail-device",
+ "holtmail-mime",
+ "holtmail-proxy-protocol",
+ "holtmail-serve-net",
+ "holtmail-smtp",
+ "holtmail-submission",
+ "holtmail-submit",
+ "holtmail-submit-smtp",
+ "mail-builder",
+ "rcgen",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "holtmail-server"
 version = "0.0.0"
 dependencies = [
@@ -2698,6 +2923,7 @@ dependencies = [
  "chrono",
  "clap",
  "ed25519-dalek",
+ "holtmail-access",
  "holtmail-alias",
  "holtmail-alias-addy",
  "holtmail-alias-apple",
@@ -2712,6 +2938,7 @@ dependencies = [
  "holtmail-blob",
  "holtmail-blob-fs",
  "holtmail-blob-s3",
+ "holtmail-calendar",
  "holtmail-category",
  "holtmail-category-data",
  "holtmail-category-domains",
@@ -2721,7 +2948,10 @@ dependencies = [
  "holtmail-collection-graph",
  "holtmail-collection-jmap",
  "holtmail-collection-merge",
+ "holtmail-compose",
  "holtmail-core",
+ "holtmail-device",
+ "holtmail-device-local",
  "holtmail-export",
  "holtmail-extract",
  "holtmail-extract-basic",
@@ -2741,16 +2971,23 @@ dependencies = [
  "holtmail-insight-unsubscribe",
  "holtmail-insights",
  "holtmail-ledger",
+ "holtmail-mail-writeback",
  "holtmail-mime",
  "holtmail-oauth",
  "holtmail-oauth-http",
+ "holtmail-outbox",
  "holtmail-people",
  "holtmail-pim",
+ "holtmail-pim-edit",
  "holtmail-pim-sync",
+ "holtmail-pim-writeback",
  "holtmail-query",
  "holtmail-remote",
+ "holtmail-route",
  "holtmail-secret",
  "holtmail-secret-local",
+ "holtmail-serve-net",
+ "holtmail-serve-submit",
  "holtmail-smtp",
  "holtmail-source",
  "holtmail-source-graph",
@@ -2758,6 +2995,12 @@ dependencies = [
  "holtmail-source-jmap",
  "holtmail-store",
  "holtmail-store-sqlite",
+ "holtmail-submission",
+ "holtmail-submission-outbox",
+ "holtmail-submit",
+ "holtmail-submit-graph",
+ "holtmail-submit-jmap",
+ "holtmail-submit-smtp",
  "holtmail-sync",
  "holtmail-webhook",
  "holtmail-webhook-http",
@@ -2809,6 +3052,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "bytes",
  "futures",
  "holtmail-core",
@@ -2830,6 +3074,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
+ "chrono",
  "futures",
  "holtmail-core",
  "holtmail-source",
@@ -2900,9 +3145,101 @@ dependencies = [
 ]
 
 [[package]]
+name = "holtmail-submission"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "holtmail-core",
+ "holtmail-route",
+ "holtmail-submission",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "holtmail-submission-outbox"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "holtmail-access",
+ "holtmail-blob",
+ "holtmail-blob-fs",
+ "holtmail-core",
+ "holtmail-mime",
+ "holtmail-outbox",
+ "holtmail-route",
+ "holtmail-store",
+ "holtmail-store-sqlite",
+ "holtmail-submission",
+ "holtmail-submit",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "holtmail-submit"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "holtmail-submit-graph"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "holtmail-core",
+ "holtmail-submit",
+ "mail-parser 1.0.1",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "holtmail-submit-jmap"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "futures",
+ "holtmail-core",
+ "holtmail-submit",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "holtmail-submit-smtp"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "holtmail-core",
+ "holtmail-smtp",
+ "holtmail-submit",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
+]
+
+[[package]]
 name = "holtmail-sync"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "holtmail-blob-fs",
  "holtmail-core",
  "holtmail-index",

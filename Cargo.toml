@@ -19,6 +19,7 @@ holtmail-alias-relay = { path = "crates/alias-relay" }
 holtmail-alias-rules = { path = "crates/alias-rules" }
 holtmail-alias-simplelogin = { path = "crates/alias-simplelogin" }
 holtmail-aliases = { path = "crates/aliases" }
+holtmail-access = { path = "crates/access" }
 holtmail-api = { path = "crates/api" }
 holtmail-auth = { path = "crates/auth" }
 holtmail-blob = { path = "crates/blob" }
@@ -34,7 +35,10 @@ holtmail-collection-merge = { path = "crates/collection-merge" }
 holtmail-collection-dav = { path = "crates/collection-dav" }
 holtmail-collection-graph = { path = "crates/collection-graph" }
 holtmail-collection-jmap = { path = "crates/collection-jmap" }
+holtmail-compose = { path = "crates/compose" }
 holtmail-core = { path = "crates/core" }
+holtmail-device = { path = "crates/device" }
+holtmail-device-local = { path = "crates/device-local" }
 holtmail-auth-results = { path = "crates/auth-results" }
 holtmail-html-scan = { path = "crates/html-scan" }
 holtmail-insight = { path = "crates/insight" }
@@ -58,16 +62,22 @@ holtmail-index-tantivy = { path = "crates/index-tantivy" }
 holtmail-hooks = { path = "crates/hooks" }
 holtmail-ingest = { path = "crates/ingest" }
 holtmail-json-http = { path = "crates/json-http" }
+holtmail-mail-writeback = { path = "crates/mail-writeback" }
 holtmail-mime = { path = "crates/mime" }
+holtmail-outbox = { path = "crates/outbox" }
 holtmail-oauth = { path = "crates/oauth" }
 holtmail-oauth-http = { path = "crates/oauth-http" }
 holtmail-pim = { path = "crates/pim" }
 holtmail-pdf = { path = "crates/pdf" }
 holtmail-people = { path = "crates/people" }
+holtmail-pim-edit = { path = "crates/pim-edit" }
 holtmail-pim-sync = { path = "crates/pim-sync" }
+holtmail-pim-writeback = { path = "crates/pim-writeback" }
 holtmail-query = { path = "crates/query" }
 holtmail-recur = { path = "crates/recur" }
 holtmail-remote = { path = "crates/remote" }
+holtmail-route = { path = "crates/route" }
+holtmail-proxy-protocol = { path = "crates/proxy-protocol" }
 holtmail-sanitize = { path = "crates/sanitize" }
 holtmail-secret = { path = "crates/secret" }
 holtmail-secret-local = { path = "crates/secret-local" }
@@ -78,7 +88,15 @@ holtmail-source-imap = { path = "crates/source-imap" }
 holtmail-source-jmap = { path = "crates/source-jmap" }
 holtmail-store = { path = "crates/store" }
 holtmail-store-sqlite = { path = "crates/store-sqlite" }
+holtmail-serve-net = { path = "crates/serve-net" }
+holtmail-serve-submit = { path = "crates/serve-submit" }
 holtmail-sse = { path = "crates/sse" }
+holtmail-submission = { path = "crates/submission" }
+holtmail-submission-outbox = { path = "crates/submission-outbox" }
+holtmail-submit = { path = "crates/submit" }
+holtmail-submit-graph = { path = "crates/submit-graph" }
+holtmail-submit-smtp = { path = "crates/submit-smtp" }
+holtmail-submit-jmap = { path = "crates/submit-jmap" }
 holtmail-sync = { path = "crates/sync" }
 holtmail-thumbnail = { path = "crates/thumbnail" }
 holtmail-webhook = { path = "crates/webhook" }
@@ -106,8 +124,10 @@ flate2 = "1"
 getrandom = "0.4"
 html5ever = "0.40"
 idna = "1"
+ipnet = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 lopdf = { version = "0.47", default-features = false }
+mail-builder = { version = "1.0.0", default-features = false }
 mail-parser = { version = "1", features = ["full_encoding"] }
 rustls-pki-types = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "socks"] }

@@ -488,7 +488,10 @@ impl PeopleStore for SqliteStore {
                  WHERE archive_id = ?1 AND (email IN (SELECT value FROM json_each(?2))
                      OR email IN (SELECT reverse_alias FROM message_aliases
                          WHERE archive_id = ?1 AND reverse_alias IS NOT NULL
-                         AND sender_email IN (SELECT value FROM json_each(?2))))
+                         AND sender_email IN (SELECT value FROM json_each(?2)))
+                     OR email IN (SELECT reverse_alias FROM reverse_aliases
+                         WHERE archive_id = ?1
+                         AND contact IN (SELECT value FROM json_each(?2))))
                  GROUP BY message_id)";
         let totals = sqlx::query(AssertSqlSafe(format!(
             "{hits} SELECT COUNT(*) AS messages, COALESCE(SUM(h.from_them), 0) AS from_them,

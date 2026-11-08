@@ -452,4 +452,114 @@ impl AliasStore for SqliteStore {
         .await
         .map_err(backend)
     }
+
+    async fn alias_strategies(&self, archive: ArchiveId) -> Result<Vec<AliasStrategy>, StoreError> {
+        let rows = sqlx::query(
+            "SELECT scope, key, strategy FROM alias_strategies WHERE archive_id = ?
+             ORDER BY CASE scope WHEN 'alias' THEN 0 WHEN 'domain' THEN 1 ELSE 2 END, key",
+        )
+        .bind(archive.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(backend)?;
+        rows.iter()
+            .map(|row| {
+                let scope: String = get(row, "scope")?;
+                Ok(AliasStrategy {
+                    scope: StrategyScope::parse(&scope)
+                        .ok_or_else(|| StoreError::Invalid(format!("unknown scope {scope}")))?,
+                    key: get(row, "key")?,
+                    strategy: get(row, "strategy")?,
+                })
+            })
+            .collect()
+    }
+
+    async fn set_alias_strategy(
+        &self,
+        archive: ArchiveId,
+        scope: StrategyScope,
+        key: &str,
+        strategy: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let _writer = self.writer.lock().await;
+        let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM archives WHERE id = ?")
+            .bind(archive.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(backend)?;
+        if exists.is_none() {
+            return Err(StoreError::NotFound("archive"));
+        }
+        let key = lower(key);
+        match strategy {
+            Some(strategy) => sqlx::query(
+                "INSERT INTO alias_strategies (archive_id, scope, key, strategy) VALUES (?, ?, ?, ?)
+                 ON CONFLICT (archive_id, scope, key) DO UPDATE SET strategy = excluded.strategy",
+            )
+            .bind(archive.to_string())
+            .bind(scope.as_str())
+            .bind(&key)
+            .bind(strategy),
+            None => sqlx::query(
+                "DELETE FROM alias_strategies WHERE archive_id = ? AND scope = ? AND key = ?",
+            )
+            .bind(archive.to_string())
+            .bind(scope.as_str())
+            .bind(&key),
+        }
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn put_reverse_alias(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        contact: &str,
+        reverse_alias: &str,
+        at: Timestamp,
+    ) -> Result<(), StoreError> {
+        let _writer = self.writer.lock().await;
+        let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM archives WHERE id = ?")
+            .bind(archive.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(backend)?;
+        if exists.is_none() {
+            return Err(StoreError::NotFound("archive"));
+        }
+        sqlx::query(
+            "INSERT INTO reverse_aliases (archive_id, reverse_alias, alias, contact, created_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (archive_id, reverse_alias) DO UPDATE SET
+                 alias = excluded.alias, contact = excluded.contact",
+        )
+        .bind(archive.to_string())
+        .bind(lower(reverse_alias))
+        .bind(lower(alias))
+        .bind(lower(contact))
+        .bind(at.as_millis())
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn reverse_alias_contact(
+        &self,
+        archive: ArchiveId,
+        reverse_alias: &str,
+    ) -> Result<Option<String>, StoreError> {
+        sqlx::query_scalar(
+            "SELECT contact FROM reverse_aliases WHERE archive_id = ? AND reverse_alias = ?",
+        )
+        .bind(archive.to_string())
+        .bind(lower(reverse_alias))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(backend)
+    }
 }

@@ -4,7 +4,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 
 ## Traits
 
-`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore + DeletionStore + WebhookStore + AliasStore + InsightStore + CategoryStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
+`Store` is `ArchiveStore + MessageStore + LabelStore + SyncStore + UserStore + RemoteImageStore + SettingsStore + DerivedStore + InventoryStore + TaskStore + PimStore + PeopleStore + CalendarStore + LedgerStore + DeletionStore + WebhookStore + AliasStore + InsightStore + CategoryStore + WriteStore + SendStore + MailChangeStore + ItemChangeStore`, implemented automatically for any type that implements them all. Use it as `Arc<dyn Store>`.
 
 ### ArchiveStore
 
@@ -13,11 +13,11 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `create_archive`, `get_archive`, `list_archives` | Lists are oldest first |
 | `rename_archive(id, name)` | `NotFound` for a missing archive |
 | `set_save_remote_images(id, save)` | Sets `Archive.save_remote_images` (off for new archives). Turning it on records `save_remote_images_since` unless it was already on; turning it off clears it. `NotFound` for a missing archive |
-| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, insights, categories, category overrides, trusted authserv-ids, sync state and grants, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
+| `delete_archive(id)` | Removes the archive with its accounts, folders, messages, attachments, labels, insights, categories, category overrides, trusted authserv-ids, sync state and grants, its transports, identities, drafts and outbox, the remote copies no remaining message links, and the derived records of blobs no longer used. Returns the blobs no message, attachment, remote copy, outbox message, draft or derived record references any more, so the caller can delete them. `NotFound` for a missing archive |
 | `archive_stats` | Messages, attachments, total raw bytes, oldest and newest date; zeros for an empty archive |
 | `create_account` | `NotFound` when the archive does not exist |
 | `get_account`, `list_accounts`, `update_account` | `update_account` replaces everything except `id`, `archive_id`, `kind`, `created_at` |
-| `delete_account(id)` | Removes the account with its folders, locations, cursors, failures and trusted authserv-ids; its messages stay in the archive. `NotFound` for a missing account |
+| `delete_account(id)` | Removes the account with its folders, locations, cursors, failures and trusted authserv-ids; its messages stay in the archive, and its transports and identities stay without an account. `NotFound` for a missing account |
 | `upsert_folder(account, path, role)` | Idempotent per `(account, path)`; a new role replaces the stored one |
 | `list_folders(archive)` | Every folder of the archive's accounts with the count of messages located there and not removed, and of those without `\Seen` (any letter case), by account then path |
 
@@ -34,6 +34,7 @@ The contract for Holtmail's metadata: archives, accounts, folders, messages with
 | `list_messages(query)` | Newest first by `date`, ties by id; keyset pagination with an opaque `PageCursor`; `limit` capped at 500; optional folder filter (located and not removed), label filter (exact name) and `category` filter (`CategoryFilter::Kind` for the effective kind, `CategoryFilter::Topic` for an effective topic, `health` included when asked for); any may be combined |
 | `message_extras(ids, folder)` | One batched answer for a list page: for each existing message, its flags (sorted, deduplicated; in `folder` when given, else the union over locations not removed), the number of messages in its thread, the folders it is in and not removed from (by id), its labels (sorted), `insight_kinds`, the kind bits of its insights (0 without insights), and `kind` and `topic`, its effective kind and stored list topic (never `health`; both `None` before stage B). Missing ids are left out |
 | `thread_messages(thread)` | Oldest first |
+| `messages_by_rfc_id(archive, ids)` | The archive's messages whose `Message-ID` is one of `ids`, oldest first; empty for no ids |
 | `record_location(message, folder, uid, flags, seen_at)` | One location per `(folder, message)`; updates UID, flags and `last_seen_at`, clears `removed_at`; a UID held by another message moves to this one |
 | `locations`, `folder_uids`, `message_at_uid` | `folder_uids` lists only locations not removed, ascending |
 | `mark_removed(folder, uids, at)` | Marks locations removed; the message stays archived |
@@ -76,11 +77,12 @@ A new message joins every thread that contains a message whose `Message-ID` is a
 | `create_user(NewUser)` | `Invalid` when another user has the same email, compared without regard to letter case; the email is kept as entered |
 | `find_user_by_email` | Case-insensitive |
 | `update_user(user)` | Replaces email, name and role; `NotFound` for a missing user, `Invalid` when another user has the email (any letter case) |
-| `delete_user(id)` | Removes the user with their sessions and grants; `NotFound` for a missing user |
-| `grants(user)`, `set_grants(user, archives)` | The archives a member may read, oldest first; `set_grants` replaces them, skips unknown archives and answers `NotFound` for a missing user. Grants go away with their archive or user |
+| `delete_user(id)` | Removes the user with their sessions, grants, drafts, identity grants and default identities; `NotFound` for a missing user |
+| `grants(user)`, `set_grants(user, archives)` | The granted archives, oldest first; `set_grants` replaces them, skips unknown archives and answers `NotFound` for a missing user. Archives that stay granted keep their role; new ones are granted as `reader`. Grants go away with their archive or user |
 | `password_hash(user)`, `set_password_hash(user, hash)` | `NotFound` for a missing user; `None` for a user without a password |
 | `create_session(hash, user, expires_at)` | `NotFound` for a missing user, `Invalid` for a hash already in use |
 | `session_user(hash, now)` | The session's user, `None` when unknown or expired (`expires_at <= now`) |
+| `session_started_at(hash)` | When the session started, `None` when there is no such session; an expired session not yet removed still answers |
 | `delete_session`, `delete_user_sessions` | Idempotent |
 | `delete_expired_sessions(now)` | Removes sessions with `expires_at <= now`, returns how many |
 
@@ -151,7 +153,9 @@ Address books and calendars (`Collection`, `CollectionKind::{Contacts, Calendar}
 | `set_pim_index(item, index)` | Replaces the derived fields, for rebuilding; fields from an older version than the latest (`index.version` below `versions`) are ignored; `NotFound` for an unknown item |
 | `item_ids(after, limit)` | Every item id ascending, for rebuilds |
 
-Removing an account keeps its collections and items (their `account_id` becomes `None`), like its messages. Removing an archive removes its collections, items, versions and their links to messages and returns the version and picture blobs nothing else uses. A collection with no account from the start, such as each archive's "From mail" calendar, is one no source owns.
+`Collection.write_mode` (`WriteMode::{ReadOnly, Held, WriteThrough}`) says whether devices and the web app may change a collection and whether changes go upstream; a new collection read from an account is `held`; one no account owns ("From mail") and one of an import account are `read_only`, and only `read_only` is allowed for them. `Item.dav_name` is the href a client created the item under, kept once the upstream id is known; `Item::href()` is the DAV name, else `remote_id`. `ItemVersion.origin` is `VersionOrigin::Upstream` for what a source showed and `Writeback` for what upstream held after Holtmail sent it a change, with `change_id` naming the change. See [ItemChangeStore](#itemchangestore).
+
+Removing an account keeps its collections and items (their `account_id` becomes `None` and their write mode `read_only`), like its messages. Removing an archive removes its collections, items, versions and their links to messages and returns the version and picture blobs nothing else uses. A collection with no account from the start, such as each archive's "From mail" calendar, is one no source owns.
 
 ### PeopleStore
 
@@ -196,7 +200,7 @@ What the store references in the blob store, for backups and checks after a rest
 
 | Method | Guarantees |
 | --- | --- |
-| `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, an item version or its picture, a saved remote image or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
+| `referenced_blobs(after, limit)` | Up to `limit` blobs some record names: a message, an attachment, an item version or its picture, a saved remote image, an outbox message, a kept draft version, an append in the mail changes, the bytes of a contact or calendar change, or a derived file. Each blob once, ascending by id, strictly after `after` (from the start when `None`); paging with the last id of each page visits every referenced blob exactly once, and a page shorter than `limit` is the last |
 
 ### DeletionStore
 
@@ -241,6 +245,10 @@ What alias detection found per message, the alias services connected to archives
 | `create_alias_service` / `alias_services(archive)` / `all_alias_services()` / `get_alias_service(id)` / `update_alias_service` | `AliasService { id, archive_id, provider, name, base_url, sealed_key, created_at, synced_at, sync_error }`; the id is the caller's so the key can be sealed for it first (`Invalid` when taken, `NotFound` for an unknown archive); oldest first; `NotFound` for an unknown id on update |
 | `delete_alias_service(id, keep_aliases)` | Removes it; its aliases become aliases added by hand, or are forgotten. `NotFound` for an unknown id |
 | `own_alias_addresses(archive)` | Every alias of the archive, known or seen in mail, lowercase, sorted |
+| `alias_strategies(archive)` | Every reply strategy override as `AliasStrategy { scope, key, strategy }`, sorted by scope (`Alias`, `Domain`, `Service`, see `StrategyScope::as_str`) then key; empty for an unknown archive |
+| `put_reverse_alias(archive, alias, contact, reverse_alias, at)` | Records that the reverse alias reaches the contact through the alias (all trimmed, lowercase), replacing the pair of that reverse alias; idempotent. `mail_addresses` and `correspondence` then count the reverse alias as the contact, unless mail already maps it to a sender, which wins. Removing the archive removes the pairs. `NotFound` for an unknown archive |
+| `reverse_alias_contact(archive, reverse_alias)` | The contact recorded for the reverse alias, lowercase, or `None` |
+| `set_alias_strategy(archive, scope, key, strategy)` | Sets the override for `scope` and `key` (trimmed, lowercase), replacing the one there; `None` removes it, removing a missing one is fine. The strategy name is kept as given; callers check it. Removing the archive removes its overrides. `NotFound` for an unknown archive |
 
 Deleting a message removes its record; deleting an archive removes its records, services and aliases.
 
@@ -318,6 +326,136 @@ The archive ledger (`holtmail-ledger`): a hash chain of every message archived a
 | `ledger_entries(after, limit)` | Up to `limit` entries after position `after` (0 for the first), in order, exactly as stored, so a changed entry reads back changed |
 | `enter_unentered(limit)` | Enters up to `limit` live messages without an `archived` entry, oldest archived first, as entries made now; returns how many, 0 when none are left |
 | `ledger_gaps(limit)` | `LedgerGaps`: live messages without an entry, live messages whose entry names other bytes or another archive, and messages entered as archived that are gone without a `deleted` entry or a later `archive_deleted` of their archive; up to `limit` ids of each with full counts |
+
+### WriteStore
+
+The foundation of writing ([WRITE.md](../../../docs/WRITE.md)): what each account allows, the role of each grant, the audit log of writes and the records behind `Idempotency-Key`.
+
+| Method | Guarantees |
+| --- | --- |
+| `account_capabilities(account)` | The account's `Capabilities`; empty (nothing allowed) for a new or unknown account |
+| `set_account_capabilities(account, &caps)` | Replaces them; idempotent; `NotFound` for an unknown account. They go away with the account or its archive |
+| `grant_roles(user)` | `Grant { archive, role }` per granted archive, ordered like `grants`; empty for an unknown user |
+| `set_grant_role(user, archive, role)` | `Some(role)` grants or changes the role, `None` takes the grant away; idempotent; `NotFound` for an unknown user or archive |
+| `append_audit(&entry)` | Adds `NewAuditEntry { at, user, kind, archive, account, targets, count }` and returns it with its `seq`; `seq` grows with every entry. Entries are never changed or removed, also not with their user, archive or account |
+| `list_audit(&AuditQuery { archive, before, limit })` | Newest first; only the archive's entries with `archive`, only `seq < before` with `before`; at most `limit` (the store may cap it, SQLite at 500) |
+| `claim_idempotency_key(&key, fingerprint, at, since, abandoned_before)` | Atomic. With no record of `IdempotencyKey { user, key, route }` newer than `since` it holds the key for this request (`Claimed`), replacing an older record or an unfinished claim made before `abandoned_before` (a request that died without completing or releasing it); otherwise `Mismatch` when the fingerprint differs, `InFlight` while the first request runs, `Done(StoredResponse)` once it finished |
+| `complete_idempotency_key(&key, &response)` | Keeps `StoredResponse { status, content_type, body }` for later claims; `NotFound` when the key is not held |
+| `release_idempotency_key(&key)` | Forgets the key so the request can run again; idempotent |
+| `prune_idempotency_keys(before)` | Removes every record claimed before `before`, finished or not; returns how many. Records also go with their user |
+
+`Capability` is `MailFlags`, `MailMove`, `MailDelete`, `MailExpunge`, `MailAppend`, `MailSend`, `PimEdit`, `PimRespond`, named `mail.flags` … `pim.respond` by `as_str`, `parse` and serde; `Capabilities` is a set of them whose default is empty. `GrantRole` is `Reader < Editor < Sender`, each including the ones before it; grants made before roles existed read as `Reader`. `AuditKind` names every kind of write (`capabilities_changed`, `grant_changed`, `mail_flags`, `mail_move`, `mail_delete`, `mail_append`, `mail_send`, `pim_edit`, `pim_respond`, `rule_changed`, `transport_changed`, `identity_changed`, `outbox_changed`, `device_created`, `device_changed`, `device_revoked`). An audit entry carries ids and counts only, never content, subjects or addresses; `user` is `None` for the server itself. The conformance area `write` checks capabilities with their removal, roles kept by `set_grants`, the audit order, paging and survival of deletions, and every idempotency claim, expiry and pruning.
+
+### SendStore
+
+Sending ([WRITE.md](../../../docs/WRITE.md#sending)): transports, identities with the users who may send as them, drafts with their versions, and the outbox. `holtmail-outbox` drives the outbox; the store only keeps rows and makes their state changes atomic.
+
+| Method | Guarantees |
+| --- | --- |
+| `create_transport(&t)` | Adds a `Transport` whose id the caller chose (so its secret can be sealed with context `transport:<id>` first). `archive_id: None` is an instance transport. `Invalid` for a taken id, an account transport without an account, with an account of another archive, or at instance scope, and an SMTP transport that names an account; `NotFound` for an unknown archive or account |
+| `get_transport(id)` | The transport or `None` |
+| `archive_transports(archive)` | The archive's own transports and the instance transports granted to it, oldest first |
+| `instance_transports()` | Every instance transport, oldest first |
+| `update_transport(&t)` | Replaces everything but `id`, `archive_id`, `kind` and `created_at`, with the checks of `create_transport`; `NotFound` for an unknown id |
+| `delete_transport(id)` | Removes it with its grants; `Invalid` while an identity uses it. Outbox rows that name it stay (the outbox fails them) |
+| `transport_grants(id)` / `set_transport_grants(id, &archives)` | The archives an instance transport is granted to, ordered by id; replacing them is `Invalid` for an archive transport or when an archive losing the grant has an identity on the transport |
+| `create_identity(new)` | Adds an `Identity` with a fresh id; its `created_by` user (when it exists) may send as it. `Invalid` when the archive may not use the transport or the account is in another archive; `NotFound` for an unknown archive, transport or account |
+| `get_identity(id)`, `list_identities(archive)` | One identity, or the archive's oldest first |
+| `update_identity(&i)` | Replaces every field but `id`, `archive_id`, `created_by` and `created_at`, with the checks of `create_identity` |
+| `delete_identity(id)` | Removes it with its users and defaults; outbox rows that name it stay |
+| `identity_users(id)` / `set_identity_users(id, &users)` | Who may send as it, ordered by id; `NotFound` for an unknown identity or user. Users go away with their user |
+| `user_identities(user, archive)` | The archive's identities the user may send as, oldest first |
+| `default_identity(user, archive)` / `set_default_identity(user, archive, id)` | The user's default identity per archive; `Invalid` for an identity of another archive. It goes away with the identity |
+| `create_draft(archive, user, &payload, &blobs, at)` | A `Draft` at version 1. The payload is the API's JSON; `blobs` (attachments) are referenced, so they are not deleted while a kept version names them |
+| `save_draft(id, expected, &payload, &blobs, at)` | Compare-and-set: a new version only when the draft is still at `expected`, otherwise `DraftSave::Conflict(current)`. Keeps the newest `DRAFT_VERSIONS_KEPT` (50) versions |
+| `get_draft`, `draft_versions` (newest first), `list_drafts(archive, user)` (most recently saved first), `delete_draft` (idempotent) | Drafts go away with their user and their archive |
+| `enqueue_outbox(&new)` | Adds a row in `queued` or `draft` with every recipient `pending`, or returns the row with the same user and `idempotency_key` and `false`. `Invalid` for another state or no recipient; `NotFound` for an unknown archive. The row's blob counts as referenced |
+| `get_outbox(id)`, `list_outbox(&OutboxQuery { archive, states, before, user, limit })` | One row, or the archive's newest first, narrowed by states and by the user who queued it (before the limit) and paged by id; at most `limit` (SQLite caps at 500) |
+| `change_outbox(id, from, &change)` | Atomic compare-and-set: applies `OutboxChange` only when the row is in one of `from`, else `None`; of two changes from the same state one wins. Recipients may change state but not address or order (`Invalid`) |
+| `due_transports(now)` | Transports with a queued row whose `send_at` passed or a retrying row whose `next_attempt_at` passed |
+| `claim_outbox(transport, now)` | Atomically moves the transport's earliest due row to `sending`, counting an attempt at `now`; `None` when nothing is due or a row of the transport is already `sending`, so one message per transport is ever in flight |
+| `outbox_attempts_since(transport, since)` | Rows of the transport whose last attempt started at or after `since`, for the hourly limit |
+| `interrupt_sending(at, error)` | Moves every `sending` row to `uncertain` with `error` and returns them, for a start after a stop mid-send |
+| `outbox_by_rfc_message_id(archive, id)` | The archive's outbox rows with that `Message-ID` (no angle brackets, exact), oldest first |
+| `outbox_for_message(message)` | The rows whose sent bytes are `message` or whose `synced_copy` is `message`, oldest first |
+| `link_outbox_copy(id, message, at)` | Sets `synced_copy` (replacing an earlier one), state untouched; `Invalid` for a message of another archive, `NotFound` for an unknown row or message |
+| `outbox_by_idempotency_key(user, key)` | The row with this user and key, whatever became of it, or `None` |
+| `device_sends_since(user, since)` | `DeviceSends { messages, recipients, oldest }` of what the user's devices submitted at or after `since`, across every archive. Cancelled messages do not count, and messages from the web app never do |
+| `set_transport_smtputf8(id, smtputf8)` | Records what the last check found; `update_transport` leaves it alone. `NotFound` for an unknown id |
+| `set_outbox_note(id, note, at)` | Replaces `note` (`None` clears it), state untouched; `NotFound` for an unknown row |
+| `set_identity_rewritten_from(id, rewritten)` | Records or clears `RewrittenFrom { seen, at }` on the identity; idempotent; `update_identity` clears it when the address changes |
+
+`Transport.smtputf8` says whether the last check found that the transport takes internationalized addresses (false until one did). `TransportKind` is `smtp`, `jmap`, `graph` or `account` (only `account` names an account); `TransportLimits { max_size, max_recipients, per_hour }` are all optional. `SentCopyPolicy` is `Provider`, `Append(folder)` or `None`, stored as `provider`, `append:<folder>` and `none`; `append` is acted on from Phase 60 (it needs `MailboxWriter`). `OutboxState` is `draft`, `queued`, `sending`, `retrying`, `sent`, `failed`, `uncertain`, `bounced`, `cancelled`; `RecipientState` is `pending`, `accepted`, `refused { permanent, code, text }` or `bounced { status, text }` (taken, then reported undeliverable by a DSN), where `text` is the server's and may name addresses, so it is shown but never logged. `OutboxEntry.synced_copy` is the provider's own archived copy with other bytes and `note` something learned after sending (a delay); both may name addresses. The conformance area `send` checks transport scopes, grants and their checks, identities with users and defaults, removal with accounts, users and archives, draft compare-and-set and version trimming, outbox idempotency, paging, compare-and-set changes, claims with one in flight per transport, retries coming due, interruption, copy links, notes, the rewritten-`From` flag, JMAP and Graph transports, and that outbox and draft blobs count as referenced.
+
+### MailChangeStore
+
+Changes to messages on their servers ([WRITE.md](../../../docs/WRITE.md#mailbox-changes)): flags, labels, moves, deletes and appends (sent copies and restores). A change is recorded and shown at once, sent by `mail-writeback` through the account's `MailboxWriter`, and confirmed by what sync reads. The payload of a row never changes; only its state and bookkeeping do, and every state change is atomic.
+
+States: `held` → `sending` → `applied` | `superseded_by_server` | `failed`; a temporary failure goes from `sending` back to `held` with `next_attempt_at`. A flags or labels change the server accepted stays `sending` with `sent_at` until a sync confirms it (`MailOp::needs_confirmation`); everything else is `applied` as soon as the server accepts it.
+
+| Method | Guarantees |
+| --- | --- |
+| `enqueue_mail_change(&NewMailChange)` | Records it `held`, with the `device_id` it came from when a device asked. `Invalid` when the folder or a move's target is not the account's, a move targets its own folder, `uid` is missing (or given for an append), flags or labels add and remove nothing, or the message is in another archive; `NotFound` for an unknown account, folder or message |
+| `get_mail_change(id)` | The change, or `None` |
+| `due_mail_accounts(now)` | Accounts for which `claim_mail_change(now)` would find something, ordered by id |
+| `claim_mail_change(account, now)` | Atomically moves the oldest due held change to `sending` and counts an attempt. A change waits while an older change of the same message in the same account is held (even waiting for a retry) or sending, so one message's changes go out in order, one at a time; other messages pass it |
+| `mark_mail_change_sent(id, result_uid, at)` | From `sending` and not yet sent: flags and labels keep `sending` with `sent_at`, others become `applied`; keeps the UID a move or append got. Else `None` |
+| `applied_move_from(message, folder, uid, before)` | The newest `applied` move of the message from that place recorded before the change `before`, or `None`: where a later change made at the old place should go |
+| `retarget_mail_change(id, folder, uid, at)` | From `sending` and not yet sent: points the change at another place of its account (where an earlier move took the message). `Invalid` for another account's folder, an append, or a move to its own folder; else `None` |
+| `retry_mail_change(id, next_attempt_at, error, at)` | From `sending` and not yet sent back to `held` with the error code and the next attempt. Else `None` |
+| `fail_mail_change(id, error, at)` | From `held` or `sending` to `failed` (also how a held change is discarded). Else `None` |
+| `confirm_mail_flags(folder, uid, flags, labels, read_at)` | What sync read at `read_at`: an open flags change (and labels change, when `labels` is given) of that location that the state satisfies is `applied`, held ones too; a sent one sent before `read_at` that the state contradicts is `superseded_by_server` (the server wins); one being sent right now and held ones that disagree stay, and so does every change newer than the first one that stays (judged oldest first), so a later change that undoes an older one is never closed ahead of it. Flags compare ignoring ASCII case, labels exactly. Returns the closed changes, oldest first |
+| `settle_mail_changes(account, sent_before, at)` | Applies sent changes no sync confirmed before the cutoff, trusting the server's answer; returns how many |
+| `release_mail_changes(at)` | At start: every `sending` change not yet sent goes back to `held`, oldest first. Flags, labels, moves and deletes are safe to send again; an append may be saved twice |
+| `pending_mail_changes(message)` | The message's open changes in every account, oldest first, for the held mark |
+| `failed_mail_changes(message)` | The message's failed changes in every account that nobody dismissed, oldest first, for the reader's retry and dismiss |
+| `dismiss_mail_change(id, at)` | Hides a failed change from `failed_mail_changes`; the row and its state stay. `None` when it is not failed or already dismissed |
+| `outbox_mail_changes(outbox)` | The changes recorded for an outbox message (its sent copy), oldest first |
+| `retention_candidates(account, before, skip_trash, limit)` | Live located UIDs in the account's folders whose message was received (or, without a received time, dated) before `before`, with no held or sending change at that location and no retention change ever recorded there (so a failed one is not recorded again every pass), oldest message first, at most `limit`; `skip_trash` leaves out folders with the `trash` role. What the retention job may delete from the server |
+| `list_mail_changes(&MailChangeQuery { account, states, limit })` | The account's changes, newest first, narrowed by states (empty for all); SQLite caps `limit` at 500 |
+
+`MailOp` is `flags { add, remove }`, `labels { add, remove }` (on the UID in the `All` folder), `move { target }` (a folder id of the same account), `delete { expunge }` or `append { blob_id, flags, date }`, serialized with a `kind` tag; flags are IMAP spellings. `MailChangeOrigin` is `user` (restores included), `rule`, `retention` or `sent_copy` (with `outbox_id`). `last_error` is a short code such as `connection` or `unsupported`, never server text. An append's blob counts as referenced while the row exists. Rows go with their account and archive. The conformance area `mail_changes` checks the checks of `enqueue`, FIFO claims with one in flight per message, retries coming due, release, sent and applied outcomes, settling, failing, confirmation with the server winning, listing, the pending lookup, dismissing failed changes, removal with the account and the archive, and that append blobs count as referenced and are released with the archive, the outbox lookup, and which locations are retention candidates (not one whose retention change failed), and finding and following an applied move (`applied_move_from`, `retarget_mail_change`).
+
+### ItemChangeStore
+
+Edits to contacts and events from devices and the web app, held in Holtmail and sent upstream by `pim-writeback` when the collection is `write_through` ([CLIENTS.md, Edits from native apps](../../../docs/CLIENTS.md#edits-from-native-apps), [WRITE.md](../../../docs/WRITE.md#contacts-and-calendars)). Upstream versions stay what sources showed; each edit is an `ItemChange` row whose payload (target, `ChangeOp::{Create, Update, Delete}`, `ChangeClass::{Noop, Personal, Reply, Edit, Create, Delete}`, the client's bytes as a blob, the patch as opaque JSON, the base version with its upstream ETag, `supersedes`, `ChangeOrigin::{Dav, Api}`, user and device) never changes. A change is about an item (`ChangeTarget::Item`) or an href in a collection (`ChangeTarget::Href`), which names the item served under it (its `dav_name`, else its `remote_id`) and otherwise the changes made under it before any item existed (a held create). The store never parses bytes; classification, patches and rebasing belong to `pim-edit`.
+
+States: `held`, `sending`, `applied`, `superseded`, `conflict`, `rejected`, `discarded`. Open (served) means held, sending, conflict or rejected; at most one open change per item is served, the newest (the head). Every recorded change and every state change writes a `ChangeLogEntry` in the same transaction; the bytes of every change, discarded ones too, count as referenced blobs. Flags: a newer upstream version (`record_version`, `record_mail_version`) sets `upstream_changed` on the item's open changes, and an item marked removed (`mark_items_removed`, `mark_collection_removed`) sets `upstream_deleted`; an item that comes back clears `upstream_deleted`. A version recorded by a writeback flags only the item's other open changes, and not the changes that superseded the written one (the user's own later edits): those are rebased onto the new version (`rebased_onto`) instead. A change that settles or is resolved as a conflict, or settles as rejected, has both flags cleared.
+
+| Method | Guarantees |
+| --- | --- |
+| `set_write_mode(collection, mode)` | Sets and returns the collection. `Invalid` for a mode other than `read_only` on a collection no account owns or one of an import account; `NotFound` for an unknown collection |
+| `record_change(&NewItemChange, expect)` | Atomic compare-and-set. `NewItemChange.not_before` keeps the change from going upstream before then, and `messages` links held outbox messages to it in the same transaction. `Expect::Any` (last writer wins), `Expect::Absent` (nothing served under the href and no item ever had it) or `Expect::State(ServedState { version, change })`, the state the client's ETag was computed from; a mismatch records nothing and answers `RecordedChange::PreconditionFailed { current }`. The target's open head is superseded (one being sent stays `sending` and becomes `superseded` when it settles, unless applied), and the new row links it in `supersedes`. The new change is `held`, except a delete of a create that never reached upstream (no item, nothing sending), which is `applied` at once. The base ETag is copied from the base version. The store does not check the write mode, roles or scopes. `Invalid` when the class, bytes or base do not fit the operation, a create names an existing item or a served href, an update or delete names an href with nothing served, the base version does not exist, or the collection has no account; `NotFound` for an unknown item or collection |
+| `get_change(id)` | The change, or `None` |
+| `effective(target)` | `Effective { collection_id, href, item, latest, change, state, served }`: the latest upstream version with the open head on top; `served` is false for a deleted item, a held delete, or a create deleted before it left. An item removed upstream stays served while a change other than a delete is open. `None` when the target names no item and no change |
+| `open_changes(&ItemChangeQuery { archive_id, collection_id, states, flagged_only, limit })` | Open changes, oldest first; `states` narrows (empty for all open states; non-open states match nothing); `flagged_only` keeps those with an upstream flag; capped at 500 |
+| `changes_of(target)` | Every change of the target in any state, oldest first |
+| `resolve_change(id, resolution, at)` | `Rebased { onto }` (from `held`; clears `upstream_changed` when `onto` is the latest; `Invalid` for a version that does not exist or a change without an item), `Applied` and `Discard` (from `held`, `conflict` or `rejected`), `Conflict { reason }` (from `held` or `rejected`; clears `upstream_changed`), `Retry` (from `rejected`, back to `held` with no attempts). `None` from any other state |
+| `due_change_collections(now)`, `claim_change(collection, now)` | The `write_through` collections with a due change, and atomically moving the oldest due change of one to `sending` with an attempt counted. Due: `held`, a class that is sent (not `noop` or `personal`), no upstream flag, past `next_attempt_at`, the head of its chain, and no change of the same item (or href) sending. First in, first out per collection; other items pass a waiting one. A change with no item is sent as a create |
+| `settle_change(id, &Settle, at)` | Only from `sending`. `Applied { version }` records the version with origin `writeback` (same bytes as the latest add none), creating the item with the change's href as its `dav_name` when it had none and filling in the item on every change under that href; without a version, a delete marks the item removed. `Rejected { reason }`, `Conflict { reason }` and `Retry { next_attempt_at, error }` (back to `held`) become `superseded` instead when a later change superseded it. `Invalid` for a version of another collection or item |
+| `held_change_messages()` | Outbox messages in `draft` that `NewItemChange.messages` linked to a recorded change, oldest first |
+| `defer_reply(archive, message, at, next)`, `due_replies(now, limit)`, `forget_reply(message)` | The queue of incoming iMIP replies waiting for another try; deferring again counts an attempt, moves the time and keeps `since` |
+| `release_changes(at)` | At start: every `sending` change goes back to `held` (or `superseded` when a later change exists); returns the held ones, oldest first |
+| `changes_since(archive, after, limit)` | The archive's log after `seq` `after`, oldest first, capped at 1 000. Only item changes write to it so far; the live stream (CLIENTS Phase 45) extends it to everything |
+
+`reason` and `last_error` are short codes (`overlap`, `reply_obsolete`, `upstream_deleted`, `refused`, `connection`), never server text, names or addresses. Rows go only with their archive. The conformance area `item_changes` checks write modes and their defaults, recording with every precondition and refusal, superseding, creates under an href (taken hrefs, deleting a create before it left, a new create on a freed href), each resolution and the states it starts from, upstream flags from new versions, removals and restores, the writeback queue (FIFO, one in flight per item, personal changes never sent, held collections never sent, retries coming due, release, rejection and retry, conflicts, writeback versions creating the item with its DAV name, a sent delete marking the item removed), the change log, and change bytes counting as referenced and released with the archive.
+
+### DeviceStore
+
+Devices and their app password hashes ([SERVE.md](../../../docs/SERVE.md#device-credentials)). `DeviceSettings` is what can be chosen, at creation and later: `name`, `mail_archive` (required with IMAP or SMTP), `archives` (`None` is every archive the user can read; an empty set is none), `protocols`, `scopes`, `implicit_seen`. `NewDevice` adds the user, `secret_hash` (the BLAKE3 hash of the app password; `None` for a device that signs in another way, such as the enrolment of CLIENTS Phase 44) and the time. `Device` carries `has_secret`, never the hash.
+
+| Method | Guarantees |
+| --- | --- |
+| `create_device(new)` | `NotFound` for an unknown user or archive; `Invalid` when the protocols need a mail archive and it has none, or another device has the hash |
+| `get_device(id)` | The device, revoked or not |
+| `find_device_by_secret(&hash)` | The device with this hash, revoked or not, so a revoked secret can be told from a wrong one. An exact lookup, so the same time for any wrong secret |
+| `list_devices(user)` | Revoked ones too, oldest first |
+| `update_device_settings(id, &settings, raised_at)` | Replaces the settings and records `raised_at` when given (`None` keeps the earlier value); `Invalid` for a revoked device or a missing mail archive |
+| `touch_device(id, protocol, at)` | Keeps only the UTC day and the protocol (`start_of_day`), so use is not a tracking log. An earlier day and a revoked device change nothing. `NotFound` for an unknown device |
+| `revoke_device(id, at)` | Permanent; true when this call revoked it, false when it already was, which keeps the first time |
+| `revoke_user_devices(user, at)` | Revokes those not revoked yet and returns them, oldest first |
+
+Deleting an archive clears `mail_archive` where it was that archive and takes it off every `archives` list; the device stays, and IMAP and SMTP stop working for it until a new mail archive is set. Deleting a user removes their devices.
 
 ## Errors
 

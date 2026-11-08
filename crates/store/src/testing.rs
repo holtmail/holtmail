@@ -12,6 +12,12 @@ use serde_json::json;
 
 use crate::*;
 
+mod devices;
+mod item_changes;
+mod mail_changes;
+mod send;
+mod write;
+
 /// Checks that `store` keeps the [`Store`] contract. Panics on the first violation.
 ///
 /// `store` must be empty when the suite starts.
@@ -53,6 +59,11 @@ pub async fn conformance(store: Arc<dyn Store>) {
     insight_categories(&*store).await;
     reindex_queue(&*store).await;
     unsubscribe_requests(&*store).await;
+    write::run(&*store).await;
+    send::run(&*store).await;
+    mail_changes::run(&*store).await;
+    item_changes::run(&*store).await;
+    devices::run(&*store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -1466,6 +1477,26 @@ async fn threads_merge_in_any_order(store: &dyn Store) {
         order,
         [root.message_id, reply.message_id, second_reply.message_id]
     );
+    let archive_of_root = store.get_message(root.message_id).await.unwrap().unwrap();
+    let wanted = archive_of_root.rfc_message_id.clone().unwrap();
+    let found = store
+        .messages_by_rfc_id(
+            archive_of_root.archive_id,
+            &[wanted, "nobody@example.com".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        found.iter().map(|m| m.id).collect::<Vec<_>>(),
+        [root.message_id]
+    );
+    assert!(
+        store
+            .messages_by_rfc_id(archive_of_root.archive_id, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     let mut stray = message(store.create_archive("Elsewhere").await.unwrap().id, 14, 0);
     stray.parent_ids = vec!["m10@example.com".into()];
@@ -2109,6 +2140,11 @@ async fn sessions(store: &dyn Store) {
             .await,
         Err(StoreError::NotFound(_))
     ));
+
+    let before = Timestamp::now().as_millis() - 60_000;
+    let started = store.session_started_at(&live).await.unwrap().unwrap();
+    assert!(started.as_millis() >= before, "a session started just now");
+    assert_eq!(store.session_started_at(&[9u8; 32]).await.unwrap(), None);
 
     let at = |secs| Timestamp::from_secs(secs);
     assert_eq!(
@@ -4088,8 +4124,179 @@ async fn aliases(store: &dyn Store) {
         store.message_alias(forwarded.message_id).await.unwrap(),
         None
     );
+    alias_strategies(store, archive).await;
+    reverse_aliases(store, archive).await;
     store.delete_archive(archive).await.unwrap();
+    assert_eq!(
+        store
+            .reverse_alias_contact(archive, "ra_9@sl.example.org")
+            .await
+            .unwrap(),
+        None
+    );
     assert!(store.aliases(archive).await.unwrap().is_empty());
+    assert!(store.alias_strategies(archive).await.unwrap().is_empty());
+}
+
+async fn reverse_aliases(store: &dyn Store, archive: ArchiveId) {
+    store
+        .insert_message(mail_from(
+            archive,
+            503,
+            1_700_200_000,
+            ("Me", "me@example.com"),
+            &["RA_9@sl.example.org"],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .reverse_alias_contact(archive, "ra_9@sl.example.org")
+            .await
+            .unwrap(),
+        None
+    );
+    for contact in ["carol@example.org", " Bob@Example.org "] {
+        store
+            .put_reverse_alias(
+                archive,
+                "Shop@Alias.example.org",
+                contact,
+                " RA_9@sl.example.org ",
+                Timestamp::from_secs(20),
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store
+            .reverse_alias_contact(archive, "RA_9@SL.example.org")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("bob@example.org"),
+        "a second put replaces the contact"
+    );
+    let mail = store.mail_addresses(archive).await.unwrap();
+    assert!(mail.addresses.iter().any(|a| a.email == "bob@example.org"));
+    assert!(
+        !mail
+            .addresses
+            .iter()
+            .any(|a| a.email == "ra_9@sl.example.org")
+    );
+    let with_bob = store
+        .correspondence(archive, &["bob@example.org".into()], 10, 10)
+        .await
+        .unwrap();
+    assert_eq!(with_bob.messages, 1);
+    store
+        .put_reverse_alias(
+            archive,
+            "shop@alias.example.org",
+            "mallory@example.org",
+            "ra_1@sl.example.org",
+            Timestamp::from_secs(21),
+        )
+        .await
+        .unwrap();
+    let mail = store.mail_addresses(archive).await.unwrap();
+    assert!(
+        !mail
+            .addresses
+            .iter()
+            .any(|a| a.email == "mallory@example.org"),
+        "a sender seen in mail wins"
+    );
+    assert!(matches!(
+        store
+            .put_reverse_alias(
+                ArchiveId::new(),
+                "a@example.org",
+                "b@example.org",
+                "c@example.org",
+                Timestamp::from_secs(1)
+            )
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+}
+
+async fn alias_strategies(store: &dyn Store, archive: ArchiveId) {
+    assert!(store.alias_strategies(archive).await.unwrap().is_empty());
+    store
+        .set_alias_strategy(
+            archive,
+            StrategyScope::Service,
+            "simplelogin",
+            Some("direct"),
+        )
+        .await
+        .unwrap();
+    store
+        .set_alias_strategy(
+            archive,
+            StrategyScope::Alias,
+            " Shop@Alias.example.org ",
+            Some("reverse_alias"),
+        )
+        .await
+        .unwrap();
+    store
+        .set_alias_strategy(
+            archive,
+            StrategyScope::Domain,
+            "alias.example.org",
+            Some("reply_header"),
+        )
+        .await
+        .unwrap();
+    store
+        .set_alias_strategy(
+            archive,
+            StrategyScope::Alias,
+            "shop@alias.example.org",
+            Some("direct"),
+        )
+        .await
+        .unwrap();
+    let all = store.alias_strategies(archive).await.unwrap();
+    let keys: Vec<(StrategyScope, &str, &str)> = all
+        .iter()
+        .map(|s| (s.scope, s.key.as_str(), s.strategy.as_str()))
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            (StrategyScope::Alias, "shop@alias.example.org", "direct"),
+            (StrategyScope::Domain, "alias.example.org", "reply_header"),
+            (StrategyScope::Service, "simplelogin", "direct"),
+        ],
+        "sorted by scope then key, keys lowercase, a second set replaces"
+    );
+    store
+        .set_alias_strategy(archive, StrategyScope::Domain, "ALIAS.example.org", None)
+        .await
+        .unwrap();
+    store
+        .set_alias_strategy(archive, StrategyScope::Domain, "missing.example.org", None)
+        .await
+        .unwrap();
+    assert_eq!(store.alias_strategies(archive).await.unwrap().len(), 2);
+    let other = store.create_archive("Other strategies").await.unwrap();
+    assert!(store.alias_strategies(other.id).await.unwrap().is_empty());
+    store.delete_archive(other.id).await.unwrap();
+    assert!(matches!(
+        store
+            .set_alias_strategy(
+                ArchiveId::new(),
+                StrategyScope::Alias,
+                "a@example.org",
+                Some("direct")
+            )
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
 }
 
 fn insight_row(

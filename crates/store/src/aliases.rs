@@ -102,6 +102,49 @@ pub struct AliasSummary {
     pub mail: AliasMail,
 }
 
+/// What an alias reply strategy override applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StrategyScope {
+    /// One alias address.
+    Alias,
+    /// Every alias on a domain.
+    Domain,
+    /// Every alias of a provider, by provider id (`simplelogin`).
+    Service,
+}
+
+impl StrategyScope {
+    /// Every scope, most specific first.
+    pub const ALL: [StrategyScope; 3] = [Self::Alias, Self::Domain, Self::Service];
+
+    /// The stable lowercase name used in storage and the API.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Alias => "alias",
+            Self::Domain => "domain",
+            Self::Service => "service",
+        }
+    }
+
+    /// The scope named by [`StrategyScope::as_str`].
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == name)
+    }
+}
+
+/// A reply strategy an archive manager set for an alias, a domain or a service, overriding the
+/// detector's default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasStrategy {
+    /// What it applies to.
+    pub scope: StrategyScope,
+    /// The alias address, domain or provider id, lowercase.
+    pub key: String,
+    /// The strategy name (`reverse_alias`, `direct`, `reply_header`), kept as given; callers
+    /// check it.
+    pub strategy: String,
+}
+
 /// Aliases: what detection found in each message, the alias services connected to archives and
 /// the aliases they list or the owner added.
 ///
@@ -177,4 +220,41 @@ pub trait AliasStore: Send + Sync {
     /// Every alias address of `archive` the owner has: known aliases and aliases seen in mail,
     /// lowercase, sorted. People counts them as the owner's own addresses.
     async fn own_alias_addresses(&self, archive: ArchiveId) -> Result<Vec<String>, StoreError>;
+
+    /// Every reply strategy override of `archive`, sorted by scope (alias, domain, service) and
+    /// key. Empty for an unknown archive.
+    async fn alias_strategies(&self, archive: ArchiveId) -> Result<Vec<AliasStrategy>, StoreError>;
+
+    /// Sets the override for `scope` and `key` (trimmed and compared lowercase), replacing the
+    /// one there; `None` removes it, and removing a missing one is fine. Removing the archive
+    /// removes its overrides. `NotFound` for an unknown archive.
+    async fn set_alias_strategy(
+        &self,
+        archive: ArchiveId,
+        scope: StrategyScope,
+        key: &str,
+        strategy: Option<&str>,
+    ) -> Result<(), StoreError>;
+
+    /// Records that `reverse_alias` reaches `contact` through `alias` in `archive` (all trimmed
+    /// and compared lowercase), replacing what was recorded for that reverse alias. People and
+    /// the reader then count the reverse alias as the contact, as for one seen in mail; a
+    /// reverse alias seen in mail with a sender keeps that sender. Idempotent. Removing the
+    /// archive removes the pairs. `NotFound` for an unknown archive.
+    async fn put_reverse_alias(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        contact: &str,
+        reverse_alias: &str,
+        at: Timestamp,
+    ) -> Result<(), StoreError>;
+
+    /// The contact recorded by [`AliasStore::put_reverse_alias`] for `reverse_alias`
+    /// (compared lowercase), lowercase, or `None`.
+    async fn reverse_alias_contact(
+        &self,
+        archive: ArchiveId,
+        reverse_alias: &str,
+    ) -> Result<Option<String>, StoreError>;
 }

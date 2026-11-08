@@ -361,6 +361,34 @@ impl Aliases for Runner {
             .await
             .map_err(mailbox_error)
     }
+    fn default_strategy(&self, provider: &str) -> holtmail_alias::ReplyStrategy {
+        self.services().aliases.default_strategy(provider)
+    }
+
+    async fn can_reverse(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        alias: &str,
+    ) -> Result<bool, MailboxError> {
+        self.services()
+            .aliases
+            .can_reverse(archive, alias)
+            .await
+            .map_err(mailbox_error)
+    }
+
+    async fn reverse_alias(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        alias: &str,
+        contact: &str,
+    ) -> Result<String, MailboxError> {
+        self.services()
+            .aliases
+            .reverse_alias(archive, alias, contact)
+            .await
+            .map_err(mailbox_error)
+    }
 }
 
 /// Lists every connected service's aliases every `minutes`, from a minute after start.

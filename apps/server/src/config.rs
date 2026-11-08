@@ -16,6 +16,7 @@ use holtmail_oauth::{Client, Provider};
 use holtmail_oauth_http::HttpTokenEndpoint;
 use holtmail_secret::SecretBox;
 use holtmail_secret_local::LocalSecretBox;
+use holtmail_serve_net::{DEFAULT_RELOAD_INTERVAL, TlsCertificates, TrustedProxies};
 use holtmail_store::{SettingsStore, Store};
 use holtmail_store_sqlite::SqliteStore;
 use serde::Deserialize;
@@ -66,6 +67,13 @@ pub struct Config {
     /// Codes, unsubscribe links and the like read out of archived mail.
     #[serde(default)]
     pub insights: crate::insights::InsightsConfig,
+    /// Instance switches for writing to mail, contacts and calendars servers.
+    #[serde(default)]
+    pub write: WriteConfig,
+    /// Serving mail, calendars and contacts to clients: certificates, proxies and who may make
+    /// devices.
+    #[serde(default)]
+    pub serve: ServeConfig,
     #[serde(skip)]
     pub tls_roots: TlsRoots,
 }
@@ -87,6 +95,175 @@ impl Default for WatchConfig {
         Self {
             enabled: true,
             parallel_syncs: default_parallel_syncs(),
+        }
+    }
+}
+
+/// `[serve]`: what every protocol listener shares. Every listener stays off until its own
+/// section names it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServeConfig {
+    /// PEM certificate chain for the protocol listeners; needs `tls_key`. Renewed files are
+    /// picked up without a restart.
+    #[serde(default)]
+    pub tls_cert: Option<PathBuf>,
+    /// PEM private key for `tls_cert`.
+    #[serde(default)]
+    pub tls_key: Option<PathBuf>,
+    /// Read PROXY protocol v2 headers on the protocol listeners; needs `trusted_proxies`.
+    #[serde(default)]
+    pub proxy_protocol: bool,
+    /// IP addresses and CIDR ranges of proxies whose PROXY headers and `X-Forwarded-For` are
+    /// believed. Nobody by default.
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
+    /// Whether members may make devices for their own archives; `false` limits new devices to
+    /// the owner and admins.
+    #[serde(default = "yes")]
+    pub members: bool,
+    /// SMTP submission for mail clients; off without this section.
+    #[serde(default)]
+    pub submit: Option<SubmitConfig>,
+}
+
+/// `[serve.submit]`: SMTP submission for mail clients.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitConfig {
+    /// Addresses with TLS from the first byte, such as `0.0.0.0:465`.
+    #[serde(default)]
+    pub listen_tls: Vec<SocketAddr>,
+    /// Addresses with `STARTTLS`, such as `0.0.0.0:587`.
+    #[serde(default)]
+    pub listen_starttls: Vec<SocketAddr>,
+    /// How long a submitted message can be undone before it leaves; 0 by default, because the
+    /// mail client already had its own chance.
+    #[serde(default)]
+    pub undo_seconds: u64,
+    /// Messages per user in any hour, across their devices.
+    #[serde(default = "default_messages_per_hour")]
+    pub messages_per_hour: u32,
+    /// Envelope recipients per user in any day, across their devices.
+    #[serde(default = "default_recipients_per_day")]
+    pub recipients_per_day: u32,
+    /// The name in the greeting; the host of `public_url` by default.
+    #[serde(default)]
+    pub hostname: Option<String>,
+}
+
+fn default_messages_per_hour() -> u32 {
+    200
+}
+
+fn default_recipients_per_day() -> u32 {
+    2000
+}
+
+impl Default for ServeConfig {
+    fn default() -> Self {
+        Self {
+            tls_cert: None,
+            tls_key: None,
+            proxy_protocol: false,
+            trusted_proxies: Vec::new(),
+            members: true,
+            submit: None,
+        }
+    }
+}
+
+impl ServeConfig {
+    /// Refuses a section that cannot work, and reads the proxy list.
+    pub fn validate(&self) -> anyhow::Result<TrustedProxies> {
+        anyhow::ensure!(
+            self.tls_cert.is_some() == self.tls_key.is_some(),
+            "[serve] tls_cert and tls_key go together"
+        );
+        anyhow::ensure!(
+            !self.proxy_protocol || !self.trusted_proxies.is_empty(),
+            "[serve] proxy_protocol needs trusted_proxies"
+        );
+        if let Some(submit) = &self.submit {
+            anyhow::ensure!(
+                !submit.listen_tls.is_empty() || !submit.listen_starttls.is_empty(),
+                "[serve.submit] needs listen_tls or listen_starttls"
+            );
+            let everything_local = submit.listen_tls.is_empty()
+                && submit.listen_starttls.iter().all(|a| a.ip().is_loopback());
+            anyhow::ensure!(
+                self.tls_cert.is_some() || everything_local,
+                "[serve.submit] needs [serve] tls_cert and tls_key, unless it only listens with \
+                 STARTTLS on loopback addresses"
+            );
+        }
+        TrustedProxies::parse(&self.trusted_proxies).context("[serve] trusted_proxies")
+    }
+
+    /// What the API acts on.
+    pub fn api_options(&self) -> anyhow::Result<holtmail_api::ServeOptions> {
+        Ok(holtmail_api::ServeOptions {
+            members: self.members,
+            trusted_proxies: self.validate()?,
+            ..holtmail_api::ServeOptions::default()
+        })
+    }
+
+    /// Loads the certificate, and keeps it fresh for as long as the returned value or a clone
+    /// of it lives. `None` without `tls_cert`.
+    pub async fn certificates(&self) -> anyhow::Result<Option<TlsCertificates>> {
+        let (Some(cert), Some(key)) = (&self.tls_cert, &self.tls_key) else {
+            return Ok(None);
+        };
+        let certificates = TlsCertificates::load(cert, key)
+            .await
+            .context("[serve] tls_cert and tls_key")?;
+        drop(certificates.watch(DEFAULT_RELOAD_INTERVAL));
+        Ok(Some(certificates))
+    }
+}
+
+/// `[write]`: instance switches over what accounts allow. `false` turns a capability off for
+/// every account, whatever the account allows; all are on by default, and accounts allow nothing
+/// until a manager turns their capabilities on.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WriteConfig {
+    /// Any write to a mail, contacts or calendars server.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Sending mail.
+    #[serde(default = "yes")]
+    pub send: bool,
+    /// Running rule flows.
+    #[serde(default = "yes")]
+    pub rules: bool,
+    /// Seconds a queued message waits before it leaves, so it can be undone.
+    #[serde(default = "default_undo_seconds")]
+    pub undo_seconds: u64,
+}
+
+impl Default for WriteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            send: true,
+            rules: true,
+            undo_seconds: default_undo_seconds(),
+        }
+    }
+}
+
+fn default_undo_seconds() -> u64 {
+    10
+}
+
+impl From<WriteConfig> for holtmail_api::WriteSwitches {
+    fn from(config: WriteConfig) -> Self {
+        Self {
+            enabled: config.enabled,
+            send: config.send,
+            rules: config.rules,
         }
     }
 }
@@ -292,6 +469,7 @@ impl Config {
             config.tls_roots = read_roots(path)?;
         }
         *TLS_ROOTS.write().expect("TLS roots lock") = config.tls_roots.clone();
+        config.serve.validate()?;
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
                 url.starts_with("http://") || url.starts_with("https://"),
@@ -410,6 +588,11 @@ pub struct Services {
     pub oauth: Arc<OAuth>,
     pub hooks: Arc<crate::webhooks::Hooks>,
     pub smtp: std::sync::OnceLock<Arc<crate::smtp::Listener>>,
+    /// Sends held contact and calendar edits upstream, once `serve` started it.
+    pub pim_writeback: std::sync::OnceLock<Arc<holtmail_pim_writeback::Writeback>>,
+    /// The writers `pim_writeback` sends through, which also tell how a collection's server
+    /// schedules; set with it.
+    pub pim_writers: std::sync::OnceLock<Arc<crate::pim_writeback::PimWriters>>,
     pub watch: WatchConfig,
     /// Where contacts and calendars servers post WebDAV-Push messages: the https `public_url`
     /// without a trailing slash; `None` when the instance has no public https address.
@@ -425,6 +608,10 @@ pub struct Services {
     /// The category data release loader and updater; `None` when insights are off or `domains`
     /// is not among the sources.
     pub category_data: Option<Arc<crate::category_data::Updater>>,
+    /// Matches what sync adds against the outbox once the server's outbox is open.
+    pub sent_mail: Arc<crate::send::SentMail>,
+    /// Records attendees' iMIP replies on the user's own events once `serve` started it.
+    pub replies: Arc<crate::replies::Replies>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -584,7 +771,8 @@ impl Services {
             secrets.clone(),
             crate::aliases::providers(),
             crate::aliases::connect(config.tls_roots.clone()),
-        );
+        )
+        .with_detectors(detectors.clone());
         Ok(Self {
             secrets,
             blobs,
@@ -595,6 +783,8 @@ impl Services {
             oauth,
             hooks,
             smtp: Default::default(),
+            pim_writeback: Default::default(),
+            pim_writers: Default::default(),
             watch: config.watch.clone(),
             push_base: config.https().then(|| config.base_url()),
             detectors,
@@ -602,6 +792,8 @@ impl Services {
             alias_sync_minutes: config.aliases.sync_interval_minutes,
             insights,
             category_data,
+            sent_mail: Arc::default(),
+            replies: Arc::default(),
         })
     }
 
@@ -609,6 +801,8 @@ impl Services {
     /// insights and their categories.
     pub fn ingest(&self) -> Ingest {
         let ingest = Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
+            .with_observer(self.sent_mail.clone())
+            .with_observer(self.replies.clone())
             .with_extractor(self.extractor.clone())
             .with_alias_detectors(self.detectors.clone());
         match &self.insights {
@@ -630,6 +824,92 @@ mod tests {
         assert_eq!(config.listen.to_string(), "127.0.0.1:8080");
         assert_eq!(config.data_dir, PathBuf::from("data"));
         assert!(matches!(config.blobs, BlobConfig::Fs));
+    }
+
+    #[test]
+    fn reads_the_serve_section() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.serve.members && !config.serve.proxy_protocol);
+        assert_eq!(config.serve.validate().unwrap(), TrustedProxies::default());
+
+        let config: Config = toml::from_str(
+            "[serve]\ntls_cert = \"c.pem\"\ntls_key = \"k.pem\"\nproxy_protocol = true\ntrusted_proxies = [\"10.0.0.0/8\", \"192.0.2.1\"]\nmembers = false",
+        )
+        .unwrap();
+        assert!(!config.serve.members);
+        let trusted = config.serve.validate().unwrap();
+        assert!(trusted.contains("10.1.2.3".parse().unwrap()));
+        assert!(trusted.contains("192.0.2.1".parse().unwrap()));
+        assert!(!trusted.contains("192.0.2.2".parse().unwrap()));
+        let api = config.serve.api_options().unwrap();
+        assert!(!api.members);
+        assert_eq!(api.recent_sign_in.as_secs(), 300);
+
+        for bad in [
+            "[serve]\ntls_cert = \"c.pem\"",
+            "[serve]\ntls_key = \"k.pem\"",
+            "[serve]\nproxy_protocol = true",
+            "[serve]\ntrusted_proxies = [\"proxy.example.com\"]",
+        ] {
+            let config: Config = toml::from_str(bad).unwrap();
+            assert!(config.serve.validate().is_err(), "{bad}");
+        }
+        assert!(toml::from_str::<Config>("[serve]\nlisten = 1").is_err());
+        let config: Config = toml::from_str(
+            "[serve]\ntls_cert = \"c.pem\"\ntls_key = \"k.pem\"\n[serve.submit]\nlisten_tls = [\"0.0.0.0:465\"]\nlisten_starttls = [\"0.0.0.0:587\"]",
+        )
+        .unwrap();
+        config.serve.validate().unwrap();
+        let submit = config.serve.submit.unwrap();
+        assert_eq!(
+            (
+                submit.undo_seconds,
+                submit.messages_per_hour,
+                submit.recipients_per_day
+            ),
+            (0, 200, 2000)
+        );
+        for bad in [
+            "[serve.submit]\nundo_seconds = 1",
+            "[serve.submit]\nlisten_tls = [\"0.0.0.0:465\"]",
+            "[serve.submit]\nlisten_starttls = [\"0.0.0.0:587\"]",
+        ] {
+            let config: Config = toml::from_str(bad).unwrap();
+            assert!(config.serve.validate().is_err(), "{bad}");
+        }
+        let local: Config =
+            toml::from_str("[serve.submit]\nlisten_starttls = [\"127.0.0.1:2587\"]").unwrap();
+        local.serve.validate().unwrap();
+    }
+
+    #[tokio::test]
+    async fn refuses_certificates_that_cannot_be_read() {
+        let config = ServeConfig {
+            tls_cert: Some("/nonexistent/c.pem".into()),
+            tls_key: Some("/nonexistent/k.pem".into()),
+            ..ServeConfig::default()
+        };
+        assert!(config.certificates().await.is_err());
+        assert!(
+            ServeConfig::default()
+                .certificates()
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reads_the_write_switches() {
+        let config: Config = toml::from_str("").unwrap();
+        let on: holtmail_api::WriteSwitches = config.write.into();
+        assert_eq!(on, holtmail_api::WriteSwitches::default());
+        let config: Config = toml::from_str("[write]\nsend = false").unwrap();
+        assert!(config.write.enabled && !config.write.send && config.write.rules);
+        assert_eq!(config.write.undo_seconds, 10);
+        let config: Config = toml::from_str("[write]\nundo_seconds = 0").unwrap();
+        assert_eq!(config.write.undo_seconds, 0);
+        assert!(toml::from_str::<Config>("[write]\nsending = false").is_err());
     }
 
     #[test]

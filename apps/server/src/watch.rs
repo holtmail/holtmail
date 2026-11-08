@@ -149,6 +149,8 @@ fn source_reason(error: &SourceError) -> String {
             format!("The mail server answered unexpectedly: {reason}.")
         }
         SourceError::Config(reason) => format!("Check the settings: {reason}."),
+        SourceError::Unsupported(reason) => format!("The mail server cannot do this: {reason}."),
+        SourceError::Missing(reason) => format!("Not found on the mail server: {reason}."),
     }
 }
 

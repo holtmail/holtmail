@@ -239,6 +239,7 @@ impl Handler for Receiver {
                 flags: Vec::new(),
                 labels: None,
                 received_at: Some(now),
+                live: true,
             };
             match self.ingest.ingest(archive, bytes, &placement).await {
                 Ok(_) => {

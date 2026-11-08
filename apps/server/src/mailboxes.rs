@@ -1225,7 +1225,13 @@ impl Mailboxes for Runner {
             jmap: accounts::jmap_connection(account),
             sync_interval_minutes: accounts::sync_interval(account),
             min_age_days: accounts::min_age_days(account),
-            needs_sign_in: oauth.as_ref().is_some_and(|o| o.needs_sign_in),
+            needs_sign_in: oauth
+                .as_ref()
+                .is_some_and(|o| o.needs_sign_in || o.missing_consent.is_some()),
+            sign_in_reason: oauth
+                .as_ref()
+                .filter(|o| !o.needs_sign_in)
+                .and_then(crate::oauth::consent_reason),
             oauth_provider: oauth.map(|o| o.provider),
             contacts_calendars: dav::details(account).map(|mut c| {
                 c.caldav_offer = self
@@ -1275,6 +1281,9 @@ impl Mailboxes for Runner {
             .ok_or_else(|| MailboxError::Invalid("Choose Google or Microsoft.".into()))?;
         let store = &self.0.services.store;
         let mut wanted = None;
+        let mut send = false;
+        let mut write = false;
+        let mut pim_write = false;
         let (email, purpose, kind) = match start.target {
             OAuthTarget::NewAccount { archive, name } => {
                 store
@@ -1310,6 +1319,13 @@ impl Mailboxes for Runner {
                         .ok_or_else(|| MailboxError::Invalid("Enter the email address.".into()))?,
                 };
                 wanted = Some(dav::wanted_access(&account));
+                let capabilities = store
+                    .account_capabilities(account.id)
+                    .await
+                    .map_err(backend)?;
+                send = capabilities.has(holtmail_store::Capability::MailSend);
+                write = holtmail_mail_writeback::writes_mail(&capabilities);
+                pim_write = capabilities.has(holtmail_store::Capability::PimEdit);
                 (email, Purpose::SignInAgain(id), account.kind)
             }
         };
@@ -1335,7 +1351,18 @@ impl Mailboxes for Runner {
             .0
             .services
             .oauth
-            .start(provider, access, email.trim(), purpose, start.return_to)
+            .start(
+                provider,
+                access,
+                crate::oauth::Extra {
+                    send: send && provider.send_scope(access).is_some(),
+                    write: write && provider.write_scope(access).is_some(),
+                    pim_write: pim_write && provider.pim_write_scope(access).is_some(),
+                },
+                email.trim(),
+                purpose,
+                start.return_to,
+            )
             .map_err(backend)?;
         Ok(OAuthStarted {
             authorize_url: started.url,
@@ -1422,6 +1449,23 @@ impl Mailboxes for Runner {
 
     async fn set_image_proxy(&self, proxy: Option<String>) -> Result<ImageProxy, MailboxError> {
         self.0.services.fetcher.set(proxy).await
+    }
+
+    async fn scheduling(
+        &self,
+        collection: &holtmail_store::Collection,
+    ) -> holtmail_api::SchedulingProbe {
+        match self.0.services.pim_writers.get() {
+            Some(writers) => writers.scheduling(collection).await,
+            None => holtmail_api::SchedulingProbe::Unknown,
+        }
+    }
+
+    fn pim_changed(&self, archive: ArchiveId) {
+        if let Some(writeback) = self.0.services.pim_writeback.get() {
+            writeback.wake();
+        }
+        self.refresh_people(archive);
     }
 
     async fn rebuild_people(&self, archive: ArchiveId) -> Result<(), MailboxError> {

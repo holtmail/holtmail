@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use holtmail_api::{ContactsCalendars, ContactsCalendarsChange, ContactsProtocol, MailboxError};
 use holtmail_collection::CollectionKind;
-use holtmail_collection::{CollectionError, CollectionSource, Credentials};
+use holtmail_collection::{CollectionError, CollectionSource, CollectionWriter, Credentials};
 use holtmail_collection_dav::{DavConfig, DavSource};
 use holtmail_collection_graph::GraphCollections;
 use holtmail_collection_jmap::JmapCollections;
@@ -402,6 +402,59 @@ pub async fn source_for(
     }
     let (own, dav) = both_credentials(account, &settings, store, secrets, oauth).await?;
     Ok(build(account, &settings, own, dav, SYNC_TIMEOUT)?)
+}
+
+fn upstream<T: CollectionSource + CollectionWriter + 'static>(
+    source: T,
+) -> holtmail_pim_writeback::Upstream {
+    let source = std::sync::Arc::new(source);
+    holtmail_pim_writeback::Upstream {
+        writer: source.clone(),
+        source,
+    }
+}
+
+/// The writer of the account's collections of `kind`, with the source that reads them back:
+/// the one protocol those collections are read with (so a JMAP account with CalDAV calendars
+/// writes calendars over CalDAV), signed in as for syncing. `own` are the account's addresses,
+/// which a CalDAV writer matches attendees against. A CardDAV, CalDAV or Graph writer has
+/// listed its collections before it is returned, so it knows what each can do (Graph: which
+/// calendars the account may only read).
+pub async fn upstream_for(
+    account: &Account,
+    kind: CollectionKind,
+    own: Vec<String>,
+    store: &dyn Store,
+    secrets: &dyn SecretBox,
+    oauth: &OAuth,
+) -> anyhow::Result<holtmail_pim_writeback::Upstream> {
+    let settings = DavSettings::of(account)
+        .filter(|d| d.enabled)
+        .context("contacts and calendars are off for this account")?;
+    if needs_consent(account) {
+        bail!("the sign-in does not allow access to contacts and calendars");
+    }
+    let (own_credentials, dav) =
+        both_credentials(account, &settings, store, secrets, oauth).await?;
+    let protocol = match kind {
+        CollectionKind::Contacts => settings.protocol,
+        CollectionKind::Calendar => settings.calendars(),
+    };
+    Ok(match protocol {
+        Protocol::Dav => {
+            let source = DavSource::new(config(&settings, Some(kind), dav, SYNC_TIMEOUT))?
+                .with_roots(&crate::config::tls_roots())?
+                .with_addresses(own);
+            source.collections().await?;
+            upstream(source)
+        }
+        Protocol::Graph => {
+            let source = graph_source(account, own_credentials, SYNC_TIMEOUT)?;
+            source.collections().await?;
+            upstream(source)
+        }
+        Protocol::Jmap => upstream(jmap_source(account, own_credentials, SYNC_TIMEOUT)?),
+    })
 }
 
 /// Where a JMAP account without calendars may have them over CalDAV, best first: its

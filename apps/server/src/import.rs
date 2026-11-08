@@ -131,6 +131,7 @@ pub async fn import_path(
             flags: message.flags,
             labels: None,
             received_at: message.received_at,
+            live: false,
         };
         match ingest.ingest(archive, message.raw, &placement).await {
             Ok(done) if done.created => totals.new += 1,

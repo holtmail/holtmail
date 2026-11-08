@@ -17,13 +17,18 @@ mod mailboxes;
 mod oauth;
 mod operations;
 mod people;
+mod pim_writeback;
 mod push;
+mod replies;
 mod schedule;
+mod send;
 mod smtp;
+mod submit;
 mod tasks;
 mod walk;
 mod watch;
 mod webhooks;
+mod writeback;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -185,6 +190,60 @@ enum Command {
     /// Look at what is read out of archived mail: codes, unsubscribe links and the like.
     #[command(subcommand)]
     Insights(InsightsCommand),
+    /// Queue a message as one of an archive's identities, built from flags or read from an .eml
+    /// file. The running server sends it once the undo window ends. Works while `serve` runs.
+    Send {
+        /// Archive name or id.
+        #[arg(long)]
+        archive: String,
+        /// The identity's address or id.
+        #[arg(long)]
+        from: String,
+        /// Recipients; for --eml they replace the file's To and Cc in the envelope.
+        #[arg(long)]
+        to: Vec<String>,
+        #[arg(long)]
+        cc: Vec<String>,
+        /// Envelope-only recipients, never written into the message.
+        #[arg(long)]
+        bcc: Vec<String>,
+        #[arg(long)]
+        subject: Option<String>,
+        /// The plain text body; `-` reads it from standard input.
+        #[arg(long)]
+        body: Option<String>,
+        /// Send this file as it is (bare LF line ends become CRLF); its From must be the identity.
+        #[arg(long)]
+        eml: Option<PathBuf>,
+        /// Send at this RFC 3339 time instead of after the undo window.
+        #[arg(long)]
+        at: Option<String>,
+        /// Wait until the server sent it or gave up, print each recipient's result and exit 1
+        /// unless it was sent.
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Look at outgoing mail, queue a message again or cancel it. Works while `serve` runs.
+    #[command(subcommand)]
+    Outbox(OutboxCommand),
+}
+
+#[derive(Subcommand)]
+enum OutboxCommand {
+    /// List messages, newest first, with each recipient's result.
+    List {
+        /// Archive name or id; every archive when missing.
+        #[arg(long)]
+        archive: Option<String>,
+        /// Comma-separated states: queued, sending, retrying, sent, failed, uncertain, cancelled.
+        #[arg(long)]
+        state: Option<String>,
+    },
+    /// Queue a retrying, failed or uncertain message again now, for the recipients that did not
+    /// take it.
+    Retry { id: String },
+    /// Cancel a message that has not left yet.
+    Cancel { id: String },
 }
 
 #[derive(Subcommand)]
@@ -423,6 +482,45 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Serve => serve(Config::load(cli.config.as_deref())?).await,
+        Command::Send {
+            archive,
+            from,
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+            eml,
+            at,
+            wait,
+        } => {
+            let config = Config::load(cli.config.as_deref())?;
+            send::send(
+                &config,
+                send::SendArgs {
+                    archive,
+                    from,
+                    to,
+                    cc,
+                    bcc,
+                    subject,
+                    body,
+                    eml,
+                    at,
+                    wait,
+                },
+            )
+            .await
+        }
+        Command::Outbox(command) => {
+            let config = Config::load(cli.config.as_deref())?;
+            let args = match command {
+                OutboxCommand::List { archive, state } => send::OutboxArgs::List { archive, state },
+                OutboxCommand::Retry { id } => send::OutboxArgs::Retry(id),
+                OutboxCommand::Cancel { id } => send::OutboxArgs::Cancel(id),
+            };
+            send::outbox(&config, args).await
+        }
         Command::Delete {
             archive,
             query,
@@ -927,6 +1025,7 @@ async fn sign_in_from_cli(
     let started = services.oauth.start(
         provider,
         access,
+        oauth::Extra::default(),
         email.trim(),
         oauth::Purpose::NewAccount { archive, name },
         "/settings".into(),
@@ -1317,6 +1416,23 @@ async fn user_command(store: Arc<dyn Store>, command: UserCommand) -> anyhow::Re
     }
 }
 
+async fn prune_idempotency_keys(store: Arc<dyn Store>) {
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+    loop {
+        every.tick().await;
+        let cutoff = holtmail_core::Timestamp::now().as_millis()
+            - holtmail_api::IDEMPOTENCY_WINDOW.as_millis() as i64;
+        match store
+            .prune_idempotency_keys(holtmail_core::Timestamp::from_millis(cutoff))
+            .await
+        {
+            Ok(0) => {}
+            Ok(removed) => tracing::debug!(removed, "expired idempotency keys removed"),
+            Err(error) => tracing::warn!(%error, "expired idempotency keys not removed"),
+        }
+    }
+}
+
 async fn serve(config: Config) -> anyhow::Result<()> {
     let services = Arc::new(Services::open(&config).await?);
     let auth = auth(services.store.clone())?;
@@ -1326,6 +1442,20 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let runner =
         mailboxes::Runner::open(services.clone(), config.data_dir.join("uploads"), schedule)
             .await?;
+    let (outbox, transports) = send::open(&services, &config);
+    let serve_options = holtmail_api::ServeOptions {
+        servers: submit::endpoints(&config),
+        ..config.serve.api_options()?
+    };
+    let certificates = config.serve.certificates().await?;
+    let devices: Arc<dyn holtmail_device::DeviceAuth> =
+        Arc::new(holtmail_device_local::LocalDeviceAuth::new(
+            services.store.clone(),
+            holtmail_device_local::Options::default(),
+        ));
+    let instance_token = submit::instance_token(&*services.store).await?;
+    transports.refuse_own_instance(instance_token.clone());
+    let submission = submit::submission(&services, &config, outbox.clone());
     let mut app = holtmail_api::router(ApiState {
         blobs: services.blobs.clone(),
         store: services.store.clone(),
@@ -1337,7 +1467,46 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         fetcher: services.fetcher.clone(),
         secure_cookies: config.https(),
         insights: services.insights.as_ref().map(|i| i.api.clone()),
+        write: config.write.into(),
+        sending: Some(holtmail_api::Sending {
+            outbox: outbox.clone(),
+            transports,
+            secrets: services.secrets.clone(),
+            submission: submission.clone(),
+        }),
+        devices: devices.clone(),
+        serve: serve_options,
     });
+    tokio::spawn(send::run(outbox));
+    submit::start(
+        &config,
+        submission,
+        devices,
+        certificates.as_ref(),
+        instance_token,
+    )
+    .await?;
+    let mail_writeback = writeback::open(&services, &config);
+    tokio::spawn(writeback::run(mail_writeback.clone()));
+    tokio::spawn(writeback::run_retention(
+        services.store.clone(),
+        config.write,
+        mail_writeback,
+    ));
+    let pim_writeback = pim_writeback::open(&services, &config);
+    let _ = services.pim_writeback.set(pim_writeback.clone());
+    if let Some(writers) = services.pim_writers.get() {
+        services.replies.start(
+            services.store.clone(),
+            services.blobs.clone(),
+            holtmail_pim_sync::Edits::new(services.store.clone(), services.ingest()),
+            writers.clone(),
+            pim_writeback.clone(),
+            config.write,
+        );
+    }
+    tokio::spawn(pim_writeback::run(pim_writeback));
+    tokio::spawn(prune_idempotency_keys(services.store.clone()));
     tokio::spawn(runner.clone().write_tasks());
     tokio::spawn(services.hooks.clone().run());
     if let Some(smtp) = &config.smtp {

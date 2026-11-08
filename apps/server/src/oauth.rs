@@ -16,7 +16,7 @@ const MAX_PENDING: usize = 100;
 const REFRESH_BEFORE: Duration = Duration::from_secs(120);
 
 /// What `settings.oauth` holds for an account that signs in with OAuth.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthSettings {
     pub provider: String,
     #[serde(default)]
@@ -25,6 +25,22 @@ pub struct OAuthSettings {
     /// before contacts and calendars, which have their kind's access.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access: Option<String>,
+    /// The last sign-in also granted the provider's send scope ([`Provider::send_scope`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub send: bool,
+    /// The last sign-in also granted the provider's write scope ([`Provider::write_scope`]).
+    /// Read by `holtmail_mail_writeback::write_consent_missing` as `oauth.write`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub write: bool,
+    /// The last sign-in also granted the provider's scopes for changing contacts and calendars
+    /// ([`Provider::pim_write_scope`]). Read by `holtmail_pim_writeback::pim_write_consent_missing`
+    /// as `oauth.pim_write`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pim_write: bool,
+    /// A capability that waits for consent the sign-in lacks, such as `mail.send`. Syncs go on;
+    /// signing in again asks for it and clears this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing_consent: Option<String>,
 }
 
 impl OAuthSettings {
@@ -44,6 +60,17 @@ impl OAuthSettings {
     }
 }
 
+/// The scopes a sign-in asks for beyond reading.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Extra {
+    /// The provider's send scope ([`Provider::send_scope`]).
+    pub send: bool,
+    /// The provider's write scope ([`Provider::write_scope`]).
+    pub write: bool,
+    /// The provider's scopes for changing contacts and calendars ([`Provider::pim_write_scope`]).
+    pub pim_write: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Purpose {
     NewAccount {
@@ -56,6 +83,12 @@ pub enum Purpose {
 pub struct Pending {
     pub provider: Provider,
     pub access: Access,
+    /// The sign-in also asks for the provider's send scope.
+    pub send: bool,
+    /// The sign-in also asks for the provider's write scope.
+    pub write: bool,
+    /// The sign-in also asks for the provider's scopes for changing contacts and calendars.
+    pub pim_write: bool,
     pub email: String,
     pub purpose: Purpose,
     pub return_to: String,
@@ -139,8 +172,14 @@ impl OAuth {
         self.clients.get(&provider).map(Client::is_thunderbird)
     }
 
-    fn client(&self, provider: Provider, access: Access) -> Result<Client, OAuthError> {
-        self.clients
+    fn client(
+        &self,
+        provider: Provider,
+        access: Access,
+        extra: Extra,
+    ) -> Result<Client, OAuthError> {
+        let client = self
+            .clients
             .get(&provider)
             .ok_or_else(|| {
                 OAuthError::Rejected(format!(
@@ -155,18 +194,36 @@ impl OAuth {
                     provider.name(),
                     access.as_str()
                 ))
-            })
+            })?;
+        let client = if extra.write {
+            client.with_write(access)
+        } else {
+            client
+        };
+        let client = if extra.pim_write {
+            client.with_pim_write(access)
+        } else {
+            client
+        };
+        Ok(if extra.send {
+            client.with_send(access)
+        } else {
+            client
+        })
     }
 
+    /// Starts a sign-in for `access`, also asking for the provider's send and write scopes as
+    /// `extra` says.
     pub fn start(
         &self,
         provider: Provider,
         access: Access,
+        extra: Extra,
         email: &str,
         purpose: Purpose,
         return_to: String,
     ) -> Result<Started, OAuthError> {
-        let client = self.client(provider, access)?;
+        let client = self.client(provider, access, extra)?;
         let authorization = client.authorize(Some(email))?;
         let now = Instant::now();
         let mut pending = self.pending.lock().expect("pending lock");
@@ -184,6 +241,9 @@ impl OAuth {
             Pending {
                 provider,
                 access,
+                send: extra.send,
+                write: extra.write,
+                pim_write: extra.pim_write,
                 email: email.to_owned(),
                 purpose,
                 return_to,
@@ -219,9 +279,17 @@ impl OAuth {
     }
 
     pub async fn exchange(&self, pending: &Pending, code: &str) -> Result<Tokens, OAuthError> {
-        self.client(pending.provider, pending.access)?
-            .exchange(&*self.endpoint, code, &pending.verifier)
-            .await
+        self.client(
+            pending.provider,
+            pending.access,
+            Extra {
+                send: pending.send,
+                write: pending.write,
+                pim_write: pending.pim_write,
+            },
+        )?
+        .exchange(&*self.endpoint, code, &pending.verifier)
+        .await
     }
 
     pub fn remember(&self, account: AccountId, tokens: &Tokens) {
@@ -291,7 +359,16 @@ impl OAuth {
                 .context("the stored sign-in cannot be opened with this secret key")?,
         )
         .context("the stored sign-in is damaged")?;
-        let client = self.client(provider, granted_access(account))?;
+        let granted = OAuthSettings::of(account);
+        let client = self.client(
+            provider,
+            granted_access(account),
+            Extra {
+                send: granted.as_ref().is_some_and(|o| o.send),
+                write: granted.as_ref().is_some_and(|o| o.write),
+                pim_write: granted.as_ref().is_some_and(|o| o.pim_write),
+            },
+        )?;
         match client.refresh(&*self.endpoint, &refresh).await {
             Ok(tokens) => {
                 if let Some(rotated) = tokens.refresh_token.as_deref().filter(|t| *t != refresh) {
@@ -331,6 +408,73 @@ impl OAuth {
             )),
         }
     }
+}
+
+impl OAuth {
+    /// Records that `capability` waits for consent the account's sign-in lacks and tells the
+    /// webhooks once, when it starts waiting. Syncs go on; the account shows that someone has
+    /// to sign in again.
+    pub async fn ask_consent(
+        &self,
+        account: &Account,
+        store: &dyn Store,
+        capability: &str,
+    ) -> anyhow::Result<()> {
+        let mut stored = store
+            .get_account(account.id)
+            .await?
+            .context("the account was removed")?;
+        let Some(mut settings) = OAuthSettings::of(&stored) else {
+            return Ok(());
+        };
+        if settings.missing_consent.is_some() {
+            return Ok(());
+        }
+        settings.missing_consent = Some(capability.to_owned());
+        settings.write(&mut stored.settings);
+        store.update_account(&stored).await?;
+        tracing::warn!(account = %account.id, provider = %settings.provider, capability,
+            "the sign-in lacks consent for a capability");
+        if let Some(hooks) = self.hooks.get() {
+            hooks
+                .emit(holtmail_hooks::Event::AccountNeedsSignIn {
+                    account_id: account.id,
+                    archive_id: account.archive_id,
+                    provider: settings.provider.clone(),
+                })
+                .await;
+        }
+        Ok(())
+    }
+}
+
+/// Why `settings` asks someone to sign in again although the sign-in still works, for people.
+pub fn consent_reason(settings: &OAuthSettings) -> Option<String> {
+    let capability = settings.missing_consent.as_deref()?;
+    let provider = settings.provider().map_or("The provider", Provider::name);
+    Some(match capability {
+        "mail.send" => format!(
+            "Sending is turned on, but the sign-in does not allow {provider} to send mail. Sign in again to give that permission; until then messages wait in the outbox."
+        ),
+        "mail.write" => format!(
+            "Changing mail on the server is turned on, but the sign-in does not allow {provider} to change mail. Sign in again to give that permission; until then changes wait."
+        ),
+        "pim.edit" => format!(
+            "Changing contacts and calendars is turned on, but the sign-in does not allow {provider} to change them. Sign in again to give that permission; until then edits wait."
+        ),
+        other => format!("{other} needs another sign-in."),
+    })
+}
+
+/// Whether the account's sign-in lets Holtmail send through the account.
+pub fn send_granted(account: &Account) -> bool {
+    let Some(settings) = OAuthSettings::of(account) else {
+        return true;
+    };
+    let Some(provider) = settings.provider() else {
+        return false;
+    };
+    settings.send || provider.sends_without_consent(granted_access(account))
 }
 
 /// What the account's last OAuth sign-in granted.
@@ -387,6 +531,7 @@ mod tests {
             provider: "google".into(),
             needs_sign_in: false,
             access: None,
+            ..OAuthSettings::default()
         }
         .write(&mut settings);
         let mut account = store
@@ -492,6 +637,7 @@ mod tests {
             provider: "microsoft".into(),
             needs_sign_in: false,
             access: None,
+            ..OAuthSettings::default()
         }
         .write(&mut settings);
         let mut graph = f
@@ -528,6 +674,7 @@ mod tests {
             .start(
                 Provider::Microsoft,
                 Access::Graph,
+                Extra::default(),
                 "ada@example.com",
                 Purpose::SignInAgain(graph.id),
                 "/settings".into(),
@@ -540,6 +687,7 @@ mod tests {
                 .start(
                     Provider::Google,
                     Access::Graph,
+                    Extra::default(),
                     "ada@example.com",
                     Purpose::SignInAgain(graph.id),
                     "/settings".into(),
@@ -569,6 +717,7 @@ mod tests {
             .start(
                 Provider::Microsoft,
                 Access::Imap,
+                Extra::default(),
                 "ada@example.com",
                 Purpose::NewAccount {
                     archive,
@@ -614,6 +763,7 @@ mod tests {
             .start(
                 Provider::Google,
                 Access::Imap,
+                Extra::default(),
                 "ada@example.com",
                 Purpose::SignInAgain(AccountId::new()),
                 "/settings".into(),

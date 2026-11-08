@@ -194,7 +194,10 @@ fn jmap_credentials(auth: JmapAuth, secret: String) -> Credentials {
 
 fn jmap_reason(error: SourceError) -> String {
     match error {
-        SourceError::Config(reason) | SourceError::Protocol(reason) => {
+        SourceError::Config(reason)
+        | SourceError::Protocol(reason)
+        | SourceError::Unsupported(reason)
+        | SourceError::Missing(reason) => {
             let mut chars = reason.chars();
             chars.next().map_or_else(String::new, |first| {
                 format!("{}{}.", first.to_uppercase(), chars.as_str())
@@ -219,7 +222,7 @@ pub fn jmap_sign_in_error(error: SourceError, settings: &JmapSettings) -> Mailbo
         SourceError::Protocol(reason) => {
             format!("The JMAP server answered unexpectedly: {reason}.")
         }
-        config @ SourceError::Config(_) => jmap_reason(config),
+        other => jmap_reason(other),
     })
 }
 
@@ -243,7 +246,7 @@ pub async fn check_jmap_sign_in(settings: &JmapSettings, secret: &str) -> Result
     Ok(())
 }
 
-fn open_secret(account: &Account, secrets: &dyn SecretBox) -> anyhow::Result<String> {
+pub(crate) fn open_secret(account: &Account, secrets: &dyn SecretBox) -> anyhow::Result<String> {
     let sealed = account
         .sealed_secret
         .as_deref()
@@ -847,7 +850,9 @@ pub fn sign_in_error(error: SourceError, settings: &ImapSettings, oauth: bool) -
             format!("Could not connect to {place}: {reason}")
         }
         SourceError::Protocol(reason) => format!("{place} answered unexpectedly: {reason}"),
-        SourceError::Config(reason) => reason,
+        SourceError::Config(reason)
+        | SourceError::Unsupported(reason)
+        | SourceError::Missing(reason) => reason,
     })
 }
 
@@ -878,7 +883,9 @@ pub fn graph_sign_in_error(error: SourceError) -> MailboxError {
         SourceError::Auth(_) => "Signed in, but Microsoft Graph refused access to the mailbox. Check that the address has an Exchange Online or Outlook.com mailbox and that reading mail was allowed.".to_owned(),
         SourceError::Connection(reason) => format!("Could not reach Microsoft Graph: {reason}."),
         SourceError::Protocol(reason) => format!("Microsoft Graph answered unexpectedly: {reason}."),
-        SourceError::Config(reason) => reason,
+        SourceError::Config(reason)
+        | SourceError::Unsupported(reason)
+        | SourceError::Missing(reason) => reason,
     })
 }
 
@@ -1050,6 +1057,10 @@ async fn target(
         provider: pending.provider.as_str().to_owned(),
         needs_sign_in: false,
         access: Some(pending.access.as_str().to_owned()),
+        send: pending.send,
+        write: pending.write,
+        pim_write: pending.pim_write,
+        missing_consent: None,
     };
     match &pending.purpose {
         Purpose::NewAccount { archive, .. } => {
@@ -1325,6 +1336,7 @@ mod tests {
             provider: "google".into(),
             needs_sign_in: true,
             access: None,
+            ..OAuthSettings::default()
         }
         .write(&mut revoked.settings);
         store.update_account(&revoked).await.unwrap();
@@ -1620,6 +1632,7 @@ mod tests {
             provider: "google".into(),
             needs_sign_in: false,
             access: None,
+            ..OAuthSettings::default()
         }
         .write(&mut google.settings);
         store.update_account(&google).await.unwrap();

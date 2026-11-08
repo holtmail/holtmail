@@ -1,0 +1,28 @@
+[package]
+name = "holtmail-serve-net"
+description = "The TCP listener shared by Holtmail's protocol front ends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-proxy-protocol.workspace = true
+async-trait.workspace = true
+blake3.workspace = true
+ipnet.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "net", "io-util", "rt", "sync", "time"] }
+tokio-rustls.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-proxy-protocol = { workspace = true, features = ["testing"] }
+rcgen.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

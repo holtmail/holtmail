@@ -1,6 +1,6 @@
 [package]
 name = "holtmail-smtp"
-description = "An SMTP receiver that hands accepted mail to a handler"
+description = "An SMTP server that hands accepted mail to a handler"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,7 @@ async-trait.workspace = true
 base64.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
+tokio = { workspace = true, features = ["net", "io-util", "time", "sync", "macros"] }
 tokio-rustls.workspace = true
 tracing.workspace = true
 

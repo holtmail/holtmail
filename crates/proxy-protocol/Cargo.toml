@@ -1,0 +1,21 @@
+[package]
+name = "holtmail-proxy-protocol"
+description = "Parses PROXY protocol v2 headers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-proxy-protocol = { workspace = true, features = ["testing"] }
+proptest.workspace = true
+
+[lints]
+workspace = true

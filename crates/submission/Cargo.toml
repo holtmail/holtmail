@@ -1,0 +1,25 @@
+[package]
+name = "holtmail-submission"
+description = "The contract for accepting mail from a person or a client into the outbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-route.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-submission = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

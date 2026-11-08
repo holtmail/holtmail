@@ -1,0 +1,22 @@
+[package]
+name = "holtmail-access"
+description = "The one decision for every write: instance switch, account capability, archive grant, credentials' scope and sign-in consent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-store.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

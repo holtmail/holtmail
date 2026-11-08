@@ -1,12 +1,16 @@
-//! An SMTP receiver (RFC 5321) for mail servers that forward or journal into Holtmail.
+//! An SMTP server (RFC 5321) for mail that comes to Holtmail: inbound from mail servers that
+//! forward or journal into it, and submission from mail clients.
 //!
-//! It speaks just enough SMTP to take mail in: `EHLO`/`HELO`, `STARTTLS`, `AUTH PLAIN` and
-//! `LOGIN`, `MAIL`, `RCPT`, `DATA`, `RSET`, `NOOP`, `VRFY` (always `252`), `HELP` and `QUIT`.
-//! It never relays: every recipient is asked of a [`Handler`], and accepted mail is handed to it
-//! with the envelope. The data is passed on as received, after dot-unstuffing, without a
-//! `Received:` line. Only `<CRLF>.<CRLF>` ends the data, so a bare `LF` cannot smuggle a second
-//! message in.
+//! It speaks `EHLO`/`HELO`, `STARTTLS`, implicit TLS, `AUTH PLAIN` and `LOGIN`, `MAIL`, `RCPT`,
+//! `DATA`, `RSET`, `NOOP`, `VRFY` (always `252`), `HELP` and `QUIT`. It never relays: the reverse
+//! path and every recipient are ruled on by a handler, and accepted mail is handed to it with
+//! the envelope. The data is passed on as received, after dot-unstuffing, without a `Received:`
+//! line. Only `<CRLF>.<CRLF>` ends the data, so a bare `LF` cannot smuggle a second message in.
+//!
+//! [`server`] is the full API. The crate root is a simpler one for receiving: one fixed sign-in,
+//! every reverse path taken, and handlers that do not need the session.
 
+pub mod server;
 mod session;
 
 use std::net::{IpAddr, SocketAddr};
@@ -16,8 +20,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
 use tokio_rustls::TlsAcceptor;
+
+use crate::server::{AuthError, Principal, Refused, Session, SignedIn, SmtpAuth};
 
 /// Who sent a message and to whom, as the client said.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +89,32 @@ impl std::fmt::Debug for Credentials {
     }
 }
 
+#[async_trait]
+impl SmtpAuth for Credentials {
+    async fn verify(
+        &self,
+        login: &str,
+        secret: &str,
+        _peer: IpAddr,
+    ) -> Result<SignedIn, AuthError> {
+        if equal(login.as_bytes(), self.username.as_bytes())
+            & equal(secret.as_bytes(), self.password.as_bytes())
+        {
+            Ok(SignedIn::new(Principal::new(())))
+        } else {
+            Err(AuthError::Invalid)
+        }
+    }
+}
+
+fn equal(a: &[u8], b: &[u8]) -> bool {
+    let mut diff = a.len() ^ b.len();
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= usize::from(x ^ y);
+    }
+    diff == 0
+}
+
 /// How the receiver behaves.
 #[derive(Clone)]
 pub struct Options {
@@ -121,6 +152,58 @@ impl Options {
             max_connections: 32,
         }
     }
+
+    fn server(&self) -> server::Options {
+        server::Options {
+            tls: self.tls.clone(),
+            require_tls: self.require_tls,
+            auth: self
+                .credentials
+                .clone()
+                .map(|c| Arc::new(c) as Arc<dyn SmtpAuth>),
+            max_size: self.max_size,
+            max_recipients: self.max_recipients,
+            idle_timeout: self.idle_timeout,
+            max_connections: self.max_connections,
+            ..server::Options::new(self.hostname.clone())
+        }
+    }
+}
+
+struct Receiver(Arc<dyn Handler>);
+
+#[async_trait]
+impl server::Handler for Receiver {
+    async fn mail_from(&self, _session: &Session, _address: &str) -> Result<(), Refused> {
+        Ok(())
+    }
+
+    async fn recipient(&self, _session: &Session, address: &str) -> Result<(), Refused> {
+        match self.0.recipient(address).await {
+            Recipient::Accept => Ok(()),
+            Recipient::Reject(text) => Err(Refused::new(550, "5.1.1", text)),
+        }
+    }
+
+    async fn deliver(
+        &self,
+        _session: &Session,
+        envelope: &server::Envelope,
+        data: Bytes,
+    ) -> Result<(), Refused> {
+        let envelope = Envelope {
+            peer: envelope.peer,
+            helo: envelope.helo.clone(),
+            mail_from: envelope.mail_from.clone(),
+            recipients: envelope.recipients.clone(),
+            tls: envelope.tls,
+            authenticated: envelope.principal.is_some(),
+        };
+        self.0.deliver(&envelope, data).await.map_err(|r| match r {
+            Refusal::Temporary(text) => Refused::new(451, "4.3.0", text),
+            Refusal::Permanent(text) => Refused::new(554, "5.6.0", text),
+        })
+    }
 }
 
 /// Serves SMTP on `listener` until the runtime stops. Clients for which `allowed` is `false`
@@ -132,27 +215,13 @@ pub async fn serve(
     handler: Arc<dyn Handler>,
     allowed: Arc<dyn Fn(IpAddr) -> bool + Send + Sync>,
 ) {
-    let places = Arc::new(Semaphore::new(options.max_connections.max(1)));
-    loop {
-        let (stream, peer) = match listener.accept().await {
-            Ok(accepted) => accepted,
-            Err(error) => {
-                tracing::warn!(%error, "SMTP accept failed");
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
-            }
-        };
-        let Ok(place) = places.clone().acquire_owned().await else {
-            return;
-        };
-        let options = options.clone();
-        let handler = handler.clone();
-        let allowed = allowed(peer.ip());
-        tokio::spawn(async move {
-            let _place = place;
-            session::run(stream, peer, &options, &*handler, allowed).await;
-        });
-    }
+    server::serve(
+        listener,
+        Arc::new(options.server()),
+        Arc::new(Receiver(handler)),
+        allowed,
+    )
+    .await;
 }
 
 /// The address a client connected from, for tests and logs.

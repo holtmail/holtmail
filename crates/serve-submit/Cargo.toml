@@ -1,0 +1,37 @@
+[package]
+name = "holtmail-serve-submit"
+description = "SMTP submission for mail clients: device sign-in, identities and fix-ups in front of Submission"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-device.workspace = true
+holtmail-serve-net.workspace = true
+holtmail-smtp.workspace = true
+holtmail-submission.workspace = true
+async-trait.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+mail-builder.workspace = true
+tokio = { workspace = true, features = ["net"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+holtmail-core = { workspace = true, features = ["testing"] }
+holtmail-proxy-protocol = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+rcgen.workspace = true
+holtmail-device = { workspace = true, features = ["testing"] }
+holtmail-submission = { workspace = true, features = ["testing"] }
+holtmail-submit.workspace = true
+holtmail-submit-smtp.workspace = true
+holtmail-mime.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "io-util"] }
+
+[lints]
+workspace = true

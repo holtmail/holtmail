@@ -1,0 +1,28 @@
+[package]
+name = "holtmail-device-local"
+description = "DeviceAuth over the metadata store: BLAKE3 app passwords, sign-in limits and revocation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-auth.workspace = true
+holtmail-core.workspace = true
+holtmail-device.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+blake3.workspace = true
+getrandom.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-device = { workspace = true, features = ["testing"] }
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+
+[lints]
+workspace = true

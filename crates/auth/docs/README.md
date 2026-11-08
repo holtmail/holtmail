@@ -28,6 +28,7 @@ Methods hash on Tokio's blocking pool, so they run inside a Tokio runtime.
 | `change_password(user, current, new)` | Checks `current` (`InvalidCredentials` when wrong), replaces the hash, ends every session of the user and starts a new one |
 | `login(client_ip, email, password)` | Starts a session. Unknown emails, users without a password and wrong passwords all give `InvalidCredentials` and take the same time (a decoy hash is checked). After `max_failures` failures for the same client address and email within `failure_window`, every attempt gives `TooManyAttempts { retry_after }` without checking the password until the oldest failure leaves the window; a success clears the count |
 | `session(token)` | The user of a live session; `None` for unknown, malformed or expired tokens |
+| `signed_in_at(token)` | When the session of this token started, which is when its user last signed in; `None` for unknown or malformed tokens |
 | `logout(token)` | Ends the session; idempotent |
 | `prune()` | Removes expired sessions and stale failure counts |
 
@@ -49,6 +50,10 @@ Stored hashes are PHC strings and carry their own cost, so changing `hash_cost` 
 ## Tokens
 
 Session and setup tokens are 32 bytes from the operating system's random source, encoded as 43 characters of unpadded base64url. The store keeps only the BLAKE3 hash of a session token (`token_hash`), so a copy of the database cannot be used to sign in.
+
+## Limiter
+
+`Limiter::new(max_failures, window)` counts failed sign-ins per client (an IPv4 address or an IPv6 /64, however written) and login name in memory; `Auth` uses one, and `device-local` uses it for protocol sign-ins. `blocked(ip, login, now)` is `Some(wait)` (at least one second) once the key used up its failures within the window, `fail` counts one, `clear` forgets the key, `prune` drops keys with nothing left in the window. Safe to share; memory stays bounded at 100 000 keys: a new key at that size drops the keys with nothing left in the window and then, if that frees less than a tenth, the keys whose last failure is oldest, down to nine tenths. For a limit per address alone, use a second limiter with a fixed login.
 
 ## Limits
 

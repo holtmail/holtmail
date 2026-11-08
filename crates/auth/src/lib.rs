@@ -18,7 +18,7 @@ use holtmail_store::{InstanceRole, NewUser, StoreError, User, UserStore};
 use subtle::ConstantTimeEq;
 use tokio::sync::{Mutex, OnceCell};
 
-use limiter::Limiter;
+pub use limiter::Limiter;
 pub use password::{
     HashCost, MAX_PASSWORD_BYTES, MIN_PASSWORD_CHARS, Passwords, normalize_email, normalize_name,
     validate_password,
@@ -290,6 +290,15 @@ impl Auth {
     pub async fn session(&self, token: &str) -> Result<Option<User>, AuthError> {
         match token_hash(token) {
             Some(hash) => Ok(self.store.session_user(&hash, Timestamp::now()).await?),
+            None => Ok(None),
+        }
+    }
+
+    /// When the live session of `token` started, which is when its user last signed in. `None`
+    /// for an unknown or malformed token.
+    pub async fn signed_in_at(&self, token: &str) -> Result<Option<Timestamp>, AuthError> {
+        match token_hash(token) {
+            Some(hash) => Ok(self.store.session_started_at(&hash).await?),
             None => Ok(None),
         }
     }

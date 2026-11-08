@@ -1,0 +1,24 @@
+[package]
+name = "holtmail-device"
+description = "The contract for signing devices in with app passwords"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = ["dep:tokio"]
+
+[dependencies]
+holtmail-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["sync", "time", "macros"] }
+
+[dev-dependencies]
+holtmail-device = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["sync", "time", "macros", "rt"] }
+
+[lints]
+workspace = true

@@ -5,11 +5,12 @@ import {
   type EventVersion,
   eventQuery,
   itemVersionRawUrl,
+  rsvpItemOptionsQuery,
 } from '@holtmail/api-client'
 import { distance, transition } from '@holtmail/tokens'
 import { Badge, Button, cn, Skeleton } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useParams, useSearch } from '@tanstack/react-router'
 import {
   ArrowLeftIcon,
   CalendarIcon,
@@ -22,11 +23,13 @@ import { m } from 'motion/react'
 import { type ReactNode, useMemo } from 'react'
 
 import { Changes } from '../items/changes.tsx'
+import { RsvpPanel } from '../items/rsvp-panel.tsx'
 import { senderLabel } from '../lib/address.ts'
 import { calendarColor } from '../lib/calendar.ts'
 import { fieldLabel, formatWhen, participantLabel, viewerZone } from '../lib/events.ts'
 import { formatFullDate } from '../lib/format.ts'
 import { describeRecurrence } from '../lib/recurrence.ts'
+import { tally } from '../lib/rsvp.ts'
 import { EmptyState } from '../mail/empty-state.tsx'
 import { strings } from '../strings.ts'
 
@@ -37,6 +40,7 @@ const linkClass =
 
 export function EventPage() {
   const { groupId } = useParams({ from: '/events/$groupId' })
+  const { occ } = useSearch({ from: '/events/$groupId' })
   const zone = useMemo(() => viewerZone(), [])
   const event = useQuery(eventQuery(groupId, zone))
   const archiveId = event.data?.archive_id
@@ -69,6 +73,13 @@ export function EventPage() {
           animate={{ opacity: 1, y: 0, transition: transition.expressive.moderate02 }}
         >
           <Summary event={event.data} zone={zone} />
+          {!event.data.cancelled && (
+            <RsvpPanel
+              target={{ kind: 'item', id: event.data.item_id }}
+              archiveId={event.data.archive_id}
+              occurrence={occ}
+            />
+          )}
           <Attendees event={event.data} />
           <Copies event={event.data} />
           <Differences event={event.data} />
@@ -243,10 +254,22 @@ function copyLabel(copy: EventCopy): string {
 }
 
 function Attendees({ event }: { event: EventDetail }) {
+  const options = useQuery(rsvpItemOptionsQuery(event.item_id))
   if (event.attendees.length === 0) return null
   const several = event.copies.length > 1
+  const counts = options.data?.reason === 'organizer' ? tally(event.attendees) : undefined
   return (
     <Section id="event-attendees" title={t.attendees} aside={String(event.attendees.length)}>
+      {counts && (
+        <p className="text-sm text-fg-muted">
+          {strings.edits.rsvp.tally(
+            counts.accepted,
+            counts.tentative,
+            counts.declined,
+            counts.none,
+          )}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>

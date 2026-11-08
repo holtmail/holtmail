@@ -1,4 +1,4 @@
-import { archivesQuery, sessionQuery, tasksQuery } from '@holtmail/api-client'
+import { archivesQuery, pimChangesQuery, sessionQuery, tasksQuery } from '@holtmail/api-client'
 import { distance, transition } from '@holtmail/tokens'
 import { Button, cn } from '@holtmail/ui'
 import { useQuery } from '@tanstack/react-query'
@@ -7,10 +7,13 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BookOpenIcon,
+  BookUserIcon,
   GlobeIcon,
   InboxIcon,
   InfoIcon,
   ListChecksIcon,
+  SendIcon,
+  SmartphoneIcon,
   type LucideIcon,
   ShapesIcon,
   ShieldCheckIcon,
@@ -22,10 +25,12 @@ import {
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 
+import { decisionCount } from '../lib/edits.ts'
 import { manages } from '../lib/roles.ts'
 import { runningTasks } from '../lib/tasks.ts'
 import { UserMenu } from '../mail/user-menu.tsx'
 import { strings } from '../strings.ts'
+import { DeviceNotices } from './device-notices.tsx'
 
 const t = strings.settings
 
@@ -39,7 +44,10 @@ interface Section {
     | '/settings/webhooks'
     | '/settings/aliases'
     | '/settings/smtp'
+    | '/settings/sending'
     | '/settings/categories'
+    | '/settings/contacts-calendars'
+    | '/settings/devices'
     | '/settings/reading'
     | '/settings/profile'
     | '/settings/about'
@@ -57,7 +65,15 @@ const sections: Section[] = [
   { to: '/settings/webhooks', label: t.webhooks, icon: WebhookIcon, managers: true },
   { to: '/settings/aliases', label: t.aliases, icon: VenetianMaskIcon, managers: true },
   { to: '/settings/smtp', label: t.smtp, icon: InboxIcon, managers: true },
+  { to: '/settings/sending', label: strings.writing.sending.nav, icon: SendIcon, managers: true },
   { to: '/settings/categories', label: t.categories, icon: ShapesIcon, managers: true },
+  {
+    to: '/settings/contacts-calendars',
+    label: strings.edits.settings.nav,
+    icon: BookUserIcon,
+    managers: false,
+  },
+  { to: '/settings/devices', label: strings.devices.nav, icon: SmartphoneIcon, managers: false },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
   { to: '/settings/about', label: t.about, icon: InfoIcon, managers: false },
@@ -71,6 +87,10 @@ export function SettingsLayout() {
   const visible = sections.filter((section) => !section.managers || canManage)
   const tasks = useQuery({ ...tasksQuery, enabled: canManage })
   const running = runningTasks(tasks.data).length
+  const decisions = decisionCount(
+    useQuery({ ...pimChangesQuery({ states: ['conflict', 'rejected'] }), refetchInterval: 60_000 })
+      .data,
+  )
   const first = archives.data?.[0]
 
   return (
@@ -89,6 +109,7 @@ export function SettingsLayout() {
         <span className="flex-1" />
         <UserMenu />
       </header>
+      <DeviceNotices />
       <div className="flex min-h-0 flex-1 max-md:flex-col">
         <nav
           aria-label={t.nav}
@@ -127,12 +148,13 @@ export function SettingsLayout() {
                     <Icon className="relative" />
                     <span className="relative">{label}</span>
                     {to === '/settings/tasks' && running > 0 && (
-                      <span
-                        aria-label={t.tasksRunning(running)}
-                        className="relative ml-auto flex h-4 min-w-4 items-center justify-center bg-accent px-1 font-mono text-[0.625rem] text-accent-fg tabular-nums max-md:ml-0"
-                      >
-                        {running}
-                      </span>
+                      <NavCount label={t.tasksRunning(running)} count={running} />
+                    )}
+                    {to === '/settings/contacts-calendars' && decisions > 0 && (
+                      <NavCount
+                        label={strings.edits.settings.navCount(decisions)}
+                        count={decisions}
+                      />
                     )}
                   </Link>
                 </li>
@@ -154,6 +176,17 @@ export function SettingsLayout() {
         </main>
       </div>
     </div>
+  )
+}
+
+function NavCount({ label, count }: { label: string; count: number }) {
+  return (
+    <span
+      aria-label={label}
+      className="relative ml-auto flex h-4 min-w-4 items-center justify-center bg-accent px-1 font-mono text-[0.625rem] text-accent-fg tabular-nums max-md:ml-0"
+    >
+      {count}
+    </span>
   )
 }
 

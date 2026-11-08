@@ -104,7 +104,7 @@ function HtmlBody({ message }: { message: MessageDetail }) {
   )
 }
 
-function AutoHeightFrame({ srcDoc, title }: { srcDoc: string; title: string }) {
+export function AutoHeightFrame({ srcDoc, title }: { srcDoc: string; title: string }) {
   const ref = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState<number>()
 

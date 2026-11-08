@@ -20,6 +20,7 @@ function account(overrides: Partial<Account> = {}): Account {
     kind: 'imap',
     enabled: true,
     needs_sign_in: false,
+    writable: [],
     status: {
       running: false,
       new_messages: 0,

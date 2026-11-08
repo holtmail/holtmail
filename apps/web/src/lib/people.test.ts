@@ -82,7 +82,7 @@ describe('seenLabel', () => {
 
 describe('addressPeople', () => {
   test('finds people by address without regard to case', () => {
-    const people = addressPeople([{ email: 'Ada@Example.com', person_id: 'p1' }])
+    const people = addressPeople([{ email: 'Ada@Example.com', person_id: 'p1', has_card: true }])
     expect(personFor(people, ' ada@example.COM ')).toBe('p1')
     expect(personFor(people, 'bob@example.org')).toBeUndefined()
   })
@@ -123,6 +123,8 @@ function collection(
     created_at: 0,
     removed_at: null,
     items,
+    write_mode: 'read_only',
+    editable: false,
     removed_items: 0,
   }
 }

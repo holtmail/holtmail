@@ -3,17 +3,35 @@ import { Badge, cn } from '@holtmail/ui'
 import { Link } from '@tanstack/react-router'
 import { ArrowRightIcon, CalendarIcon, RepeatIcon } from 'lucide-react'
 
+import { RsvpPanel, type RsvpTarget } from '../items/rsvp-panel.tsx'
 import { formatWhen, participantLabel, viewerZone } from '../lib/events.ts'
+import { answerable } from '../lib/rsvp.ts'
 import { strings } from '../strings.ts'
 import { Row } from './row.tsx'
 
-export function Invitations({ invitations }: { invitations: Invitation[] }) {
+export function Invitations({
+  invitations,
+  messageId,
+  archiveId,
+}: {
+  invitations: Invitation[]
+  messageId: string
+  archiveId: string
+}) {
   if (invitations.length === 0) return null
   return (
     <ul aria-label={strings.invitation.shown} className="grid gap-2">
       {invitations.map((invitation) => (
         <li key={invitation.item_id}>
-          <InvitationCard invitation={invitation} />
+          <InvitationCard
+            invitation={invitation}
+            archiveId={archiveId}
+            target={
+              invitations.length === 1
+                ? { kind: 'message', id: messageId }
+                : { kind: 'item', id: invitation.item_id }
+            }
+          />
         </li>
       ))}
     </ul>
@@ -23,7 +41,15 @@ export function Invitations({ invitations }: { invitations: Invitation[] }) {
 const openClass =
   'flex items-center gap-1 text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus'
 
-function InvitationCard({ invitation }: { invitation: Invitation }) {
+function InvitationCard({
+  invitation,
+  target,
+  archiveId,
+}: {
+  invitation: Invitation
+  target: RsvpTarget
+  archiveId: string
+}) {
   const when = formatWhen(invitation.start, invitation.end, invitation.all_day, viewerZone())
   const method =
     (invitation.method && strings.invitation.methods[invitation.method]) || strings.invitation.event
@@ -86,6 +112,7 @@ function InvitationCard({ invitation }: { invitation: Invitation }) {
         )}
         {answer && <Row label={strings.invitation.yourAnswer}>{answer}</Row>}
       </dl>
+      {answerable(invitation) && <RsvpPanel target={target} archiveId={archiveId} />}
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs">
         <span className="text-fg-subtle">
           {strings.invitation.updatedSince(invitation.updates_after)}

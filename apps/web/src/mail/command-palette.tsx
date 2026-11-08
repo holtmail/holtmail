@@ -28,8 +28,10 @@ import {
   KeyboardIcon,
   MailIcon,
   MailPlusIcon,
+  PenLineIcon,
   RefreshCwIcon,
   SearchIcon,
+  SendIcon,
   ShapesIcon,
   SettingsIcon,
   SunMoonIcon,
@@ -38,6 +40,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { useCompose } from '../compose/compose-host.tsx'
 import { paletteEntries } from '../lib/categories.ts'
 import {
   calendarExportFormats,
@@ -64,6 +67,7 @@ export function CommandPalette({
   onShowShortcuts: () => void
 }) {
   const { archiveId } = useMail()
+  const compose = useCompose()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const archives = useQuery(archivesQuery)
@@ -247,6 +251,35 @@ export function CommandPalette({
         )}
         <CommandSeparator />
         <CommandGroup heading={strings.command.actions}>
+          {compose.available && (
+            <>
+              <CommandItem
+                value="action new message compose write"
+                onSelect={() => run(compose.compose)}
+              >
+                <PenLineIcon />
+                {strings.writing.command.compose}
+              </CommandItem>
+              <CommandItem
+                value="action outbox sent"
+                onSelect={() =>
+                  run(() => void navigate({ to: '/a/$archiveId/outbox', params: { archiveId } }))
+                }
+              >
+                <SendIcon />
+                {strings.writing.command.outbox}
+              </CommandItem>
+            </>
+          )}
+          {canManage && (
+            <CommandItem
+              value="action sending identities transports"
+              onSelect={() => run(() => void navigate({ to: '/settings/sending' }))}
+            >
+              <SettingsIcon />
+              {strings.writing.command.sending}
+            </CommandItem>
+          )}
           <CommandItem value="action theme" onSelect={() => run(toggleTheme)}>
             <SunMoonIcon />
             {strings.command.toggleTheme}

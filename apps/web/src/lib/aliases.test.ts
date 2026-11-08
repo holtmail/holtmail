@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { Alias, MessageAlias } from '@holtmail/api-client'
+import type { Alias, AliasStrategies, MessageAlias } from '@holtmail/api-client'
 
 import {
   aliasDomain,
+  aliasDomains,
   aliasProviders,
   aliasTrust,
+  domainKey,
+  domainOverrides,
   filterAliases,
+  isReplyStrategy,
   providerName,
+  serviceStrategies,
   shownFrom,
 } from './aliases.ts'
 
@@ -20,6 +25,8 @@ const alias = (address: string, extra: Partial<Alias> = {}): Alias => ({
   senders: 0,
   signed: 0,
   accounts: [],
+  reply_strategy: 'reverse_alias',
+  reply_strategy_source: 'default',
   ...extra,
 })
 
@@ -100,4 +107,55 @@ test('providers, names and domains', () => {
   ).toEqual(['addy', 'simplelogin'])
   expect(aliasDomain('shop@alias.example.org')).toBe('alias.example.org')
   expect(aliasDomain('nobody')).toBe('')
+})
+
+describe('reply strategies', () => {
+  const strategies: AliasStrategies = {
+    defaults: [
+      { provider: 'simplelogin', strategy: 'reverse_alias' },
+      { provider: 'relay', strategy: 'reply_header' },
+      { provider: 'rules', strategy: 'direct' },
+    ],
+    overrides: [
+      { scope: 'alias', key: 'shop@sl.example.org', strategy: 'direct' },
+      { scope: 'domain', key: 'mail.example.org', strategy: 'direct' },
+      { scope: 'domain', key: 'b.example.org', strategy: 'reverse_alias' },
+      { scope: 'service', key: 'relay', strategy: 'direct' },
+    ],
+  }
+
+  test('lists services in use and with an override, each with its default', () => {
+    expect(serviceStrategies(strategies, ['simplelogin', 'simplelogin', ''])).toEqual([
+      { provider: 'relay', fallback: 'reply_header', override: 'direct' },
+      { provider: 'simplelogin', fallback: 'reverse_alias', override: null },
+    ])
+    expect(serviceStrategies(strategies, ['unknown'])[1]).toEqual({
+      provider: 'unknown',
+      fallback: 'direct',
+      override: null,
+    })
+  })
+
+  test('domain overrides and keys', () => {
+    expect(domainOverrides(strategies)).toEqual([
+      { domain: 'b.example.org', strategy: 'reverse_alias' },
+      { domain: 'mail.example.org', strategy: 'direct' },
+    ])
+    expect(domainKey(' @Mail.Example.org ')).toBe('mail.example.org')
+    expect(domainKey('example')).toBeNull()
+    expect(domainKey('a b.example.org')).toBeNull()
+    expect(isReplyStrategy('reply_header')).toBe(true)
+    expect(isReplyStrategy('')).toBe(false)
+  })
+
+  test('alias domains are unique and sorted', () => {
+    expect(
+      aliasDomains([
+        alias('x@SL.example.org'),
+        alias('y@sl.example.org'),
+        alias('z@a.example.net'),
+        alias('broken'),
+      ]),
+    ).toEqual(['a.example.net', 'sl.example.org'])
+  })
 })

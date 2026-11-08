@@ -16,6 +16,7 @@ import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/rea
 import {
   BellIcon,
   CircleAlertIcon,
+  ClockIcon,
   KeyRoundIcon,
   NewspaperIcon,
   MailOpenIcon,
@@ -33,6 +34,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 
 import { useNow } from '../hooks/use-now.ts'
@@ -42,6 +44,7 @@ import { isFlagged, isUnread } from '../lib/flags.ts'
 import { formatCount, formatListDate } from '../lib/format.ts'
 import { groupByDay, type ListRow } from '../lib/group.ts'
 import { listChips } from '../lib/labels.ts'
+import { applyOverlay, overlay, type OverlayEntry, overlayHeld } from '../lib/overlay.ts'
 import { manages } from '../lib/roles.ts'
 import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
@@ -211,6 +214,7 @@ export function MessageListPane({ source }: { source: ListSource }) {
           key={sourceKey(source)}
           items={items}
           label={label}
+          folderId={folderId}
           hasNextPage={active.hasNextPage}
           isFetchingNextPage={active.isFetchingNextPage}
           fetchNextPage={() => void active.fetchNextPage()}
@@ -243,18 +247,21 @@ function SkeletonRows() {
 function VirtualList({
   items,
   label,
+  folderId,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
 }: {
   items: MessageSummary[]
   label?: string
+  folderId?: string
   hasNextPage: boolean
   isFetchingNextPage: boolean
   fetchNextPage: () => void
 }) {
   const { layout, selectedId, select, focusReader, list } = useMail()
   const now = useNow()
+  useSyncExternalStore(overlay.subscribe, overlay.snapshot, overlay.snapshot)
   const scrollRef = useRef<HTMLDivElement>(null)
   const listboxRef = useRef<HTMLDivElement>(null)
   const [cursor, setCursor] = useState(selectedId)
@@ -432,6 +439,8 @@ function VirtualList({
                   row={row}
                   now={now}
                   label={label}
+                  folderId={folderId}
+                  entry={row.kind === 'item' ? overlay.get(row.item.id) : undefined}
                   selected={row.kind === 'item' && row.item.id === cursor}
                 />
               ) : (
@@ -449,11 +458,15 @@ function Row({
   row,
   now,
   label,
+  folderId,
+  entry,
   selected,
 }: {
   row: ListRow<MessageSummary>
   now: number
   label?: string
+  folderId?: string
+  entry?: OverlayEntry
   selected: boolean
 }) {
   if (row.kind === 'header') {
@@ -468,8 +481,11 @@ function Row({
   }
   const message = row.item
   const sender = senderLabel(message.from, strings.list.noSender)
-  const unread = isUnread(message.flags)
-  const flagged = isFlagged(message.flags)
+  const flags = applyOverlay(message.flags, entry)
+  const unread = isUnread(flags)
+  const flagged = isFlagged(flags)
+  const held = overlayHeld(message.flags, entry, folderId)
+  const leaving = folderId !== undefined && entry?.leaves.includes(folderId) === true
   const chips = listChips(message.labels, label)
   const glyph = listKindGlyph(message.kind)
   const topic = listTopic(message.topic)
@@ -485,6 +501,7 @@ function Row({
         'relative grid h-full cursor-default content-center gap-0.5 border-b border-border px-4 select-none',
         'transition-colors duration-fast-02 ease-productive group-data-[scrolling]/list:transition-none',
         !selected && 'hover:bg-bg-hover',
+        leaving && 'opacity-60',
       )}
     >
       {unread && (
@@ -533,6 +550,12 @@ function Row({
         {glyph && (
           <GlyphIcon
             aria-label={strings.categories.glyphs[glyph]}
+            className="size-3 shrink-0 self-center text-fg-subtle"
+          />
+        )}
+        {held && (
+          <ClockIcon
+            aria-label={strings.writing.mailbox.held}
             className="size-3 shrink-0 self-center text-fg-subtle"
           />
         )}

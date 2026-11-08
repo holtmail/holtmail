@@ -27,6 +27,7 @@ import {
   ArchiveIcon,
   BellIcon,
   CalendarIcon,
+  PenLineIcon,
   ChevronsUpDownIcon,
   FilePenIcon,
   FolderIcon,
@@ -48,6 +49,7 @@ import {
 } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { useCompose } from '../compose/compose-host.tsx'
 import { useNow } from '../hooks/use-now.ts'
 import { accountState } from '../lib/accounts.ts'
 import { categoryLabel, isCategory, sidebarCounts } from '../lib/categories.ts'
@@ -124,6 +126,7 @@ export function Sidebar({
   isAllMail,
   isPeople,
   isCalendar,
+  isOutbox = false,
   onNavigate,
 }: {
   folderId?: string
@@ -132,9 +135,11 @@ export function Sidebar({
   isAllMail: boolean
   isPeople: boolean
   isCalendar: boolean
+  isOutbox?: boolean
   onNavigate?: () => void
 }) {
   const { archiveId } = useMail()
+  const compose = useCompose()
   const archives = useQuery(archivesQuery)
   const folders = useQuery(foldersQuery(archiveId))
   const accounts = useQuery(accountsQuery(archiveId))
@@ -148,6 +153,21 @@ export function Sidebar({
     <div className="flex h-full flex-col">
       <ArchiveSwitcher archive={archive} archives={archives.data ?? []} onNavigate={onNavigate} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+        {compose.available && (
+          <div className="px-4 pt-3 pb-1">
+            <Button
+              variant="primary"
+              className="w-full justify-start"
+              onClick={() => {
+                onNavigate?.()
+                compose.compose()
+              }}
+            >
+              <PenLineIcon />
+              {strings.writing.compose.newMessage}
+            </Button>
+          </div>
+        )}
         <Link
           to="/a/$archiveId"
           params={{ archiveId }}
@@ -179,6 +199,18 @@ export function Sidebar({
           <CalendarIcon />
           <span className="truncate">{strings.calendar.title}</span>
         </Link>
+        {(compose.available || archive?.rights.manage) && (
+          <Link
+            to="/a/$archiveId/outbox"
+            params={{ archiveId }}
+            aria-current={isOutbox ? 'page' : undefined}
+            className={cn(itemClass, 'pl-4')}
+            onClick={onNavigate}
+          >
+            <SendIcon />
+            <span className="truncate">{strings.writing.outbox.nav}</span>
+          </Link>
+        )}
 
         {folders.isPending && (
           <div className="mt-4 grid gap-3 px-4" aria-label={strings.folders.loading}>

@@ -16,6 +16,14 @@ export const keymap = {
   openLink: ['shift+l'],
   unsubscribe: ['shift+u'],
   category: ['x'],
+  reply: ['r'],
+  replyAll: ['a'],
+  forward: ['f'],
+  compose: ['n'],
+  toggleRead: ['u'],
+  toggleFlag: ['s'],
+  move: ['v'],
+  trash: ['#'],
 } as const satisfies Record<string, readonly string[]>
 
 export type KeyAction = keyof typeof keymap
@@ -40,6 +48,14 @@ export const shortcutList: {
   { action: 'openLink', keys: ['shift+l'] },
   { action: 'unsubscribe', keys: ['shift+u'] },
   { action: 'category', keys: ['x'] },
+  { action: 'compose', keys: ['n'] },
+  { action: 'reply', keys: ['r'] },
+  { action: 'replyAll', keys: ['a'] },
+  { action: 'forward', keys: ['f'] },
+  { action: 'toggleRead', keys: ['u'] },
+  { action: 'toggleFlag', keys: ['s'] },
+  { action: 'move', keys: ['v'] },
+  { action: 'trash', keys: ['#'] },
   { action: 'palette', keys: ['mod+k'] },
   { action: 'help', keys: ['?'] },
 ]

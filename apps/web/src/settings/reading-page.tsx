@@ -1,8 +1,9 @@
 import { transition } from '@holtmail/tokens'
-import { cn, RadioGroup, RadioGroupItem } from '@holtmail/ui'
+import { cn, RadioGroup, RadioGroupItem, Switch } from '@holtmail/ui'
 import { ArchiveIcon, TriangleAlertIcon } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 
+import { useReadOnOpen } from '../hooks/use-read-on-open.ts'
 import { useRemoteImages } from '../hooks/use-remote-images.ts'
 import { parseRemoteImages, type RemoteImages } from '../lib/remote-images.ts'
 import { strings } from '../strings.ts'
@@ -13,6 +14,8 @@ const choices: RemoteImages[] = ['ask', 'proxy', 'direct']
 
 export function ReadingPage() {
   const [remote, setRemote] = useRemoteImages()
+  const [readOnOpen, setReadOnOpen] = useReadOnOpen()
+  const mb = strings.writing.mailbox
   return (
     <SettingsPage title={t.reading} lead={t.readingLead}>
       <section aria-labelledby="remote-images" className="grid max-w-xl gap-4">
@@ -71,6 +74,24 @@ export function ReadingPage() {
             {t.savedCopiesNote} {t.thisBrowser}
           </span>
         </p>
+      </section>
+      <section aria-labelledby="read-on-open" className="mt-10 grid max-w-xl gap-1">
+        <div className="flex items-start gap-4">
+          <div className="grid min-w-0 flex-1 gap-1">
+            <label id="read-on-open" htmlFor="read-on-open-switch" className="text-lg font-normal">
+              {mb.readOnOpen}
+            </label>
+            <p id="read-on-open-hint" className="text-sm text-fg-muted">
+              {mb.readOnOpenHint} {t.thisBrowser}
+            </p>
+          </div>
+          <Switch
+            id="read-on-open-switch"
+            aria-describedby="read-on-open-hint"
+            checked={readOnOpen}
+            onCheckedChange={setReadOnOpen}
+          />
+        </div>
       </section>
     </SettingsPage>
   )

@@ -16,6 +16,7 @@ function account(
     kind: 'imap',
     enabled: true,
     needs_sign_in: false,
+    writable: [],
     ...overrides,
     status: {
       running: false,
@@ -63,6 +64,35 @@ describe('accountState', () => {
     expect(
       accountState(account({ needs_sign_in: true, oauth_provider: 'google' }, { error: 'x' }), now),
     ).toEqual({ tone: 'error', label: 'Sign-in expired' })
+  })
+
+  test('a missing consent to send asks for another sign-in', () => {
+    expect(
+      accountState(
+        account({
+          needs_sign_in: true,
+          oauth_provider: 'microsoft',
+          sign_in_reason:
+            'Sending is turned on, but the sign-in does not allow Microsoft to send mail.',
+        }),
+        now,
+      ),
+    ).toEqual({ tone: 'error', label: 'Sign in again to allow it' })
+  })
+
+  test('a sync error shows over missing send consent, since syncing goes on', () => {
+    expect(
+      accountState(
+        account(
+          {
+            needs_sign_in: true,
+            sign_in_reason: 'Sending is turned on, but the sign-in does not allow sending.',
+          },
+          { error: 'mailbox full' },
+        ),
+        now,
+      ),
+    ).toEqual({ tone: 'error', label: 'mailbox full' })
   })
 
   test('finished runs say when and how much', () => {

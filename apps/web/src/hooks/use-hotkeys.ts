@@ -17,7 +17,7 @@ export function useHotkeys<Id extends string>(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
       const target = event.target
-      if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (target instanceof Element && target.closest('[role="dialog"], [data-compose]')) return
       const modified = event.metaKey || event.ctrlKey
       if (isEditable(target) && event.key !== 'Escape' && !modified) return
       const id = matcher.feed(event, event.timeStamp)

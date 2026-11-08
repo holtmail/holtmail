@@ -36,6 +36,7 @@ import {
   MailIcon,
   PauseIcon,
   PencilIcon,
+  PenLineIcon,
   PlayIcon,
   RadioTowerIcon,
   RefreshCwIcon,
@@ -71,6 +72,7 @@ import { ContactsCalendarsDialog } from './contacts-calendars.tsx'
 import { EditConnectionDialog } from './edit-connection.tsx'
 import { OAuthSignInDialog } from './oauth-sign-in.tsx'
 import { TrustedServersDialog } from './trusted-servers.tsx'
+import { WritingDialog } from './writing-dialog.tsx'
 
 const t = strings.accounts
 
@@ -167,6 +169,7 @@ function AccountRow({
     | 'consent'
     | 'watch-folders'
     | 'trusted'
+    | 'writing'
     | null
   >(null)
   const schedule = useQuery({ ...syncScheduleQuery, enabled: manage })
@@ -255,6 +258,9 @@ function AccountRow({
           <WatchMark badge={mailWatch} />
           {next && <span className="hidden shrink-0 text-fg-subtle sm:inline">· {next}</span>}
         </span>
+        {account.needs_sign_in && account.sign_in_reason && (
+          <span className="text-xs text-fg-muted">{account.sign_in_reason}</span>
+        )}
         {contacts && (
           <span className="flex min-w-0 items-center gap-2 text-xs">
             <StatusDot tone={contacts.tone} />
@@ -354,6 +360,12 @@ function AccountRow({
                     <DropdownMenuItem onSelect={() => setDialog('trusted')}>
                       <ShieldCheckIcon />
                       {strings.trustedServers.menu}
+                    </DropdownMenuItem>
+                  )}
+                  {account.kind !== 'import' && (
+                    <DropdownMenuItem onSelect={() => setDialog('writing')}>
+                      <PenLineIcon />
+                      {strings.writing.capabilities.menu}
                     </DropdownMenuItem>
                   )}
                   {support !== 'none' && (
@@ -538,6 +550,11 @@ function AccountRow({
           onOpenChange={(open) => setDialog(open ? 'trusted' : null)}
         />
       )}
+      <WritingDialog
+        account={account}
+        open={dialog === 'writing'}
+        onOpenChange={(open) => setDialog(open ? 'writing' : null)}
+      />
       <ContactsCalendarsDialog
         account={account}
         open={dialog === 'contacts'}

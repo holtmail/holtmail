@@ -19,6 +19,15 @@ export function parseMailSearch(search: Record<string, unknown>): MailSearch {
   return m ? { m } : {}
 }
 
+export interface EventSearch {
+  occ?: string
+}
+
+export function parseEventSearch(search: Record<string, unknown>): EventSearch {
+  const occ = text(search.occ)?.trim()
+  return occ ? { occ } : {}
+}
+
 export function parseSearchRouteSearch(search: Record<string, unknown>): SearchRouteSearch {
   return { q: text(search.q) ?? '', ...parseMailSearch(search) }
 }

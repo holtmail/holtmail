@@ -37,8 +37,11 @@ export function accountState(account: Account, now: number): AccountState {
       label: status.new_messages > 0 ? `${verb}… ${newCount(status.new_messages)}` : `${verb}…`,
     }
   }
-  if (account.needs_sign_in) return { tone: 'error', label: 'Sign-in expired' }
+  if (account.needs_sign_in && !account.sign_in_reason) {
+    return { tone: 'error', label: 'Sign-in expired' }
+  }
   if (status.error) return { tone: 'error', label: status.error }
+  if (account.needs_sign_in) return { tone: 'error', label: 'Sign in again to allow it' }
   if (!imported && !account.enabled) return { tone: 'paused', label: 'Paused' }
   if (status.finished_at != null) {
     if (imported) {

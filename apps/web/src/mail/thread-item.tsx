@@ -214,7 +214,11 @@ export function ThreadItem({
                   line(strings.reader.replyTo, message.reply_to)}
               </dl>
               <InsightsCard message={message} />
-              <Invitations invitations={message.invitations} />
+              <Invitations
+                invitations={message.invitations}
+                messageId={message.id}
+                archiveId={message.archive_id}
+              />
               <MessageBody message={message} />
               <Attachments attachments={attachments} />
             </div>

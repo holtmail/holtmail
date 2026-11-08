@@ -20,6 +20,54 @@ export interface paths {
     patch: operations['update_account']
     trace?: never
   }
+  '/api/accounts/{id}/capabilities': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_capabilities']
+    put: operations['put_capabilities']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/accounts/{id}/mail-changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_mail_changes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/accounts/{id}/retention': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_retention']
+    put: operations['put_retention']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/accounts/{id}/sync': {
     parameters: {
       query?: never
@@ -196,6 +244,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/alias-strategies': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_alias_strategies']
+    put: operations['set_alias_strategy']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/aliases': {
     parameters: {
       query?: never
@@ -356,6 +420,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/default-identity': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['put_default_identity']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/deletions': {
     parameters: {
       query?: never
@@ -366,6 +446,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['review']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/drafts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_drafts']
+    put?: never
+    post: operations['create_draft']
     delete?: never
     options?: never
     head?: never
@@ -412,6 +508,38 @@ export interface paths {
       cookie?: never
     }
     get: operations['list_folders']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/identities': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_identities']
+    put?: never
+    post: operations['create_identity']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/identities/suggestions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['identity_suggestions']
     put?: never
     post?: never
     delete?: never
@@ -476,6 +604,22 @@ export interface paths {
       cookie?: never
     }
     get: operations['list_messages']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/outbox': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_outbox']
     put?: never
     post?: never
     delete?: never
@@ -564,6 +708,86 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/transports': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_transports']
+    put?: never
+    post: operations['create_transport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/audit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_audit']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/collections/{id}/items': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['create_item']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/collections/{id}/organizing': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['organizing']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/collections/{id}/write-mode': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_write_mode']
+    put: operations['put_write_mode']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/deletions/{id}/confirm': {
     parameters: {
       query?: never
@@ -580,6 +804,134 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/devices': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_devices']
+    put?: never
+    post: operations['create_device']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/devices/setup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['device_setup']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/devices/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['revoke_device']
+    options?: never
+    head?: never
+    patch: operations['update_device']
+    trace?: never
+  }
+  '/api/drafts/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_draft']
+    put: operations['save_draft']
+    post?: never
+    delete: operations['delete_draft']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/drafts/{id}/attachments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['upload_attachment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/drafts/{id}/reverse-alias': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['reverse_alias']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/drafts/{id}/send': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['send_draft']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/drafts/{id}/versions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['draft_versions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/events/{id}': {
     parameters: {
       query?: never
@@ -589,6 +941,38 @@ export interface paths {
     }
     get: operations['get_event']
     put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/identities/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_identity']
+    options?: never
+    head?: never
+    patch: operations['update_identity']
+    trace?: never
+  }
+  '/api/identities/{id}/users': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['put_identity_users']
     post?: never
     delete?: never
     options?: never
@@ -639,6 +1023,54 @@ export interface paths {
     get: operations['get_item']
     put?: never
     post?: never
+    delete: operations['delete_item']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/items/{id}/content': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['edit_item']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/items/{id}/edit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_edit']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/items/{id}/rsvp': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['rsvp_item_options']
+    put?: never
+    post: operations['rsvp_item']
     delete?: never
     options?: never
     head?: never
@@ -719,6 +1151,54 @@ export interface paths {
     get?: never
     put?: never
     post: operations['logout']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mail-changes/{id}/dismiss': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['dismiss_change']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mail-changes/{id}/retry': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['retry_change']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/mail/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['change_bulk']
     delete?: never
     options?: never
     head?: never
@@ -821,6 +1301,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/messages/{id}/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['change_message']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/forward': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['forward']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/messages/{id}/live/{key}': {
     parameters: {
       query?: never
@@ -879,6 +1391,54 @@ export interface paths {
     get: operations['get_remote']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/reply': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['reply']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/restore': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['restore']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/rsvp': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['rsvp_message_options']
+    put?: never
+    post: operations['rsvp_message']
     delete?: never
     options?: never
     head?: never
@@ -965,6 +1525,86 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/outbox/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_outbox']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/outbox/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['cancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/outbox/{id}/resend': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['resend']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/outbox/{id}/retry': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['retry']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/outbox/{id}/undo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['undo']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/people/join': {
     parameters: {
       query?: never
@@ -1013,6 +1653,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/people/{id}/card': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['edit_person_card']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/people/{id}/split': {
     parameters: {
       query?: never
@@ -1023,6 +1679,54 @@ export interface paths {
     get?: never
     put?: never
     post: operations['split']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/pim/changes': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_changes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/pim/changes/{id}/diff': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['change_diff']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/pim/changes/{id}/resolve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['resolve_change']
     delete?: never
     options?: never
     head?: never
@@ -1157,6 +1861,70 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/transports': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_instance_transports']
+    put?: never
+    post: operations['create_instance_transport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/transports/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['delete_transport']
+    options?: never
+    head?: never
+    patch: operations['update_transport']
+    trace?: never
+  }
+  '/api/transports/{id}/check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['check_transport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/transports/{id}/grants': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['put_transport_grants']
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/users': {
     parameters: {
       query?: never
@@ -1187,6 +1955,22 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['update_user']
+    trace?: never
+  }
+  '/api/users/{id}/grants/{archive}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['put_grant']
+    post?: never
+    delete: operations['delete_grant']
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/api/webhooks': {
@@ -1273,6 +2057,24 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
+    /** @description An account's write capabilities. */
+    AccountCapabilitiesDto: {
+      account: string
+      /** @description The ones in effect: those turned on whose instance switch is on too. */
+      active: string[]
+      /**
+       * @description Capabilities turned on for the account: `mail.flags`, `mail.move`, `mail.delete`,
+       *     `mail.expunge`, `mail.append`, `mail.send`, `pim.edit`, `pim.respond`.
+       */
+      capabilities: string[]
+      /** @description The instance switches from the config. */
+      switches: components['schemas']['WriteSwitches']
+    }
+    /** @description Replaces an account's capabilities. */
+    AccountCapabilitiesRequest: {
+      /** @description Every capability to have on; the rest are turned off. */
+      capabilities: string[]
+    }
     /** @description A mail account of an archive. */
     AccountDto: {
       address?: string | null
@@ -1290,10 +2092,16 @@ export interface components {
        */
       min_age_days?: number | null
       name: string
-      /** @description The provider no longer accepts the sign-in: it does not sync until someone signs in again. */
+      /**
+       * @description Someone has to sign in again: the provider no longer accepts the sign-in (it does not sync
+       *     until then), or sending or changing mail needs consent the sign-in lacks
+       *     (`sign_in_reason` says so; it keeps syncing).
+       */
       needs_sign_in: boolean
       /** @description `google` or `microsoft` when it signs in with OAuth; `null` for a password. */
       oauth_provider?: string | null
+      /** @description Why signing in again is needed when the sign-in itself still works; `null` otherwise. */
+      sign_in_reason?: string | null
       status: components['schemas']['AccountStatusDto']
       /**
        * @description The authserv-id that stamps nearly all of this account's recent mail, offered for
@@ -1312,6 +2120,14 @@ export interface components {
        */
       trusted_authserv_ids?: string[] | null
       watch?: components['schemas']['WatchDto'] | null
+      /**
+       * @description The mailbox capabilities (`mail.flags`, `mail.move`, `mail.delete`, `mail.expunge`,
+       *     `mail.append`) the current user may use on this account now: the instance switch, the
+       *     account's capability, the grant and the credentials' scope all allow it. Filled in the
+       *     archive's account list; empty in other answers. Every change is checked again when it is
+       *     asked for.
+       */
+      writable: string[]
     }
     /** @description What is happening to an account now and how its last sync or import ended. */
     AccountStatusDto: {
@@ -1388,7 +2204,21 @@ export interface components {
     AddressPersonDto: {
       /** @description The address as the message writes it. */
       email: string
+      /**
+       * @description The person has a contact card that is not removed, as opposed to being known from mail
+       *     alone.
+       */
+      has_card: boolean
       person_id: string
+    }
+    /** @description A reminder before an event starts. */
+    AlarmFormDto: {
+      /**
+       * Format: int64
+       * @description Minutes before the start; 0 at the start.
+       * @default 0
+       */
+      minutes_before: number
     }
     /** @description An account receiving an alias's mail. */
     AliasAccountDto: {
@@ -1439,6 +2269,10 @@ export interface components {
       provider: string
       /** Format: int64 */
       replied?: number | null
+      /** @description How replies to its mail are sent: `reverse_alias`, `direct` or `reply_header`. */
+      reply_strategy: string
+      /** @description `alias`, `domain` or `service` for an override, `default` for the detector's. */
+      reply_strategy_source: string
       /** Format: int64 */
       senders: number
       service_id?: string | null
@@ -1509,6 +2343,34 @@ export interface components {
       key?: string | null
       name?: string | null
     }
+    /** @description How replies to mail received through aliases are sent in an archive. */
+    AliasStrategiesDto: {
+      /** @description The default of every provider the server knows. */
+      defaults: components['schemas']['ProviderStrategyDto'][]
+      /**
+       * @description Overrides, most specific scope first, then by key. An alias uses the override for its
+       *     address, else for its domain, else for its provider, else its provider's default.
+       */
+      overrides: components['schemas']['AliasStrategyDto'][]
+    }
+    /** @description A reply strategy override. */
+    AliasStrategyDto: {
+      /** @description The alias address, the domain or the provider id, lowercase. */
+      key: string
+      /** @description `alias`, `domain` or `service`. */
+      scope: string
+      /** @description `reverse_alias`, `direct` or `reply_header`. */
+      strategy: string
+    }
+    /** @description An override to set or, with `strategy` `null`, remove. */
+    AliasStrategyRequest: {
+      /** @description An alias address for `alias`, a domain for `domain`, a provider id for `service`. */
+      key: string
+      /** @description `alias`, `domain` or `service`. */
+      scope: string
+      /** @description `reverse_alias`, `direct`, `reply_header`, or `null` to remove the override. */
+      strategy?: string | null
+    }
     /** @description Changes an alias; missing fields stay, an empty string clears. */
     AliasUpdateRequest: {
       enabled?: boolean | null
@@ -1527,9 +2389,25 @@ export interface components {
       id: string
       name: string
       remote_images: components['schemas']['RemoteImagesDto']
+      /** @description What the current user may do in it. */
+      rights: components['schemas']['ArchiveRightsDto']
       /** @description Remote images linked from its messages are downloaded and kept with the archive. */
       save_remote_images: boolean
       stats: components['schemas']['StatsDto']
+    }
+    /** @description The current user's rights in an archive, as the server checks them now. */
+    ArchiveRightsDto: {
+      /**
+       * @description Whether the user may write drafts and send here: the server sends mail, the `[write]`
+       *     switches allow sending, the grant is `sender`, the credentials carry `send:mail` and the
+       *     user may send as at least one active identity of the archive. Each send is still checked
+       *     against the transport and its account.
+       */
+      compose: boolean
+      /** @description Whether the user manages the archive: accounts, capabilities, transports and identities. */
+      manage: boolean
+      /** @description The user's grant: `reader`, `editor` or `sender`; each includes the ones before it. */
+      role: string
     }
     /** @description Changes to an archive. */
     ArchiveUpdateRequest: {
@@ -1558,6 +2436,31 @@ export interface components {
       /** @description Where to download it. */
       url: string
     }
+    /** @description One recorded write: ids and counts only. */
+    AuditEntryDto: {
+      account?: string | null
+      archive?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      at: number
+      /** Format: int64 */
+      count: number
+      /**
+       * @description `capabilities_changed`, `grant_changed`, `mail_flags`, `mail_move`, `mail_delete`,
+       *     `mail_append`, `mail_send`, `pim_edit`, `pim_respond`, `rule_changed`, `transport_changed`,
+       *     `identity_changed`, `outbox_changed`, `device_created`, `device_changed` or
+       *     `device_revoked`.
+       */
+      kind: string
+      /** Format: int64 */
+      seq: number
+      /** @description Ids of what it touched. */
+      targets: string[]
+      /** @description The user who made it; missing for the server itself. */
+      user?: string | null
+    }
     /** @description One leg of a boarding pass. */
     BoardingLegDto: {
       /** @description The operating airline's IATA code. */
@@ -1579,6 +2482,14 @@ export interface components {
       passenger?: string | null
       /** @description The booking reference. */
       pnr?: string | null
+    }
+    /** @description The same change to many messages. */
+    BulkChangeRequest: {
+      /** @description Only their places in this account. */
+      account?: string | null
+      /** @description Message ids, at most 500. */
+      messages: string[]
+      op: components['schemas']['MailChangeOp']
     }
     /** @description One instance of an event in a span, its copies folded together. */
     CalendarOccurrenceDto: {
@@ -1748,6 +2659,31 @@ export interface components {
       overridden: boolean
       source: components['schemas']['CategorySourceDto']
     }
+    /** @description A change next to the version it was made on and the latest upstream version. */
+    ChangeDiffDto: {
+      /**
+       * Format: int32
+       * @description The upstream version the change was made on; absent for a create.
+       */
+      base_version?: number | null
+      change_id: string
+      /** @description `text/calendar` or `text/vcard`. */
+      content_type: string
+      /**
+       * @description The fields where the change or upstream differ from the base, in the order they first
+       *     appear. Alarms, client properties, `SEQUENCE`, `REV` and `UID` are left out.
+       */
+      fields: components['schemas']['FieldDiffDto'][]
+      /**
+       * Format: int32
+       * @description The latest upstream version; absent for a create that has not reached the account.
+       */
+      latest_version?: number | null
+      /** @description The change's own iCalendar or vCard text; absent for a delete. */
+      mine?: string | null
+      /** @description The item is gone upstream. */
+      upstream_deleted: boolean
+    }
     /** @description One difference between a version and the one before it. */
     ChangeDto: {
       /** @description Absent when the value was removed. */
@@ -1781,6 +2717,11 @@ export interface components {
        * @description Unix milliseconds.
        */
       created_at: number
+      /**
+       * @description Whether the current user may create, change and delete its items now: it belongs to an
+       *     account, is not `read_only` and not removed, and every lock for `pim.edit` is open.
+       */
+      editable: boolean
       id: string
       /**
        * Format: int64
@@ -1806,6 +2747,11 @@ export interface components {
        *     and the calendar of events found in mail.
        */
       synced_at?: number | null
+      /**
+       * @description `read_only`, `held` (edits stay in Holtmail) or `write_through` (edits are sent to the
+       *     account).
+       */
+      write_mode: string
     }
     /**
      * @description How sure the extractor is.
@@ -1825,6 +2771,41 @@ export interface components {
       /** @description `tls` (default), `starttls` or `plain`. */
       security?: string | null
       username: string
+    }
+    /** @description The fields of the contact form. Saving it on an existing card rewrites only what changed. */
+    ContactFormDto: {
+      /** @default [] */
+      addresses: components['schemas']['PostalAddressDto'][]
+      /** @default [] */
+      emails: components['schemas']['LabeledDto'][]
+      /**
+       * @description Made from the name, the organization or the first address when absent.
+       * @default null
+       */
+      full_name: string | null
+      /**
+       * @default {
+       *       "additional": null,
+       *       "family": null,
+       *       "given": null,
+       *       "prefix": null,
+       *       "suffix": null
+       *     }
+       */
+      name: components['schemas']['NamePartsDto']
+      /** @default null */
+      notes: string | null
+      /** @default null */
+      organization: string | null
+      /** @default [] */
+      phones: components['schemas']['LabeledDto'][]
+      /** @default null */
+      title: string | null
+      /**
+       * @description The `UID` of a new card; one is made when absent. Ignored for an existing card.
+       * @default null
+       */
+      uid: string | null
     }
     /** @description Whether and where an account's contacts and calendars are archived. */
     ContactsCalendarsDto: {
@@ -1967,6 +2948,30 @@ export interface components {
       note?: string | null
       prefix?: string | null
     }
+    /** @description A new device. */
+    CreateDeviceRequest: {
+      /** @description The archives JMAP and DAV may see; missing or `null` means every archive the user can read. */
+      archives?: string[] | null
+      /** @description Whether fetching a whole body marks a message read; off when missing. */
+      implicit_seen?: boolean | null
+      /** @description The archive IMAP and SMTP serve; required with either protocol. */
+      mail_archive?: string | null
+      /** @description Shown in lists and audit entries; 1 to 100 characters. */
+      name: string
+      /** @description At least one of `imap`, `smtp`, `jmap`, `dav` and `api`. */
+      protocols: string[]
+      /**
+       * @description Any of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`, at least one;
+       *     `["read"]` when missing.
+       */
+      scopes?: string[] | null
+    }
+    /** @description A device that was just made, with its app password. */
+    CreatedDeviceDto: {
+      device: components['schemas']['DeviceDto']
+      /** @description The app password: `hm_` plus 32 characters. Shown only here, once. */
+      secret: string
+    }
     /** @description One category data table the server uses. */
     DataFileDto: {
       /** @description The attribution to show with the data, when its licence asks for one. */
@@ -2008,6 +3013,11 @@ export interface components {
        */
       last_checked_at?: number | null
       last_outcome?: components['schemas']['DataOutcomeDto'] | null
+    }
+    /** @description The current user's default identity in an archive. */
+    DefaultIdentityRequest: {
+      /** @description An identity the user may send as; `null` clears the default. */
+      identity?: string | null
     }
     /** @description Confirms a review. */
     DeletionConfirmRequest: {
@@ -2099,6 +3109,166 @@ export interface components {
        */
       next_at?: number | null
     }
+    /** @description A device: one client installation with its own app password. */
+    DeviceDto: {
+      /** @description The archives JMAP and DAV may see; `null` means every archive the user can read. */
+      archives?: string[] | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      /** @description Whether it has an app password. The password itself is never shown again. */
+      has_secret: boolean
+      id: string
+      /** @description Whether fetching a whole body marks a message read. */
+      implicit_seen: boolean
+      /** @description The protocol of its latest use. */
+      last_protocol?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the start (UTC) of the last day it was used.
+       */
+      last_used_day?: number | null
+      /** @description The archive IMAP and SMTP serve to it. */
+      mail_archive?: string | null
+      name: string
+      /** @description Any of `imap`, `smtp`, `jmap`, `dav` and `api`. */
+      protocols: string[]
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the last raise of its rights after it was made.
+       */
+      raised_at?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds of its revocation, which is permanent.
+       */
+      revoked_at?: number | null
+      /** @description Any of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`. */
+      scopes: string[]
+    }
+    /** @description One place a device can connect to. */
+    DeviceServerDto: {
+      /** @description The name to connect to; `null` when the server has no name of its own to give. */
+      host?: string | null
+      /** Format: int32 */
+      port: number
+      /** @description `smtp` or `imap`. */
+      protocol: string
+      /** @description `tls` from the first byte, or `starttls`. */
+      security: string
+    }
+    /** @description What this server offers to devices. */
+    DeviceSetupDto: {
+      /** @description Whether this user may make devices and raise their rights. */
+      can_create: boolean
+      /** @description The configured listeners, implicit TLS first; empty when none is. */
+      servers: components['schemas']['DeviceServerDto'][]
+    }
+    /**
+     * @description A file of a draft. Stored drafts always carry `blob`, `name`, `content_type` and `size`.
+     *     When saving, an attachment is either one the draft already has (`blob`) or an attachment of
+     *     an archived message (`message` and `ordinal`), which the server resolves.
+     */
+    DraftAttachment: {
+      blob?: string | null
+      /** @description For a part the HTML shows through `cid:`. */
+      content_id?: string | null
+      content_type?: string | null
+      message?: string | null
+      name?: string | null
+      /** Format: int32 */
+      ordinal?: number | null
+      /** Format: int64 */
+      size?: number | null
+    }
+    /** @description What the draft answers or forwards; used to pick the identity. */
+    DraftContext: {
+      /** @description `new`, `reply` or `forward`. */
+      kind?: string
+      /** @description The archived message it answers or forwards. */
+      message?: string | null
+      /**
+       * @description A reverse alias the server made for the original's sender when the draft was started,
+       *     so the route can show it; sending makes or asks for it again.
+       */
+      reverse_alias?: string | null
+      /**
+       * @description Reverse aliases the server made for other recipients (the `use_reverse_alias` fix).
+       *     Sending asks the alias service again and trusts only those it confirms.
+       */
+      reverse_contacts?: components['schemas']['ReverseContact'][]
+    }
+    /** @description A draft at its newest version, with the route it would take now. */
+    DraftDto: {
+      archive: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      id: string
+      /**
+       * @description Recipients that would see the real mailbox behind an alias; sending refuses while any
+       *     is left unless told to send anyway.
+       */
+      leaks: components['schemas']['LeakDto'][]
+      payload: components['schemas']['DraftPayload']
+      route?: components['schemas']['RouteDto'] | null
+      route_error?: components['schemas']['RouteErrorDto'] | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      saved_at: number
+      /**
+       * Format: int32
+       * @description Grows by one with every save; send it back to save again.
+       */
+      version: number
+    }
+    /** @description What the compose window holds. */
+    DraftPayload: {
+      attachments?: components['schemas']['DraftAttachment'][]
+      bcc?: components['schemas']['MailboxDto'][]
+      cc?: components['schemas']['MailboxDto'][]
+      context?: components['schemas']['DraftContext']
+      html?: string | null
+      /** @description The identity picked by hand; `null` lets the route decide. */
+      identity?: string | null
+      /** @description `Message-ID` it answers, without angle brackets. */
+      in_reply_to?: string | null
+      references?: string[]
+      /**
+       * Format: int64
+       * @description When to send, Unix milliseconds; `null` for as soon as the undo window ends.
+       */
+      send_at?: number | null
+      subject?: string
+      text?: string
+      to?: components['schemas']['MailboxDto'][]
+    }
+    /** @description A new version of a draft. */
+    DraftSaveRequest: {
+      payload: components['schemas']['DraftPayload']
+      /**
+       * Format: int32
+       * @description The version this one replaces; another save in between answers `409`.
+       */
+      version: number
+    }
+    /** @description One kept version of a draft. */
+    DraftVersionDto: {
+      payload: components['schemas']['DraftPayload']
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      saved_at: number
+      /** Format: int32 */
+      version: number
+    }
     /** @description An error. */
     ErrorDto: {
       error: string
@@ -2161,6 +3331,48 @@ export interface components {
       /** @description The viewer's zone the `in_zone` times are in, when it names a known zone. */
       viewer_zone?: string | null
     }
+    /** @description The fields of the event form. Saving it on an existing event rewrites only what changed. */
+    EventFormDto: {
+      /** @default [] */
+      alarms: components['schemas']['AlarmFormDto'][]
+      /** @default false */
+      all_day: boolean
+      /** @default [] */
+      attendees: components['schemas']['PersonFormDto'][]
+      /** @default null */
+      description: string | null
+      /**
+       * @description Like `start`, exclusive for all-day events; absent means one day or one hour.
+       * @default null
+       */
+      end: string | null
+      /** @default null */
+      location: string | null
+      /** @default null */
+      organizer: components['schemas']['PersonFormDto'] | null
+      /**
+       * @description An `RRULE` value such as `FREQ=WEEKLY;BYDAY=MO`.
+       * @default null
+       */
+      recurrence: string | null
+      /**
+       * @description `YYYY-MM-DD` for an all-day event, else `YYYY-MM-DDTHH:MM[:SS]` in `time_zone`.
+       * @default
+       */
+      start: string
+      /**
+       * @description `UTC`, an IANA or Windows zone name; absent for a floating time.
+       * @default null
+       */
+      time_zone: string | null
+      /** @default  */
+      title: string
+      /**
+       * @description The `UID` of a new event; one is made when absent. Ignored for an existing event.
+       * @default null
+       */
+      uid: string | null
+    }
     /** @description A message about the event. */
     EventMessageDto: {
       /**
@@ -2221,6 +3433,26 @@ export interface components {
       collection_name: string
       item_id: string
     }
+    /** @description One field of a change compared with its base and the latest upstream version. */
+    FieldDiffDto: {
+      /** @description Its values in the version the change was made on; empty when it had none. */
+      base: string[]
+      /** @description Both differ from the base, and from each other. */
+      conflict: boolean
+      /**
+       * @description The field as the item history names it, such as `summary`, `start`, `attendee`, `email`
+       *     or `instance 2026-12-01T10:00:00 Europe/Berlin summary`.
+       */
+      field: string
+      /** @description Its values in the change. */
+      mine: string[]
+      /** @description The change differs from the base here. */
+      mine_changed: boolean
+      /** @description Its values in the latest upstream version; empty when the item is gone upstream. */
+      theirs: string[]
+      /** @description Upstream differs from the base here. */
+      theirs_changed: boolean
+    }
     /** @description One value of a person's field. */
     FieldValueDto: {
       /** @description The cards that say it. */
@@ -2246,11 +3478,112 @@ export interface components {
        */
       unread: number
     }
+    /** @description A forward of an archived message. */
+    ForwardRequest: {
+      identity?: string | null
+      /** @description `inline` (the default) or `attachment`. */
+      kind?: string | null
+    }
+    /** @description One archive granted to a user. */
+    GrantDto: {
+      archive: string
+      /** @description `reader`, `editor` or `sender`; each includes the ones before it. */
+      role: string
+    }
+    /** @description A user's grant on an archive. */
+    GrantRequest: {
+      /** @description `reader`, `editor` or `sender`. Only the owner gives `editor` and `sender`. */
+      role: string
+    }
     /**
      * @description Why a topic of an override does not apply to this message.
      * @enum {string}
      */
     HeldBackDto: 'not_verified'
+    /** @description An address people may send as. */
+    IdentityDto: {
+      account?: string | null
+      active: boolean
+      address: string
+      alias?: string | null
+      archive: string
+      bcc_self: boolean
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      created_by?: string | null
+      /** @description Whether it is the current user's default in the archive. */
+      default: boolean
+      id: string
+      name?: string | null
+      plus_addresses: boolean
+      reply_to?: string | null
+      rewritten_from?: components['schemas']['RewrittenFromDto'] | null
+      /** @description `provider`, `append:<folder>` or `none`. */
+      sent_copy: string
+      signature_html?: string | null
+      signature_text?: string | null
+      transport: string
+      /** @description Users who may send as it. */
+      users: string[]
+    }
+    /**
+     * @description An identity to add. It starts inactive unless `active` is set, and becomes active only when
+     *     its transport may send as the address and the transport check passes.
+     */
+    IdentityRequest: {
+      account?: string | null
+      active?: boolean
+      address: string
+      alias?: string | null
+      bcc_self?: boolean
+      name?: string | null
+      plus_addresses?: boolean
+      reply_to?: string | null
+      /**
+       * @description `provider`, `append:<folder>` or `none`; `provider` for account transports and `none`
+       *     otherwise when missing.
+       */
+      sent_copy?: string | null
+      signature_html?: string | null
+      signature_text?: string | null
+      /** @description The transport: the archive's own or an instance transport granted to it. */
+      transport: string
+    }
+    /** @description An address that could become an identity. */
+    IdentitySuggestionDto: {
+      account?: string | null
+      address: string
+      alias?: string | null
+      /**
+       * @description `account` (an account's address), `alias` (the alias store) or `sent` (a sender of the
+       *     archive's sent mail).
+       */
+      source: string
+      /** @description A transport that may send as the address, when the archive has one. */
+      transport?: string | null
+    }
+    /** @description Changes to an identity; missing fields stay as they are, empty strings clear optional ones. */
+    IdentityUpdateRequest: {
+      account?: string | null
+      active?: boolean | null
+      address?: string | null
+      alias?: string | null
+      bcc_self?: boolean | null
+      name?: string | null
+      plus_addresses?: boolean | null
+      reply_to?: string | null
+      sent_copy?: string | null
+      signature_html?: string | null
+      signature_text?: string | null
+      transport?: string | null
+    }
+    /** @description Who may send as an identity. */
+    IdentityUsersRequest: {
+      users: string[]
+    }
     /** @description The outbound proxy for remote images. */
     ImageProxyDto: {
       /** @description `scheme://host:port`, without credentials; `null` without a proxy. */
@@ -2496,8 +3829,9 @@ export interface components {
       /** @description This message's iTIP method, lowercase; absent when the part named none. */
       method?: string | null
       /**
-       * @description The answer of the attendee whose address is one of the archive's account addresses, when
-       *     one matches.
+       * @description The answer of the attendee whose address is one of the archive's own (an account's, an
+       *     identity's or an own alias), when one matches. An answer given through the RSVP API
+       *     shows here once its iMIP reply has left and is archived.
        */
       my_status?: string | null
       organizer?: components['schemas']['ParticipantDto'] | null
@@ -2526,18 +3860,73 @@ export interface components {
        */
       version_count: number
     }
+    /**
+     * @description What an item should become: exactly one of a form of the collection's kind or raw
+     *     iCalendar or vCard text.
+     */
+    ItemContentRequest: {
+      /** @default null */
+      contact: components['schemas']['ContactFormDto'] | null
+      /** @default null */
+      event: components['schemas']['EventFormDto'] | null
+      /** @default null */
+      expect: components['schemas']['ServedStateDto'] | null
+      /**
+       * @description A new contact from the first sender of this message (name and address); fields of
+       *     `contact` win. Address books only.
+       * @default null
+       */
+      from_message: string | null
+      /**
+       * @description For an event the user organizes: `false` records the change without mailing invitations,
+       *     updates or cancellations to attendees. Absent or `true`: they are sent through the outbox
+       *     unless the collection's server schedules itself.
+       * @default null
+       */
+      invitations: boolean | null
+      /**
+       * @description The whole item as iCalendar (calendars) or vCard (address books).
+       * @default null
+       */
+      raw: string | null
+    }
     /** @description An item with every version and what changed between them. */
     ItemDetail: {
       /**
-       * @description The normalized view of the latest version: `{"type": "contact", ...}`,
+       * @description The normalized view of what is served: the open change when there is one (see
+       *     `item.local_edit`), else the latest version: `{"type": "contact", ...}`,
        *     `{"type": "calendar", "components": [...]}` or `{"type": "unreadable"}`. For an event
        *     found in mail, the versions merged: the latest invitation with later instance changes,
        *     every attendee's latest answer, and `status` `CANCELLED` once cancelled.
        */
       data: Record<string, never>
       item: components['schemas']['ItemSummaryDto']
+      /** @description Versions and changes made in Holtmail or on devices, interleaved, oldest first. */
+      timeline: components['schemas']['TimelineEntryDto'][]
       /** @description Oldest first. */
       versions: components['schemas']['ItemVersionDto'][]
+    }
+    /** @description An item as the edit forms see it. */
+    ItemEditDto: {
+      collection_id: string
+      contact?: components['schemas']['ContactFormDto'] | null
+      /** @description `text/calendar` or `text/vcard`. */
+      content_type: string
+      event?: components['schemas']['EventFormDto'] | null
+      item_id: string
+      local_edit?: components['schemas']['LocalEditDto'] | null
+      /**
+       * @description What is served now, as iCalendar or vCard text: the latest upstream version with the
+       *     open change on top.
+       */
+      raw: string
+      /** @description Pass back as `expect` to refuse the edit when something else was saved meanwhile. */
+      state: components['schemas']['ServedStateDto']
+      /**
+       * @description Whether the current user may save edits: the collection is not `read_only` and every
+       *     lock for `pim.edit` is open.
+       */
+      writable: boolean
     }
     /** @description A contact or event a search found. */
     ItemHitDto: {
@@ -2601,6 +3990,7 @@ export interface components {
       id: string
       /** @description `contact`, `event`, `task` or `other`. */
       kind: string
+      local_edit?: components['schemas']['LocalEditDto'] | null
       /** @description The organizer's address. */
       organizer?: string | null
       /** @description A contact's phone numbers in E.164 form. */
@@ -2734,6 +4124,34 @@ export interface components {
        */
       unread: number
     }
+    /** @description An email address or phone number with its kinds. */
+    LabeledDto: {
+      /**
+       * @description Lowercase `TYPE` values such as `work` or `cell`.
+       * @default []
+       */
+      kinds: string[]
+      /** @default  */
+      value: string
+    }
+    /** @description A recipient that would see the real mailbox behind an alias. */
+    LeakDto: {
+      /** @description `to`, `cc` or `bcc`. */
+      field: string
+      /** @description `use_reverse_alias`, `use_alias_identity` or `remove_recipient`. */
+      fix: string
+      /**
+       * @description `mixed_recipients`, `cc_not_reverse_alias`, `bcc_not_reverse_alias`,
+       *     `forward_from_real_address` or `real_address_from`.
+       */
+      reason: string
+      recipient: string
+    }
+    /** @description Why a send was refused: recipients would see the real mailbox behind an alias. */
+    LeaksDto: {
+      error: string
+      leaks: components['schemas']['LeakDto'][]
+    }
     /** @description The ledger as it stands. */
     LedgerDto: {
       head?: components['schemas']['LedgerEntryDto'] | null
@@ -2809,6 +4227,33 @@ export interface components {
       | 'check_in'
       | 'wallet_save'
       | 'view'
+    /**
+     * @description The "Local edit" mark of an item whose served version comes from a change: `held` (not
+     *     sent to the account), `sending`, `conflict` (changed in the account too, or removed there)
+     *     or `rejected` (the account refused it).
+     */
+    LocalEditDto: {
+      account_id?: string | null
+      account_name?: string | null
+      change_id: string
+      /** @description `noop`, `personal`, `reply`, `edit`, `create` or `delete`. */
+      class: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      /** @description `create`, `update` or `delete`. */
+      op: string
+      /**
+       * @description A short code for a conflict or refusal, such as `overlap`, `upstream_deleted`,
+       *     `reply_obsolete` or `refused`.
+       */
+      reason?: string | null
+      state: string
+      /** @description The collection's write mode: `held` changes are never sent, `write_through` ones are. */
+      write_mode: string
+    }
     /** @description A folder a message is in. */
     LocationDto: {
       flags: string[]
@@ -2823,6 +4268,101 @@ export interface components {
     LoginRequest: {
       email: string
       password: string
+    }
+    /** @description A change to a message on its server, held until `mail-writeback` sends it. */
+    MailChangeDto: {
+      account_id: string
+      /** @description Flags or labels added. */
+      add: string[]
+      /** Format: int32 */
+      attempts: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds when it was asked for.
+       */
+      created_at: number
+      /** @description Whether a delete removes for good. */
+      expunge?: boolean | null
+      /** @description The folder it works in; for an append, where the bytes go. */
+      folder_id: string
+      id: string
+      /** @description `flags`, `labels`, `move`, `delete` or `append`. */
+      kind: string
+      /**
+       * @description A short code for why the last attempt did not succeed, such as `connection`,
+       *     `unsupported`, `not_allowed` or `gone`.
+       */
+      last_error?: string | null
+      message_id?: string | null
+      /** @description `user`, `rule`, `retention` or `sent_copy`. */
+      origin: string
+      /** @description The outbox message a sent copy belongs to. */
+      outbox_id?: string | null
+      /** @description Flags or labels removed. */
+      remove: string[]
+      /**
+       * Format: int64
+       * @description The UID the server gave a moved or appended message, when it said.
+       */
+      result_uid?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds when the server accepted a flags or labels change that waits for a
+       *     sync to confirm it.
+       */
+      sent_at?: number | null
+      /**
+       * @description `held` (not yet on the server), `sending`, `applied`, `superseded_by_server` (the
+       *     server showed something else afterwards and wins) or `failed`.
+       */
+      state: string
+      /** @description The folder a move goes to. */
+      target_folder_id?: string | null
+      /**
+       * Format: int64
+       * @description The message's UID in the folder; missing for an append.
+       */
+      uid?: number | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds when it last changed.
+       */
+      updated_at: number
+    }
+    /** @description What to change on the server. */
+    MailChangeOp:
+      | {
+          add?: string[]
+          /** @enum {string} */
+          kind: 'flags'
+          remove?: string[]
+        }
+      | {
+          add?: string[]
+          /** @enum {string} */
+          kind: 'labels'
+          remove?: string[]
+        }
+      | {
+          folder: string
+          /** @enum {string} */
+          kind: 'move'
+        }
+      | {
+          expunge?: boolean
+          /** @enum {string} */
+          kind: 'delete'
+        }
+    /** @description What a change request recorded. */
+    MailChangesDto: {
+      /** @description The held changes, one per place of a message on a server. */
+      changes: components['schemas']['MailChangeDto'][]
+      skipped: components['schemas']['SkippedDto'][]
+    }
+    /** @description One mailbox of a draft. */
+    MailboxDto: {
+      address: string
+      name?: string | null
     }
     /** @description Adds an alias by hand, e.g. an Apple Hide My Email address. */
     ManualAliasRequest: {
@@ -2876,6 +4416,12 @@ export interface components {
       /** @description The provider's signature passed; without it the forwarding fields may be forged. */
       signed: boolean
     }
+    /** @description A change to one message. */
+    MessageChangeRequest: {
+      /** @description Only the message's places in this account; every account it is in by default. */
+      account?: string | null
+      op: components['schemas']['MailChangeOp']
+    }
     /** @description Everything the reader shows about a message, except its HTML body. */
     MessageDetail: {
       alias?: components['schemas']['MessageAliasDto'] | null
@@ -2887,6 +4433,11 @@ export interface components {
       cc: components['schemas']['AddressDto'][]
       /** Format: int64 */
       date: number
+      /**
+       * @description Changes to it that failed and nobody dismissed, oldest first: retry them with
+       *     `POST /api/mail-changes/{id}/retry`, hide them with `POST /api/mail-changes/{id}/dismiss`.
+       */
+      failed: components['schemas']['MailChangeDto'][]
       from: components['schemas']['AddressDto'][]
       /** @description Whether `GET /api/messages/{id}/body` has an HTML body to show. */
       has_html: boolean
@@ -2901,7 +4452,17 @@ export interface components {
       invitations: components['schemas']['InvitationDto'][]
       /** @description Its labels, sorted. */
       labels: string[]
+      /**
+       * @description The list address from `List-Post`, without `mailto:`; `null` when the message names no
+       *     list to post to. A list reply is offered only when this is set.
+       */
+      list_post?: string | null
       locations: components['schemas']['LocationDto'][]
+      /**
+       * @description The held mark: changes to it on its servers that are not confirmed there yet (`held` or
+       *     `sending`), oldest first. The locations above still show what the server last showed.
+       */
+      pending: components['schemas']['MailChangeDto'][]
       /**
        * @description The people of its `From`, `To`, `Cc`, `Bcc` and `Reply-To` addresses, for those that
        *     belong to one, each address once.
@@ -3013,6 +4574,19 @@ export interface components {
        */
       exponent: number
     }
+    /** @description The parts of a contact's name. */
+    NamePartsDto: {
+      /** @default null */
+      additional: string | null
+      /** @default null */
+      family: string | null
+      /** @default null */
+      given: string | null
+      /** @default null */
+      prefix: string | null
+      /** @default null */
+      suffix: string | null
+    }
     /** @description Connects an account at an alias service. */
     NewAliasServiceRequest: {
       /** @description Another address, for a self-hosted service. */
@@ -3025,6 +4599,10 @@ export interface components {
     NewArchiveRequest: {
       /** @description Not empty, at most 100 characters. */
       name: string
+    }
+    /** @description A draft to start. */
+    NewDraftRequest: {
+      payload?: components['schemas']['DraftPayload']
     }
     /** @description A user to add. */
     NewUserRequest: {
@@ -3115,6 +4693,119 @@ export interface components {
       | 'disabled'
       | 'recently_requested'
       | 'members'
+    /**
+     * @description Who would send the invitations of an event the user organizes in a calendar. Reading it
+     *     records and sends nothing.
+     */
+    OrganizingDto: {
+      /** @description The calendar's account. */
+      account_name?: string | null
+      /**
+       * @description Whether invitations can go out as `route` says: false for `imip` when no identity of
+       *     the user sends as `from` or the user may not send mail, and for `unknown`. Save with
+       *     `invitations: false` then.
+       */
+      allowed: boolean
+      /**
+       * @description For `imip`: the address invitations are mailed from: the event's organizer, or for a
+       *     new event the identity it would be organized as.
+       */
+      from?: string | null
+      /**
+       * @description `server` (the calendar's server sends them when the change is written), `deferred` (it
+       *     will once the change reaches the account), `imip` (Holtmail mails them from `from`),
+       *     `unknown` (the server cannot be asked now, so saving with invitations is refused) or
+       *     `none` (the event is organized by someone else, so saving it mails nobody).
+       */
+      route: string
+    }
+    /** @description A message in the outbox. */
+    OutboxDto: {
+      archive: string
+      /** Format: int32 */
+      attempts: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      id: string
+      identity: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      last_attempt_at?: number | null
+      last_error?: string | null
+      /** @description The return path; empty for `<>`. */
+      mail_from: string
+      /** @description The archived message, once the first attempt archived it. */
+      message?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      next_attempt_at?: number | null
+      /** @description Something learned after sending that is not a failure, such as a delayed delivery. */
+      note?: string | null
+      /** @description Every envelope recipient, Bcc included, in order. */
+      recipients: components['schemas']['OutboxRecipientDto'][]
+      /** @description The outbox message this one sends again. */
+      resend_of?: string | null
+      /** @description The `Message-ID` in the bytes. */
+      rfc_message_id: string
+      route?: components['schemas']['RouteDto'] | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      send_at: number
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      sent_at?: number | null
+      sent_copy?: components['schemas']['MailChangeDto'] | null
+      /** Format: int64 */
+      size: number
+      /**
+       * @description `draft`, `queued`, `sending`, `retrying`, `sent`, `failed`, `uncertain`, `bounced` or
+       *     `cancelled`.
+       */
+      state: string
+      /** @description The `Subject` in the bytes, decoded; `null` when it has none. */
+      subject?: string | null
+      /**
+       * @description The provider's own copy that sync archived with other bytes (a Sent copy the server
+       *     rewrote): a second copy of the same message.
+       */
+      synced_copy?: string | null
+      transport: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      updated_at: number
+      /** @description Who queued it; `null` for the server itself. */
+      user?: string | null
+    }
+    /** @description One envelope recipient of an outbox message and what became of it. */
+    OutboxRecipientDto: {
+      address: string
+      /** Format: int32 */
+      code?: number | null
+      /** @description For `refused`: a permanent (`5xx`) refusal. */
+      permanent?: boolean | null
+      /**
+       * @description `pending`, `accepted`, `refused`, or `bounced` when the server took it and a delivery
+       *     status notification said it could not be delivered.
+       */
+      state: string
+      /** @description For `bounced`: the enhanced status code, such as `5.1.1`. */
+      status?: string | null
+      /** @description The server's words. */
+      text?: string | null
+    }
     /** @description An organizer or attendee. */
     ParticipantDto: {
       /** @description Lowercased address. */
@@ -3210,6 +4901,12 @@ export interface components {
       /** @description Splits and joins made by hand that touch one of their cards or addresses, oldest first. */
       overrides: components['schemas']['PersonOverrideDto'][]
       person: components['schemas']['PersonSummaryDto']
+      /**
+       * @description The card edits of this person go to (`PUT /api/people/{id}/card`): their card in the
+       *     editable address book stored first; absent when they have none, and a save then makes a
+       *     new card.
+       */
+      primary_card?: string | null
     }
     /** @description A user as owners and admins see them. */
     PersonDto: {
@@ -3220,6 +4917,8 @@ export interface components {
        * @description Unix milliseconds.
        */
       created_at: number
+      /** @description The same archives with the role of each grant. */
+      grants: components['schemas']['GrantDto'][]
       user: components['schemas']['UserDto']
     }
     /** @description A field of a person merged from their cards. */
@@ -3232,6 +4931,19 @@ export interface components {
        */
       name: string
       values: components['schemas']['FieldValueDto'][]
+    }
+    /** @description A person on an event form. */
+    PersonFormDto: {
+      /** @default  */
+      email: string
+      /** @default null */
+      name: string | null
+      /**
+       * @description `NEEDS-ACTION`, `ACCEPTED`, `TENTATIVE` or `DECLINED`; absent keeps what the item had,
+       *     or asks a new attendee to answer.
+       * @default null
+       */
+      partstat: string | null
     }
     /** @description Why two cards are the same person. */
     PersonLinkDto: {
@@ -3353,10 +5065,85 @@ export interface components {
       subject?: string | null
       thread_id: string
     }
+    /** @description A change to a contact or event made in Holtmail. */
+    PimChangeDto: {
+      archive_id: string
+      /** Format: int32 */
+      attempts: number
+      /**
+       * @description `noop`, `personal`, `reply`, `edit`, `create` or `delete`; `noop` and `personal` are
+       *     never sent.
+       */
+      class: string
+      collection_id: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      /** @description The href of a create before the item exists. */
+      href?: string | null
+      id: string
+      /** @description Absent for a create that has not reached the account yet. */
+      item_id?: string | null
+      /** @description A short code for the last temporary failure, such as `connection` or `not_allowed`. */
+      last_error?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds when a held change may be sent again.
+       */
+      next_attempt_at?: number | null
+      /** @description `create`, `update` or `delete`. */
+      op: string
+      /** @description `dav` or `api`. */
+      origin: string
+      reason?: string | null
+      /** @description `held`, `sending`, `applied`, `superseded`, `conflict`, `rejected` or `discarded`. */
+      state: string
+      /**
+       * @description The item's contact name or event summary as last derived; only in the open changes
+       *     list, and absent for a create that has not reached the account.
+       */
+      title?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      updated_at: number
+      /** @description A newer upstream version landed since it was last looked at. */
+      upstream_changed: boolean
+      /** @description The item disappeared upstream. */
+      upstream_deleted: boolean
+      user_id?: string | null
+    }
+    /** @description A postal address; every part is optional. */
+    PostalAddressDto: {
+      /** @default null */
+      country: string | null
+      /** @default null */
+      extended: string | null
+      /** @default [] */
+      kinds: string[]
+      /** @default null */
+      locality: string | null
+      /** @default null */
+      po_box: string | null
+      /** @default null */
+      postal_code: string | null
+      /** @default null */
+      region: string | null
+      /** @default null */
+      street: string | null
+    }
     /** @description Changes to your own profile; missing fields stay as they are. */
     ProfileRequest: {
       email?: string | null
       name?: string | null
+    }
+    /** @description The strategy a provider's detector suggests. */
+    ProviderStrategyDto: {
+      provider: string
+      strategy: string
     }
     /** @description How an event repeats. */
     RecurrenceDto: {
@@ -3441,6 +5228,18 @@ export interface components {
      * @enum {string}
      */
     RemoteMode: 'block' | 'proxy' | 'direct'
+    /** @description A reply to an archived message. */
+    ReplyRequest: {
+      /** @description An identity picked by hand. */
+      identity?: string | null
+      /** @description `sender` (the default), `all` or `list`. */
+      kind?: string | null
+    }
+    /** @description Recipients to send a message to again. */
+    ResendRequest: {
+      /** @description Addresses from the original envelope; the refused ones when missing. */
+      recipients?: string[] | null
+    }
     /**
      * @description A reservation, tagged by `kind`. Every `url` comes with its `url_host`, the display host
      *     (Unicode, or the A-label form when confusable); a URL without a host is left out.
@@ -3552,6 +5351,248 @@ export interface components {
           url?: string | null
           url_host?: string | null
         }
+    /** @description How to decide an open change. */
+    ResolveRequest: {
+      /**
+       * @description `keep_mine` (record the change again on the latest upstream version, re-creating the
+       *     item when it was deleted upstream), `take_theirs` or `discard` (stop serving it), or
+       *     `retry` (send a refused change again).
+       */
+      action: string
+    }
+    /** @description Puts an archived message back on a server. */
+    RestoreRequest: {
+      /** @description The folder it goes to, of an account in the message's archive; needs `mail.append` there. */
+      folder: string
+    }
+    /** @description An account's retention: delete mail from its server some days after it arrived. */
+    RetentionDto: {
+      account: string
+      /**
+       * @description The job may run: `mail.delete` is on, the instance allows writing, and there is a
+       *     trash folder or `mail.expunge`.
+       */
+      active: boolean
+      /**
+       * Format: int32
+       * @description The period the counts below are for: `days`, or the one asked about.
+       */
+      checked_days?: number | null
+      /**
+       * Format: int32
+       * @description The stored period in days; `null` keeps everything on the server.
+       */
+      days?: number | null
+      /**
+       * Format: int64
+       * @description Messages the job would delete now (at most 10 000 are counted).
+       */
+      due: number
+      /** @description They would be removed for good (`mail.expunge`) rather than moved to the trash. */
+      expunge: boolean
+      /** @description More are due than counted. */
+      more: boolean
+    }
+    /** @description Sets an account's retention. */
+    RetentionRequest: {
+      /**
+       * Format: int32
+       * @description Days after arrival, 1 to 36 500; `null` turns retention off.
+       */
+      days?: number | null
+    }
+    /** @description A recipient to reach through the alias the draft's thread came through. */
+    ReverseAliasRequest: {
+      recipient: string
+      /**
+       * Format: int32
+       * @description The draft version shown; another save in between answers `409`.
+       */
+      version: number
+    }
+    /** @description A recipient and the reverse alias that reaches it through the thread's alias. */
+    ReverseContact: {
+      address: string
+      contact: string
+    }
+    /** @description The provider rewrote an identity's `From`. */
+    RewrittenFromDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      at: number
+      /** @description What happened and what to do, for people. */
+      explanation: string
+      /** @description The `From` address the provider's copy carried. */
+      seen: string
+    }
+    /** @description How a draft is sent. */
+    RouteDto: {
+      /**
+       * @description The alias the original came through, else the first alias another message of its thread
+       *     came through: the address to send as for the `use_alias_identity` fix.
+       */
+      alias?: string | null
+      /**
+       * @description For a reply through an alias service that replaces the original sender: the real sender,
+       *     lowercase, whom [`RouteDto::to`] reaches.
+       */
+      contact?: string | null
+      /** @description The exact `From` address. */
+      from: string
+      identity: string
+      name?: string | null
+      /** @description The provider id of the alias service the original came through, such as `simplelogin`. */
+      provider?: string | null
+      /** @description The rule that picked the identity first, then notes. */
+      reasons: components['schemas']['RouteReasonDto'][]
+      /** @description `direct`, `reverse_alias` or `reply_header`. */
+      strategy: string
+      /**
+       * @description Where the strategy comes from: `alias`, `domain` or `service` for an override, `default`
+       *     for the detector's.
+       */
+      strategy_source?: string | null
+      /**
+       * @description For a reply through an alias service: the address that takes the original sender's
+       *     place in `To` (the reverse alias or the service's `Reply-To`).
+       */
+      to?: string | null
+      transport: string
+    }
+    /** @description Why a draft has no route. */
+    RouteErrorDto: {
+      address?: string | null
+      alias?: string | null
+      /**
+       * @description `no_identity`, `unknown_identity`, `unknown_transport`, `not_allowed_from`,
+       *     `needs_reverse_alias` (made when the draft is sent), `no_reply_header` or
+       *     `no_alias_identity`.
+       */
+      code: string
+      contact?: string | null
+      id?: string | null
+      transport?: string | null
+    }
+    /**
+     * @description Why a route looks the way it does: a stable `code` with the address, alias or account it
+     *     names.
+     */
+    RouteReasonDto: {
+      account?: string | null
+      address?: string | null
+      alias?: string | null
+      /**
+       * @description `chosen`, `original_recipient`, `plus_address`, `alias`, `account`, `default`,
+       *     `plus_address_dropped`, and for replies through an alias service `alias_mailbox`,
+       *     `no_alias_mailbox`, `not_alias_mailbox`, `alias_from`, `reverse_alias`,
+       *     `computed_reverse_alias`, `unsigned_reverse_alias` or `reply_header`.
+       */
+      code: string
+    }
+    /** @description How an answer was given. */
+    RsvpDto: {
+      change?: components['schemas']['PimChangeDto'] | null
+      /**
+       * @description How the account's copy follows: `respond`, `put`, `held` (recorded, sent once the
+       *     collection writes through) or `none` (no account holds a copy; the archived reply shows
+       *     the answer once it leaves).
+       */
+      copy: string
+      outbox?: components['schemas']['OutboxDto'] | null
+      /**
+       * @description `server` (the account's server tells the organizer), `imip` (an iMIP reply through the
+       *     outbox) or `quiet` (the organizer asked for no answers; only the copy follows).
+       */
+      route: string
+    }
+    /** @description One occurrence of a repeating event that can be answered on its own. */
+    RsvpOccurrenceDto: {
+      all_day: boolean
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      ends_at: number
+      /** @description The instance as the calendar names it (`CalendarOccurrence.recurrence_id`). */
+      key: string
+      /** @description Pass back as `RsvpRequest.recurrence_id`. */
+      recurrence_id: string
+      /** @description The start as a wall-clock time in its own zone. */
+      start_local: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      starts_at: number
+      time_zone?: string | null
+    }
+    /** @description What answering an invitation would do now. Reading it records and sends nothing. */
+    RsvpOptionsDto: {
+      /** @description The account of that copy; for `server`, the one whose server tells the organizer. */
+      account_name?: string | null
+      /**
+       * @description Whether `POST .../rsvp` would be accepted now (it may still fail when something changes
+       *     in between).
+       */
+      allowed: boolean
+      /**
+       * @description The attendee address the organizer sees: the alias for an invitation that came through
+       *     one.
+       */
+      attendee?: string | null
+      /** @description The calendar of that copy. */
+      collection_name?: string | null
+      /** @description `respond`, `put`, `held` or `none`, as `RsvpDto.copy` would say. */
+      copy: string
+      /**
+       * @description For `imip`: the address the reply is sent from, when the route needs no reverse alias
+       *     made first.
+       */
+      from?: string | null
+      /** @description The account's copy an answer is recorded on; absent when only "From mail" holds it. */
+      item_id?: string | null
+      local_edit?: components['schemas']['LocalEditDto'] | null
+      /** @description The user's current answer on what would be answered, lowercase `PARTSTAT`. */
+      my_status?: string | null
+      /**
+       * @description The occurrences that can be answered one by one, by start: from a month ago to a year
+       *     ahead, at most 60, without cancelled ones. Empty for an event that does not repeat.
+       */
+      occurrences: components['schemas']['RsvpOccurrenceDto'][]
+      /** @description For an `imip` reply through an alias service: its provider id, such as `simplelogin`. */
+      provider?: string | null
+      /**
+       * @description Why not, when `allowed` is false: `organizer` (one of the archive's own addresses
+       *     organizes it), `not_invited` (none of them is an attendee, or none the user answers
+       *     as), `locked` (a lock for `pim.respond` is closed), `no_answers` (the organizer asked
+       *     for no answers and no account holds a copy), `open_edit` (an edit of the copy has not
+       *     reached the account yet) or `cannot_send` (an iMIP reply is needed and the user may not
+       *     send it, no identity routes it, or it would show the real mailbox behind an alias).
+       */
+      reason?: string | null
+      /** @description Whether the event repeats, so one occurrence can be answered by its `RECURRENCE-ID`. */
+      recurring: boolean
+      /**
+       * @description `server`, `imip` or `quiet`, as `RsvpDto.route` would say; absent for `organizer`,
+       *     `not_invited` and `locked`.
+       */
+      route?: string | null
+    }
+    /** @description An answer to an invitation. */
+    RsvpRequest: {
+      /** @description `accepted`, `tentative` or `declined`. */
+      answer: string
+      /** @description A note for the organizer, sent as the reply's `COMMENT`. */
+      comment?: string | null
+      /**
+       * @description One occurrence of a repeating event, by its `RECURRENCE-ID` as iCalendar writes it
+       *     (`20261208T100000Z`, `20261208T110000` in the event's zone, `20261208`); absent answers
+       *     the whole event.
+       */
+      recurrence_id?: string | null
+    }
     /** @description A weekday of a rule, with its ordinal: `{ ordinal: -1, weekday: "FR" }` is the last Friday. */
     RuleDayDto: {
       /** Format: int32 */
@@ -3570,6 +5611,27 @@ export interface components {
       /** Format: int64 */
       total: number
     }
+    /** @description When to send a draft. */
+    SendRequest: {
+      /** @description Send even though recipients would see the real mailbox behind an alias; audited. */
+      allow_leaks?: boolean
+      /**
+       * Format: int64
+       * @description Unix milliseconds; overrides the draft's `send_at`.
+       */
+      send_at?: number | null
+      /**
+       * Format: int32
+       * @description The version shown to the user; another save in between answers `409`.
+       */
+      version?: number | null
+    }
+    /** @description What is served for an item: its latest upstream version and the open change on top. */
+    ServedStateDto: {
+      change?: string | null
+      /** Format: int32 */
+      version?: number | null
+    }
     /** @description The signed-in user. */
     SessionDto: {
       user: components['schemas']['UserDto']
@@ -3587,6 +5649,17 @@ export interface components {
     SetupStatusDto: {
       /** @description `true` while there are no users; the web app then shows the setup screen. */
       needed: boolean
+    }
+    /** @description A message, or a place of it, a change left alone. */
+    SkippedDto: {
+      message_id: string
+      /**
+       * @description `not_on_server` (no live place with a UID), `no_server` (an import account),
+       *     `already` (the server already shows it), `in_target` (already in the folder),
+       *     `in_trash` (a delete of a message already in the trash), `no_labels` (not in an
+       *     all-mail folder) or `other_account` (a move to a folder of another account).
+       */
+      reason: string
     }
     /** @description The SMTP listener, from the server's config. */
     SmtpDto: {
@@ -3731,6 +5804,169 @@ export interface components {
       /** @description The IANA zone name, when the message gave one. */
       zone?: string | null
     }
+    /**
+     * @description One entry of an item's timeline: an upstream version or a change made in Holtmail, in the
+     *     order they happened.
+     */
+    TimelineEntryDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds: when the version was first seen or the change made.
+       */
+      at: number
+      change?: components['schemas']['PimChangeDto'] | null
+      /** @description `version` or `change`. */
+      kind: string
+      /**
+       * Format: int32
+       * @description For a version: its number.
+       */
+      number?: number | null
+      /**
+       * @description For a version: `upstream` or `writeback` (what the account held after Holtmail sent a
+       *     change).
+       */
+      origin?: string | null
+    }
+    /** @description What a transport check found. */
+    TransportCheckDto: {
+      /** @description Why not, in the server's words. */
+      error?: string | null
+      /**
+       * Format: int64
+       * @description The largest message the server takes, when it said so.
+       */
+      max_size?: number | null
+      /** @description The server took the sign-in; nothing was sent. */
+      ok: boolean
+    }
+    /** @description A way out for mail. The password is never shown. */
+    TransportDto: {
+      /** @description For `account`: the account whose connection it uses. */
+      account?: string | null
+      /** @description Address patterns it may send as. */
+      allowed_from: string[]
+      /** @description The archive it belongs to; `null` for an instance transport. */
+      archive?: string | null
+      /** @description For `jmap`: `password` or `token`. */
+      auth?: string | null
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      created_at: number
+      enabled: boolean
+      /** @description For an instance transport: the archives it is granted to. */
+      grants: string[]
+      /** @description Whether a password is stored. */
+      has_password: boolean
+      /** @description SMTP server; for `account`, an override of the default the server picks. */
+      host?: string | null
+      id: string
+      /** @description `smtp`, `jmap`, `graph` or `account`. */
+      kind: string
+      limits: components['schemas']['TransportLimitsDto']
+      /** @description For `graph`: the mailbox it sends as; `null` for the token's own. */
+      mailbox?: string | null
+      name: string
+      /** Format: int32 */
+      port?: number | null
+      /** @description `tls`, `starttls` or `none`. */
+      security?: string | null
+      /** @description For `jmap` and `graph`: the server's address. */
+      url?: string | null
+      username?: string | null
+    }
+    /** @description The archives an instance transport is granted to. */
+    TransportGrantsRequest: {
+      archives: string[]
+    }
+    /** @description Limits of a transport; `null` is no limit of Holtmail's own. */
+    TransportLimitsDto: {
+      /**
+       * Format: int32
+       * @description The most envelope recipients of one message.
+       */
+      max_recipients?: number | null
+      /**
+       * Format: int64
+       * @description The largest message in bytes.
+       */
+      max_size?: number | null
+      /**
+       * Format: int32
+       * @description The most messages handed over in any hour.
+       */
+      per_hour?: number | null
+    }
+    /** @description A transport to add. */
+    TransportRequest: {
+      /** @description For `account`: the account, in the same archive. */
+      account?: string | null
+      /**
+       * @description Address patterns it may send as: `ada@example.com`, `*@example.org`,
+       *     `*@*.example.org`. Empty for `account` means the account's own address.
+       */
+      allowed_from?: string[]
+      /** @description For `jmap`: `password` (the default; needs `username`) or `token`. */
+      auth?: string | null
+      enabled?: boolean
+      /** @description For `smtp` required; for `account` it overrides the server's choice. */
+      host?: string | null
+      /**
+       * @description `smtp`, `jmap` (JMAP submission), `graph` (Microsoft Graph `sendMail`), or `account` to
+       *     send through an account's own server and sign-in (SMTP for IMAP accounts, JMAP for JMAP
+       *     accounts, Graph for Microsoft Graph accounts).
+       */
+      kind: string
+      limits?: components['schemas']['TransportLimitsDto']
+      /**
+       * @description For `graph`: the user id or principal name to send as; the token's own mailbox when
+       *     missing.
+       */
+      mailbox?: string | null
+      name: string
+      /**
+       * @description Sealed before it is stored and never shown again. For `jmap` with `auth` `token` and
+       *     for `graph` it is the bearer token.
+       */
+      password?: string | null
+      /**
+       * Format: int32
+       * @description 465 for `tls`, 587 otherwise when missing.
+       */
+      port?: number | null
+      /** @description `tls`, `starttls` (the default) or `none` (only towards localhost). */
+      security?: string | null
+      /**
+       * @description For `jmap`: the session address or the server's address; for `graph`: the Graph
+       *     endpoint, Microsoft's when missing.
+       */
+      url?: string | null
+      /** @description Sign-in name; needs `password`. For `account` it replaces the account's own sign-in. */
+      username?: string | null
+    }
+    /** @description Changes to a transport; missing fields stay as they are. */
+    TransportUpdateRequest: {
+      allowed_from?: string[] | null
+      /** @description For `jmap`: `password` or `token`. */
+      auth?: string | null
+      enabled?: boolean | null
+      host?: string | null
+      limits?: components['schemas']['TransportLimitsDto'] | null
+      /** @description For `graph`: the mailbox to send as; empty for the token's own. */
+      mailbox?: string | null
+      name?: string | null
+      /** @description Replaces the stored password or token. */
+      password?: string | null
+      /** Format: int32 */
+      port?: number | null
+      security?: string | null
+      /** @description For `jmap` and `graph`: a new address needs the password or token again. */
+      url?: string | null
+      /** @description An empty name removes the sign-in together with the password. */
+      username?: string | null
+    }
     /** @description The sender trust of a message, from its derived categories row. */
     TrustDto: {
       /** @description The aligned domain, for `aligned`. */
@@ -3744,6 +5980,11 @@ export interface components {
      * @enum {string}
      */
     TrustStateDto: 'aligned' | 'relayed' | 'unverified' | 'unknown'
+    /** @description An undone message and the draft it went back to. */
+    UndoDto: {
+      draft: components['schemas']['DraftDto']
+      outbox: components['schemas']['OutboxDto']
+    }
     /**
      * @description The user's consent to one one-click unsubscribe request. Any URL in the body is ignored: the
      *     server only uses the link stored with the message.
@@ -3794,6 +6035,21 @@ export interface components {
       repeated: boolean
       /** @description The request, as recorded. */
       request: components['schemas']['UnsubscribeRequestDto']
+    }
+    /** @description Changes to a device; what is missing stays as it is. */
+    UpdateDeviceRequest: {
+      /** @description The archives JMAP and DAV may see; `null` means every archive the user can read. */
+      archives?: string[] | null
+      /** @description Whether fetching a whole body marks a message read. */
+      implicit_seen?: boolean | null
+      /** @description The archive IMAP and SMTP serve; `null` clears it, which needs neither protocol to remain. */
+      mail_archive?: string | null
+      /** @description A new name, 1 to 100 characters. */
+      name?: string | null
+      /** @description At least one of `imap`, `smtp`, `jmap`, `dav` and `api`. */
+      protocols?: string[] | null
+      /** @description At least one of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`. */
+      scopes?: string[] | null
     }
     /** @description A user who can sign in. */
     UserDto: {
@@ -3895,6 +6151,46 @@ export interface components {
       enabled?: boolean | null
       events?: string[] | null
       url?: string | null
+    }
+    /** @description A collection's write mode and its open changes. */
+    WriteModeDto: {
+      /**
+       * @description The modes the current user may set now, in order; always holds the current one. Only
+       *     `read_only` for a collection no account owns or one of an import account, and nothing
+       *     else for someone who does not manage the archive.
+       */
+      allowed_modes: string[]
+      collection_id: string
+      /** @description Whether the current user may set `write_through`. */
+      may_write_through: boolean
+      /** @description `read_only`, `held` or `write_through`. */
+      mode: string
+      /**
+       * Format: int64
+       * @description Unix milliseconds of the oldest open change.
+       */
+      oldest_open_at?: number | null
+      /**
+       * Format: int64
+       * @description Changes not yet applied or discarded.
+       */
+      open_changes: number
+    }
+    /** @description A new write mode. */
+    WriteModeRequest: {
+      /** @description Required to turn on `write_through` while changes are open: they are sent upstream. */
+      confirm?: boolean
+      /** @description `read_only`, `held` or `write_through`. */
+      mode: string
+    }
+    /** @description The instance switches, as the API shows them. */
+    WriteSwitches: {
+      /** @description Any write to a mail, contacts or calendar server. */
+      enabled: boolean
+      /** @description Running rule flows; needs `enabled` too. */
+      rules: boolean
+      /** @description Sending mail; needs `enabled` too. */
+      send: boolean
     }
     /** @description Messages of a year. */
     YearCountDto: {
@@ -4021,6 +6317,330 @@ export interface operations {
         }
       }
       /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_capabilities: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountCapabilitiesDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_capabilities: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AccountCapabilitiesRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AccountCapabilitiesDto']
+        }
+      }
+      /** @description An unknown capability, or mail.expunge without mail.delete */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_mail_changes: {
+    parameters: {
+      query?: {
+        /** @description Only changes in these states, comma-separated (`held,sending`); every state by default. */
+        state?: string
+        /** @description At most this many, 100 by default and 500 at most. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangeDto'][]
+        }
+      }
+      /** @description An unknown state */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account, or not readable */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_retention: {
+    parameters: {
+      query?: {
+        /** @description Count for this many days instead of the stored period; nothing is saved. */
+        days?: number
+      }
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RetentionDto']
+        }
+      }
+      /** @description Days out of range */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such account, or not readable */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_retention: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Account id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RetentionRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RetentionDto']
+        }
+      }
+      /** @description Days out of range, or an import account */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or a closed lock for mail.delete */
       403: {
         headers: {
           [name: string]: unknown
@@ -5036,6 +7656,109 @@ export interface operations {
       }
     }
   }
+  list_alias_strategies: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasStrategiesDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  set_alias_strategy: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AliasStrategyRequest']
+      }
+    }
+    responses: {
+      /** @description Every override and default after the change */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AliasStrategiesDto']
+        }
+      }
+      /** @description An unknown scope or strategy, or a key that does not fit the scope */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_aliases: {
     parameters: {
       query?: never
@@ -5890,6 +8613,67 @@ export interface operations {
       }
     }
   }
+  put_default_identity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DefaultIdentityRequest']
+      }
+    }
+    responses: {
+      /** @description Set or cleared */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not an identity the user may send as */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not allowed to send in this archive */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   review: {
     parameters: {
       query?: never
@@ -5962,6 +8746,118 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_drafts: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The user's drafts, most recently saved first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_draft: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewDraftRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description An attachment that is neither in an archived message nor uploaded */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -6150,6 +9046,177 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_identities: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Every identity for owners and admins, the ones the user may send as for others */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IdentityDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_identity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IdentityRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IdentityDto']
+        }
+      }
+      /** @description An invalid field, or activation refused because the transport may not send as the address or its check failed */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  identity_suggestions: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Addresses of accounts, aliases and sent mail that are no identity yet */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IdentitySuggestionDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -6416,6 +9483,63 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_outbox: {
+    parameters: {
+      query?: {
+        /** @description Comma-separated states; every state when missing. */
+        state?: string
+        /** @description Only messages older than this id, for the next page. */
+        before?: string
+        /** @description At most this many, 100 by default and 500 at most. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Newest first: every message for owners and admins, the user's own for others */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto'][]
+        }
+      }
+      /** @description An unknown state or a malformed id */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -6751,6 +9875,450 @@ export interface operations {
       }
     }
   }
+  list_transports: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_transport: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransportRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto']
+        }
+      }
+      /** @description A missing or invalid field */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_audit: {
+    parameters: {
+      query?: {
+        /** @description Only entries of this archive. */
+        archive?: string
+        /** @description Only entries older than this `seq`, for the next page. */
+        before?: number
+        /** @description At most this many, 100 by default and 500 at most. */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AuditEntryDto'][]
+        }
+      }
+      /** @description A malformed archive id */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not the owner */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_item: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Collection id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ItemContentRequest']
+      }
+    }
+    responses: {
+      /** @description The held create; with write_through it is sent upstream, and the item appears once it is there */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto']
+        }
+      }
+      /** @description Not exactly one of event, contact and raw, or a form of the other kind */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A read-only collection, or a closed lock: the instance switch, the account's pim.edit, the grant (editor) or the scope (write:pim) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such collection or message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Invalid iCalendar or vCard, or a form that cannot become one */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  organizing: {
+    parameters: {
+      query?: {
+        /** @description An existing event of the calendar; absent for a new one. */
+        item?: string
+      }
+      header?: never
+      path: {
+        /** @description Calendar id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OrganizingDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such calendar or item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not a calendar of an account */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_write_mode: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Collection id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WriteModeDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such collection */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_write_mode: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Collection id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['WriteModeRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['WriteModeDto']
+        }
+      }
+      /** @description An unknown mode, or a mode other than read_only for a collection no account owns */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or write_through without every lock for pim.edit */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such collection */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description write_through while changes are open, without confirm */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   confirm: {
     parameters: {
       query?: never
@@ -6814,6 +10382,708 @@ export interface operations {
       }
     }
   }
+  list_devices: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The user's own devices, revoked ones too, oldest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DeviceDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_device: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateDeviceRequest']
+      }
+    }
+    responses: {
+      /** @description Made; the app password is in this answer and never again */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CreatedDeviceDto']
+        }
+      }
+      /** @description An empty name, no protocol, no scope, an unknown protocol or scope, or imap or smtp without a mail archive */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A member when `[serve] members` is false */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description An archive the user cannot read */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The last sign-in is too old; sign in again and repeat */
+      428: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  device_setup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Whether this user may make devices, and the listeners to connect to */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DeviceSetupDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  revoke_device: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Device id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Revoked, or it already was. The device stays listed */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such device of this user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_device: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Device id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateDeviceRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DeviceDto']
+        }
+      }
+      /** @description An empty name, no protocol, no scope, an unknown protocol or scope, imap or smtp without a mail archive, or a revoked device */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A raise of rights by a member when `[serve] members` is false */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such device of this user, or an archive the user cannot read */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A raise of rights and the last sign-in is too old; sign in again and repeat */
+      428: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_draft: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  save_draft: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DraftSaveRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description An unknown attachment */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Another save came first; the body is the draft as it is now */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+    }
+  }
+  delete_draft: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with every version */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Never: a user removes only their own drafts */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  upload_attachment: {
+    parameters: {
+      query: {
+        name: string
+        /** @description `application/octet-stream` when missing. */
+        content_type?: string
+      }
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/octet-stream': number[]
+      }
+    }
+    responses: {
+      /** @description The draft with the file attached as a new version */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description An empty name or file */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Larger than 50 MB */
+      413: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  reverse_alias: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReverseAliasRequest']
+      }
+    }
+    responses: {
+      /** @description The `use_reverse_alias` fix of a leak: the recipient is replaced in To, Cc and Bcc by its reverse alias, saved as a new version */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description The draft answers no mail received through an alias, the recipient is not in the draft, or the service gives no reverse alias */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The draft was saved again since that version */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  send_draft: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SendRequest']
+      }
+    }
+    responses: {
+      /** @description Queued; the draft is removed. It leaves when the undo window ends or at send_at */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto']
+        }
+      }
+      /** @description No route, a draft that cannot be built, a message the transport may not carry, or an alias service that gave no reverse alias */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Sending is off, the account does not allow it, or no sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The draft was saved again since that version (ErrorDto), or recipients would see the real mailbox behind an alias and allow_leaks is not set (LeaksDto) */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LeaksDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  draft_versions: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Draft id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Kept versions, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftVersionDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such draft of the user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_event: {
     parameters: {
       query?: {
@@ -6857,6 +11127,187 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_identity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Identity id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed; queued messages keep their identity id */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such identity */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_identity: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Identity id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IdentityUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IdentityDto']
+        }
+      }
+      /** @description An invalid field, or activation refused */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such identity */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_identity_users: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Identity id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IdentityUsersRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IdentityDto']
+        }
+      }
+      /** @description A malformed user id */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such identity or user */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -7030,6 +11481,361 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_item: {
+    parameters: {
+      query?: {
+        /** @description `state.version` of `ItemEditDto`. */
+        version?: number
+        /** @description `state.change` of `ItemEditDto`; with neither, the last writer wins. */
+        change?: string
+        /**
+         * @description For an event the user organizes: `false` deletes it without mailing attendees a
+         *     cancellation.
+         */
+        invitations?: boolean
+      }
+      header?: never
+      path: {
+        /** @description Item id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The held delete; the archive keeps the item and its versions */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A read-only collection or a closed lock */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Something else is served than expected */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  edit_item: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ItemContentRequest']
+      }
+    }
+    responses: {
+      /** @description The held change; with write_through it is sent upstream */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto']
+        }
+      }
+      /** @description Not exactly one of event, contact and raw */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A read-only collection or a closed lock */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Something else is served than `expect` says */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Invalid iCalendar or vCard, a changed UID, or a form that cannot become one */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_edit: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItemEditDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item, or nothing served for it (deleted) */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  rsvp_item_options: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Event item id: an account's copy or the event from mail */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RsvpOptionsDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an event, or its invitation cannot be read */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  rsvp_item: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Event item id: an account's copy or the event from mail */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RsvpRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RsvpDto']
+        }
+      }
+      /** @description An unknown answer, no route for the reply, or a transport the archive may not use */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock: the instance switch, the account's pim.respond, the grant (editor, sender for an iMIP reply), the scope (write:pim, send:mail) or the transport's allowed senders */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such item */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The copy changed since it was read */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an invitation to the user: no attendee address of theirs, their own event, no such occurrence, or an organizer who asked for no answers */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description An iMIP reply is needed but the server does not send mail */
+      503: {
         headers: {
           [name: string]: unknown
         }
@@ -7274,6 +12080,210 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  dismiss_change: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Mail change id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The dismissed change */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangeDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Neither an editor of the archive nor an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such change, or not readable */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The change is not failed, or was dismissed */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  retry_change: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Mail change id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The new held change */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangeDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock for the change's capability */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such change, or not readable */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The change is not failed, or was dismissed */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  change_bulk: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BulkChangeRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangesDto']
+        }
+      }
+      /** @description A malformed change, or more than 500 messages */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock for one of the accounts; nothing is recorded */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message, account or folder */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
       }
     }
   }
@@ -7611,6 +12621,140 @@ export interface operations {
       }
     }
   }
+  change_message: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MessageChangeRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangesDto']
+        }
+      }
+      /** @description A malformed change */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock: the instance switch, the account's capability, the grant (editor) or the scope (write:mail) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message, account or folder */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  forward: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ForwardRequest']
+      }
+    }
+    responses: {
+      /** @description A new draft forwarding the message, with its route */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description An unknown kind */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   get_live: {
     parameters: {
       query?: never
@@ -7806,6 +12950,278 @@ export interface operations {
       }
       /** @description The remote server could not be reached */
       502: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  reply: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReplyRequest']
+      }
+    }
+    responses: {
+      /** @description A new draft answering the message, with its route */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DraftDto']
+        }
+      }
+      /** @description An unknown kind, or a list reply to a message without a list */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  restore: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['MailChangeDto']
+        }
+      }
+      /** @description The folder is in another archive or an import account */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock: the instance switch, mail.append, the grant (editor) or the scope (write:mail) */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message or folder */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  rsvp_message_options: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id of a message carrying an invitation */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RsvpOptionsDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The message holds no invitation */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  rsvp_message: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id of a message carrying an invitation */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RsvpRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RsvpDto']
+        }
+      }
+      /** @description An unknown answer, no route for the reply, or a transport the archive may not use */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock, as for an item */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The copy changed since it was read */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The message holds no invitation to the user */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description An iMIP reply is needed but the server does not send mail */
+      503: {
         headers: {
           [name: string]: unknown
         }
@@ -8095,6 +13511,330 @@ export interface operations {
       }
     }
   }
+  get_outbox: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Outbox message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message the user may see */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Outbox message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Never for the sender or a manager */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message the user may see */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description It already left or ended */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  resend: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Outbox message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResendRequest']
+      }
+    }
+    responses: {
+      /** @description A new outbox message with the same bytes */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto']
+        }
+      }
+      /** @description A recipient not in the original envelope, or the identity may no longer be used */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Sending is not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message the user may see */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description It has not ended yet */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  retry: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Outbox message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Queued again now, for every recipient that has not accepted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OutboxDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Sending is not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message the user may see */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not retrying, failed or uncertain */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  undo: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Outbox message id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cancelled before it left, and back as a draft */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UndoDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not the user who queued it */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message the user may see */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description It is no longer waiting */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   join: {
     parameters: {
       query?: never
@@ -8281,6 +14021,96 @@ export interface operations {
       }
     }
   }
+  edit_person_card: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Person id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ItemContentRequest']
+      }
+    }
+    responses: {
+      /** @description The held change to the person's primary card (their card in the address book stored first among the editable ones), or a new card in the archive's first editable address book when they have none */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto']
+        }
+      }
+      /** @description Not a contact form or raw vCard */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A closed lock */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such person */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No editable address book, or something else served than `expect` says */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Invalid vCard or form */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   split: {
     parameters: {
       query?: never
@@ -8335,6 +14165,202 @@ export interface operations {
       }
       /** @description No such person */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  list_changes: {
+    parameters: {
+      query?: {
+        /**
+         * @description Comma-separated states among `held`, `sending`, `conflict`, `rejected`; every open
+         *     state by default.
+         */
+        state?: string
+        /** @description Only this archive's. */
+        archive?: string
+        /** @description Only this collection's. */
+        collection?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Open changes of the archives the user may read, oldest first, at most 500 per archive */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto'][]
+        }
+      }
+      /** @description An unknown state */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Malformed archive or collection id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  change_diff: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Change id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ChangeDiffDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such change, or one in an archive the user may not read */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  resolve_change: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Change id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResolveRequest']
+      }
+    }
+    responses: {
+      /** @description The decided change, or for keep_mine the new change that takes its place */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PimChangeDto']
+        }
+      }
+      /** @description An unknown action */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description A read-only collection or a closed lock */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such change */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The change is not in a state the action applies to (being sent, applied, or retry of a change that was not refused) */
+      409: {
         headers: {
           [name: string]: unknown
         }
@@ -8761,6 +14787,359 @@ export interface operations {
       }
     }
   }
+  list_instance_transports: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_instance_transport: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransportRequest']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto']
+        }
+      }
+      /** @description A missing or invalid field, or an account transport */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_transport: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transport id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description An identity still uses it */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such transport */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  update_transport: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transport id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransportUpdateRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto']
+        }
+      }
+      /** @description An invalid field, or a new host without the password again */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such transport */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  check_transport: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transport id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportCheckDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such transport */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server does not send mail */
+      503: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_transport_grants: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transport id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransportGrantsRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TransportDto']
+        }
+      }
+      /** @description An archive transport, or a removed archive still has an identity using it */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such transport or archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   list_users: {
     parameters: {
       query?: never
@@ -8983,7 +15362,7 @@ export interface operations {
           'application/json': components['schemas']['ErrorDto']
         }
       }
-      /** @description Not an owner or admin, or an admin changing an owner */
+      /** @description Not an owner or admin, an admin changing an owner, taking away an editor or sender grant, or changing the email or password of someone with one */
       403: {
         headers: {
           [name: string]: unknown
@@ -9003,6 +15382,137 @@ export interface operations {
       }
       /** @description The email is taken */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  put_grant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User id */
+        id: string
+        /** @description Archive id */
+        archive: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GrantRequest']
+      }
+    }
+    responses: {
+      /** @description Granted with this role */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description An unknown role */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or an admin giving editor or sender */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such user or archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  delete_grant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User id */
+        id: string
+        /** @description Archive id */
+        archive: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description No longer granted; idempotent */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not an owner or admin, or an admin changing an owner or a writing grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such user or archive */
+      404: {
         headers: {
           [name: string]: unknown
         }

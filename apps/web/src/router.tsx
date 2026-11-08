@@ -18,6 +18,7 @@ import { manages } from './lib/roles.ts'
 import {
   parseArchivesSettingsSearch,
   parseCalendarSearch,
+  parseEventSearch,
   parseLabelRouteSearch,
   parseMailSearch,
   parsePeopleSearch,
@@ -165,6 +166,12 @@ const webhooksSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/webhooks-page.tsx'), 'WebhooksPage'),
 })
 
+const devicesSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'devices',
+  component: lazyRouteComponent(() => import('./settings/devices-page.tsx'), 'DevicesPage'),
+})
+
 const aliasesSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'aliases',
@@ -177,6 +184,13 @@ const smtpSettingsRoute = createRoute({
   path: 'smtp',
   beforeLoad: managersOnly,
   component: lazyRouteComponent(() => import('./settings/smtp-page.tsx'), 'SmtpPage'),
+})
+
+const sendingSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'sending',
+  beforeLoad: managersOnly,
+  component: lazyRouteComponent(() => import('./settings/sending-page.tsx'), 'SendingPage'),
 })
 
 const profileSettingsRoute = createRoute({
@@ -198,6 +212,12 @@ const aboutSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/about-page.tsx'), 'AboutPage'),
 })
 
+const editsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'contacts-calendars',
+  component: lazyRouteComponent(() => import('./settings/edits-page.tsx'), 'EditsPage'),
+})
+
 const readingSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'reading',
@@ -215,6 +235,7 @@ const itemRoute = createRoute({
 const eventRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/events/$groupId',
+  validateSearch: parseEventSearch,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: lazyRouteComponent(() => import('./calendar/event-page.tsx'), 'EventPage'),
   errorComponent: ServerFailed,
@@ -273,6 +294,12 @@ const calendarRoute = createRoute({
   component: lazyRouteComponent(() => import('./calendar/calendar-pane.tsx'), 'CalendarPane'),
 })
 
+const outboxRoute = createRoute({
+  getParentRoute: () => archiveRoute,
+  path: 'outbox',
+  component: lazyRouteComponent(() => import('./mail/outbox-page.tsx'), 'OutboxPage'),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
@@ -289,8 +316,11 @@ const routeTree = rootRoute.addChildren([
     integritySettingsRoute,
     webhooksSettingsRoute,
     aliasesSettingsRoute,
+    devicesSettingsRoute,
     smtpSettingsRoute,
+    sendingSettingsRoute,
     categoriesSettingsRoute,
+    editsSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,
     aboutSettingsRoute,
@@ -302,6 +332,7 @@ const routeTree = rootRoute.addChildren([
     searchRoute,
     peopleRoute,
     calendarRoute,
+    outboxRoute,
   ]),
 ])
 

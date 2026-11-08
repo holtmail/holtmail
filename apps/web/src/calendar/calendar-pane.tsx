@@ -46,6 +46,7 @@ import {
 
 import { useHotkeys } from '../hooks/use-hotkeys.ts'
 import { useNow } from '../hooks/use-now.ts'
+import { NewItemButton } from '../items/new-item-button.tsx'
 import {
   byDay,
   type CalendarView,
@@ -202,7 +203,13 @@ export function CalendarPane() {
 
   const open = useCallback(() => {
     const current = ordered.find((o) => occurrenceKey(o) === selected)
-    if (current) void navigate({ to: '/events/$groupId', params: { groupId: current.group_id } })
+    if (current) {
+      void navigate({
+        to: '/events/$groupId',
+        params: { groupId: current.group_id },
+        search: current.recurrence_id ? { occ: current.recurrence_id } : {},
+      })
+    }
   }, [ordered, selected, navigate])
 
   const body = useRef<HTMLDivElement>(null)
@@ -307,6 +314,7 @@ export function CalendarPane() {
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
+        <NewItemButton archiveId={archiveId} kind="event" day={anchor} />
         <CalendarsMenu
           calendars={calendars.length > 0 ? calendars : []}
           hidden={hidden}
@@ -534,6 +542,7 @@ function EventLink({
       id={domId(key)}
       to="/events/$groupId"
       params={{ groupId: o.group_id }}
+      search={o.recurrence_id ? { occ: o.recurrence_id } : {}}
       data-selected={context.selected === key ? '' : undefined}
       onFocus={() => context.onSelect(key)}
       title={o.title ?? t.untitled}

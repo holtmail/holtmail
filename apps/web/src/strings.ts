@@ -7,8 +7,19 @@ import type {
   UnsubscribeOutcome,
 } from '@holtmail/api-client'
 
+import { deviceStrings } from './strings-devices.ts'
+import { editStrings } from './strings-edits.ts'
+import { currentLocale, writingStrings } from './strings-writing.ts'
+
+const writing = writingStrings[currentLocale()]
+const edits = editStrings[currentLocale()]
+const devices = deviceStrings[currentLocale()]
+
 export const strings = {
   appName: 'Holtmail',
+  writing,
+  edits,
+  devices,
   landmarks: {
     folders: 'Folders',
     messages: 'Messages',
@@ -207,6 +218,14 @@ export const strings = {
       openLink: 'Open the main link of the open message, else its tracking link',
       unsubscribe: 'Unsubscribe from the open message: one-click when offered, else its link',
       category: 'Change the category of the open message',
+      reply: writing.shortcuts.reply,
+      replyAll: writing.shortcuts.replyAll,
+      forward: writing.shortcuts.forward,
+      compose: writing.shortcuts.compose,
+      toggleRead: writing.shortcuts.toggleRead,
+      toggleFlag: writing.shortcuts.toggleFlag,
+      move: writing.shortcuts.move,
+      trash: writing.shortcuts.trash,
     },
   },
   theme: {

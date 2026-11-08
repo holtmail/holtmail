@@ -2,8 +2,11 @@ import {
   type Archive,
   archivesQuery,
   createUser,
+  deleteGrant,
   deleteUser,
+  type GrantRole,
   type Person,
+  putGrant,
   type Role,
   sessionQuery,
   updateUser,
@@ -40,6 +43,7 @@ import { Field, FormError, PasswordField, SubmitButton } from '../auth/field.tsx
 import { authErrorMessage, initials, minPasswordLength, passwordShortBy } from '../lib/auth.ts'
 import { formatFullDate } from '../lib/format.ts'
 import { manages } from '../lib/roles.ts'
+import { grantableRoles, isGrantRole, mayChangeGrant } from '../lib/writing.ts'
 import { ConfirmDialog, TextDialog } from '../manage/confirm-dialog.tsx'
 import { strings } from '../strings.ts'
 import { SettingsPage } from './settings-layout.tsx'
@@ -180,7 +184,7 @@ function PersonRow({
             ))}
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
-          {role === 'member' && (
+          {role !== 'owner' && (
             <DropdownMenuItem onSelect={() => setDialog('access')}>
               <LibraryIcon />
               {t.access}
@@ -206,6 +210,7 @@ function PersonRow({
         onOpenChange={(open) => setDialog(open ? 'access' : null)}
         person={person}
         archives={archives}
+        actorRole={actorIsOwner ? 'owner' : 'admin'}
       />
       <TextDialog
         open={dialog === 'password'}
@@ -275,35 +280,116 @@ function AccessDialog({
   onOpenChange,
   person,
   archives,
+  actorRole,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   person: Person
   archives: Archive[]
+  actorRole: string | undefined
 }) {
   const queryClient = useQueryClient()
-  const [selected, setSelected] = useState(person.archives)
+  const g = strings.writing.grants
+  const current = (): Record<string, GrantRole | 'none'> =>
+    Object.fromEntries(
+      archives.map((a) => {
+        const role = person.grants.find((grant) => grant.archive === a.id)?.role
+        return [a.id, role && isGrantRole(role) ? role : 'none']
+      }),
+    )
+  const [wanted, setWanted] = useState(current)
+  const isAdmin = person.user.role === 'admin'
+  const grantable = grantableRoles(actorRole)
   const mutation = useMutation({
-    mutationFn: () => updateUser(person.user.id, { archives: selected }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['users'] })
-      onOpenChange(false)
+    mutationFn: async () => {
+      const before = current()
+      await Promise.all(
+        archives
+          .filter((archive) => (wanted[archive.id] ?? 'none') !== before[archive.id])
+          .map((archive) => {
+            const next = wanted[archive.id] ?? 'none'
+            return next === 'none'
+              ? deleteGrant(person.user.id, archive.id)
+              : putGrant(person.user.id, archive.id, next)
+          }),
+      )
     },
+    onSuccess: () => onOpenChange(false),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
+  const choices: (GrantRole | 'none')[] = isAdmin
+    ? ['reader', 'editor', 'sender']
+    : ['none', 'reader', 'editor', 'sender']
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (next) setSelected(person.archives)
+        if (next) setWanted(current())
         onOpenChange(next)
       }}
     >
-      <DialogContent>
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{t.access}</DialogTitle>
-          <DialogDescription>{person.user.name}</DialogDescription>
+          <DialogDescription>
+            {person.user.name}. {isAdmin ? g.adminNote : ''}{' '}
+            {actorRole !== 'owner' ? g.ownerOnly : ''}
+          </DialogDescription>
         </DialogHeader>
-        <ArchiveChecklist archives={archives} selected={selected} onChange={setSelected} />
+        {archives.length === 0 ? (
+          <p className="text-sm text-fg-subtle">{t.noArchives}</p>
+        ) : (
+          <ul className="grid divide-y divide-border border-y border-border">
+            {archives.map((archive) => {
+              const before = current()[archive.id]
+              const locked = !mayChangeGrant(actorRole, before === 'none' ? undefined : before)
+              const value = wanted[archive.id] ?? 'none'
+              return (
+                <li key={archive.id} className="flex items-center gap-3 py-2">
+                  <span className="min-w-0 flex-1 truncate text-sm">{archive.name}</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={locked}
+                        aria-label={g.role(archive.name)}
+                      >
+                        {value === 'none' ? g.none : g.roles[value]}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72">
+                      <DropdownMenuRadioGroup
+                        value={value}
+                        onValueChange={(next) =>
+                          setWanted((w) => ({
+                            ...w,
+                            [archive.id]: next === 'none' || isGrantRole(next) ? next : 'none',
+                          }))
+                        }
+                      >
+                        {choices.map((choice) => (
+                          <DropdownMenuRadioItem
+                            key={choice}
+                            value={choice}
+                            disabled={choice !== 'none' && !grantable.includes(choice)}
+                          >
+                            <span className="grid">
+                              <span>{choice === 'none' ? g.none : g.roles[choice]}</span>
+                              {choice !== 'none' && (
+                                <span className="text-xs text-fg-subtle">{g.hints[choice]}</span>
+                              )}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              )
+            })}
+          </ul>
+        )}
         <FormError message={mutation.isError ? authErrorMessage(mutation.error) : undefined} />
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

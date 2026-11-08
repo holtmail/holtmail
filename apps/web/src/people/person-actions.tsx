@@ -1,4 +1,5 @@
 import {
+  collectionsQuery,
   contactsExportUrl,
   joinPeople,
   peopleInfiniteQuery,
@@ -19,11 +20,13 @@ import {
 } from '@holtmail/ui'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { DownloadIcon, MergeIcon, SearchIcon, SplitIcon, Undo2Icon } from 'lucide-react'
+import { DownloadIcon, MergeIcon, PencilIcon, SearchIcon, SplitIcon, Undo2Icon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 
 import { FormError } from '../auth/field.tsx'
+import { EditDialog } from '../items/edit-dialog.tsx'
 import { authErrorMessage } from '../lib/auth.ts'
+import { cardEditable, contactDraft } from '../lib/edits.ts'
 import { formatFullDate } from '../lib/format.ts'
 import {
   canSplit,
@@ -61,10 +64,35 @@ export function PersonActions({ detail }: { detail: PersonDetail }) {
   const user = useQuery(sessionQuery).data
   const [splitting, setSplitting] = useState(false)
   const [joining, setJoining] = useState(false)
+  const [editing, setEditing] = useState(false)
   const { person } = detail
   const canManage = manages(user?.role)
+  const collections = useQuery(collectionsQuery(person.archive_id)).data
+  const editable = cardEditable(detail, collections)
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label={t.actions}>
+      {editable && (
+        <Button size="sm" onClick={() => setEditing(true)}>
+          <PencilIcon />
+          {strings.edits.actions.editCard}
+        </Button>
+      )}
+      {editing && (
+        <EditDialog
+          target={{
+            mode: 'person',
+            archiveId: person.archive_id,
+            personId: person.id,
+            itemId: detail.primary_card,
+            contact: contactDraft({
+              full_name: person.name ?? null,
+              emails: person.emails.map((value) => ({ value, kinds: [] })),
+              phones: person.phones.map((value) => ({ value, kinds: [] })),
+            }),
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
       {canManage && detail.cards.length > 1 && (
         <Button size="sm" onClick={() => setSplitting(true)}>
           <SplitIcon />

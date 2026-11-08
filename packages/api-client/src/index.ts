@@ -107,6 +107,12 @@ export type ChangedInstance = Schemas['ChangedInstanceDto']
 export type ItemHit = Schemas['ItemHitDto']
 export type ItemSearchResponse = Schemas['ItemSearchResponse']
 export type PersonOverride = Schemas['PersonOverrideDto']
+export type Device = Schemas['DeviceDto']
+export type CreatedDevice = Schemas['CreatedDeviceDto']
+export type DeviceSetup = Schemas['DeviceSetupDto']
+export type DeviceServer = Schemas['DeviceServerDto']
+export type CreateDeviceRequest = Schemas['CreateDeviceRequest']
+export type UpdateDeviceRequest = Schemas['UpdateDeviceRequest']
 export type AliasProvider = Schemas['AliasProviderDto']
 export type AliasCapabilities = Schemas['CapabilitiesDto']
 export type AliasService = Schemas['AliasServiceDto']
@@ -241,13 +247,32 @@ export const client = createClient<paths>({ baseUrl: '' })
 export class ApiError extends Error {
   readonly status: number
   readonly retryAfter: number | undefined
+  /** The parsed error body, when the server sent one. */
+  readonly body: unknown
 
-  constructor(status: number, message: string, retryAfter?: number) {
+  constructor(status: number, message: string, retryAfter?: number, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfter = retryAfter
+    this.body = body
   }
+}
+
+/** The leaks of a send refused with `409` because recipients would see the real mailbox behind
+ * an alias; `null` for any other error. */
+export function refusedLeaks(error: unknown): Leak[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  const body = error.body
+  if (typeof body !== 'object' || body === null || !('leaks' in body)) return null
+  const leaks: unknown = body.leaks
+  return Array.isArray(leaks) && leaks.every(isLeak) ? leaks : null
+}
+
+function isLeak(value: unknown): value is Leak {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = new Map(Object.entries(value))
+  return ['recipient', 'field', 'reason', 'fix'].every((k) => typeof fields.get(k) === 'string')
 }
 
 export const isUnauthorized = (error: unknown): boolean =>
@@ -274,6 +299,7 @@ function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T
       result.response.status,
       errorMessage(result.error, result.response),
       readRetryAfter(result.response),
+      result.error,
     )
   }
   return result.data
@@ -286,7 +312,7 @@ async function failure(response: Response): Promise<ApiError> {
   } catch {
     body = undefined
   }
-  return new ApiError(response.status, errorMessage(body, response), readRetryAfter(response))
+  return new ApiError(response.status, errorMessage(body, response), readRetryAfter(response), body)
 }
 
 async function post(path: string, body: unknown): Promise<Response> {
@@ -454,6 +480,15 @@ export const testWebhook = async (id: string) =>
   done(await client.POST('/api/webhooks/{id}/test', { ...archivePath(id), headers: json }))
 
 const aliasPath = (id: string, address: string) => ({ params: { path: { id, address } } })
+
+export const createDevice = async (request: CreateDeviceRequest) =>
+  unwrap(await client.POST('/api/devices', { body: request }))
+
+export const updateDevice = async (id: string, request: UpdateDeviceRequest) =>
+  unwrap(await client.PATCH('/api/devices/{id}', { ...archivePath(id), body: request }))
+
+export const revokeDevice = async (id: string) =>
+  done(await client.DELETE('/api/devices/{id}', archivePath(id)))
 
 export const addAliasService = async (archiveId: string, request: NewAliasServiceRequest) =>
   unwrap(
@@ -759,6 +794,17 @@ export const webhookDeliveriesQuery = (id: string) =>
       unwrap(await client.GET('/api/webhooks/{id}/deliveries', { ...archivePath(id), signal })),
   })
 
+export const devicesQuery = queryOptions({
+  queryKey: ['devices'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/devices', { signal })),
+})
+
+export const deviceSetupQuery = queryOptions({
+  queryKey: ['device-setup'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/devices/setup', { signal })),
+  staleTime: Infinity,
+})
+
 export const aliasProvidersQuery = queryOptions({
   queryKey: ['alias-providers'],
   queryFn: async ({ signal }) => unwrap(await client.GET('/api/alias-providers', { signal })),
@@ -1054,3 +1100,598 @@ export const personQuery = (id: string) =>
     queryFn: async ({ signal }) =>
       unwrap(await client.GET('/api/people/{id}', { params: { path: { id } }, signal })),
   })
+
+export type ArchiveRights = Schemas['ArchiveRightsDto']
+export type GrantRole = 'reader' | 'editor' | 'sender'
+export type Grant = Schemas['GrantDto']
+export type Capability =
+  | 'mail.flags'
+  | 'mail.move'
+  | 'mail.delete'
+  | 'mail.expunge'
+  | 'mail.append'
+  | 'mail.send'
+  | 'pim.edit'
+  | 'pim.respond'
+export type AccountCapabilities = Schemas['AccountCapabilitiesDto']
+export type WriteSwitches = Schemas['WriteSwitches']
+export type Transport = Schemas['TransportDto']
+export type TransportLimits = Schemas['TransportLimitsDto']
+export type TransportRequest = Schemas['TransportRequest']
+export type TransportUpdateRequest = Schemas['TransportUpdateRequest']
+export type TransportCheck = Schemas['TransportCheckDto']
+export type TransportSecurity = 'tls' | 'starttls' | 'none'
+export type Identity = Schemas['IdentityDto']
+export type IdentityRequest = Schemas['IdentityRequest']
+export type IdentityUpdateRequest = Schemas['IdentityUpdateRequest']
+export type IdentitySuggestion = Schemas['IdentitySuggestionDto']
+export type Mailbox = Schemas['MailboxDto']
+export type Draft = Schemas['DraftDto']
+export type DraftPayload = Schemas['DraftPayload']
+export type DraftAttachment = Schemas['DraftAttachment']
+export type DraftVersion = Schemas['DraftVersionDto']
+export type Route = Schemas['RouteDto']
+export type RouteReason = Schemas['RouteReasonDto']
+export type RouteError = Schemas['RouteErrorDto']
+export type Leak = Schemas['LeakDto']
+export type AliasStrategies = Schemas['AliasStrategiesDto']
+export type Outbox = Schemas['OutboxDto']
+export type OutboxRecipient = Schemas['OutboxRecipientDto']
+export type OutboxState =
+  | 'draft'
+  | 'queued'
+  | 'sending'
+  | 'retrying'
+  | 'sent'
+  | 'failed'
+  | 'uncertain'
+  | 'bounced'
+  | 'cancelled'
+export type Undo = Schemas['UndoDto']
+export type ReplyKind = 'sender' | 'all' | 'list'
+export type ForwardKind = 'inline' | 'attachment'
+
+const idPath = (id: string) => ({ params: { path: { id } } })
+
+/** A fresh `Idempotency-Key`: send the same key again only to repeat the same request. Works
+ * outside secure contexts too (plain HTTP on a LAN), where `crypto.randomUUID` is missing. */
+export const idempotencyKey = (): string => {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+export const capabilitiesQuery = (accountId: string) =>
+  queryOptions({
+    queryKey: ['accounts', accountId, 'capabilities'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/accounts/{id}/capabilities', { ...idPath(accountId), signal })),
+  })
+
+/** Replaces the account's capabilities: every one listed is on, the rest off. */
+export const setCapabilities = async (accountId: string, capabilities: readonly Capability[]) =>
+  unwrap(
+    await client.PUT('/api/accounts/{id}/capabilities', {
+      ...idPath(accountId),
+      body: { capabilities: [...capabilities] },
+    }),
+  )
+
+export const putGrant = async (userId: string, archiveId: string, role: GrantRole) =>
+  done(
+    await client.PUT('/api/users/{id}/grants/{archive}', {
+      params: { path: { id: userId, archive: archiveId } },
+      body: { role },
+    }),
+  )
+
+export const deleteGrant = async (userId: string, archiveId: string) =>
+  done(
+    await client.DELETE('/api/users/{id}/grants/{archive}', {
+      params: { path: { id: userId, archive: archiveId } },
+      headers: json,
+    }),
+  )
+
+export const transportsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'transports'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/archives/{id}/transports', { ...idPath(archiveId), signal })),
+  })
+
+export const instanceTransportsQuery = queryOptions({
+  queryKey: ['transports'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/transports', { signal })),
+})
+
+export const createTransport = async (archiveId: string, request: TransportRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/transports', { ...idPath(archiveId), body: request }),
+  )
+
+export const createInstanceTransport = async (request: TransportRequest) =>
+  unwrap(await client.POST('/api/transports', { body: request }))
+
+export const updateTransport = async (id: string, request: TransportUpdateRequest) =>
+  unwrap(await client.PATCH('/api/transports/{id}', { ...idPath(id), body: request }))
+
+export const deleteTransport = async (id: string) =>
+  done(await client.DELETE('/api/transports/{id}', { ...idPath(id), headers: json }))
+
+export const setTransportGrants = async (id: string, archives: readonly string[]) =>
+  done(
+    await client.PUT('/api/transports/{id}/grants', {
+      ...idPath(id),
+      body: { archives: [...archives] },
+    }),
+  )
+
+/** Signs in to the transport's server without sending anything. */
+export const checkTransport = async (id: string) =>
+  unwrap(await client.POST('/api/transports/{id}/check', { ...idPath(id), headers: json }))
+
+export const identitiesQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'identities'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/archives/{id}/identities', { ...idPath(archiveId), signal })),
+  })
+
+export const identitySuggestionsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'identities', 'suggestions'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/identities/suggestions', {
+          ...idPath(archiveId),
+          signal,
+        }),
+      ),
+  })
+
+export const createIdentity = async (archiveId: string, request: IdentityRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/identities', { ...idPath(archiveId), body: request }),
+  )
+
+export const updateIdentity = async (id: string, request: IdentityUpdateRequest) =>
+  unwrap(await client.PATCH('/api/identities/{id}', { ...idPath(id), body: request }))
+
+export const deleteIdentity = async (id: string) =>
+  done(await client.DELETE('/api/identities/{id}', { ...idPath(id), headers: json }))
+
+export const setIdentityUsers = async (id: string, users: readonly string[]) =>
+  done(
+    await client.PUT('/api/identities/{id}/users', { ...idPath(id), body: { users: [...users] } }),
+  )
+
+export const setDefaultIdentity = async (archiveId: string, identity: string | null) =>
+  done(
+    await client.PUT('/api/archives/{id}/default-identity', {
+      ...idPath(archiveId),
+      body: { identity },
+    }),
+  )
+
+export const draftsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'drafts'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/archives/{id}/drafts', { ...idPath(archiveId), signal })),
+  })
+
+export const draftQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['drafts', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/drafts/{id}', { ...idPath(id), signal })),
+  })
+
+export const createDraft = async (archiveId: string, payload: DraftPayload) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/drafts', { ...idPath(archiveId), body: { payload } }),
+  )
+
+/** Saves a new version. `conflict` is true when another save came first; `draft` is then the
+ * draft as the server has it, and nothing of `payload` was kept. */
+function isDraft(value: unknown): value is Draft {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = new Map(Object.entries(value))
+  return (
+    typeof fields.get('id') === 'string' &&
+    typeof fields.get('version') === 'number' &&
+    typeof fields.get('payload') === 'object'
+  )
+}
+
+export async function saveDraft(
+  id: string,
+  version: number,
+  payload: DraftPayload,
+): Promise<{ draft: Draft; conflict: boolean }> {
+  const result = await client.PUT('/api/drafts/{id}', { ...idPath(id), body: { version, payload } })
+  const error: unknown = result.error
+  if (result.response.status === 409 && isDraft(error)) return { draft: error, conflict: true }
+  return { draft: unwrap(result), conflict: false }
+}
+
+export const deleteDraft = async (id: string) =>
+  done(await client.DELETE('/api/drafts/{id}', { ...idPath(id), headers: json }))
+
+/** Uploads a file into the draft; resolves with the draft at its new version. */
+export async function uploadDraftAttachment(
+  id: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<Draft> {
+  const params = new URLSearchParams({ name: file.name })
+  if (file.type) params.set('content_type', file.type)
+  const response = await fetch(`/api/drafts/${encode(id)}/attachments?${params}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!response.ok) throw await failure(response)
+  const body: unknown = await response.json()
+  if (!isDraft(body)) throw new ApiError(500, 'malformed draft')
+  return body
+}
+
+/** A new draft answering the message, with its recipients, quote and route filled in. */
+export const replyToMessage = async (messageId: string, kind: ReplyKind, identity?: string) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/reply', {
+      ...idPath(messageId),
+      body: { kind, identity: identity ?? null },
+    }),
+  )
+
+/** A new draft forwarding the message inline or as an attached `.eml`. */
+export const forwardMessage = async (messageId: string, kind: ForwardKind, identity?: string) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/forward', {
+      ...idPath(messageId),
+      body: { kind, identity: identity ?? null },
+    }),
+  )
+
+/** Queues the draft. The same `key` makes a repeated request answer with the first result. */
+export const sendDraft = async (
+  id: string,
+  request: { version?: number; send_at?: number | null; allow_leaks?: boolean },
+  key: string,
+) =>
+  unwrap(
+    await client.POST('/api/drafts/{id}/send', {
+      ...idPath(id),
+      body: request,
+      headers: { 'Idempotency-Key': key },
+    }),
+  )
+
+/** Applies the `use_reverse_alias` fix of a leak: the server replaces `recipient` in the draft by
+ * its reverse alias through the thread's alias and saves a new version. */
+export const reverseAliasFix = async (id: string, version: number, recipient: string) =>
+  unwrap(
+    await client.POST('/api/drafts/{id}/reverse-alias', {
+      ...idPath(id),
+      body: { version, recipient },
+    }),
+  )
+
+/** Reply strategies of an archive's aliases: overrides and each provider's default. */
+export const aliasStrategiesQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'alias-strategies'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/alias-strategies', {
+          ...idPath(archiveId),
+          signal,
+        }),
+      ),
+  })
+
+/** Sets the reply strategy override of an alias, a domain or a provider; `null` removes it. */
+export const setAliasStrategy = async (
+  archiveId: string,
+  scope: 'alias' | 'domain' | 'service',
+  key: string,
+  strategy: 'reverse_alias' | 'direct' | 'reply_header' | null,
+) =>
+  unwrap(
+    await client.PUT('/api/archives/{id}/alias-strategies', {
+      ...idPath(archiveId),
+      body: { scope, key, strategy },
+    }),
+  )
+
+export const outboxQuery = (archiveId: string, states?: readonly OutboxState[]) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'outbox', states?.join(',') ?? null],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/archives/{id}/outbox', {
+          params: {
+            path: { id: archiveId },
+            query: states && states.length > 0 ? { state: states.join(',') } : {},
+          },
+          signal,
+        }),
+      ),
+    refetchInterval: (query) =>
+      query.state.data?.some((entry) => ['queued', 'sending', 'retrying'].includes(entry.state))
+        ? 2_000
+        : 30_000,
+  })
+
+export const outboxEntryQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['outbox', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/outbox/{id}', { ...idPath(id), signal })),
+  })
+
+/** Cancels a message still waiting and gives it back as a new draft. */
+export const undoOutbox = async (id: string) =>
+  unwrap(await client.POST('/api/outbox/{id}/undo', { ...idPath(id), headers: json }))
+
+export const cancelOutbox = async (id: string) =>
+  unwrap(await client.POST('/api/outbox/{id}/cancel', { ...idPath(id), headers: json }))
+
+export const retryOutbox = async (id: string, key: string) =>
+  unwrap(
+    await client.POST('/api/outbox/{id}/retry', {
+      ...idPath(id),
+      headers: { ...json, 'Idempotency-Key': key },
+    }),
+  )
+
+/** Sends the bytes again to `recipients` of the original envelope, the refused ones when
+ * missing. */
+export const resendOutbox = async (id: string, key: string, recipients?: readonly string[]) =>
+  unwrap(
+    await client.POST('/api/outbox/{id}/resend', {
+      ...idPath(id),
+      body: { recipients: recipients ? [...recipients] : null },
+      headers: { 'Idempotency-Key': key },
+    }),
+  )
+
+export type MailChange = Schemas['MailChangeDto']
+export type MailChangeOp = Schemas['MailChangeOp']
+export type MailChanges = Schemas['MailChangesDto']
+export type MailChangeSkip = Schemas['SkippedDto']
+export type MailChangeState = 'held' | 'sending' | 'applied' | 'superseded_by_server' | 'failed'
+export type Retention = Schemas['RetentionDto']
+
+/** Records a change to one message on its servers, in every account it is in unless `account`
+ * narrows it. The change is held and sent later; the answer lists what was recorded and what
+ * needed nothing. */
+export const changeMessage = async (id: string, op: MailChangeOp, account?: string) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/changes', {
+      ...idPath(id),
+      body: { op, account: account ?? null },
+    }),
+  )
+
+/** The same change to up to 500 messages; nothing is recorded when one account refuses. */
+export const changeMessages = async (
+  messages: readonly string[],
+  op: MailChangeOp,
+  account?: string,
+) =>
+  unwrap(
+    await client.POST('/api/mail/changes', {
+      body: { messages: [...messages], op, account: account ?? null },
+    }),
+  )
+
+/** Puts the archived bytes of a message back into a folder on its server (`mail.append`). */
+export const restoreMessage = async (id: string, folder: string) =>
+  unwrap(await client.POST('/api/messages/{id}/restore', { ...idPath(id), body: { folder } }))
+
+/** Asks again for a failed change: the failed one is dismissed and a new held one returned. */
+export const retryMailChange = async (id: string) =>
+  unwrap(await client.POST('/api/mail-changes/{id}/retry', { ...idPath(id), headers: json }))
+
+/** Hides a failed change from the reader. */
+export const dismissMailChange = async (id: string) =>
+  unwrap(await client.POST('/api/mail-changes/{id}/dismiss', { ...idPath(id), headers: json }))
+
+/** The account's retention; with `days`, a dry run counting for that period instead. */
+export const retentionQuery = (accountId: string, days?: number) =>
+  queryOptions({
+    queryKey: ['accounts', accountId, 'retention', days ?? null],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/accounts/{id}/retention', {
+          params: { path: { id: accountId }, query: days === undefined ? {} : { days } },
+          signal,
+        }),
+      ),
+  })
+
+/** Sets the account's retention in days after arrival; `null` keeps everything on the server. */
+export const setRetention = async (accountId: string, days: number | null) =>
+  unwrap(await client.PUT('/api/accounts/{id}/retention', { ...idPath(accountId), body: { days } }))
+
+export type EventForm = Schemas['EventFormDto']
+export type ContactForm = Schemas['ContactFormDto']
+export type AlarmForm = Schemas['AlarmFormDto']
+export type PersonForm = Schemas['PersonFormDto']
+export type Labeled = Schemas['LabeledDto']
+export type NameParts = Schemas['NamePartsDto']
+export type PostalAddress = Schemas['PostalAddressDto']
+export type ItemContentRequest = Schemas['ItemContentRequest']
+export type ServedState = Schemas['ServedStateDto']
+export type ItemEdit = Schemas['ItemEditDto']
+export type LocalEdit = Schemas['LocalEditDto']
+export type PimChange = Schemas['PimChangeDto']
+export type PimChangeState = 'held' | 'sending' | 'conflict' | 'rejected'
+export type PimResolution = 'keep_mine' | 'take_theirs' | 'discard' | 'retry'
+export type TimelineEntry = Schemas['TimelineEntryDto']
+export type WriteModeState = Schemas['WriteModeDto']
+export type WriteMode = 'read_only' | 'held' | 'write_through'
+export type ChangeDiff = Schemas['ChangeDiffDto']
+export type FieldDiff = Schemas['FieldDiffDto']
+
+/** What is served for an item as text, the form read from it and the state to pass back as
+ * `expect`. */
+export const itemEditQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['items', id, 'edit'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/items/{id}/edit', { ...idPath(id), signal })),
+    staleTime: 0,
+  })
+
+/** Records a held create in the collection from a form, raw text or a message's sender. */
+export const createItem = async (collectionId: string, request: ItemContentRequest) =>
+  unwrap(
+    await client.POST('/api/collections/{id}/items', { ...idPath(collectionId), body: request }),
+  )
+
+/** Records a held edit of the item; `409` when `expect` no longer matches what is served. */
+export const editItem = async (id: string, request: ItemContentRequest) =>
+  unwrap(await client.PUT('/api/items/{id}/content', { ...idPath(id), body: request }))
+
+/** Records a held delete of the item; with `expect`, refused with `409` when something else is
+ * served now. For an event the user organizes, `invitations: false` deletes it without mailing
+ * attendees a cancellation. The archive keeps the item and its versions. */
+export const deleteItem = async (
+  id: string,
+  options: { expect?: ServedState; invitations?: boolean } = {},
+) =>
+  unwrap(
+    await client.DELETE('/api/items/{id}', {
+      params: {
+        path: { id },
+        query: {
+          version: options.expect?.version ?? undefined,
+          change: options.expect?.change ?? undefined,
+          invitations: options.invitations,
+        },
+      },
+      headers: json,
+    }),
+  )
+
+export type RsvpRequest = Schemas['RsvpRequest']
+export type Rsvp = Schemas['RsvpDto']
+export type RsvpAnswer = 'accepted' | 'tentative' | 'declined'
+
+/** Answers the invitation of an event item (an account's copy or the event from mail). The
+ * answer goes through the account's server when it schedules, else as an iMIP reply through the
+ * outbox, which waits for the undo window. Send the same `key` again only to repeat it. */
+export const rsvpItem = async (id: string, request: RsvpRequest, key = idempotencyKey()) =>
+  unwrap(
+    await client.POST('/api/items/{id}/rsvp', {
+      ...idPath(id),
+      body: request,
+      headers: { 'Idempotency-Key': key },
+    }),
+  )
+
+/** Answers the invitation a message carries, as `rsvpItem` does. */
+export const rsvpMessage = async (id: string, request: RsvpRequest, key = idempotencyKey()) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/rsvp', {
+      ...idPath(id),
+      body: request,
+      headers: { 'Idempotency-Key': key },
+    }),
+  )
+
+export type RsvpOptions = Schemas['RsvpOptionsDto']
+export type RsvpOccurrence = Schemas['RsvpOccurrenceDto']
+export type Organizing = Schemas['OrganizingDto']
+
+/** What answering the invitation of an event item would do now; records and sends nothing. */
+export const rsvpItemOptionsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['items', id, 'rsvp'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/items/{id}/rsvp', { ...idPath(id), signal })),
+    retry: false,
+  })
+
+/** What answering the invitation a message carries would do now. */
+export const rsvpMessageOptionsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['messages', id, 'rsvp'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/messages/{id}/rsvp', { ...idPath(id), signal })),
+    retry: false,
+  })
+
+/** Who would send the invitations of an event in the calendar: `itemId` for an existing one. */
+export const organizingQuery = (collectionId: string, itemId?: string) =>
+  queryOptions({
+    queryKey: ['collections', collectionId, 'organizing', itemId ?? null],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/collections/{id}/organizing', {
+          params: { path: { id: collectionId }, query: itemId ? { item: itemId } : {} },
+          signal,
+        }),
+      ),
+    retry: false,
+  })
+
+/** Edits the person's primary card, or makes one in the archive's first editable address book. */
+export const editPersonCard = async (personId: string, request: ItemContentRequest) =>
+  unwrap(await client.PUT('/api/people/{id}/card', { ...idPath(personId), body: request }))
+
+/** Open changes of the archives the user may read, oldest first; narrowed by state, archive and
+ * collection when given. */
+export const pimChangesQuery = (
+  filters: { states?: readonly PimChangeState[]; archive?: string; collection?: string } = {},
+) => {
+  const query = {
+    ...(filters.states?.length ? { state: filters.states.toSorted().join(',') } : {}),
+    ...(filters.archive ? { archive: filters.archive } : {}),
+    ...(filters.collection ? { collection: filters.collection } : {}),
+  }
+  return queryOptions({
+    queryKey: ['pim-changes', query],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/pim/changes', { params: { query }, signal })),
+  })
+}
+
+/** The change next to its base and the latest upstream version, field by field, with its own
+ * text. */
+export const pimChangeDiffQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['pim-changes', 'diff', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/pim/changes/{id}/diff', { ...idPath(id), signal })),
+  })
+
+/** Decides an open change; `keep_mine` answers with the change that takes its place. */
+export const resolvePimChange = async (id: string, action: PimResolution) =>
+  unwrap(await client.POST('/api/pim/changes/{id}/resolve', { ...idPath(id), body: { action } }))
+
+export const writeModeQuery = (collectionId: string) =>
+  queryOptions({
+    queryKey: ['collections', collectionId, 'write-mode'],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/collections/{id}/write-mode', { ...idPath(collectionId), signal }),
+      ),
+  })
+
+/** Sets the collection's write mode (owners and admins); `write_through` while changes are open
+ * needs `confirm`, else `409`. */
+export const setWriteMode = async (collectionId: string, mode: WriteMode, confirm = false) =>
+  unwrap(
+    await client.PUT('/api/collections/{id}/write-mode', {
+      ...idPath(collectionId),
+      body: { mode, confirm },
+    }),
+  )

@@ -1,4 +1,5 @@
 import {
+  collectionsQuery,
   type MessageDetail,
   messageQuery,
   sessionQuery,
@@ -15,6 +16,10 @@ import {
   CopyButton,
   Dialog,
   DialogContent,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -29,25 +34,40 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowLeftIcon,
   CircleAlertIcon,
+  ChevronDownIcon,
   CodeIcon,
   DownloadIcon,
+  FilePenIcon,
+  ForwardIcon,
   FileTypeIcon,
   LinkIcon,
   MailIcon,
+  ListIcon,
+  PaperclipIcon,
+  ReplyAllIcon,
   ReplyIcon,
   TagIcon,
-  Trash2Icon,
+  ArchiveXIcon,
+  UserPlusIcon,
 } from 'lucide-react'
 import { m } from 'motion/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
+import { useCompose } from '../compose/compose-host.tsx'
+import { useMailbox } from '../hooks/use-mailbox.ts'
 import { useNow } from '../hooks/use-now.ts'
+import { useReadOnOpen } from '../hooks/use-read-on-open.ts'
+import { EditDialog } from '../items/edit-dialog.tsx'
 import { replyMailto, senderLabel } from '../lib/address.ts'
 import { shownFrom } from '../lib/aliases.ts'
 import { categoryTarget } from '../lib/categories.ts'
+import { editableCollections, newSender, senderDraft } from '../lib/edits.ts'
 import { copyTarget, linkTarget, unsubscribeTarget } from '../lib/insights.ts'
 import { readerLabels } from '../lib/labels.ts'
+import { planReadOnOpen } from '../lib/mailbox.ts'
+import { flagsOnly, overlay } from '../lib/overlay.ts'
 import { manages } from '../lib/roles.ts'
+import { readerActions } from '../lib/writing.ts'
 import { DeletionDialog } from '../manage/deletion-dialog.tsx'
 import { strings } from '../strings.ts'
 import { ids, useMail } from './context.ts'
@@ -58,6 +78,7 @@ import {
   insightLinkSelector,
   insightUnsubscribeSelector,
 } from './insights-card.tsx'
+import { HeldMark, MailboxActions } from './mailbox-actions.tsx'
 import { ThreadItem } from './thread-item.tsx'
 
 export function ReaderEmpty() {
@@ -70,14 +91,34 @@ export function ReaderEmpty() {
 
 export function Reader({ messageId, onBack }: { messageId: string; onBack?: () => void }) {
   const message = useQuery(messageQuery(messageId))
+  const session = useQuery(sessionQuery).data
   const threadId = message.data?.thread_id
   const thread = useQuery({ ...threadQuery(threadId ?? ''), enabled: Boolean(threadId) })
 
   const messages: MessageDetail[] = thread.data?.messages ?? (message.data ? [message.data] : [])
+  const { archiveId } = useMail()
+  const mailbox = useMailbox(archiveId)
+  const [readOnOpen] = useReadOnOpen()
+  const opened = useRef<string | undefined>(undefined)
+  const { reset } = mailbox
+  useEffect(() => reset(), [messageId, reset])
+  const detail = message.data
+  useEffect(() => {
+    if (detail && detail.pending.length === 0 && flagsOnly(overlay.get(detail.id))) {
+      overlay.forget(detail.id)
+    }
+  }, [detail])
+  const ready = mailbox.accounts.length > 0 && mailbox.folders.length > 0
+  useEffect(() => {
+    if (!detail || !ready || opened.current === detail.id) return
+    opened.current = detail.id
+    const plan = planReadOnOpen(detail, mailbox.folders, mailbox.writable, readOnOpen)
+    if (plan.length > 0) mailbox.apply.mutate({ message: detail, plan })
+  }, [detail, ready, readOnOpen, mailbox.folders, mailbox.writable, mailbox.apply])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Toolbar message={message.data} onBack={onBack} />
+      <Toolbar message={message.data} onBack={onBack} mailbox={mailbox} />
       <div id={ids.reader} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
         {message.isError ? (
           <EmptyState icon={<CircleAlertIcon />} title={strings.reader.loadFailed}>
@@ -99,6 +140,11 @@ export function Reader({ messageId, onBack }: { messageId: string; onBack?: () =
                 </p>
               )}
               <LabelChips archiveId={message.data.archive_id} labels={message.data.labels} />
+              <HeldMark
+                message={message.data}
+                mailbox={mailbox}
+                managesInstance={manages(session?.role)}
+              />
             </header>
             <Thread key={messageId} messages={messages} selectedId={messageId} />
           </m.div>
@@ -243,10 +289,19 @@ function ToolButton({
   )
 }
 
-function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => void }) {
+function Toolbar({
+  message,
+  onBack,
+  mailbox,
+}: {
+  message?: MessageDetail
+  onBack?: () => void
+  mailbox: ReturnType<typeof useMailbox>
+}) {
   const [sourceOpen, setSourceOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const user = useQuery(sessionQuery).data
+  const compose = useCompose()
   const reply = message
     ? replyMailto(
         message,
@@ -268,19 +323,25 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
       <div className="flex-1" />
       {message && (
         <>
-          {reply && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8" asChild>
-                  <a href={reply}>
-                    <ReplyIcon />
-                    {strings.reader.reply}
-                  </a>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{strings.reader.reply}</TooltipContent>
-            </Tooltip>
+          {compose.available ? (
+            <ReplyActions message={message} />
+          ) : (
+            reply && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8" asChild>
+                    <a href={reply}>
+                      <ReplyIcon />
+                      {strings.reader.reply}
+                    </a>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{strings.reader.reply}</TooltipContent>
+              </Tooltip>
+            )
           )}
+          <MailboxActions message={message} mailbox={mailbox} />
+          <AddSender message={message} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" asChild>
@@ -314,8 +375,11 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
           <SourceDialog messageId={message.id} open={sourceOpen} onOpenChange={setSourceOpen} />
           {manages(user?.role) && (
             <>
-              <ToolButton label={strings.reader.delete} onClick={() => setDeleting(true)}>
-                <Trash2Icon />
+              <ToolButton
+                label={strings.writing.mailbox.archiveDelete}
+                onClick={() => setDeleting(true)}
+              >
+                <ArchiveXIcon />
               </ToolButton>
               <DeletionDialog
                 archiveId={message.archive_id}
@@ -329,6 +393,88 @@ function Toolbar({ message, onBack }: { message?: MessageDetail; onBack?: () => 
         </>
       )}
     </div>
+  )
+}
+
+function AddSender({ message }: { message: MessageDetail }) {
+  const collections = useQuery(collectionsQuery(message.archive_id)).data
+  const [open, setOpen] = useState(false)
+  const sender = newSender(shownFrom(message), message.people)
+  if (!sender || editableCollections(collections, 'contact').length === 0) return null
+  return (
+    <>
+      <ToolButton label={strings.edits.actions.addSender} onClick={() => setOpen(true)}>
+        <UserPlusIcon />
+      </ToolButton>
+      {open && (
+        <EditDialog
+          target={{
+            mode: 'create',
+            kind: 'contact',
+            archiveId: message.archive_id,
+            fromMessage: message.id,
+            contact: senderDraft(sender.name, sender.email),
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function ReplyActions({ message }: { message: MessageDetail }) {
+  const compose = useCompose()
+  const w = strings.writing.reader
+  const actions = readerActions(message, compose.available)
+  if (actions.length === 0) return null
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => compose.reply(message.id, 'sender')}
+          >
+            <ReplyIcon />
+            <span className="max-sm:sr-only">{w.reply}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {w.reply} <Kbd>R</Kbd>
+        </TooltipContent>
+      </Tooltip>
+      <ToolButton label={w.replyAll} onClick={() => compose.reply(message.id, 'all')}>
+        <ReplyAllIcon />
+      </ToolButton>
+      <ToolButton label={w.forward} onClick={() => compose.forward(message.id, 'inline')}>
+        <ForwardIcon />
+      </ToolButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label={w.more}>
+            <ChevronDownIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          {actions.includes('replyList') && (
+            <DropdownMenuItem onSelect={() => compose.reply(message.id, 'list')}>
+              <ListIcon />
+              {w.replyList}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={() => compose.forward(message.id, 'attachment')}>
+            <PaperclipIcon />
+            {w.forwardAttachment}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => compose.editAsNew(message)}>
+            <FilePenIcon />
+            {w.editAsNew}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   )
 }
 

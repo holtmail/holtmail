@@ -8,12 +8,15 @@ import {
   contactsExportUrl,
   exportUrl,
   fetchBody,
+  idempotencyKey,
   isUnauthorized,
   itemVersionRawUrl,
   login,
   logout,
   peopleParams,
   rawUrl,
+  refusedLeaks,
+  uploadDraftAttachment,
 } from './index.ts'
 
 const realFetch = globalThis.fetch
@@ -157,5 +160,78 @@ describe('calendar', () => {
       to: 2,
       collections: '',
     })
+  })
+})
+
+describe('drafts', () => {
+  test('uploads an attachment as octet-stream with its name and type', async () => {
+    const draft = {
+      id: 'd1',
+      archive: 'a1',
+      version: 3,
+      payload: {},
+      saved_at: 0,
+      created_at: 0,
+      leaks: [],
+    }
+    const stub = stubFetch(Response.json(draft))
+    const file = new File(['hi'], 'Plans for the café.pdf', { type: 'application/pdf' })
+    expect(await uploadDraftAttachment('d/1', file)).toEqual(draft)
+    const [url, init] = stub.mock.calls[0] ?? []
+    expect(url).toBe(
+      '/api/drafts/d%2F1/attachments?name=Plans+for+the+caf%C3%A9.pdf&content_type=application%2Fpdf',
+    )
+    expect(init?.method).toBe('POST')
+    expect(new Headers(init?.headers).get('content-type')).toBe('application/octet-stream')
+  })
+
+  test('a refused upload throws the server message', async () => {
+    stubFetch(Response.json({ error: 'attachments are at most 50 MB' }, { status: 413 }))
+    const error = await uploadDraftAttachment('d1', new File(['x'], 'big.bin')).catch(
+      (e: unknown) => e,
+    )
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 413, message: 'attachments are at most 50 MB' })
+  })
+
+  test('idempotency keys are fresh each time', () => {
+    expect(idempotencyKey()).not.toBe(idempotencyKey())
+    expect(idempotencyKey()).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  test('idempotency keys work without crypto.randomUUID (plain HTTP)', () => {
+    const own = Object.getOwnPropertyDescriptor(crypto, 'randomUUID')
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true })
+    try {
+      const key = idempotencyKey()
+      expect(key).toMatch(/^[0-9a-f]{32}$/)
+      expect(idempotencyKey()).not.toBe(key)
+    } finally {
+      if (own) Object.defineProperty(crypto, 'randomUUID', own)
+      else Reflect.deleteProperty(crypto, 'randomUUID')
+    }
+  })
+})
+
+describe('refusedLeaks', () => {
+  const leak = {
+    recipient: 'carol@example.org',
+    field: 'cc',
+    reason: 'cc_not_reverse_alias',
+    fix: 'remove_recipient',
+  }
+
+  test('reads the leaks of a refused send', () => {
+    const error = new ApiError(409, 'leaks', undefined, { error: 'leaks', leaks: [leak] })
+    expect(refusedLeaks(error)).toEqual([leak])
+  })
+
+  test('is null for other errors', () => {
+    expect(refusedLeaks(new ApiError(409, 'saved again', undefined, { error: 'x' }))).toBeNull()
+    expect(refusedLeaks(new ApiError(400, 'bad', undefined, { leaks: [leak] }))).toBeNull()
+    expect(
+      refusedLeaks(new ApiError(409, 'odd', undefined, { leaks: [{ recipient: 1 }] })),
+    ).toBeNull()
+    expect(refusedLeaks(new Error('plain'))).toBeNull()
   })
 })

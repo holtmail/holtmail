@@ -73,9 +73,33 @@ describe('groupFolders', () => {
       contacts_watch: { state: 'off' },
     }
     const groups = groupFolders(folders, [
-      { id: 'a', name: 'Alpha', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
-      { id: 'b', name: 'Beta', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
-      { id: 'c', name: 'Empty', kind: 'imap', enabled: true, needs_sign_in: false, status: idle },
+      {
+        id: 'a',
+        name: 'Alpha',
+        kind: 'imap',
+        enabled: true,
+        needs_sign_in: false,
+        writable: [],
+        status: idle,
+      },
+      {
+        id: 'b',
+        name: 'Beta',
+        kind: 'imap',
+        enabled: true,
+        needs_sign_in: false,
+        writable: [],
+        status: idle,
+      },
+      {
+        id: 'c',
+        name: 'Empty',
+        kind: 'imap',
+        enabled: true,
+        needs_sign_in: false,
+        writable: [],
+        status: idle,
+      },
     ])
     expect(groups.map((group) => group.name)).toEqual(['Alpha', 'Beta', 'z'])
   })

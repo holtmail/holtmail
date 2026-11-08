@@ -48,6 +48,7 @@ import {
   useState,
 } from 'react'
 
+import { NewItemButton } from '../items/new-item-button.tsx'
 import { contactsExportFormats, contactsScope } from '../lib/export.ts'
 import { formatCount } from '../lib/format.ts'
 import { initials, personLabel, sourceOptions } from '../lib/people.ts'
@@ -103,6 +104,7 @@ export function PeopleListPane() {
             </span>
           )}
           <span className={cn('-mr-2 flex shrink-0', total === undefined && 'ml-auto')}>
+            <NewItemButton archiveId={archiveId} kind="contact" iconOnly />
             <ContactsExportMenu archiveId={archiveId} source={search.source} />
             <FilterMenu archiveId={archiveId} search={search} />
           </span>

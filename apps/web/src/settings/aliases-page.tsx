@@ -4,6 +4,7 @@ import {
   type Alias,
   aliasesQuery,
   aliasOptionsQuery,
+  aliasStrategiesQuery,
   aliasProvidersQuery,
   type AliasProvider,
   type AliasService,
@@ -11,6 +12,7 @@ import {
   createAlias,
   removeAlias,
   removeAliasService,
+  setAliasStrategy,
   syncAliasService,
   updateAlias,
   updateAliasService,
@@ -53,11 +55,18 @@ import { Field, FormError, PasswordField, SubmitButton } from '../auth/field.tsx
 import {
   ALL,
   type AliasSource,
+  aliasDomains,
   aliasProviders,
   aliasSearch,
+  domainKey,
+  domainOverrides,
   filterAliases,
   isAliasSource,
+  isReplyStrategy,
   providerName,
+  replyStrategies,
+  type ReplyStrategyName,
+  serviceStrategies,
 } from '../lib/aliases.ts'
 import { authErrorMessage } from '../lib/auth.ts'
 import { formatFullDate, formatListDate } from '../lib/format.ts'
@@ -368,6 +377,9 @@ function AliasRow({
         </Fact>
         {alias.for_domain && <Fact label={t.website}>{alias.for_domain}</Fact>}
         {alias.name && <Fact label={t.replyName}>{alias.name}</Fact>}
+        <Fact label={strings.writing.aliasStrategy.label}>
+          <ReplyStrategy alias={alias} archiveId={archiveId} />
+        </Fact>
         {alias.mailboxes.length > 0 && (
           <Fact label={t.deliversTo}>
             <span className="font-mono">{alias.mailboxes.join(', ')}</span>
@@ -404,6 +416,45 @@ function AliasRow({
         }}
       />
     </li>
+  )
+}
+
+function ReplyStrategy({ alias, archiveId }: { alias: Alias; archiveId: string }) {
+  const s = strings.writing.aliasStrategy
+  const refresh = useRefresh(archiveId)
+  const queryClient = useQueryClient()
+  const refreshStrategies = () =>
+    queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'alias-strategies'] })
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      setAliasStrategy(archiveId, 'alias', alias.address, isReplyStrategy(value) ? value : null),
+    onSettled: () => Promise.all([refresh(), refreshStrategies()]),
+  })
+  const own = alias.reply_strategy_source === 'alias'
+  const name = (strategy: string) => s.names[strategy] ?? strategy
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <select
+        aria-label={s.label}
+        className="h-7 border border-border bg-bg px-1 text-xs text-fg"
+        value={own ? alias.reply_strategy : ''}
+        disabled={change.isPending}
+        onChange={(event) => change.mutate(event.target.value)}
+      >
+        <option value="">{own ? s.inherit : s.byDefault(name(alias.reply_strategy))}</option>
+        {replyStrategies.map((strategy) => (
+          <option key={strategy} value={strategy}>
+            {name(strategy)}
+          </option>
+        ))}
+      </select>
+      {!own && s.from[alias.reply_strategy_source] && (
+        <span className="text-fg-subtle">{s.from[alias.reply_strategy_source]}</span>
+      )}
+      {change.isError && (
+        <span className="text-danger">{s.failed(authErrorMessage(change.error))}</span>
+      )}
+    </span>
   )
 }
 
@@ -760,6 +811,204 @@ function ManualAlias({
   )
 }
 
+function StrategyChoice({
+  label,
+  value,
+  fallback,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: ReplyStrategyName | null
+  fallback: string
+  disabled?: boolean
+  onChange: (value: ReplyStrategyName | null) => void
+}) {
+  const s = strings.writing.aliasStrategy
+  return (
+    <select
+      aria-label={label}
+      className="h-8 max-w-full border border-border bg-bg px-1 text-sm text-fg"
+      value={value ?? ''}
+      disabled={disabled}
+      onChange={(event) =>
+        onChange(isReplyStrategy(event.target.value) ? event.target.value : null)
+      }
+    >
+      <option value="">{s.byDefault(s.names[fallback] ?? fallback)}</option>
+      {replyStrategies.map((strategy) => (
+        <option key={strategy} value={strategy}>
+          {s.names[strategy] ?? strategy}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function ReplyStrategies({
+  archiveId,
+  aliases,
+  services,
+  providers,
+}: {
+  archiveId: string
+  aliases: Alias[]
+  services: AliasService[]
+  providers: AliasProvider[] | undefined
+}) {
+  const s = strings.writing.aliasStrategy
+  const queryClient = useQueryClient()
+  const strategies = useQuery(aliasStrategiesQuery(archiveId))
+  const [domain, setDomain] = useState('')
+  const [domainStrategy, setDomainStrategy] = useState<ReplyStrategyName>('direct')
+  const [problem, setProblem] = useState<string>()
+  const change = useMutation({
+    mutationFn: (next: {
+      scope: 'domain' | 'service'
+      key: string
+      strategy: ReplyStrategyName | null
+    }) => setAliasStrategy(archiveId, next.scope, next.key, next.strategy),
+    onMutate: () => setProblem(undefined),
+    onError: (error) => setProblem(s.failed(authErrorMessage(error))),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'alias-strategies'] }),
+        queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'aliases'] }),
+      ]),
+  })
+  const inUse = useMemo(
+    () => [...aliases.map((a) => a.provider), ...services.map((sv) => sv.provider)],
+    [aliases, services],
+  )
+  const domains = useMemo(() => aliasDomains(aliases), [aliases])
+  if (strategies.isPending) return <Skeleton className="h-24" />
+  if (strategies.isError) {
+    return <FormError message={s.loadFailed(authErrorMessage(strategies.error))} />
+  }
+  const rows = serviceStrategies(strategies.data, inUse)
+  const byDomain = domainOverrides(strategies.data)
+  const addDomain = (event: FormEvent) => {
+    event.preventDefault()
+    const key = domainKey(domain)
+    if (!key) {
+      setProblem(s.domainInvalid)
+      return
+    }
+    change.mutate(
+      { scope: 'domain', key, strategy: domainStrategy },
+      { onSuccess: () => setDomain('') },
+    )
+  }
+  return (
+    <section aria-labelledby="alias-replies" className="grid gap-4">
+      <div className="grid gap-1">
+        <h3 id="alias-replies" className="text-lg font-normal">
+          {s.title}
+        </h3>
+        <p className="text-sm text-fg-muted">{s.lead}</p>
+      </div>
+      <dl className="grid gap-3 border-y border-border py-3 text-sm">
+        {replyStrategies.map((strategy) => (
+          <div key={strategy} className="grid gap-0.5">
+            <dt>{s.names[strategy]}</dt>
+            <dd className="text-xs text-fg-muted">{s.explain[strategy]}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-xs text-fg-subtle">{s.order}</p>
+      <div className="grid gap-2">
+        <h4 className="text-sm text-fg">{s.byService}</h4>
+        {rows.length === 0 ? (
+          <p className="text-sm text-fg-muted">{s.noServices}</p>
+        ) : (
+          <ul className="grid divide-y divide-border border-y border-border">
+            {rows.map((row) => (
+              <li key={row.provider} className="flex flex-wrap items-center gap-3 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {providerName(providers, row.provider)}
+                </span>
+                <StrategyChoice
+                  label={s.forService(providerName(providers, row.provider))}
+                  value={row.override}
+                  fallback={row.fallback}
+                  disabled={change.isPending}
+                  onChange={(strategy) =>
+                    change.mutate({ scope: 'service', key: row.provider, strategy })
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="grid gap-2">
+        <h4 className="text-sm text-fg">{s.byDomain}</h4>
+        <p className="text-xs text-fg-muted">{s.byDomainLead}</p>
+        {byDomain.length > 0 && (
+          <ul className="grid divide-y divide-border border-y border-border">
+            {byDomain.map((row) => (
+              <li key={row.domain} className="flex flex-wrap items-center gap-3 py-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-sm">{row.domain}</span>
+                <StrategyChoice
+                  label={s.forDomain(row.domain)}
+                  value={row.strategy}
+                  fallback={s.serviceDefault}
+                  disabled={change.isPending}
+                  onChange={(strategy) =>
+                    change.mutate({ scope: 'domain', key: row.domain, strategy })
+                  }
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={change.isPending}
+                  onClick={() =>
+                    change.mutate({ scope: 'domain', key: row.domain, strategy: null })
+                  }
+                >
+                  {s.removeDomain}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form className="flex flex-wrap items-end gap-2" onSubmit={addDomain}>
+          <Field
+            label={s.domain}
+            className="min-w-48 flex-1"
+            list="alias-domains"
+            spellCheck={false}
+            placeholder="example.org"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+          />
+          <datalist id="alias-domains">
+            {domains.map((d) => (
+              <option key={d} value={d} />
+            ))}
+          </datalist>
+          <select
+            aria-label={s.domainStrategy}
+            className="h-9 border border-border bg-bg px-1 text-sm text-fg"
+            value={domainStrategy}
+            onChange={(e) => isReplyStrategy(e.target.value) && setDomainStrategy(e.target.value)}
+          >
+            {replyStrategies.map((strategy) => (
+              <option key={strategy} value={strategy}>
+                {s.names[strategy]}
+              </option>
+            ))}
+          </select>
+          <Button type="submit" variant="secondary" disabled={change.isPending || !domain.trim()}>
+            {s.addDomain}
+          </Button>
+        </form>
+      </div>
+      <FormError message={problem} />
+    </section>
+  )
+}
+
 function ArchiveAliases({ archiveId }: { archiveId: string }) {
   const list = useQuery(aliasesQuery(archiveId))
   const providers = useQuery(aliasProvidersQuery).data
@@ -803,6 +1052,13 @@ function ArchiveAliases({ archiveId }: { archiveId: string }) {
         )}
         {providers && <ConnectService archiveId={archiveId} providers={providers} />}
       </section>
+
+      <ReplyStrategies
+        archiveId={archiveId}
+        aliases={aliases}
+        services={services}
+        providers={providers}
+      />
 
       <section aria-labelledby="alias-list" className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-4">

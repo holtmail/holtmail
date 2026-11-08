@@ -1,12 +1,17 @@
 import {
+  collectionsQuery,
+  deleteItem,
   type ItemDetail,
   type ItemVersion,
   itemQuery,
   itemVersionRawUrl,
+  type PimChange,
+  type TimelineEntry,
+  organizingQuery,
 } from '@holtmail/api-client'
 import { distance, transition } from '@holtmail/tokens'
-import { Badge, Button, cn, Skeleton } from '@holtmail/ui'
-import { useQuery } from '@tanstack/react-query'
+import { Badge, Button, cn, Skeleton, Switch } from '@holtmail/ui'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import {
   ArrowLeftIcon,
@@ -15,9 +20,12 @@ import {
   ContactIcon,
   DownloadIcon,
   MailIcon,
+  PencilIcon,
+  PencilLineIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import { m } from 'motion/react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 
 import { senderLabel } from '../lib/address.ts'
 import {
@@ -29,9 +37,16 @@ import {
 } from '../lib/events.ts'
 import { formatFullDate } from '../lib/format.ts'
 import { type ContactView, readContact } from '../lib/people.ts'
+import { canChooseInvitations, invitationsFlag, organizingNote } from '../lib/rsvp.ts'
 import { EmptyState } from '../mail/empty-state.tsx'
+import { ConfirmDialog } from '../manage/confirm-dialog.tsx'
 import { strings } from '../strings.ts'
+import { ChangeDiff } from './change-diff.tsx'
 import { Changes } from './changes.tsx'
+import { EditDialog } from './edit-dialog.tsx'
+import { LocalEditMark } from './local-edit-mark.tsx'
+
+const e = strings.edits
 
 export function ItemPage() {
   const { itemId } = useParams({ from: '/items/$itemId' })
@@ -71,6 +86,7 @@ export function ItemPage() {
           initial={{ opacity: 0, y: distance.sm }}
           animate={{ opacity: 1, y: 0, transition: transition.expressive.moderate02 }}
         >
+          <ItemActions detail={item.data} />
           <ItemSummary detail={item.data} />
           <Timeline detail={item.data} />
         </m.article>
@@ -217,8 +233,111 @@ function EventFields({ event }: { event: EventView }) {
   )
 }
 
+function ItemActions({ detail }: { detail: ItemDetail }) {
+  const item = detail.item
+  const collections = useQuery(collectionsQuery(item.archive_id)).data
+  const editable = collections?.find((c) => c.id === item.collection_id)?.editable === true
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [tellAttendees, setTellAttendees] = useState(true)
+  const queryClient = useQueryClient()
+  const removed = item.removed_at != null && !item.local_edit
+  const tellId = useId()
+  const organizing = useQuery({
+    ...organizingQuery(item.collection_id, item.id),
+    enabled: deleting && item.kind === 'event',
+  }).data
+  const hasAttendees = (readEvent(detail.data)?.attendees.length ?? 0) > 0
+  const tells = hasAttendees && organizing !== undefined && organizing.route !== 'none'
+  if (!item.local_edit && (!editable || removed)) return null
+  const contact = item.kind === 'contact'
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {item.local_edit && <LocalEditMark edit={item.local_edit} />}
+      {editable && !removed && (item.kind === 'contact' || item.kind === 'event') && (
+        <span className="ml-auto flex gap-1">
+          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <PencilIcon />
+            {e.actions.edit}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setDeleting(true)}>
+            <Trash2Icon />
+            {e.actions.delete}
+          </Button>
+        </span>
+      )}
+      {editing && (
+        <EditDialog
+          target={{ mode: 'edit', archiveId: item.archive_id, itemId: item.id }}
+          onClose={() => setEditing(false)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={e.remove.title}
+        description={
+          contact ? (
+            e.remove.contact
+          ) : (
+            <span className="grid gap-3">
+              <span>{e.remove.event}</span>
+              {tells && (
+                <span className="grid gap-2">
+                  {canChooseInvitations(organizing) && (
+                    <span className="flex items-center gap-3">
+                      <Switch
+                        id={tellId}
+                        checked={tellAttendees}
+                        onCheckedChange={setTellAttendees}
+                      />
+                      <label htmlFor={tellId}>{e.remove.keep}</label>
+                    </span>
+                  )}
+                  <span className="text-xs">
+                    {canChooseInvitations(organizing) && !tellAttendees
+                      ? e.remove.silent
+                      : organizing.route === 'unknown' || !organizing.allowed
+                        ? organizingNote(organizing)
+                        : e.remove.cancel(organizingNote(organizing))}
+                  </span>
+                </span>
+              )}
+            </span>
+          )
+        }
+        action={e.remove.confirm}
+        busyAction={e.dialog.saving}
+        onConfirm={async () => {
+          const current =
+            organizing ??
+            (hasAttendees
+              ? await queryClient
+                  .fetchQuery(organizingQuery(item.collection_id, item.id))
+                  .catch(() => undefined)
+              : undefined)
+          const invitations = invitationsFlag(current, tellAttendees)
+          await deleteItem(item.id, invitations === false ? { invitations: false } : {})
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['items'] }),
+            queryClient.invalidateQueries({ queryKey: ['archives', item.archive_id] }),
+            queryClient.invalidateQueries({ queryKey: ['pim-changes'] }),
+            queryClient.invalidateQueries({ queryKey: ['people'] }),
+          ])
+        }}
+      />
+    </div>
+  )
+}
+
 function Timeline({ detail }: { detail: ItemDetail }) {
-  const versions = detail.versions.toReversed()
+  const versions = new Map(detail.versions.map((v) => [v.number, v]))
+  const entries: TimelineEntry[] =
+    detail.timeline.length > 0
+      ? detail.timeline.toReversed()
+      : detail.versions
+          .toReversed()
+          .map((v) => ({ kind: 'version', at: v.seen_at, number: v.number }))
   return (
     <section aria-labelledby="item-history" className="grid gap-3">
       <h2 id="item-history" className="flex items-baseline gap-2 text-base font-medium">
@@ -228,17 +347,64 @@ function Timeline({ detail }: { detail: ItemDetail }) {
         </span>
       </h2>
       <ol className="border-l border-border">
-        {versions.map((version) => (
-          <li key={version.number} className="grid gap-2 pb-6 pl-5 last:pb-0">
-            <VersionEntry
-              itemId={detail.item.id}
-              archiveId={detail.item.archive_id}
-              version={version}
-            />
-          </li>
-        ))}
+        {entries.map((entry) => {
+          const version = entry.number != null ? versions.get(entry.number) : undefined
+          if (entry.kind === 'version' && version) {
+            return (
+              <li key={`v${version.number}`} className="grid gap-2 pb-6 pl-5 last:pb-0">
+                <VersionEntry
+                  itemId={detail.item.id}
+                  archiveId={detail.item.archive_id}
+                  version={version}
+                  writeback={entry.origin === 'writeback'}
+                />
+              </li>
+            )
+          }
+          if (entry.kind === 'change' && entry.change) {
+            return (
+              <li key={`c${entry.change.id}`} className="grid gap-2 pb-6 pl-5 last:pb-0">
+                <ChangeEntry change={entry.change} />
+              </li>
+            )
+          }
+          return null
+        })}
       </ol>
     </section>
+  )
+}
+
+function ChangeEntry({ change }: { change: PimChange }) {
+  const [open, setOpen] = useState(change.state === 'conflict')
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <PencilLineIcon aria-hidden className="size-3.5 self-center text-fg-subtle" />
+        <span className="text-sm font-medium text-fg">{e.timeline.change(change.origin)}</span>
+        <span className="text-xs text-fg-subtle">
+          {e.classes[change.class] ?? change.class} · {e.states[change.state] ?? change.state}
+        </span>
+        <time
+          dateTime={new Date(change.created_at).toISOString()}
+          className="font-mono text-xs text-fg-subtle tabular-nums"
+        >
+          {formatFullDate(change.created_at)}
+        </time>
+        <button
+          type="button"
+          aria-expanded={open}
+          className="ml-auto text-xs text-fg-subtle underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? e.actions.hideDiff : e.actions.showDiff}
+        </button>
+      </div>
+      {change.reason && (
+        <p className="text-sm text-fg-muted">{e.reasons[change.reason] ?? change.reason}</p>
+      )}
+      {open && <ChangeDiff changeId={change.id} />}
+    </>
   )
 }
 
@@ -246,10 +412,12 @@ function VersionEntry({
   itemId,
   archiveId,
   version,
+  writeback,
 }: {
   itemId: string
   archiveId: string
   version: ItemVersion
+  writeback: boolean
 }) {
   const method = version.method
     ? (strings.invitation.methods[version.method] ?? version.method)
@@ -260,6 +428,7 @@ function VersionEntry({
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm font-medium text-fg">{strings.item.version(version.number)}</span>
         {method && <span className="font-mono text-xs text-fg-subtle uppercase">{method}</span>}
+        {writeback && <span className="text-xs text-fg-subtle">{e.timeline.writeback}</span>}
         <time
           dateTime={new Date(when).toISOString()}
           className="font-mono text-xs text-fg-subtle tabular-nums"

@@ -15,6 +15,13 @@ export interface InsightController {
   category: () => boolean
 }
 
+export interface MailboxController {
+  toggleRead: () => void
+  toggleFlag: () => void
+  move: () => void
+  trash: () => void
+}
+
 export interface MailContextValue {
   archiveId: string
   layout: Layout
@@ -23,6 +30,7 @@ export interface MailContextValue {
   focusReader: () => void
   list: RefObject<ListController | null>
   insights: RefObject<InsightController | null>
+  mailbox: RefObject<MailboxController | null>
 }
 
 export const MailContext = createContext<MailContextValue | null>(null)

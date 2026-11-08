@@ -10,7 +10,10 @@ Status: milestones 1 and 2 in progress; see [WORKPLAN.md](WORKPLAN.md) for the c
 - **Raw bytes are the truth.** Messages are stored byte for byte, addressed by their BLAKE3 hash. Everything else is derived and can be rebuilt.
 - **Bytes on disk or S3, never in the database.** Message bodies and attachments live in a `BlobStore` (local disk or S3-compatible storage). The database holds metadata only, so it stays small, fast to back up and cheap to migrate.
 - **Everything behind contracts.** Mail sources, storage, the metadata store, the search index and authentication are contracts with replaceable implementations. A new provider is a new crate; nothing else changes.
-- **Read-only towards the mail server.** Archiving never changes, moves or deletes mail on the source account unless a user explicitly turns that on for an account.
+- **Read-only by default, not read-only forever.** Nothing is written to a server unless the owner turned that capability on for that account (see [WRITE.md](WRITE.md)). The read path never writes: sync keeps `EXAMINE` and `BODY.PEEK[]`.
+- **The archive never loses anything because of a write.** Moving or deleting on the server only records that a location was removed, as sync does today, and a sent message is in the archive before it leaves.
+- **Raw bytes are the truth for outgoing mail too.** The exact bytes handed to a transport are stored as a blob and ingested like any other message; Bcc stays out of the bytes and lives in the outbox record.
+- **Holtmail is not an MTA.** It never delivers to recipient MX hosts; it hands mail to a submission server (SMTP submission, JMAP, Graph), which signs, queues and delivers.
 - **Admins run the instance, they do not read the mail.** Managing Holtmail and reading an archive are separate permissions. See [Users and access](#users-and-access).
 - **One binary.** `holtmail serve` runs everything with SQLite and files on disk. Postgres and S3 are options, not requirements.
 - **Light and beautiful.** A quiet interface with square corners, hairline borders and meaningful motion. See [design.md](design.md).
@@ -101,7 +104,7 @@ It looks and feels like a beautiful mail client, not an admin panel for an archi
 - **Three panes**: archives and folders, the message list, the reader. Each pane collapses on small screens.
 - **A list made for reading**: sender, subject and a one-line preview, grouped by day ("Today", "Last week", "March 2019"), with flags, attachment and thread indicators from the original mailbox.
 - **Conversations**: a thread reads top to bottom as one page, older messages collapsed to one line each, quoted text folded.
-- **Read-only, honestly**: no compose button pretending to be a mail client. Reply opens the user's own mail client (`mailto:` with the right headers); the actions are those of an archive: export, restore to a mailbox, tag, hold, show the source.
+- **Read-only, honestly**: a compose button exists only in an archive where someone may send (a `sender` grant, an account with `mail.send` and an identity). Everywhere else the actions are those of an archive: export, restore to a mailbox, tag, hold, show the source, and Reply opens the user's own mail client (`mailto:` with the right headers).
 - **Command palette** (`⌘K`) for every action and for jumping to an archive, folder or saved search.
 - **Search first**: the search field is always one key away (`/`), with suggestions for operators, senders and folders.
 - **Timeline**: a year-by-month histogram of an archive, which also works as a date filter.

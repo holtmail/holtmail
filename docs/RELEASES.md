@@ -4,6 +4,31 @@ Changes people notice when they upgrade: new behavior, changed meaning and one-t
 
 ## Unreleased
 
+### Writing and sending
+
+- Holtmail can send mail: compose, reply, reply all, reply to list, forward inline or as an attachment, and edit as new, through identities and transports set up in Settings → Sending. Every message waits out an undo window (`[write] undo_seconds`, 10 s by default), is archived before it leaves, and is listed in the archive's Outbox with what became of every recipient.
+- New config section `[write]` with `enabled`, `send` and `rules` (all `true` by default). Nothing is written to a mail server unless the owner also turns the capability on for the account; every account starts with all capabilities off.
+- Archive grants gain roles: `reader` (every existing grant), `editor` and `sender`. Only the instance owner gives or takes away `editor` and `sender`; admins write and send only with such a grant, and may no longer change the email or password of someone who holds one.
+- Holtmail can change mail on the servers it archives from, account by account and only with the matching switch in the account's Writing dialog: mark read or unread, star, move, move to the trash, erase for good, and restore an archived message into a mailbox. Changes show at once with a "not yet on the server" mark, go out in order, and are confirmed by the next sync; when another app changed the same flag meanwhile, the server wins. Failed changes say why and offer Try again and Dismiss to those who may. _Mark as read when opened_ (Settings → Reading) is off by default.
+- An account can delete its old mail from the server after a number of days (to the server's trash, or for good with _Erase for good_), with a count of what would go before saving. The archive keeps every message.
+- An identity with the sent-copy policy `append:<folder>` now saves each sent message into that folder.
+- Invitations can be answered from the invitation card and the event page, by email through the outbox with an undo window, or through the account's calendar server where it schedules. An invitation that came through an alias is answered as the alias, or refused if that would show the real mailbox.
+- Events you organize mail their invitations, updates and cancellations through the outbox unless the calendar's server sends them itself (Microsoft 365 and CalDAV servers that schedule). JMAP calendars are mailed by Holtmail. If the server cannot be reached, saving with invitations is refused until it can, or until you save without them. The event form and the delete dialog say who is told and let you leave them out.
+- A reply from an attendee updates an event you organize only when the mail comes from that attendee, and is retried for a week if the calendar's server is away.
+- Contacts and events can be created, edited and deleted from the web app (forms or raw iCalendar and vCard) in address books and calendars whose mode allows it (Settings → Contacts and calendars). By default edits stay in Holtmail; with _Send edits to the account_ they go to the server, and edits that clash with the server's own changes wait for a decision (Keep mine, Take theirs). Google accounts on their own OAuth client and Microsoft Graph accounts ask to sign in again once _Contacts and calendars_ is on under Writing, so the provider grants write access. Changing only your own answer to an invitation goes to the server only with _Answer invitations_ on.
+- Microsoft Graph accounts need one more sign-in to change mail on the server: once a mailbox switch is on, the account asks to sign in again so Microsoft grants `Mail.ReadWrite`.
+- Every write is recorded in an audit log the owner reads at `GET /api/audit` (ids and counts only).
+- Mutating requests accept an `Idempotency-Key` header; repeating a request with the same key returns the first answer instead of running it twice.
+- Replies to mail that came through an alias service (SimpleLogin, addy.io, DuckDuckGo, Apple Hide My Email, Firefox Relay, Fastmail Masked Email, own domains) leave so that the other side sees the alias, never the real mailbox; a draft whose recipients would see the real address is held with one-click fixes until you fix it or explicitly send anyway. How replies leave is set per alias, domain or service on Settings → Aliases.
+- Replying as the alias itself (`direct`, the default for own domains, catch-all rules and Fastmail Masked Email) needs an identity whose address is the alias or that is linked to it; a transport allowed to send as the alias is no longer enough.
+- A message queued by someone who later loses the right to send (their grant, the identity, the transport's allowed addresses) fails at its send time instead of leaving.
+
+### Mail clients
+
+- Settings → Devices makes an app password per mail client, with its own protocols, archives and rights; it is shown once and can be revoked at any time, which ends the client's open connections. Taking a right away from a device also ends its open connections, and the client signs in again under the new rights. Making a device or giving it more rights asks for a recent sign-in, and a notice appears for seven days.
+- Mail clients can send through Holtmail over SMTP submission with an app password: the new config section `[serve.submit]` opens ports such as 465 and 587, off until configured. Messages go through the same identities, limits and outbox as the web app, and a failure after the client was told `250` shows on the outbox row and as a delivery report in the archive.
+- New config section `[serve]` with `tls_cert`, `tls_key`, `proxy_protocol`, `trusted_proxies` and `members`. Behind a proxy listed in `trusted_proxies`, the web sign-in limit now counts the client's address from `X-Forwarded-For` instead of the proxy's.
+
 ### New search operators
 
 - `has:code`, `has:link`, `has:unsubscribe`, `has:reservation`, `has:order`, `has:invoice`, `has:parcel` and `has:pass` find messages with that kind of [insight](INSIGHTS.md) at `Likely` or higher, outside forwarded parts.

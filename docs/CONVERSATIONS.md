@@ -19,7 +19,7 @@ The mail stays the truth. Every chat, topic, bubble and mark is derived data, bu
 
 **Non-goals**
 
-- **Sending.** Holtmail is an archiver, so there is no compose box, no reply and no reactions written back. Chats never change flags on the server; read state is shown, not set.
+- **Sending.** Chats have no compose box and no reactions written back for now. Sending, replies and flag changes come with [WRITE.md](WRITE.md), off until the owner turns them on per account; a chat reply would go through the same outbox and checks. Until then chats never change flags on the server; read state is shown, not set.
 - **Replacing the mail reader.** Chats is a second view. The mail reader stays the place for full headers, raw source and every byte.
 - **Changing threading.** Store threads (`References`/`In-Reply-To`) keep their semantics. Chats groups threads into topics on top of them.
 - **Outlook reactions, recalls and subject-fallback threading in the first release.** They come in Phase 4 (§15): Outlook reactions only through `source-graph` (§7.2), the rest behind detectors proven by fixtures.
@@ -212,6 +212,7 @@ Old and imported mail often has no usable `Authentication-Results`, so rule 2 ke
 
 - `holtmail-alias` gains an optional `AliasDirectory::reverse_aliases(&self, alias_id: &str) -> Result<Vec<ReverseAlias>, AliasError>`, a default method that returns `Unsupported`, plus `Capabilities::reverse_aliases`. `ReverseAlias { address, contact: Address }`: the reverse alias, lowercase, and the contact it reaches. `alias_id` is a `RemoteAlias::id`. Every contact of the alias is listed once, in no particular order.
 - `alias-simplelogin` implements it with the contacts endpoint, `GET /api/aliases/{alias_id}/contacts?page_id=N`, 20 contacts per page, each with the reverse alias address and the contact email. The field names and paging are checked against the official SimpleLogin `api.md` before the code is written, and against the SimpleLogin container of the `aliases` integration profile.
+- Reverse aliases Holtmail made itself (for a first message to a contact) are already recorded in `reverse_aliases` (migration 0028, `AliasStore::put_reverse_alias`) and resolved by the `resolved_addresses` view; `alias_contacts` should feed the same view.
 - A new table `alias_contacts` (`archive_id`, `reverse_alias`, `contact_email`, `contact_name`, `alias`, `provider`, `service_id`, `seen_at`), in a new migration `NNNN_alias_contacts.sql` (the next free number at merge), with `AliasStore` methods to replace a service's rows and to read them. It is refreshed in the same `holtmail-aliases` sync that calls `replace_service_aliases`, and its rows go with the service's aliases when the service is removed.
 - addy.io and DuckDuckGo need no listing: they encode the sender in the reverse address (`alias+bob=example.org@…` in `crates/alias-addy`, `bob_at_example.org_user@duck.com` in `crates/alias-duck`), so the decoded sender plus a signed hit (rules 1 and 2) already suffices. Apple Hide My Email and Firefox Relay have no such listing, and Fastmail hides no sender. For those, rules 1 and 2 are the only ones.
 

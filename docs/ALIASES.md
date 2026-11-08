@@ -16,10 +16,10 @@ Alias services give each website its own address and forward its mail to a real 
 
 ## Modules
 
-- `holtmail-alias`: the contract. `AliasDetector` (pure, never fails, `version()` for re-detection) and `AliasDirectory` (list, options, create, update, delete, with `Capabilities`). Conformance suites for both and a `FakeDirectory`.
+- `holtmail-alias`: the contract. `AliasDetector` (pure, never fails, `version()` for re-detection, a default `reply_strategy()`, `encode_reverse` and `decode_reverse` for services that write the sender into the address) and `AliasDirectory` (list, options, create, update, delete, with `Capabilities`, and the optional `reverse` capability with `reverse_alias`). Conformance suites for both and a `FakeDirectory`.
 - One crate per service: `alias-simplelogin`, `alias-addy`, `alias-relay` (detector and directory), `alias-fastmail` (directory), `alias-duck`, `alias-apple` (detector), `alias-rules` (detectors from the config).
 - `holtmail-json-http`: JSON over HTTPS for the directories.
-- `holtmail-aliases`: services connected to archives (sealed keys, listing, changes at the service), over the contracts; the server gives it the providers and a `Connect` function.
+- `holtmail-aliases`: services connected to archives (sealed keys, listing, changes at the service, reverse aliases for new contacts), over the contracts; the server gives it the providers, a `Connect` function and the detectors.
 - `apps/server/src/aliases.rs`: the only place that names the implementations (`detectors`, `providers`, `connect`), the `[aliases]` config, the listing schedule and the start-up detection pass.
 
 A new service is a new crate that passes the conformance suites and three lines in `apps/server/src/aliases.rs`.
@@ -36,6 +36,20 @@ The alias list of an archive merges known aliases with aliases seen in mail, wit
 ## Trust
 
 Anyone can write `X-SimpleLogin-*` fields. A hit is `signed` only when the topmost `Authentication-Results` (added by the receiving server) records a passing DKIM signature of the provider's own domain. The reader marks a hit that is neither signed nor a known alias as not verified, and the alias list counts unsigned messages of aliases only seen in mail. Self-hosted services add their domains in `[aliases]`.
+
+## Replies
+
+How a reply to forwarded mail leaves is a `ReplyStrategy` ([WRITE.md](WRITE.md#replies-through-relay-mailboxes)); each detector has a default and the route may override it per alias, domain or service:
+
+| Service | Strategy | Reverse alias for a new contact |
+| --- | --- | --- |
+| SimpleLogin, Proton Pass | `reverse_alias`, from one of the alias's mailboxes (SimpleLogin lists them) | the contacts API (`reverse_alias` on the directory) |
+| addy.io | `reverse_alias`, from one of the alias's recipients | `encode_reverse`: `alias+contact=domain@alias-domain` |
+| DuckDuckGo | `reverse_alias` | `encode_reverse`: `contact_at_domain_user@duck.com` |
+| Firefox Relay, Apple | `reply_header` | none |
+| Fastmail, own domains, rules, aliases added by hand | `direct` | not needed |
+
+`AliasManager::reverse_alias(archive, alias, contact)` picks the directory when it has the capability, else the detector of the alias's provider. Results are not cached yet.
 
 ## Search and the reader
 

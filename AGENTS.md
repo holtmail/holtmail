@@ -32,6 +32,7 @@ Holtmail is many small modules, and any of them can be swapped for another one t
 - **Contract crates** (`holtmail-blob`, `holtmail-store`, `holtmail-source`, `holtmail-index`, `holtmail-secret`, ...) hold only traits, the types in their signatures and their error type. No I/O, no provider code.
 - **Implementation crates** are named `<contract>-<kind>` (`blob-fs`, `blob-s3`, `source-imap`, `index-tantivy`). They depend on their contract and on `holtmail-core`, never on another implementation.
 - **One composition root.** Only `apps/server` depends on implementation crates; it builds them from config and hands them out as `Arc<dyn Trait>`. Library code receives contracts, never constructs implementations.
+- **Protocol front ends.** `serve-*` crates (IMAP, JMAP, SMTP submission, DAV) are libraries that receive contracts and are wired only by `apps/server`. They are not `<contract>-<kind>` implementations, and there is no `holtmail-serve` contract.
 - **Object-safe traits.** Every contract trait is `Send + Sync` and usable as `dyn Trait`; async methods use `#[async_trait]`. Generic parameters on contract methods are not allowed.
 - **Nothing leaks.** Contract signatures use the contract's own types. No `async_imap`, `tantivy`, `sqlx` or `aws_sdk` types cross a contract boundary, including in errors.
 - **Errors per contract.** Each contract defines one `thiserror` enum; implementations map their failures into it. Libraries never return `anyhow::Error`; only `apps/server` may use `anyhow`.

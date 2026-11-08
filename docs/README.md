@@ -9,6 +9,8 @@
 - [Conversations](CONVERSATIONS.md) — design of Chats, a messenger view of the archive: chats, topics, bubbles, marks and identity
 - [Message insights](INSIGHTS.md) — codes, action links, reservations, unsubscribe and categories read out of each message for the reader card, with trust and the domain data file
 - [Native clients](CLIENTS.md) — Tauri apps and PWA around the SPA: devices, live stream, Web Push with autopush-rs, contacts and calendars over DAV with edits held from native apps, offline subset
+- [Writing](WRITE.md) — sending, replies through identities, shared transports and alias services, flags and folders on the server, contacts and calendars edited from the web, rules as flows with a visual editor
+- [Serving](SERVE.md) — Holtmail as an account for standard clients: IMAP, JMAP, SMTP submission, CalDAV and CardDAV with calendar-auto-schedule, device credentials
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 - [Release notes](RELEASES.md) — what changes for people on upgrade: new operators, changed meaning, one-time rebuilds
@@ -24,7 +26,19 @@
 | `holtmail-webhook` | [Contract for delivering webhook requests](../crates/webhook/docs/README.md) |
 | `holtmail-webhook-http` | [Webhook delivery over HTTP](../crates/webhook-http/docs/README.md) |
 | `holtmail-hooks` | [Webhook events, payloads, signatures and retries](../crates/hooks/docs/README.md) |
-| `holtmail-smtp` | [SMTP receiver for forwarded and journaled mail](../crates/smtp/docs/README.md) |
+| `holtmail-proxy-protocol` | [PROXY protocol v2 headers: client addresses and the SSL TLV](../crates/proxy-protocol/docs/README.md) |
+| `holtmail-serve-submit` | [SMTP submission for mail clients: device sign-in, identity checks, RFC 6409 fix-ups, the loop guard](../crates/serve-submit/docs/README.md) |
+| `holtmail-serve-net` | [Shared TCP listener for protocol front ends: PROXY v2, connection limits, TLS, STARTTLS, certificate reload](../crates/serve-net/docs/README.md) |
+| `holtmail-access` | [The one decision for every write: switch, capability, grant, scope and consent](../crates/access/docs/README.md) |
+| `holtmail-smtp` | [SMTP server for inbound mail and submission](../crates/smtp/docs/README.md) |
+| `holtmail-device` | [Contract for device credentials: who an app password signs in, lockout, revocation feed](../crates/device/docs/README.md) |
+| `holtmail-device-local` | [Device credentials over the store: BLAKE3 app passwords, sign-in limits, revocation feed](../crates/device-local/docs/README.md) |
+| `holtmail-submission` | [Contract for accepting mail from clients: identity checks, queue, undo, status](../crates/submission/docs/README.md) |
+| `holtmail-submission-outbox` | [Submission over the outbox: identities, the five locks, per-user limits, the leak guard](../crates/submission-outbox/docs/README.md) |
+| `holtmail-submit` | [Contract for handing prebuilt messages to a submission server](../crates/submit/docs/README.md) |
+| `holtmail-submit-smtp` | [SMTP submission with TLS, STARTTLS and PLAIN, LOGIN or XOAUTH2](../crates/submit-smtp/docs/README.md) |
+| `holtmail-submit-jmap` | [JMAP submission with `Email/import`, `EmailSubmission` and `onSuccessUpdateEmail`](../crates/submit-jmap/docs/README.md) |
+| `holtmail-submit-graph` | [Microsoft Graph `sendMail` with base64 MIME, Bcc rebuilt for Graph only](../crates/submit-graph/docs/README.md) |
 | `holtmail-pdf` | [A message as a PDF with the original inside](../crates/pdf/docs/README.md) |
 | `holtmail-ledger` | [Hash-chained ledger of archived and deleted messages](../crates/ledger/docs/README.md) |
 | `holtmail-blob` | [Contract for raw message storage](../crates/blob/docs/README.md) |
@@ -34,6 +48,7 @@
 | `holtmail-store` | [Contract for metadata](../crates/store/docs/README.md) |
 | `holtmail-store-sqlite` | [Metadata on SQLite](../crates/store-sqlite/docs/README.md) |
 | `holtmail-sanitize` | [Safe message HTML](../crates/sanitize/docs/README.md) |
+| `holtmail-compose` | [Drafts, replies and forwards to RFC 5322 bytes](../crates/compose/docs/README.md) |
 | `holtmail-fetch` | [Contract for fetching remote images, sending one-click unsubscribes and downloading data files](../crates/fetch/docs/README.md) |
 | `holtmail-fetch-http` | [Fetching over HTTP, public addresses only](../crates/fetch-http/docs/README.md) |
 | `holtmail-remote` | [Saving remote images into the archive](../crates/remote/docs/README.md) |
@@ -56,6 +71,9 @@
 | `holtmail-alias-apple` | [Apple Hide My Email and Sign in with Apple](../crates/alias-apple/docs/README.md) |
 | `holtmail-alias-rules` | [Alias detection from config rules](../crates/alias-rules/docs/README.md) |
 | `holtmail-aliases` | [Alias services connected to archives](../crates/aliases/docs/README.md) |
+| `holtmail-route` | [How a draft is sent: identity, From, transport, alias strategies, reasons and the leak guard](../crates/route/docs/README.md) |
+| `holtmail-outbox` | [The outgoing queue: undo window, scheduled send, retries, uncertain sends](../crates/outbox/docs/README.md) |
+| `holtmail-mail-writeback` | [Sending held flags, labels, moves, deletes and appends to the mail server; confirmation by sync](../crates/mail-writeback/docs/README.md) |
 | `holtmail-auth-results` | [Authentication-Results and DKIM-Signature grammar](../crates/auth-results/docs/README.md) |
 | `holtmail-html-scan` | [Bounded scan of message HTML for visible anchors, text and structured data](../crates/html-scan/docs/README.md) |
 | `holtmail-insight` | [Contract for insight extractors](../crates/insight/docs/README.md) |
@@ -92,6 +110,8 @@
 | `holtmail-collection-graph` | [Microsoft Graph contacts and calendars](../crates/collection-graph/docs/README.md) |
 | `holtmail-collection-jmap` | [JMAP contacts and calendars](../crates/collection-jmap/docs/README.md) |
 | `holtmail-pim-sync` | [Archiving contacts and calendars with their history](../crates/pim-sync/docs/README.md) |
+| `holtmail-pim-edit` | [Edits to contacts and events: validation, classification, rebase, three-way diffs, field patches and the web forms](../crates/pim-edit/docs/README.md) |
+| `holtmail-pim-writeback` | [Sending held edits of contacts and events upstream in `write_through` collections; conflicts and retries that never drop an edit](../crates/pim-writeback/docs/README.md) |
 | `holtmail-auth` | [Sign-in, sessions and the setup link](../crates/auth/docs/README.md) |
 | `@holtmail/tokens` | [Design tokens](../packages/tokens/docs/README.md) |
 | `@holtmail/ui` | [Components](../packages/ui/docs/README.md) |

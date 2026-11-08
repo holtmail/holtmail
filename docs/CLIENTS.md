@@ -98,7 +98,7 @@ crates/
   notify/                contract: deliver an encrypted payload to a push subscription
   notify-webpush/        RFC 8030 delivery with holtmail-webpush and VAPID; endpoint allowlist
   notify-policy/         pure: event + device rules → notification or nothing
-  dav-serve/             CalDAV, CardDAV and ICS over the store and people; writes through pim-edit
+  serve-dav/             CalDAV, CardDAV and ICS over the store and people; writes through pim-edit
   pim-edit/              pure: validate, classify and rebase edits from devices; field diff
   blob-encrypted/        AES-256-GCM wrapper over any BlobStore (already named in PLAN.md)
   client/                async HTTP client for the Holtmail API: bearer, SSE via holtmail-sse, changes
@@ -200,7 +200,7 @@ export function detectHost(): Promise<Host>
   A code that arrives through a `holtmail://pair` link first shows a native confirmation: "Pair with X as Y?".
 - **Token**
   - It is opaque, stored hashed on the server and in the OS keystore on the device. JavaScript never sees it.
-  - Scopes are `read`, `notify` and `dav:read`. `dav:write` allows held edits. The reserved scopes `write:mail`, `write:pim` and `write:contacts` are granted by nothing yet.
+  - Scopes are [SERVE.md](SERVE.md#device-credentials)'s: `read`, `write:mail`, `send:mail`, `write:pim` and `notify`. `read` with the `dav` protocol is what this file used to call `dav:read`, `write:pim` with `dav` is `dav:write`.
   - `require_session` accepts `Authorization: Bearer`. `guard_writes` skips its CSRF checks only for bearer requests.
 - **Cookie renewal**
   - Sessions created on an enrolled device are sliding.
@@ -347,7 +347,7 @@ There are three server layers. `pim.methods()` tells the SPA what the platform o
 1. **ICS feed:** `GET /ics/{token}.ics`, built on the existing export.
    - The token is revocable, read-only and scoped to chosen calendars.
    - The feed carries `REFRESH-INTERVAL` hints.
-2. **`dav-serve`: CalDAV and CardDAV.**
+2. **`serve-dav`: CalDAV and CardDAV.**
    - **Discovery:** `/.well-known/caldav` and `/.well-known/carddav`, the principal and the home set.
    - **Reads:**
      - `PROPFIND`, `getctag`, `sync-token` (from the `changes` log);
@@ -360,7 +360,7 @@ There are three server layers. `pim.methods()` tells the SPA what the platform o
      - "From mail", holding only the invitations whose UID no other served calendar has.
    - **Auth:** Basic, with a per-device app password.
    - **Live updates:** WebDAV-Push is served through `notify`, so DAVx5 updates within seconds.
-   - **Tests:** syncing `dav-serve` with `collection-dav` in memory.
+   - **Tests:** syncing `serve-dav` with `collection-dav` in memory.
    - **Code:** a thin protocol layer of our own on axum, `quick-xml` and `calcard`. The `dav-server` crate is built around files and has no ACL. Stalwart's DAV crates are AGPL, so they serve only as a reference.
 3. **Shell glue**, only where the OS needs it.
 
@@ -396,16 +396,16 @@ Each collection has a `write_mode`:
 | --- | --- | --- | --- |
 | `read_only` | `read` | 403. Clients see this up front, so they show a lock and offer no editing | — |
 | `held` | `read`, `write-content`, `bind`, `unbind` | Accepted as a held change | Never automatically |
-| `write_through` (Phase 53) | the same | Accepted as a held change | Yes, by the writer, in order |
+| `write_through` (WRITE.md Phase 61) | the same | Accepted as a held change | Yes, by the writer, in order |
 
 **Defaults:**
 
 - Upstream calendars and address books are `held`.
-- "From mail" and the merged "People" book are `read_only` until replies can really be sent (Phase 54) and People edits can be routed (Phase 53). Without that, an RSVP on an invitation that exists only in mail would never reach the organizer.
+- "From mail" and the merged "People" book are `read_only` until replies can really be sent (WRITE.md Phase 62) and People edits can be routed (WRITE.md Phase 61). Without that, an RSVP on an invitation that exists only in mail would never reach the organizer.
 - Imported files are `read_only`.
-- The server setting `[dav] edits = false` makes everything `read_only`.
+- The server setting `[serve.dav] edits = false` makes everything `read_only`.
 
-**Who may write.** The advertised privilege is the lowest of three: the collection's `write_mode`, the user's role on the archive, and the device's scope (`dav:write`). Only the archive's owner may write until grants gain a read-only role. Each change records its user and device.
+**Who may write.** The advertised privilege is the lowest of three: the collection's `write_mode`, the user's role on the archive, and the device's scope (`write:pim`). Only the archive's owner may write until grants gain a read-only role. Each change records its user and device.
 
 **Mode changes:**
 
@@ -430,9 +430,9 @@ Each collection has a `write_mode`:
   - blobs referenced by changes count as referenced for retention and deletion.
 - Every change writes a `changes` log row in the same transaction. The live stream, sync-tokens and the offline replica therefore see it.
 - **Version origin:** `item_versions` gains `origin` and `change_id`. After a successful write-through, the upstream state is recorded with `origin = writeback`. The history can then say "Edited on Anna's iPhone · sent to Google on 7 Nov".
-- **Derived data follows what is served.** The PIM index, people, event series and occurrences are rebuilt from the served version whenever a change opens or closes. Search, the calendar and the people pages then show what the user's devices show, with a mark. Derived data can still be rebuilt: its inputs are now versions plus open changes.
+- **Derived data follows what is served.** The PIM index, people, event series and occurrences are rebuilt from the served version whenever a change opens or closes. Search, the calendar and the people pages then show what the user's devices show, with a mark. Derived data can still be rebuilt: its inputs are now versions plus open changes. Not yet for a held create from the web app, which has no item until it reaches the account (see WRITE.md, "Decision (Phase 61): held creates are not served yet").
 
-**`pim-edit`** is a pure library over `holtmail-pim`, used by `dav-serve` and, later, the API. It does four things:
+**`pim-edit`** is a pure library over `holtmail-pim`, used by `serve-dav`, the API, the pim-sync post-batch step and the write-through. Besides the four things below it computes what is served (`serve`), the field patch for write-through (`item_patch`) and the web forms (see its [README](../crates/pim-edit/docs/README.md)):
 
 1. **Validation:** parses with `calcard`, and checks that there is one UID per resource, the same UID as the resource it replaces, the right component type, and the size limit (2 MiB for iCalendar, 5 MiB for vCard).
 2. **Classification**, by comparing normalized models with the base:
@@ -494,7 +494,7 @@ Nothing is dropped silently. Every terminal state except `applied` and `supersed
 
 ### Invitations and RSVP
 
-**Phase 51: replies are held.** Holtmail does not advertise `calendar-auto-schedule`, because advertising it obliges the server to deliver replies.
+**Phase 51: replies are held.** Holtmail does not advertise `calendar-auto-schedule` until [Phase 74](SERVE.md#calendar-auto-schedule), because advertising it obliges the server to deliver replies.
 
 - **Thunderbird and Evolution** send the iMIP REPLY themselves through the user's mail account. The sent reply reaches the archive through Sent and updates the invitation's status. Holtmail sees that the held reply matches it (same UID, recurrence and answer) and marks it `applied`, sent by the client.
 - **Apple and DAVx5** PUT the changed `PARTSTAT` to the attendee's copy in an upstream calendar, and it is held as a `reply`.
@@ -503,14 +503,14 @@ Nothing is dropped silently. Every terminal state except `applied` and `supersed
   - The web invitation card says: "You answered **Accepted** on Anna's iPhone. The organizer has not been told yet."
 - **Upstream calendars that already contain the invitation** (Google, Exchange, Fastmail) are where these answers happen, since "From mail" is read-only.
 
-**Phase 54: replies are sent.** Each reply goes by the route its collection supports:
+**WRITE.md Phase 62: replies are sent.** Each reply goes by the route its collection supports:
 
 1. **CalDAV upstreams with RFC 6638** (iCloud, Fastmail, Nextcloud): a write-through PUT of the attendee copy. The upstream server then sends the reply.
 2. **Graph:** `POST /events/{id}/accept|tentativelyAccept|decline` with `sendResponse: true`.
 3. **JMAP:** a `participationStatus` patch with `sendSchedulingMessages: true`.
 4. **"From mail", or a source with no scheduling:** an iMIP REPLY through `submit`, from the matched account address, with `In-Reply-To` set to the invitation. It respects `SCHEDULE-AGENT=CLIENT`.
 
-"From mail" becomes writable for replies at this point. `calendar-auto-schedule` is advertised only when every writable calendar of the principal has a reply route **and** the organizer path exists: REQUEST and CANCEL for events the user organizes, `Schedule-Tag` with `If-Schedule-Tag-Match`, and the schedule inbox and outbox. Until then Apple may hide adding invitees.
+"From mail" becomes writable for replies at this point. `calendar-auto-schedule` is advertised only when every writable calendar of the principal has a reply route **and** the organizer path exists: REQUEST and CANCEL for events the user organizes, `Schedule-Tag` with `If-Schedule-Tag-Match`, and the schedule inbox and outbox (Phase 74, [SERVE.md](SERVE.md#calendar-auto-schedule)). Until then Apple may hide adding invitees.
 
 ### What the user sees
 
@@ -533,14 +533,14 @@ Nothing is dropped silently. Every terminal state except `applied` and `supersed
 ### Limits
 
 - **A held edit or reply does not exist upstream** until write-through sends it:
-  - organizers are not told about answers given on Apple or Android devices until Phase 54;
+  - organizers are not told about answers given on Apple or Android devices until WRITE.md Phase 62;
   - colleagues see no change to a shared calendar.
 - **Devices and apps that sync directly with the upstream** (Google Calendar on the same phone, Outlook) do not see held edits. A device should use either Holtmail or the upstream account, not both, to avoid duplicates.
 - **Without server scheduling,** events organized on Apple devices send no invitations.
 - **Graph and JMAP collections are edited as iCalendar or vCard.** Write-through sends them as a field patch against the base, never as a full replace. Alarms, categories and photos the client never saw are therefore not lost.
 - **Recurring series:** editing one occurrence is a PUT of the whole resource. It is classified and rebased as a whole.
 
-### Write-through (Phase 53)
+### Write-through (WRITE.md Phase 61)
 
 The `CollectionWriter` trait lives in `holtmail-collection`, separate from `CollectionSource`. It is object-safe, uses `#[async_trait]`, and ships a fake and a conformance suite:
 
@@ -598,13 +598,9 @@ The spike checks that `aws-lc-rs`, `sqlx` and `tantivy` build for iOS and Androi
 
 ## Write later
 
-These names are reserved now, so that the write phases fit without reshaping anything:
+Writing is planned in [WRITE.md](WRITE.md) (Phases 55–64). The write-through and reply designs in this file stay as they are; their phases (53 and 54 here) are WRITE.md Phases 61 and 62. What stays on the client side:
 
-- **`holtmail-submit`** is the contract for outbound mail, with `submit-smtp`, `submit-jmap` and `submit-graph`. `crates/smtp` stays inbound only.
-- **`Source::set_flags` and `Source::append`** (to Sent) are optional methods with an `Unsupported` default.
-- **Opt-in.** Every upstream write needs a scope (`write:mail`, `write:pim` or `write:contacts`) and a per-account switch. "Read-only towards the mail server" stays the default.
-- **API.** Plain REST mutations through `api-client`, with an `Idempotency-Key` table.
-- **Client.** An outbox in the local store, replayed in order through the same embedded API.
+- **Client.** An outbox in the local store, replayed in order through the same embedded API, with the `Idempotency-Key` the server already accepts.
 - **Bridge.** The capabilities `outbox` and `write.mail`, and the notification categories Reply and RSVP.
 
 ## Security

@@ -7,6 +7,10 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 
+mod writer;
+
+pub use writer::*;
+
 use crate::{
     Changes, CollectionError, CollectionKind, CollectionSource, CollectionWatch,
     CollectionsChanged, ItemTag, PushRegistration, PushSubscription, RemoteCollection, RemoteItem,
@@ -61,6 +65,11 @@ struct State {
     pushable: bool,
     registrations: Vec<(String, PushSubscription, String)>,
     registered: u64,
+    writable: bool,
+    refuse: Option<String>,
+    created: BTreeMap<(String, String), String>,
+    answers: BTreeMap<(String, Option<String>), crate::Partstat>,
+    notices: Vec<(String, Option<String>, crate::Partstat)>,
 }
 
 /// An in-memory server: collections, items with counting ETags, a change log per collection

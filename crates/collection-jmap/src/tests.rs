@@ -7,7 +7,10 @@ use axum::body::Bytes as Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use holtmail_collection::testing::{Remote, conformance, watch_conformance};
+use holtmail_collection::testing::{
+    Remote, WriteProbe, conformance, watch_conformance, writer_conformance,
+};
+use holtmail_collection::{CollectionWriter, Field, ItemPatch, Partstat, Precondition, WriteCaps};
 
 use super::*;
 
@@ -44,6 +47,9 @@ struct Fake {
     port: u16,
     push: Option<tokio::sync::broadcast::Sender<String>>,
     event_queries: Vec<String>,
+    sets: Vec<Value>,
+    read_only: bool,
+    races: u32,
 }
 
 fn state_change(kind: &str) -> String {
@@ -115,7 +121,7 @@ impl Fake {
         let (type_name, verb) = name.split_once('/').ok_or("unknownMethod")?;
         let kind = match type_name {
             "AddressBook" | "ContactCard" => CollectionKind::Contacts,
-            "Calendar" | "CalendarEvent" => CollectionKind::Calendar,
+            "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CollectionKind::Calendar,
             _ => return Err("unknownMethod"),
         };
         if kind == CollectionKind::Calendar && !self.calendars {
@@ -126,6 +132,12 @@ impl Fake {
         }
         let state = serde_json::to_string(&self.state()).unwrap();
         match (type_name, verb) {
+            ("ParticipantIdentity", "get") => Ok(json!({
+                "accountId": ACCOUNT, "state": "i", "notFound": [],
+                "list": [{ "id": "i1", "name": "Ada", "sendTo": { "imip": "mailto:Ada@Example.com" } }],
+            })
+            .to_string()),
+            (_, "set") => self.set(kind, args),
             ("AddressBook" | "Calendar", "get") => {
                 let wanted: Option<Vec<String>> = args["ids"].as_array().map(|a| {
                     a.iter()
@@ -177,15 +189,23 @@ impl Fake {
             }
             (_, "query") => {
                 let filter = args["filter"]
-                    .as_object()
-                    .and_then(|f| f.values().next())
+                    .get(match kind {
+                        CollectionKind::Contacts => "inAddressBook",
+                        CollectionKind::Calendar => "inCalendar",
+                    })
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned();
+                let uid = args["filter"].get("uid").and_then(Value::as_str);
                 let all: Vec<String> = self
                     .items
                     .iter()
                     .filter(|((k, _), item)| *k == kind && item.member == filter)
+                    .filter(|(_, item)| {
+                        uid.is_none_or(|uid| {
+                            serde_json::from_str::<Value>(&item.json).unwrap()["uid"] == uid
+                        })
+                    })
                     .map(|((_, id), _)| id.clone())
                     .collect();
                 let position = args["position"].as_u64().unwrap_or(0) as usize;
@@ -254,6 +274,120 @@ impl Fake {
     }
 }
 
+fn apply(object: &mut Value, patch: &serde_json::Map<String, Value>) -> Result<(), ()> {
+    for (path, value) in patch {
+        let parts: Vec<String> = path
+            .split('/')
+            .map(|p| p.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        let (last, parents) = parts.split_last().unwrap();
+        let mut at = &mut *object;
+        for part in parents {
+            at = at.get_mut(part.as_str()).ok_or(())?;
+        }
+        let map = at.as_object_mut().ok_or(())?;
+        if value.is_null() {
+            map.remove(last);
+        } else {
+            map.insert(last.clone(), value.clone());
+        }
+    }
+    Ok(())
+}
+
+impl Fake {
+    fn set(&mut self, kind: CollectionKind, args: &Value) -> Result<String, &'static str> {
+        self.sets.push(args.clone());
+        let old = self.state();
+        if let Some(state) = args.get("ifInState").and_then(Value::as_str) {
+            if self.races > 0 {
+                self.races -= 1;
+                self.seq += 1;
+                return Err("stateMismatch");
+            }
+            if state != old {
+                return Err("stateMismatch");
+            }
+        }
+        let refusal = json!({ "type": "forbidden" });
+        let mut created = serde_json::Map::new();
+        let mut not_created = serde_json::Map::new();
+        for (cid, object) in args["create"].as_object().into_iter().flatten() {
+            if self.read_only {
+                not_created.insert(cid.clone(), refusal.clone());
+                continue;
+            }
+            let member = object[member_key(kind)]
+                .as_object()
+                .and_then(|m| m.keys().next().cloned())
+                .unwrap_or_default();
+            self.seq += 1;
+            let id = format!("n{}", self.seq);
+            let mut object = object.clone();
+            object["id"] = json!(id);
+            self.items.insert(
+                (kind, id.clone()),
+                FakeItem {
+                    member,
+                    json: object.to_string(),
+                },
+            );
+            self.log.push((self.seq, kind, id.clone()));
+            created.insert(cid.clone(), json!({ "id": id }));
+        }
+        let mut updated = serde_json::Map::new();
+        let mut not_updated = serde_json::Map::new();
+        for (id, patch) in args["update"].as_object().into_iter().flatten() {
+            let Some(item) = self.items.get(&(kind, id.clone())).cloned() else {
+                not_updated.insert(id.clone(), json!({ "type": "notFound" }));
+                continue;
+            };
+            if self.read_only {
+                not_updated.insert(id.clone(), refusal.clone());
+                continue;
+            }
+            let mut object: Value = serde_json::from_str(&item.json).unwrap();
+            if apply(&mut object, patch.as_object().unwrap()).is_err() {
+                not_updated.insert(id.clone(), json!({ "type": "invalidPatch" }));
+                continue;
+            }
+            self.seq += 1;
+            self.items.insert(
+                (kind, id.clone()),
+                FakeItem {
+                    member: item.member,
+                    json: object.to_string(),
+                },
+            );
+            self.log.push((self.seq, kind, id.clone()));
+            updated.insert(id.clone(), Value::Null);
+        }
+        let mut destroyed = Vec::new();
+        let mut not_destroyed = serde_json::Map::new();
+        for id in args["destroy"].as_array().into_iter().flatten() {
+            let id = id.as_str().unwrap().to_owned();
+            if self.read_only {
+                not_destroyed.insert(id, refusal.clone());
+            } else if self.items.remove(&(kind, id.clone())).is_some() {
+                self.seq += 1;
+                self.log.push((self.seq, kind, id.clone()));
+                destroyed.push(id);
+            } else {
+                not_destroyed.insert(id, json!({ "type": "notFound" }));
+            }
+        }
+        if self.state() != old {
+            self.announce(kind);
+        }
+        Ok(json!({
+            "accountId": ACCOUNT, "oldState": old, "newState": self.state(),
+            "created": created, "notCreated": not_created, "updated": updated,
+            "notUpdated": not_updated, "destroyed": destroyed, "notDestroyed": not_destroyed,
+        })
+        .to_string())
+    }
+}
+
 async fn handle(
     State(fake): State<Shared>,
     method: Method,
@@ -289,7 +423,7 @@ async fn handle(
             let api = f.api_url.clone().unwrap_or_else(|| "/jmap/api".to_owned());
             axum::Json(json!({
                 "capabilities": capabilities, "primaryAccounts": primary, "apiUrl": api,
-                "accounts": { ACCOUNT: { "name": "ada@example.com" } }, "state": "s1",
+                "accounts": { ACCOUNT: { "name": "ada@example.com" } }, "state": "s1", "username": "ada",
                 "eventSourceUrl": "/jmap/events?types={types}&closeafter={closeafter}&ping={ping}",
             }))
             .into_response()
@@ -693,5 +827,329 @@ async fn trusts_extra_roots_only_when_given() {
     assert!(matches!(
         source().collections().await,
         Err(CollectionError::Connection(_))
+    ));
+}
+
+impl FakeJmap {
+    fn object(&self, collection: &str, id: &str) -> Option<Value> {
+        let f = self.0.lock().unwrap();
+        let jmap = collection.split_once('/')?.1;
+        let item = f.items.get(&(kind_of(collection), id.to_owned()))?;
+        (item.member == jmap).then(|| serde_json::from_str(&item.json).unwrap())
+    }
+
+    fn writer(&self) -> JmapCollections {
+        self.source()
+    }
+}
+
+#[async_trait]
+impl WriteProbe for FakeJmap {
+    fn own_address(&self) -> String {
+        "ada@example.com".into()
+    }
+
+    fn uid(&self, stored: &[u8]) -> Option<String> {
+        serde_json::from_slice::<serde_json::Value>(stored)
+            .ok()?
+            .get("uid")?
+            .as_str()
+            .map(str::to_owned)
+    }
+
+    async fn read(&self, collection: &str, id: &str) -> Option<(Option<String>, Bytes)> {
+        let object = self.object(collection, id)?;
+        Some((
+            None,
+            Bytes::from(serde_json::to_vec(&canonical(object)).unwrap()),
+        ))
+    }
+
+    async fn ids(&self, collection: &str) -> Vec<String> {
+        let f = self.0.lock().unwrap();
+        let jmap = collection.split_once('/').map_or("", |(_, id)| id);
+        let mut ids: Vec<String> = f
+            .items
+            .iter()
+            .filter(|((k, _), item)| *k == kind_of(collection) && item.member == jmap)
+            .map(|((_, id), _)| id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    async fn touch(&self, collection: &str, id: &str) {
+        let Some(mut object) = self.object(collection, id) else {
+            return;
+        };
+        let mut f = self.0.lock().unwrap();
+        f.seq += 1;
+        object["x-touched"] = json!(f.seq);
+        let kind = kind_of(collection);
+        let member = f.items[&(kind, id.to_owned())].member.clone();
+        f.items.insert(
+            (kind, id.to_owned()),
+            FakeItem {
+                member,
+                json: object.to_string(),
+            },
+        );
+        let seq = f.seq;
+        f.log.push((seq, kind, id.to_owned()));
+    }
+
+    async fn partstat(
+        &self,
+        collection: &str,
+        id: &str,
+        recurrence_id: Option<&str>,
+    ) -> Option<Partstat> {
+        let event = self.object(collection, id)?;
+        let pid = write::own_participant(&event, &["ada@example.com".to_owned()])?;
+        let word = match recurrence_id {
+            None => event["participants"][&pid]["participationStatus"].clone(),
+            Some(rid) => {
+                let key = write::override_key(rid, event["timeZone"].as_str()).ok()?;
+                let item = &event["recurrenceOverrides"][&key];
+                item.get(format!("participants/{pid}/participationStatus"))
+                    .cloned()
+                    .unwrap_or_else(|| item["participants"][&pid]["participationStatus"].clone())
+            }
+        };
+        Partstat::parse(word.as_str()?)
+    }
+
+    fn holds(&self, stored: &[u8], patch: &ItemPatch) -> bool {
+        let kind = if patch.content_type == media::VCARD {
+            CollectionKind::Contacts
+        } else {
+            CollectionKind::Calendar
+        };
+        write::holds(kind, stored, patch)
+    }
+}
+
+#[tokio::test]
+async fn writes_keep_the_writer_contract_in_calendars() {
+    let fake = FakeJmap::start(true).await;
+    let writer = fake.writer();
+    writer_conformance(&writer, &fake, "calendar/k1", CollectionKind::Calendar).await;
+    let sets = fake.0.lock().unwrap().sets.clone();
+    let scheduling: Vec<bool> = sets
+        .iter()
+        .filter_map(|s| s.get("sendSchedulingMessages").and_then(Value::as_bool))
+        .collect();
+    assert_eq!(
+        scheduling,
+        vec![false, true],
+        "the organizer is told only when asked"
+    );
+}
+
+#[tokio::test]
+async fn writes_keep_the_writer_contract_in_address_books() {
+    let fake = FakeJmap::start(false).await;
+    let writer = fake.writer();
+    assert!(writer.offers_contacts().await.unwrap());
+    assert_eq!(writer.capabilities("calendar/k1"), WriteCaps::default());
+    writer_conformance(&writer, &fake, "addressbook/b1", CollectionKind::Contacts).await;
+}
+
+fn event_patch(summary: &str, fields: Option<Vec<Field>>) -> ItemPatch {
+    ItemPatch {
+        content_type: media::ICALENDAR.into(),
+        raw: Bytes::from(format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Holtmail//test//EN\r\n\
+             BEGIN:VEVENT\r\nUID:review@example.org\r\nDTSTAMP:20261101T090000Z\r\n\
+             DTSTART:20261201T100000Z\r\nDTEND:20261201T110000Z\r\nSUMMARY:{summary}\r\n\
+             END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )),
+        uid: Some("review@example.org".into()),
+        fields,
+    }
+}
+
+#[tokio::test]
+async fn an_update_patches_only_the_changed_fields() {
+    let fake = FakeJmap::start(true).await;
+    fake.put_json(
+        "calendar/k1",
+        "e1",
+        r#"{"@type":"Event","id":"e1","calendarIds":{"k1":true},"uid":"review@example.org","title":"Review","description":"Server notes","x-server":{"kept":true}}"#,
+    );
+    let writer = fake.writer();
+    let (_, before) = fake.read("calendar/k1", "e1").await.unwrap();
+    let written = writer
+        .put(
+            "calendar/k1",
+            Some("e1"),
+            &event_patch("Quarterly review", Some(vec![Field::Summary])),
+            Precondition::IfUnchanged(before),
+            "k",
+        )
+        .await
+        .unwrap();
+    let object = fake.object("calendar/k1", "e1").unwrap();
+    assert_eq!(object["title"], "Quarterly review");
+    assert_eq!(object["description"], "Server notes");
+    assert_eq!(object["x-server"]["kept"], true);
+    assert_eq!(
+        written.item.unwrap().raw,
+        Bytes::from(serde_json::to_vec(&canonical(object)).unwrap())
+    );
+    let sets = fake.0.lock().unwrap().sets.clone();
+    assert_eq!(
+        sets.last().unwrap()["update"]["e1"],
+        json!({ "title": "Quarterly review" })
+    );
+    assert!(sets.last().unwrap()["ifInState"].is_string());
+}
+
+#[tokio::test]
+async fn a_create_whose_uid_another_item_holds_is_not_taken_for_it() {
+    let fake = FakeJmap::start(true).await;
+    fake.put_json(
+        "calendar/k1",
+        "e1",
+        r#"{"@type":"Event","id":"e1","calendarIds":{"k1":true},"uid":"review@example.org","title":"Review"}"#,
+    );
+    let writer = fake.writer();
+    let answer = writer
+        .put(
+            "calendar/k1",
+            None,
+            &event_patch("Another meeting", None),
+            Precondition::Absent,
+            "k",
+        )
+        .await;
+    assert!(matches!(
+        answer,
+        Err(CollectionError::PreconditionFailed { current: None })
+    ));
+    assert_eq!(fake.object("calendar/k1", "e1").unwrap()["title"], "Review");
+    assert_eq!(fake.ids("calendar/k1").await, vec!["e1".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_change_elsewhere_in_the_account_is_retried_and_one_to_the_item_is_not() {
+    let fake = FakeJmap::start(true).await;
+    fake.put_json(
+        "calendar/k1",
+        "e1",
+        r#"{"@type":"Event","id":"e1","calendarIds":{"k1":true},"uid":"review@example.org","title":"Review"}"#,
+    );
+    let writer = fake.writer();
+    let (_, before) = fake.read("calendar/k1", "e1").await.unwrap();
+    fake.0.lock().unwrap().races = 2;
+    writer
+        .put(
+            "calendar/k1",
+            Some("e1"),
+            &event_patch("Moved", Some(vec![Field::Summary])),
+            Precondition::IfUnchanged(before.clone()),
+            "k",
+        )
+        .await
+        .expect("a state that moved for another item is asked again");
+    assert_eq!(fake.object("calendar/k1", "e1").unwrap()["title"], "Moved");
+    assert_eq!(fake.0.lock().unwrap().sets.len(), 3);
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k1",
+                Some("e1"),
+                &event_patch("Again", Some(vec![Field::Summary])),
+                Precondition::IfUnchanged(before),
+                "k",
+            )
+            .await,
+        Err(CollectionError::PreconditionFailed { current: None })
+    ));
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k1",
+                Some("e1"),
+                &event_patch("Tagged", None),
+                Precondition::IfMatch("\"t\"".into()),
+                "k",
+            )
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+}
+
+#[tokio::test]
+async fn refusals_change_nothing() {
+    let fake = FakeJmap::start(true).await;
+    fake.put_json(
+        "calendar/k1",
+        "e1",
+        r#"{"@type":"Event","id":"e1","calendarIds":{"k1":true},"uid":"review@example.org","title":"Review"}"#,
+    );
+    let writer = fake.writer();
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k1",
+                Some("e1"),
+                &event_patch("X", Some(vec![Field::Property("X-HOLTMAIL".into())])),
+                Precondition::None,
+                "k",
+            )
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    fake.0.lock().unwrap().read_only = true;
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k1",
+                Some("e1"),
+                &event_patch("X", None),
+                Precondition::None,
+                "k"
+            )
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k1",
+                None,
+                &ItemPatch {
+                    uid: Some("other@example.org".into()),
+                    ..event_patch("New", None)
+                },
+                Precondition::Absent,
+                "k2"
+            )
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    assert!(matches!(
+        writer.delete("calendar/k1", "e1", None).await,
+        Err(CollectionError::Refused(_))
+    ));
+    assert!(matches!(
+        writer
+            .respond("calendar/k1", "e1", None, Partstat::Accepted, false)
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    assert_eq!(fake.object("calendar/k1", "e1").unwrap()["title"], "Review");
+    assert!(matches!(
+        writer
+            .put(
+                "calendar/k9",
+                None,
+                &event_patch("X", None),
+                Precondition::Absent,
+                "k"
+            )
+            .await,
+        Err(CollectionError::Gone)
     ));
 }

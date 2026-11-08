@@ -3,10 +3,14 @@
 //!
 //! Every protocol reduces to the same shape: an account has collections, a collection holds
 //! items with a stable id and a version tag, and the server can say what changed since a token.
-//! A source is read-only: it never changes anything on the server.
+//! A source is read-only: it never changes anything on the server. Writing is a separate
+//! contract, [`CollectionWriter`].
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+mod write;
+
+pub use write::*;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -161,6 +165,18 @@ pub enum CollectionError {
     /// The collection is not on the server (any more).
     #[error("the collection is gone")]
     Gone,
+    /// A write's precondition did not hold: the item changed, exists already or is gone.
+    /// `current` is the server's tag for it now; `None` when it is gone or the server keeps no
+    /// tags.
+    #[error("the item changed on the server")]
+    PreconditionFailed {
+        /// The server's current version tag.
+        current: Option<String>,
+    },
+    /// The server will not take the write: the collection is read-only, the data is invalid or
+    /// too large, or a field cannot be set. Retrying the same write will not help.
+    #[error("the server refused the write: {0}")]
+    Refused(String),
 }
 
 impl CollectionError {
@@ -322,5 +338,95 @@ mod watch_tests {
         fake.unsubscribe(&second).await.unwrap();
         assert!(fake.registrations().is_empty());
         assert!(!format!("{sub:?}").contains("auth_secret"));
+    }
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::testing::{FakeCollections, WriteProbe, writer_conformance};
+    use super::*;
+
+    fn patch(raw: &str) -> ItemPatch {
+        ItemPatch {
+            content_type: media::VCARD.into(),
+            raw: Bytes::from(raw.to_owned()),
+            uid: None,
+            fields: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_fake_keeps_the_writer_contract() {
+        let fake = FakeCollections::new();
+        fake.add_collection("/cal/", CollectionKind::Calendar, "Calendar", None);
+        fake.add_collection("/book/", CollectionKind::Contacts, "Book", None);
+        assert_eq!(fake.capabilities("/cal/"), WriteCaps::default());
+        fake.enable_writes();
+        writer_conformance(&fake, &fake, "/cal/", CollectionKind::Calendar).await;
+        writer_conformance(&fake, &fake, "/book/", CollectionKind::Contacts).await;
+        assert_eq!(
+            fake.notices(),
+            vec![(
+                "/cal/conformance-invite.ics".into(),
+                Some("20261208T100000Z".into()),
+                Partstat::Declined
+            )],
+            "only answers asked to notify reach the organizer"
+        );
+    }
+
+    #[tokio::test]
+    async fn writes_are_seen_by_the_source_and_refusals_change_nothing() {
+        let fake = FakeCollections::new();
+        fake.add_collection("/book/", CollectionKind::Contacts, "Book", None);
+        assert!(matches!(
+            fake.put("/book/", None, &patch("a"), Precondition::Absent, "k")
+                .await,
+            Err(CollectionError::Refused(_))
+        ));
+        fake.enable_writes();
+        let written = fake
+            .put(
+                "/book/",
+                None,
+                &patch("BEGIN:VCARD\r\nEND:VCARD\r\n"),
+                Precondition::Absent,
+                "k",
+            )
+            .await
+            .unwrap();
+        let listed = fake.list("/book/").await.unwrap();
+        assert_eq!(listed[0].id, written.id);
+        assert_eq!(listed[0].etag, written.etag);
+        assert_eq!(written.item.unwrap().content_type, media::VCARD);
+
+        fake.refuse_writes(Some("quota"));
+        assert!(matches!(
+            fake.delete("/book/", &written.id, None).await,
+            Err(CollectionError::Refused(_))
+        ));
+        assert!(fake.read("/book/", &written.id).await.is_some());
+        fake.refuse_writes(None);
+        fake.reject_sign_in(true);
+        assert!(matches!(
+            fake.delete("/book/", &written.id, None).await,
+            Err(CollectionError::Auth(_))
+        ));
+        fake.reject_sign_in(false);
+        assert!(matches!(
+            fake.respond(
+                "/book/",
+                "/book/missing.vcf",
+                None,
+                Partstat::Accepted,
+                false
+            )
+            .await,
+            Err(CollectionError::PreconditionFailed { current: None })
+        ));
+        assert_eq!(Partstat::parse("tentative"), Some(Partstat::Tentative));
+        assert_eq!(Partstat::Accepted.as_str(), "ACCEPTED");
+        assert!(!CollectionError::Refused("x".into()).is_transient());
+        assert!(!CollectionError::PreconditionFailed { current: None }.is_transient());
     }
 }

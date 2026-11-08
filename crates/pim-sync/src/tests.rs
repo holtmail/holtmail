@@ -14,6 +14,7 @@ const CAL: &str = "/dav/cals/work/";
 
 struct Fixture {
     syncer: PimSyncer,
+    ingest: Ingest,
     store: Arc<dyn Store>,
     archive: ArchiveId,
     account: AccountId,
@@ -48,7 +49,8 @@ async fn fixture() -> Fixture {
     server.add_collection(BOOK, CollectionKind::Contacts, "Contacts", None);
     server.add_collection(CAL, CollectionKind::Calendar, "Work", Some("#336699"));
     Fixture {
-        syncer: PimSyncer::new(store.clone(), ingest),
+        syncer: PimSyncer::new(store.clone(), ingest.clone()),
+        ingest,
         store,
         archive,
         account,
@@ -413,4 +415,176 @@ fn the_contract_media_types_are_formats() {
             })
         );
     }
+}
+
+fn located(uid: &str, summary: &str, start: &str, location: Option<&str>) -> Vec<u8> {
+    let location = location
+        .map(|l| format!("LOCATION:{l}\r\n"))
+        .unwrap_or_default();
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\n\
+         DTSTAMP:20260101T090000Z\r\nDTSTART:{start}\r\nSUMMARY:{summary}\r\n{location}\
+         END:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+    .into_bytes()
+}
+
+impl Fixture {
+    async fn item(&self, remote: &str) -> holtmail_store::ItemSummary {
+        let id = self
+            .store
+            .list_items(&ItemQuery {
+                archive_id: self.archive,
+                kind: None,
+                collection_id: None,
+                removed: RemovedFilter::Include,
+                order: ItemOrder::Title,
+                after: None,
+                limit: 100,
+            })
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .find(|s| s.item.remote_id == remote)
+            .unwrap()
+            .item
+            .id;
+        self.store.get_item(id).await.unwrap().unwrap()
+    }
+
+    async fn edit(&self, remote: &str, base: &[u8], mine: &[u8]) -> holtmail_store::ItemChange {
+        let item = self.item(remote).await;
+        let kind = holtmail_pim::ItemKind::parse(item.item.kind.as_str()).unwrap();
+        let classified = holtmail_pim_edit::classify(kind, Some(base), mine, &[]).unwrap();
+        let blob_id = self
+            .ingest
+            .blobs()
+            .put(bytes::Bytes::copy_from_slice(mine))
+            .await
+            .unwrap();
+        let recorded = self
+            .store
+            .record_change(
+                &holtmail_store::NewItemChange {
+                    target: holtmail_store::ChangeTarget::Item { item: item.item.id },
+                    op: holtmail_store::ChangeOp::Update,
+                    class: holtmail_store::ChangeClass::parse(classified.class.as_str()).unwrap(),
+                    content: Some(holtmail_store::ChangeContent {
+                        blob_id,
+                        content_type: kind.content_type().into(),
+                    }),
+                    patch: Some(serde_json::to_value(&classified.patch).unwrap()),
+                    base_version: Some(item.item.versions),
+                    origin: holtmail_store::ChangeOrigin::Api,
+                    user_id: None,
+                    device: None,
+                    at: Timestamp::now(),
+                    not_before: None,
+                    messages: Vec::new(),
+                },
+                holtmail_store::Expect::Any,
+            )
+            .await
+            .unwrap();
+        let holtmail_store::RecordedChange::Recorded(change) = recorded else {
+            panic!("not recorded");
+        };
+        *change
+    }
+
+    async fn change(&self, change: &holtmail_store::ItemChange) -> holtmail_store::ItemChange {
+        self.store.get_change(change.id).await.unwrap().unwrap()
+    }
+}
+
+#[tokio::test]
+async fn the_post_batch_step_rebases_converges_and_conflicts() {
+    let f = fixture().await;
+    let standup = located("standup", "Standup", "20260105T090000Z", None);
+    let review = located("review", "Review", "20260106T090000Z", None);
+    let retro = located("retro", "Retro", "20260107T090000Z", None);
+    let ada = card("ada", "Ada Example", "+1 555 0100");
+    f.server.put_item(CAL, "standup.ics", &standup);
+    f.server.put_item(CAL, "review.ics", &review);
+    f.server.put_item(CAL, "retro.ics", &retro);
+    f.server.put_item(BOOK, "ada.vcf", &ada);
+    f.sync().await;
+
+    let located_standup = located("standup", "Standup", "20260105T090000Z", Some("Room 1"));
+    let rebased = f
+        .edit(&format!("{CAL}standup.ics"), &standup, &located_standup)
+        .await;
+    let new_phone = card("ada", "Ada Example", "+1 555 0199");
+    let converged = f.edit(&format!("{BOOK}ada.vcf"), &ada, &new_phone).await;
+    let moved = f
+        .edit(
+            &format!("{CAL}review.ics"),
+            &review,
+            &located("review", "Review", "20260106T130000Z", None),
+        )
+        .await;
+    let deleted = f
+        .edit(
+            &format!("{CAL}retro.ics"),
+            &retro,
+            &located("retro", "Retro", "20260107T090000Z", Some("Hall")),
+        )
+        .await;
+
+    f.server.put_item(
+        CAL,
+        "standup.ics",
+        &located("standup", "Daily", "20260105T090000Z", None),
+    );
+    f.server.put_item(BOOK, "ada.vcf", &new_phone);
+    f.server.put_item(
+        CAL,
+        "review.ics",
+        &located("review", "Review", "20260106T150000Z", None),
+    );
+    f.server.delete_item(CAL, "retro.ics");
+    f.sync().await;
+
+    let rebased = f.change(&rebased).await;
+    assert_eq!(rebased.state, holtmail_store::ItemChangeState::Held);
+    assert_eq!(rebased.rebased_onto, Some(2));
+    assert!(!rebased.flagged());
+    let item = f.item(&format!("{CAL}standup.ics")).await;
+    assert_eq!(
+        item.index.as_ref().unwrap().title.as_deref(),
+        Some("Daily"),
+        "derived data follows upstream's new title"
+    );
+    let effective = f
+        .store
+        .effective(&holtmail_store::ChangeTarget::Item { item: item.item.id })
+        .await
+        .unwrap()
+        .unwrap();
+    let served = Edits::new(f.store.clone(), f.ingest.clone())
+        .served(&effective)
+        .await
+        .unwrap()
+        .unwrap();
+    let text = String::from_utf8(served.raw.to_vec()).unwrap();
+    assert!(text.contains("SUMMARY:Daily") && text.contains("LOCATION:Room 1"));
+
+    assert_eq!(
+        f.change(&converged).await.state,
+        holtmail_store::ItemChangeState::Applied
+    );
+    let moved = f.change(&moved).await;
+    assert_eq!(moved.state, holtmail_store::ItemChangeState::Conflict);
+    assert_eq!(moved.reason.as_deref(), Some("overlap"));
+    let deleted = f.change(&deleted).await;
+    assert_eq!(deleted.state, holtmail_store::ItemChangeState::Conflict);
+    assert_eq!(deleted.reason.as_deref(), Some("upstream_deleted"));
+
+    let again = f.sync().await;
+    assert_eq!(again.new_items() + again.changed_items(), 0);
+    assert_eq!(
+        f.change(&rebased).await.state,
+        holtmail_store::ItemChangeState::Held
+    );
 }

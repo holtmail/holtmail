@@ -4,8 +4,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use holtmail_collection::CollectionError;
 use holtmail_core::TlsRoots;
-use reqwest::header::{ACCEPT, HeaderMap, RETRY_AFTER};
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, IF_MATCH, RETRY_AFTER};
+use reqwest::{Method, RequestBuilder, StatusCode};
 use url::{Host, Url};
 
 const ATTEMPTS: u32 = 5;
@@ -38,6 +38,23 @@ pub(crate) enum Answer {
     Found(Bytes),
     Missing,
     Gone,
+}
+
+/// The answer to a write: a body (possibly empty), `404`, `412`, or a refusal of the request
+/// itself (`400`, `409`, `413`, `422`) with Graph's error code when it gave one.
+pub(crate) enum Reply {
+    Done(Bytes),
+    Missing,
+    Stale,
+    Refused(String),
+}
+
+/// One write request: method, address, JSON body and the version it is conditional on.
+pub(crate) struct Write<'a> {
+    pub(crate) method: Method,
+    pub(crate) url: Url,
+    pub(crate) body: Option<&'a serde_json::Value>,
+    pub(crate) if_match: Option<&'a str>,
 }
 
 #[derive(Clone)]
@@ -144,9 +161,9 @@ impl Http {
         Ok(url)
     }
 
-    fn request(&self, url: Url) -> RequestBuilder {
+    fn request(&self, method: Method, url: Url) -> RequestBuilder {
         self.client
-            .get(url)
+            .request(method, url)
             .bearer_auth(&self.token)
             .header(ACCEPT, "application/json")
             .header(
@@ -155,7 +172,13 @@ impl Http {
             )
     }
 
-    async fn send(&self, url: Url) -> Result<(reqwest::Response, String), CollectionError> {
+    async fn send(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<&[u8]>,
+        if_match: Option<&str>,
+    ) -> Result<(reqwest::Response, String), CollectionError> {
         if url.origin() != self.origin {
             return Err(CollectionError::Protocol(
                 "Microsoft Graph named an address on another host".into(),
@@ -164,7 +187,16 @@ impl Http {
         let host = host(&url);
         let mut attempt = 0;
         loop {
-            let response = self.request(url.clone()).send().await.map_err(|e| {
+            let mut request = self.request(method.clone(), url.clone());
+            if let Some(body) = body {
+                request = request
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.to_vec());
+            }
+            if let Some(tag) = if_match {
+                request = request.header(IF_MATCH, tag);
+            }
+            let response = request.send().await.map_err(|e| {
                 CollectionError::Connection(if e.is_timeout() {
                     format!("{host} did not answer in time")
                 } else {
@@ -227,7 +259,7 @@ impl Http {
         scope: Scope,
         item: bool,
     ) -> Result<Answer, CollectionError> {
-        let (response, host) = self.send(url).await?;
+        let (response, host) = self.send(Method::GET, url, None, None).await?;
         match response.status() {
             StatusCode::NOT_FOUND => return Ok(Answer::Missing),
             StatusCode::GONE => return Ok(Answer::Gone),
@@ -237,5 +269,53 @@ impl Http {
         read_limited(response, limit, &host)
             .await
             .map(Answer::Found)
+    }
+
+    /// Sends a write. `401` is `Auth`; `403` is `Refused`, since the server checks the sign-in's
+    /// write consent before it writes and Graph answers `403` for a calendar or folder the
+    /// account may only read; throttling is waited out as for reads.
+    pub(crate) async fn write(&self, write: Write<'_>) -> Result<Reply, CollectionError> {
+        let body = write
+            .body
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|_| {
+                CollectionError::Protocol("a Graph request could not be written".into())
+            })?;
+        let (response, host) = self
+            .send(write.method, write.url, body.as_deref(), write.if_match)
+            .await?;
+        let status = response.status();
+        match status {
+            StatusCode::NOT_FOUND | StatusCode::GONE => return Ok(Reply::Missing),
+            StatusCode::PRECONDITION_FAILED => return Ok(Reply::Stale),
+            StatusCode::FORBIDDEN
+            | StatusCode::BAD_REQUEST
+            | StatusCode::CONFLICT
+            | StatusCode::PAYLOAD_TOO_LARGE
+            | StatusCode::UNPROCESSABLE_ENTITY => {
+                let body = read_limited(response, MAX_ITEM, &host)
+                    .await
+                    .unwrap_or_default();
+                let code = serde_json::from_slice::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| {
+                        v.pointer("/error/code")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .filter(|c| c.len() <= 80 && c.chars().all(|c| c.is_ascii_alphanumeric()));
+                return Ok(Reply::Refused(match code {
+                    Some(code) => {
+                        format!("{host} refused the change ({}, {code})", status.as_u16())
+                    }
+                    None => format!("{host} refused the change ({})", status.as_u16()),
+                }));
+            }
+            status => Self::check(status, &host, Scope::Item)?,
+        }
+        read_limited(response, MAX_ITEM, &host)
+            .await
+            .map(Reply::Done)
     }
 }

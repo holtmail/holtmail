@@ -8,12 +8,15 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+holtmail-blob.workspace = true
 holtmail-collection.workspace = true
 holtmail-core.workspace = true
 holtmail-ingest.workspace = true
 holtmail-pim.workspace = true
+holtmail-pim-edit.workspace = true
 holtmail-store.workspace = true
 bytes.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

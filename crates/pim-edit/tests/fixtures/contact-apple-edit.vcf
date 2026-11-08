@@ -1,0 +1,18 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//iPhone OS 18.1//EN
+N:Example;Ada;;;
+FN:Ada Example
+ORG:Example Analytical Engines;Research
+TITLE:Engineer
+item1.EMAIL;type=INTERNET;type=pref:ada@example.com
+item1.X-ABLabel:_$!<Other>!$_
+EMAIL;type=INTERNET;type=WORK:ada.example@example.org
+TEL;type=CELL;type=VOICE;type=pref:+1 555 0100
+item2.TEL:+1 555 0199
+item2.X-ABLabel:_$!<HomeFAX>!$_
+ADR;type=HOME:;;12 Example Street;Springfield;;12345;Exampleland
+NOTE:Met at the example conference.
+REV:2026-11-05T10:11:12Z
+UID:4e1b7a52-ada-example
+END:VCARD

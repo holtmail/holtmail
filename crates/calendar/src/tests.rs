@@ -56,6 +56,7 @@ fn summary(archive: ArchiveId, raw: &[u8]) -> ItemSummary {
             first_seen_at: Timestamp::from_secs(0),
             removed_at: None,
             versions: 1,
+            dav_name: None,
         },
         index: Some(index(raw)),
     }

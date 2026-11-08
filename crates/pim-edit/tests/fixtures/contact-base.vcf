@@ -1,0 +1,16 @@
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Example Corp//Contacts Server 1.0//EN
+UID:4e1b7a52-ada-example
+FN:Ada Example
+N:Example;Ada;;;
+ORG:Example Analytical Engines;Research
+TITLE:Engineer
+item1.EMAIL;type=INTERNET;type=pref:ada@example.com
+item1.X-ABLabel:_$!<Other>!$_
+EMAIL;type=INTERNET;type=WORK:ada.example@example.org
+TEL;type=CELL;type=VOICE:+1 555 0100
+ADR;type=HOME:;;12 Example Street;Springfield;;12345;Exampleland
+NOTE:Met at the example conference.
+REV:2026-11-01T08:00:00Z
+END:VCARD

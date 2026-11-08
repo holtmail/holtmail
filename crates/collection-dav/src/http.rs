@@ -171,7 +171,8 @@ impl Http {
         method: &Method,
         url: &Url,
         depth: Option<&str>,
-        body: Option<&str>,
+        body: Option<(&str, &Bytes)>,
+        extra: &[(&str, &str)],
         sign_in: bool,
     ) -> Result<reqwest::Response, CollectionError> {
         let host = host(url);
@@ -181,10 +182,13 @@ impl Http {
             if let Some(depth) = depth {
                 builder = builder.header("Depth", depth);
             }
-            if let Some(body) = body {
+            for (name, value) in extra {
+                builder = builder.header(*name, *value);
+            }
+            if let Some((content_type, body)) = body {
                 builder = builder
-                    .header(CONTENT_TYPE, "application/xml; charset=utf-8")
-                    .body(body.to_owned());
+                    .header(CONTENT_TYPE, content_type)
+                    .body(body.clone());
             }
             if sign_in {
                 builder = match &self.credentials {
@@ -245,6 +249,21 @@ impl Http {
         body: Option<&str>,
         limit: usize,
     ) -> Result<Answer, CollectionError> {
+        let body = body.map(|b| Bytes::copy_from_slice(b.as_bytes()));
+        let body = body.as_ref().map(|b| ("application/xml; charset=utf-8", b));
+        self.request(method, url, depth, body, &[], limit).await
+    }
+
+    /// [`Http::dav`] with any body and extra request headers.
+    pub(crate) async fn request(
+        &self,
+        method: &str,
+        url: &Url,
+        depth: Option<&str>,
+        body: Option<(&str, &Bytes)>,
+        extra: &[(&str, &str)],
+        limit: usize,
+    ) -> Result<Answer, CollectionError> {
         let method = Method::from_bytes(method.as_bytes()).expect("a valid method");
         let mut url = url.clone();
         for _ in 0..=MAX_REDIRECTS {
@@ -255,7 +274,9 @@ impl Http {
                     host(&url)
                 )));
             }
-            let response = self.send_once(&method, &url, depth, body, true).await?;
+            let response = self
+                .send_once(&method, &url, depth, body, extra, true)
+                .await?;
             if let Some(next) = Self::redirect_target(&response, &url) {
                 url = next;
                 continue;
@@ -294,7 +315,10 @@ impl Http {
             if !allowed_scheme(&url) || (secure && url.scheme() != "https") {
                 return Ok(None);
             }
-            let response = match self.send_once(&method, &url, Some("0"), None, false).await {
+            let response = match self
+                .send_once(&method, &url, Some("0"), None, &[], false)
+                .await
+            {
                 Ok(response) => response,
                 Err(CollectionError::Connection(_)) if moved => return Ok(None),
                 Err(error) => return Err(error),

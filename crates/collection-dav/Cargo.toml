@@ -1,6 +1,6 @@
 [package]
 name = "holtmail-collection-dav"
-description = "Reading address books and calendars from CardDAV and CalDAV servers"
+description = "Reading and writing address books and calendars on CardDAV and CalDAV servers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "holtmail-collection-jmap"
-description = "Reading contacts and calendars from JMAP servers (RFC 9610, JMAP Calendars)"
+description = "Reading and writing contacts and calendars on JMAP servers (RFC 9610, JMAP Calendars)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,6 +13,9 @@ holtmail-collection.workspace = true
 holtmail-sse.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+calcard = { workspace = true, features = ["jmap"] }
+chrono.workspace = true
+chrono-tz.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }

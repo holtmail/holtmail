@@ -8,7 +8,8 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
-use holtmail_collection::testing::{Remote, conformance};
+use holtmail_collection::testing::{Remote, WriteProbe, conformance, writer_conformance};
+use holtmail_collection::{CollectionWriter, ItemPatch, Partstat, Precondition, WriteCaps, media};
 
 use super::*;
 
@@ -38,6 +39,12 @@ struct DavState {
     refuse_push: Option<&'static str>,
     registrations: BTreeMap<String, Registration>,
     registered: u64,
+    auto_schedule: bool,
+    max_size: Option<u64>,
+    refuse_writes: Option<u16>,
+    no_put_etag: bool,
+    weak_put_etag: bool,
+    schedule_replies: Vec<Option<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +100,102 @@ impl FakeDav {
 
     fn requests(&self) -> Vec<(String, String, bool)> {
         self.0.lock().unwrap().requests.clone()
+    }
+
+    fn item(&self, id: &str) -> Option<(u64, Vec<u8>)> {
+        let s = self.0.lock().unwrap();
+        let (coll, name) = locate(&s, id)?;
+        s.collections[&coll].items.get(&name).cloned()
+    }
+}
+
+fn locate(s: &DavState, path: &str) -> Option<(String, String)> {
+    s.collections.keys().find_map(|c| {
+        let name = path.strip_prefix(c.as_str())?;
+        (!name.is_empty() && !name.contains('/')).then(|| (c.clone(), name.to_owned()))
+    })
+}
+
+fn tag(seq: u64) -> String {
+    format!("\"{seq}\"")
+}
+
+fn holds(headers: &HeaderMap, current: Option<u64>) -> bool {
+    let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    if header("if-none-match") == Some("*") && current.is_some() {
+        return false;
+    }
+    match header("if-match") {
+        Some("*") => current.is_some(),
+        Some(expected) => current.is_some_and(|c| tag(c) == expected),
+        None => true,
+    }
+}
+
+fn write_item(s: &mut DavState, coll: &str, name: &str, raw: Option<Vec<u8>>) -> u64 {
+    s.seq += 1;
+    let seq = s.seq;
+    let c = s.collections.get_mut(coll).unwrap();
+    match raw {
+        Some(raw) => {
+            c.items.insert(name.into(), (seq, raw));
+        }
+        None => {
+            c.items.remove(name);
+        }
+    }
+    c.log.push((seq, name.into()));
+    seq
+}
+
+#[async_trait]
+impl WriteProbe for FakeDav {
+    fn own_address(&self) -> String {
+        "ada@example.com".into()
+    }
+
+    async fn read(&self, collection: &str, id: &str) -> Option<(Option<String>, Bytes)> {
+        id.strip_prefix(collection)?;
+        self.item(id)
+            .map(|(seq, raw)| (Some(tag(seq)), Bytes::from(raw)))
+    }
+
+    async fn ids(&self, collection: &str) -> Vec<String> {
+        let s = self.0.lock().unwrap();
+        s.collections
+            .get(collection)
+            .map(|c| c.items.keys().map(|n| format!("{collection}{n}")).collect())
+            .unwrap_or_default()
+    }
+
+    async fn touch(&self, collection: &str, id: &str) {
+        let mut s = self.0.lock().unwrap();
+        let Some((coll, name)) = locate(&s, id).filter(|(c, _)| c == collection) else {
+            return;
+        };
+        let Some((_, raw)) = s.collections[&coll].items.get(&name).cloned() else {
+            return;
+        };
+        write_item(
+            &mut s,
+            &coll,
+            &name,
+            Some([raw, b"X-TOUCHED:1\r\n".to_vec()].concat()),
+        );
+    }
+
+    async fn partstat(
+        &self,
+        collection: &str,
+        id: &str,
+        recurrence_id: Option<&str>,
+    ) -> Option<Partstat> {
+        let (_, raw) = self.read(collection, id).await?;
+        ical::partstat(
+            &String::from_utf8_lossy(&raw),
+            &[self.own_address()],
+            recurrence_id,
+        )
     }
 }
 
@@ -173,6 +276,19 @@ fn coll_props(s: &DavState, path: &str, coll: &Coll) -> String {
         esc(&coll.name),
         token(s, last)
     );
+    props.push_str(
+        "<D:current-user-principal><D:href>/dav/principals/ada/</D:href></D:current-user-principal>",
+    );
+    if let Some(max) = s.max_size {
+        let ns = if coll.kind == Some(CollectionKind::Contacts) {
+            "C"
+        } else {
+            "K"
+        };
+        props.push_str(&format!(
+            "<{ns}:max-resource-size>{max}</{ns}:max-resource-size>"
+        ));
+    }
     if let Some(color) = &coll.color {
         props.push_str(&format!("<A:calendar-color>{color}</A:calendar-color>"));
     }
@@ -305,7 +421,9 @@ async fn handle(
         ("PROPFIND", "/dav/principals/ada/") => multistatus(ok(
             "/dav/principals/ada/",
             "<C:addressbook-home-set><D:href>/dav/addressbooks/ada/</D:href></C:addressbook-home-set>\
-             <K:calendar-home-set><D:href>http://ignored.example/dav/calendars/ada/</D:href></K:calendar-home-set>",
+             <K:calendar-home-set><D:href>http://ignored.example/dav/calendars/ada/</D:href></K:calendar-home-set>\
+             <K:calendar-user-address-set><D:href>mailto:ada@example.com</D:href>\
+             <D:href>/dav/principals/ada/</D:href></K:calendar-user-address-set>",
         )
         .replace("http://ignored.example", "")),
         ("PROPFIND", home @ ("/dav/addressbooks/ada/" | "/dav/calendars/ada/")) => {
@@ -448,22 +566,85 @@ async fn handle(
             }
             multistatus(inner)
         }
+        ("OPTIONS", p) => {
+            let dav = if s.auto_schedule && p.starts_with("/dav/calendars/") {
+                "1, 3, calendar-access, calendar-auto-schedule"
+            } else {
+                "1, 3, addressbook, calendar-access"
+            };
+            (StatusCode::OK, [("dav", dav)]).into_response()
+        }
+        ("PROPFIND", p) if locate(&s, p).is_some() => {
+            match fake_item(&s, p) {
+                Some((seq, _)) => multistatus(ok(p, &format!("<D:getetag>{}</D:getetag>", tag(seq)))),
+                None => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+        ("PUT", p) => {
+            let Some((coll, name)) = locate(&s, p) else {
+                return StatusCode::CONFLICT.into_response();
+            };
+            let current = s.collections[&coll].items.get(&name).map(|(seq, _)| *seq);
+            if !holds(&headers, current) {
+                return StatusCode::PRECONDITION_FAILED.into_response();
+            }
+            if let Some(code) = s.refuse_writes {
+                return (
+                    StatusCode::from_u16(code).unwrap(),
+                    "<D:error xmlns:D=\"DAV:\" xmlns:K=\"urn:ietf:params:xml:ns:caldav\">\
+                     <K:valid-calendar-data/></D:error>",
+                )
+                    .into_response();
+            }
+            let reply = headers
+                .get("schedule-reply")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            s.schedule_replies.push(reply);
+            let seq = write_item(&mut s, &coll, &name, Some(body.to_vec()));
+            let status = if current.is_some() { StatusCode::NO_CONTENT } else { StatusCode::CREATED };
+            if s.no_put_etag {
+                status.into_response()
+            } else if s.weak_put_etag {
+                (status, [("etag", format!("W/{}", tag(seq)))]).into_response()
+            } else {
+                (status, [("etag", tag(seq))]).into_response()
+            }
+        }
+        ("DELETE", p) if locate(&s, p).is_some() => {
+            let (coll, name) = locate(&s, p).unwrap();
+            let current = s.collections[&coll].items.get(&name).map(|(seq, _)| *seq);
+            if current.is_none() {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            if !holds(&headers, current) {
+                return StatusCode::PRECONDITION_FAILED.into_response();
+            }
+            if let Some(code) = s.refuse_writes {
+                return StatusCode::from_u16(code).unwrap().into_response();
+            }
+            write_item(&mut s, &coll, &name, None);
+            StatusCode::NO_CONTENT.into_response()
+        }
         ("GET", p) => {
             if s.unservable.as_deref().is_some_and(|u| p.ends_with(u)) {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
-            let found = s.collections.iter().find_map(|(c, coll)| {
-                p.strip_prefix(c.as_str())
-                    .and_then(|n| coll.items.get(n))
-                    .map(|(_, raw)| raw.clone())
-            });
-            match found {
-                Some(raw) => raw.into_response(),
+            match fake_item(&s, p) {
+                Some((seq, raw)) => ([("etag", tag(seq))], raw).into_response(),
                 None => StatusCode::NOT_FOUND.into_response(),
             }
         }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+fn fake_item(s: &DavState, p: &str) -> Option<(u64, Vec<u8>)> {
+    s.collections.iter().find_map(|(c, coll)| {
+        p.strip_prefix(c.as_str())
+            .and_then(|n| coll.items.get(n))
+            .cloned()
+    })
 }
 
 async fn serve(fake: FakeDav) -> String {
@@ -830,4 +1011,240 @@ async fn a_refused_subscription_is_no_push_or_an_error() {
         source.subscribe(CAL, &subscription(&keys)).await,
         Err(CollectionError::Protocol(_))
     ));
+}
+
+async fn writer(fake: &FakeDav) -> DavSource {
+    let base = serve(fake.clone()).await;
+    let source = source(&base);
+    source.collections().await.unwrap();
+    source
+}
+
+const INVITE: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n\
+    BEGIN:VEVENT\r\nUID:review@example.org\r\nDTSTAMP:20261101T090000Z\r\n\
+    DTSTART:20261201T100000Z\r\nDTEND:20261201T110000Z\r\nSUMMARY:Review\r\n\
+    ORGANIZER:mailto:organizer@example.org\r\n\
+    ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:ada@example.com\r\n\
+    END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+fn invite() -> ItemPatch {
+    ItemPatch {
+        content_type: media::ICALENDAR.into(),
+        raw: Bytes::from_static(INVITE.as_bytes()),
+        uid: Some("review@example.org".into()),
+        fields: None,
+    }
+}
+
+#[tokio::test]
+async fn keeps_the_writer_contract_in_an_auto_scheduling_calendar() {
+    let fake = FakeDav::standard();
+    fake.0.lock().unwrap().auto_schedule = true;
+    let source = writer(&fake).await;
+    let caps = source.capabilities(CAL);
+    assert!(caps.respond && caps.tags && !caps.field_patch);
+    writer_conformance(&source, &fake, CAL, CollectionKind::Calendar).await;
+    let replies = fake.0.lock().unwrap().schedule_replies.clone();
+    assert!(
+        replies.contains(&Some("F".into())),
+        "an answer without notice asks the server not to reply"
+    );
+}
+
+#[tokio::test]
+async fn keeps_the_writer_contract_in_an_address_book() {
+    let fake = FakeDav::standard();
+    let source = writer(&fake).await;
+    assert!(!source.capabilities(BOOK).respond);
+    writer_conformance(&source, &fake, BOOK, CollectionKind::Contacts).await;
+    let created = fake.0.lock().unwrap().collections[BOOK].items.len();
+    assert_eq!(created, 0);
+}
+
+#[tokio::test]
+async fn creates_at_a_name_from_the_key() {
+    let fake = FakeDav::standard();
+    let source = writer(&fake).await;
+    let written = source
+        .put(CAL, None, &invite(), Precondition::Absent, "key/1")
+        .await
+        .unwrap();
+    assert_eq!(written.id, format!("{CAL}key_2f1.ics"));
+    assert_eq!(
+        written.item.unwrap().raw,
+        INVITE.as_bytes(),
+        "an ETag on PUT means the bytes were kept"
+    );
+    let other = ItemPatch {
+        uid: Some("other@example.org".into()),
+        raw: Bytes::from(INVITE.replace("review@", "other@")),
+        ..invite()
+    };
+    assert!(
+        matches!(
+            source
+                .put(CAL, None, &other, Precondition::Absent, "key/1")
+                .await,
+            Err(CollectionError::PreconditionFailed { current: Some(_) })
+        ),
+        "a different item under the same key is not taken for the earlier create"
+    );
+}
+
+#[tokio::test]
+async fn a_put_answered_without_a_tag_reads_it() {
+    let fake = FakeDav::standard();
+    fake.0.lock().unwrap().no_put_etag = true;
+    let source = writer(&fake).await;
+    let written = source
+        .put(CAL, None, &invite(), Precondition::Absent, "k1")
+        .await
+        .unwrap();
+    let (seq, _) = fake.item(&written.id).unwrap();
+    assert_eq!(written.etag, Some(tag(seq)));
+    assert!(
+        written.item.is_none(),
+        "the caller fetches what the server keeps"
+    );
+}
+
+#[tokio::test]
+async fn a_weak_tag_on_put_does_not_vouch_for_the_bytes() {
+    let fake = FakeDav::standard();
+    fake.0.lock().unwrap().weak_put_etag = true;
+    let source = writer(&fake).await;
+    let written = source
+        .put(CAL, None, &invite(), Precondition::Absent, "k1")
+        .await
+        .unwrap();
+    assert!(written.etag.is_some_and(|t| t.starts_with("W/")));
+    assert!(
+        written.item.is_none(),
+        "the caller fetches what the server keeps"
+    );
+}
+
+#[tokio::test]
+async fn refusals_and_sign_in_failures_are_told_apart() {
+    let fake = FakeDav::standard();
+    fake.0.lock().unwrap().max_size = Some(64);
+    let source = writer(&fake).await;
+    assert_eq!(source.capabilities(CAL).max_size, Some(64));
+    assert_eq!(source.capabilities("/dav/nowhere/"), WriteCaps::default());
+    let requests = fake.requests().len();
+    assert!(matches!(
+        source
+            .put(CAL, None, &invite(), Precondition::Absent, "big")
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    assert_eq!(fake.requests().len(), requests, "nothing was sent");
+    let card_in_calendar = ItemPatch {
+        content_type: media::VCARD.into(),
+        ..invite()
+    };
+    assert!(matches!(
+        source
+            .put(CAL, None, &card_in_calendar, Precondition::Absent, "x")
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+
+    fake.0.lock().unwrap().max_size = None;
+    let source = writer(&fake).await;
+    for code in [403, 415] {
+        fake.0.lock().unwrap().refuse_writes = Some(code);
+        match source
+            .put(CAL, None, &invite(), Precondition::Absent, "r")
+            .await
+        {
+            Err(CollectionError::Refused(reason)) => {
+                assert!(
+                    reason.contains(&code.to_string()) && reason.contains("valid-calendar-data")
+                )
+            }
+            other => panic!("{code} must be a refusal, got {other:?}"),
+        }
+    }
+    fake.0.lock().unwrap().refuse_writes = Some(401);
+    assert!(matches!(
+        source
+            .put(CAL, None, &invite(), Precondition::Absent, "r")
+            .await,
+        Err(CollectionError::Auth(_))
+    ));
+    fake.0.lock().unwrap().refuse_writes = None;
+    assert!(matches!(
+        source
+            .put("/dav/nowhere/", None, &invite(), Precondition::Absent, "r")
+            .await,
+        Err(CollectionError::Gone)
+    ));
+}
+
+#[tokio::test]
+async fn answers_need_a_scheduling_server_to_reach_the_organizer() {
+    let fake = FakeDav::standard();
+    fake.put_item(CAL, "review.ics", INVITE.as_bytes());
+    let source = writer(&fake).await;
+    let id = format!("{CAL}review.ics");
+    assert!(!source.capabilities(CAL).respond);
+    assert!(matches!(
+        source
+            .respond(CAL, &id, None, Partstat::Accepted, true)
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    let written = source
+        .respond(CAL, &id, None, Partstat::Tentative, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.partstat(CAL, &id, None).await,
+        Some(Partstat::Tentative)
+    );
+    assert_eq!(written.etag, Some(tag(fake.item(&id).unwrap().0)));
+    assert_eq!(
+        fake.0.lock().unwrap().schedule_replies,
+        vec![Some("F".to_owned())]
+    );
+
+    fake.0.lock().unwrap().auto_schedule = true;
+    let source = writer(&fake).await;
+    source
+        .respond(CAL, &id, None, Partstat::Accepted, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.0.lock().unwrap().schedule_replies.last(),
+        Some(&None),
+        "the server is left to tell the organizer"
+    );
+    let stranger = INVITE.replace("ada@example.com", "carol@example.org");
+    fake.put_item(CAL, "stranger.ics", stranger.as_bytes());
+    assert!(matches!(
+        source
+            .respond(
+                CAL,
+                &format!("{CAL}stranger.ics"),
+                None,
+                Partstat::Accepted,
+                true
+            )
+            .await,
+        Err(CollectionError::Refused(_))
+    ));
+    let extra = writer(&fake)
+        .await
+        .with_addresses(["carol@example.org".to_owned()]);
+    extra
+        .respond(
+            CAL,
+            &format!("{CAL}stranger.ics"),
+            None,
+            Partstat::Declined,
+            false,
+        )
+        .await
+        .unwrap();
 }

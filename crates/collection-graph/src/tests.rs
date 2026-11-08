@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::Router;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use holtmail_collection::testing::{Remote, conformance};
 use serde_json::json;
@@ -20,6 +20,8 @@ struct Coll {
     color: Option<String>,
     items: BTreeMap<String, (u64, Vec<u8>)>,
     log: Vec<(u64, String)>,
+    keys: BTreeMap<String, String>,
+    read_only: bool,
 }
 
 #[derive(Default)]
@@ -33,6 +35,12 @@ struct Fake {
     foreign_next: bool,
     stuck_next: bool,
     requests: Vec<String>,
+    created: u64,
+    transactions: BTreeMap<(String, String), String>,
+    patches: Vec<(serde_json::Value, Option<String>)>,
+    responses: Vec<(String, String, bool)>,
+    deny_writes: bool,
+    race: bool,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -121,9 +129,15 @@ fn without_skip(base: &str, uri: &Uri) -> String {
     }
 }
 
-async fn handle(State(fake): State<Shared>, uri: Uri, headers: HeaderMap) -> Response {
+async fn handle(
+    State(fake): State<Shared>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
     let mut f = fake.lock().unwrap();
-    f.requests.push(uri.to_string());
+    f.requests.push(format!("{method} {uri}"));
     if headers.get("authorization").and_then(|v| v.to_str().ok())
         != Some(&format!("Bearer {TOKEN}"))
     {
@@ -140,6 +154,9 @@ async fn handle(State(fake): State<Shared>, uri: Uri, headers: HeaderMap) -> Res
         .unwrap_or(0);
     let path = uri.path().trim_start_matches("/v1.0/me/").to_owned();
     let segments: Vec<&str> = path.split('/').collect();
+    if method != Method::GET {
+        return writes::handle(&mut f, &method, &segments, &headers, &body);
+    }
     let base = f.base();
     let here = without_skip(&base, &uri);
     let folder_key = |id: &str| format!("contacts/{id}");
@@ -161,9 +178,15 @@ async fn handle(State(fake): State<Shared>, uri: Uri, headers: HeaderMap) -> Res
         };
         match rest {
             [] => {
+                let wanted = q.get("$filter").map(|f| writes::filtered_key(f));
                 let all = coll
                     .items
                     .iter()
+                    .filter(|(n, _)| {
+                        wanted
+                            .as_ref()
+                            .is_none_or(|k| coll.keys.get(*n) == k.as_ref())
+                    })
                     .map(|(n, (seq, _))| json!({"id": item_id(n), "changeKey": seq.to_string()}))
                     .collect();
                 return f.page_of(&here, all, offset, serde_json::Value::Null);
@@ -231,7 +254,7 @@ async fn handle(State(fake): State<Shared>, uri: Uri, headers: HeaderMap) -> Res
                 .filter(|(k, _)| k.starts_with("calendars/"))
                 .map(|(k, c)| {
                     json!({"id": k.trim_start_matches("calendars/"), "name": c.name,
-                        "hexColor": c.color.clone().unwrap_or_default()})
+                        "hexColor": c.color.clone().unwrap_or_default(), "canEdit": !c.read_only})
                 })
                 .collect();
             f.page_of(&here, all, offset, serde_json::Value::Null)
@@ -257,6 +280,13 @@ async fn handle(State(fake): State<Shared>, uri: Uri, headers: HeaderMap) -> Res
                 }
                 [event] => match coll.items.get(name_of(event)) {
                     Some((_, raw)) => raw.clone().into_response(),
+                    None => StatusCode::NOT_FOUND.into_response(),
+                },
+                [event, "instances"] => match coll.items.get(name_of(event)) {
+                    Some((_, raw)) => {
+                        let all = writes::instances(raw, &q);
+                        f.page_of(&here, all, offset, serde_json::Value::Null)
+                    }
                     None => StatusCode::NOT_FOUND.into_response(),
                 },
                 _ => StatusCode::NOT_FOUND.into_response(),
@@ -568,3 +598,5 @@ async fn trusts_extra_roots_only_when_given() {
         Err(CollectionError::Connection(_))
     ));
 }
+
+mod writes;

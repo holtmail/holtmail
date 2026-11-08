@@ -6,11 +6,15 @@
 //! for `urn:ietf:params:jmap:contacts` and `urn:ietf:params:jmap:calendars`. Each card is stored
 //! as the JSContact object (`application/jscontact+json`) and each event as the JSCalendar object
 //! (`application/jscalendar+json`) exactly as they appear in the server's `/get` answer.
-//! Changes come from `ContactCard/changes` and `CalendarEvent/changes`. Read-only: only `/get`,
-//! `/query` and `/changes` methods are called. Push comes from the session's `eventSourceUrl`
-//! (RFC 8620 §7.3).
+//! Changes come from `ContactCard/changes` and `CalendarEvent/changes`. Reading calls only
+//! `/get`, `/query` and `/changes` methods; the same type is also a [`CollectionWriter`]
+//! (`ContactCard/set`, `CalendarEvent/set`), which the server hands out only for accounts
+//! allowed to write. Push comes from the session's `eventSourceUrl` (RFC 8620 §7.3).
+//!
+//! [`CollectionWriter`]: holtmail_collection::CollectionWriter
 
 mod http;
+mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -99,6 +103,7 @@ struct Session {
     calendars: Option<String>,
     max_objects: usize,
     events: Option<String>,
+    username: Option<String>,
 }
 
 impl Session {
@@ -248,18 +253,38 @@ impl JmapCollections {
             calendars: primary(CALENDARS),
             max_objects,
             events,
+            username: session
+                .get("username")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         };
         *cached = Some(found.clone());
         Ok(found)
     }
 
-    /// Sends `calls` in one request and gives each answer's arguments, in order.
+    /// Sends `calls` in one request and gives each answer's arguments, in order; the first
+    /// method error fails the whole request.
     async fn call(
         &self,
         session: &Session,
         kind: &Kind,
         calls: Vec<(String, Value)>,
     ) -> Result<Vec<Box<RawValue>>, CollectionError> {
+        self.call_each(session, kind, calls)
+            .await?
+            .into_iter()
+            .map(|answer| answer.map_err(|kind| method_error(&kind)))
+            .collect()
+    }
+
+    /// Sends `calls` in one request and gives each answer's arguments or method error type, in
+    /// order.
+    async fn call_each(
+        &self,
+        session: &Session,
+        kind: &Kind,
+        calls: Vec<(String, Value)>,
+    ) -> Result<Vec<Result<Box<RawValue>, String>>, CollectionError> {
         let count = calls.len();
         let body = json!({
             "using": [CORE, kind.capability],
@@ -279,28 +304,19 @@ impl JmapCollections {
             .await?;
         let envelope: Envelope<'_> = serde_json::from_slice(&answer)
             .map_err(|_| protocol("the JMAP server did not answer with JMAP"))?;
-        let mut out: Vec<Option<Box<RawValue>>> = vec![None; count];
+        let mut out: Vec<Option<Result<Box<RawValue>, String>>> = vec![None; count];
         for (name, args, id) in envelope.responses {
             let Some(index) = id.parse::<usize>().ok().filter(|i| *i < count) else {
                 continue;
             };
-            if name == "error" {
-                let kind = serde_json::from_str::<Value>(args.get())
-                    .ok()
-                    .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
-                    .filter(|k| k.len() <= 64 && k.chars().all(|c| c.is_ascii_alphanumeric()))
-                    .unwrap_or_else(|| "unknown".into());
-                return Err(match kind.as_str() {
-                    "cannotCalculateChanges" => CollectionError::TokenExpired,
-                    "forbidden" | "accountNotFound" | "accountNotSupportedByMethod" => {
-                        CollectionError::Auth(format!("the JMAP server refused access: {kind}"))
-                    }
-                    _ => CollectionError::Protocol(format!(
-                        "the JMAP server refused a request: {kind}"
-                    )),
-                });
+            if out[index].is_some() {
+                continue;
             }
-            out[index] = Some(args.to_owned());
+            out[index] = Some(if name == "error" {
+                Err(error_type(args))
+            } else {
+                Ok(args.to_owned())
+            });
         }
         out.into_iter()
             .map(|a| a.ok_or_else(|| protocol("the JMAP server left a call unanswered")))
@@ -532,6 +548,25 @@ fn canonical(value: Value) -> Value {
         }
         Value::Array(items) => Value::Array(items.into_iter().map(canonical).collect()),
         other => other,
+    }
+}
+
+/// The `type` of a JMAP error object, when it is a plain name; else `unknown`.
+fn error_type(args: &RawValue) -> String {
+    serde_json::from_str::<Value>(args.get())
+        .ok()
+        .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
+        .filter(|k| k.len() <= 64 && k.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| "unknown".into())
+}
+
+fn method_error(kind: &str) -> CollectionError {
+    match kind {
+        "cannotCalculateChanges" => CollectionError::TokenExpired,
+        "forbidden" | "accountNotFound" | "accountNotSupportedByMethod" => {
+            CollectionError::Auth(format!("the JMAP server refused access: {kind}"))
+        }
+        _ => CollectionError::Protocol(format!("the JMAP server refused a request: {kind}")),
     }
 }
 

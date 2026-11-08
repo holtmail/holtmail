@@ -13,6 +13,10 @@ use holtmail_core::{AccountId, ArchiveId, CollectionId, Timestamp};
 use holtmail_ingest::{IncomingItem, Ingest, IngestError};
 use holtmail_store::{Collection, NewCollection, Store, StoreError};
 
+mod edits;
+
+pub use edits::{Edits, EditsError, Reconciled, Served};
+
 /// Items fetched from the server at a time.
 pub const FETCH_BATCH: usize = 50;
 
@@ -122,6 +126,7 @@ fn format(kind: CollectionKind, content_type: &str) -> holtmail_pim::Format {
 pub struct PimSyncer {
     store: Arc<dyn Store>,
     ingest: Ingest,
+    edits: Edits,
 }
 
 struct Read {
@@ -135,7 +140,11 @@ struct Read {
 impl PimSyncer {
     /// A syncer storing through `ingest`.
     pub fn new(store: Arc<dyn Store>, ingest: Ingest) -> Self {
-        Self { store, ingest }
+        Self {
+            edits: Edits::new(store.clone(), ingest.clone()),
+            store,
+            ingest,
+        }
     }
 
     /// Syncs every collection `source` lists into `archive` for `account`.
@@ -149,6 +158,10 @@ impl PimSyncer {
     /// failed. A failure in one collection is reported in its
     /// [`CollectionReport::error`] and leaves its token for the next run; the others go on.
     /// Running it again without server changes changes nothing.
+    ///
+    /// After each collection, its held edits that a newer upstream version or a removal flagged
+    /// are decided by [`Edits::reconcile`] (the post-batch step); a failure there is logged and
+    /// tried again after the next sync.
     pub async fn sync(
         &self,
         archive: ArchiveId,
@@ -225,6 +238,7 @@ impl PimSyncer {
                 tracing::warn!(collection = %saved.id, %error, "collection sync failed");
                 entry.error = Some(error);
             }
+            self.reconcile(&saved).await;
             report.collections.push(entry);
         }
         for gone in stored
@@ -235,6 +249,7 @@ impl PimSyncer {
                 .mark_collection_removed(gone.id, Timestamp::now())
                 .await?;
             report.removed_collections += 1;
+            self.reconcile(gone).await;
         }
         if let Err(error) = self.ingest.commit().await {
             tracing::warn!(%error, "search index not committed");
@@ -249,6 +264,12 @@ impl PimSyncer {
             "contacts and calendars synced"
         );
         Ok(report)
+    }
+
+    async fn reconcile(&self, collection: &Collection) {
+        if let Err(error) = self.edits.reconcile(collection).await {
+            tracing::warn!(collection = %collection.id, %error, "held changes not reconciled");
+        }
     }
 
     async fn read(

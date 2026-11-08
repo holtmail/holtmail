@@ -1,0 +1,16 @@
+BEGIN:VCARD
+VERSION:3.0
+UID:4e1b7a52-ada-example
+PRODID:DAVx5/4.4.3-ose ez-vcard/0.12.1
+FN:Ada Example
+N:Example;Ada;;;
+ORG:Example Analytical Engines;Research
+TITLE:Engineer
+item1.EMAIL;TYPE=internet,pref:ada@example.com
+item1.X-ABLabel:_$!<Other>!$_
+EMAIL;TYPE=internet,work:ada.example@example.org
+TEL;TYPE=cell,voice:+1 555 0100
+ADR;TYPE=home:;;12 Example Street;Springfield;;12345;Exampleland
+NOTE:Met at the example conference.\nPrefers mornings.
+REV:20261105T120000Z
+END:VCARD

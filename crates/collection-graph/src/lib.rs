@@ -10,10 +10,16 @@
 //! occurrences and needs a time window, so calendars cannot list changes: each sync lists every
 //! single event and series master with its `changeKey` as the version tag, and only events whose
 //! tag changed are fetched. A series master is fetched with `cancelledOccurrences` and its
-//! `exceptionOccurrences` expanded, so the stored JSON holds the whole series. Read-only: only GET
-//! is sent.
+//! `exceptionOccurrences` expanded, so the stored JSON holds the whole series.
+//!
+//! The same type is also a [`holtmail_collection::CollectionWriter`]: changes arrive as iCalendar
+//! or vCard and are sent as Graph JSON, only the fields the change lists. Reading never writes;
+//! writes happen only through the writer, which the server hands out for accounts allowed to
+//! write.
 
+mod convert;
 mod http;
+mod write;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
@@ -46,7 +52,14 @@ attendees,organizer,location,locations,showAs,sensitivity,importance,categories,
 createdDateTime,lastModifiedDateTime,onlineMeeting,hideAttendees,cancelledOccurrences";
 
 /// Microsoft Graph contacts and calendars for one account, signed in as the owner of an access
-/// token with `Contacts.Read` and `Calendars.Read`.
+/// token with `Contacts.Read` and `Calendars.Read` for reading, `Contacts.ReadWrite` and
+/// `Calendars.ReadWrite` for writing.
+///
+/// As a [`holtmail_collection::CollectionWriter`] it patches only the fields a change lists
+/// (`field_patch`) and checks version tags (`changeKey`) by reading the item first and sending
+/// `If-Match`. Creates are idempotent by key: events through Graph's `transactionId`, contacts
+/// through a lookup of the key kept in an extended property. Answers to invitations go through
+/// Graph's `accept`, `tentativelyAccept` and `decline`.
 ///
 /// The token is sent only to the origin of the configured Graph address; links in answers that
 /// point elsewhere, and redirects, are refused. Listings are capped at 64 MiB, one item at
@@ -56,6 +69,7 @@ pub struct GraphCollections {
     base: Url,
     http: Http,
     types: Mutex<HashMap<String, String>>,
+    listed: Mutex<Option<HashMap<String, bool>>>,
 }
 
 enum Place {
@@ -163,6 +177,7 @@ impl GraphCollections {
             http: Http::new(token, &base, timeout)?,
             base,
             types: Mutex::new(HashMap::new()),
+            listed: Mutex::new(None),
         })
     }
 
@@ -465,12 +480,18 @@ impl CollectionSource for GraphCollections {
         out.extend(self.contact_folders().await?);
         let url = self.endpoint(
             &["me", "calendars"],
-            &[("$select", "id,name,hexColor"), ("$top", "100")],
+            &[("$select", "id,name,hexColor,canEdit"), ("$top", "100")],
         )?;
+        let mut editable: HashMap<String, bool> =
+            out.iter().map(|c| (c.id.clone(), true)).collect();
         for calendar in self.all(url, Scope::Account).await?.unwrap_or_default() {
             let Some(id) = string(&calendar, "id") else {
                 continue;
             };
+            editable.insert(
+                format!("calendars/{id}"),
+                calendar.get("canEdit").and_then(Value::as_bool) != Some(false),
+            );
             out.push(RemoteCollection {
                 name: string(&calendar, "name").unwrap_or_else(|| "Calendar".into()),
                 color: string(&calendar, "hexColor"),
@@ -480,6 +501,7 @@ impl CollectionSource for GraphCollections {
                 tag: None,
             });
         }
+        *self.listed.lock().unwrap_or_else(|e| e.into_inner()) = Some(editable);
         Ok(out)
     }
 

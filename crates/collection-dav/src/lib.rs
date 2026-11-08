@@ -4,13 +4,16 @@
 //! Discovery follows RFC 6764 (`/.well-known/carddav`, `/.well-known/caldav`), then the
 //! principal and its home sets. Changes come from `sync-collection` (RFC 6578); bodies from
 //! `addressbook-multiget` and `calendar-multiget` in batches, or one `GET` each on servers without
-//! them. Read-only for address books and calendars: only `PROPFIND`, `REPORT` and `GET` touch
-//! them. Collections that offer WebDAV-Push (the `https://bitfire.at/webdav-push` draft) with
+//! them. Reading uses only `PROPFIND`, `REPORT`, `OPTIONS` and `GET`. The same client is also a
+//! [`holtmail_collection::CollectionWriter`]: conditional `PUT` and `DELETE`, and answers to
+//! invitations as a `PUT` of the attendee copy for RFC 6638 servers to deliver. Collections that offer WebDAV-Push (the `https://bitfire.at/webdav-push` draft) with
 //! the Web Push transport accept a `POST` registering a subscription, which a `DELETE` ends.
 
 mod date;
 mod http;
+mod ical;
 mod path;
+mod write;
 mod xml;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -74,8 +77,26 @@ pub struct DavSource {
     http: Http,
     contacts: Option<Url>,
     calendars: Option<Url>,
-    found: Mutex<HashMap<String, (Url, CollectionKind)>>,
+    found: Mutex<HashMap<String, Found>>,
     push: Mutex<HashMap<String, String>>,
+    addresses: Vec<String>,
+    user_addresses: Mutex<Option<Vec<String>>>,
+}
+
+#[derive(Debug, Clone)]
+struct Found {
+    url: Url,
+    kind: CollectionKind,
+    auto_schedule: bool,
+    max_size: Option<u64>,
+}
+
+struct Listed {
+    collection: RemoteCollection,
+    url: Url,
+    push: Option<String>,
+    auto_schedule: bool,
+    max_size: Option<u64>,
 }
 
 fn parse_url(raw: &str) -> Result<Url, CollectionError> {
@@ -189,7 +210,17 @@ impl DavSource {
             calendars,
             found: Mutex::new(HashMap::new()),
             push: Mutex::new(HashMap::new()),
+            addresses: Vec::new(),
+            user_addresses: Mutex::new(None),
         })
+    }
+
+    /// Also counts `addresses` as the account's own when answering invitations, besides the
+    /// `calendar-user-address-set` the server lists for the signed-in principal. Compared
+    /// without `mailto:` and ignoring ASCII case.
+    pub fn with_addresses(mut self, addresses: impl IntoIterator<Item = String>) -> Self {
+        self.addresses = addresses.into_iter().collect();
+        self
     }
 
     async fn propfind(
@@ -298,7 +329,7 @@ impl DavSource {
         &self,
         kind: CollectionKind,
         configured: &Url,
-    ) -> Result<Vec<(RemoteCollection, Url, Option<String>)>, CollectionError> {
+    ) -> Result<Vec<Listed>, CollectionError> {
         let (urls, depth) = match self.start(kind, configured).await? {
             Start::Homes(homes) => (homes, "1"),
             Start::Collection(url) => (vec![url], "0"),
@@ -306,13 +337,15 @@ impl DavSource {
         let (ns, _, collection_type) = kind_names(kind);
         let mut out = Vec::new();
         for url in urls {
+            let auto_schedule = kind == CollectionKind::Calendar && self.auto_schedule(&url).await;
             let (root, base) = self
                 .propfind(
                     &url,
                     depth,
                     "<d:resourcetype/><d:displayname/><cs:getctag/><d:sync-token/>\
                      <ical:calendar-color/><cal:supported-calendar-component-set/>\
-                     <p:transports/><p:supported-triggers/>",
+                     <p:transports/><p:supported-triggers/>\
+                     <cal:max-resource-size/><card:max-resource-size/>",
                 )
                 .await?;
             for response in root.children(DAV, "response") {
@@ -360,8 +393,11 @@ impl DavSource {
                             .unwrap_or("1")
                             .to_owned()
                     });
-                out.push((
-                    RemoteCollection {
+                let max_size = prop(&props, ns, "max-resource-size")
+                    .and_then(Element::trimmed)
+                    .and_then(|v| v.parse().ok());
+                out.push(Listed {
+                    collection: RemoteCollection {
                         id,
                         kind,
                         name,
@@ -373,15 +409,22 @@ impl DavSource {
                         },
                         tag,
                     },
-                    at,
+                    url: at,
                     push,
-                ));
+                    auto_schedule,
+                    max_size,
+                });
             }
         }
         Ok(out)
     }
 
     async fn collection(&self, id: &str) -> Result<(Url, CollectionKind), CollectionError> {
+        let found = self.found(id).await?;
+        Ok((found.url, found.kind))
+    }
+
+    async fn found(&self, id: &str) -> Result<Found, CollectionError> {
         if let Some(found) = self.found.lock().expect("found lock").get(id) {
             return Ok(found.clone());
         }
@@ -392,6 +435,20 @@ impl DavSource {
             .get(id)
             .cloned()
             .ok_or(CollectionError::Gone)
+    }
+
+    async fn auto_schedule(&self, url: &Url) -> bool {
+        let Ok(answer) = self.http.dav("OPTIONS", url, None, None, MAX_XML).await else {
+            return false;
+        };
+        answer.status.is_success()
+            && answer
+                .headers
+                .get_all("dav")
+                .iter()
+                .filter_map(|v| v.to_str().ok())
+                .flat_map(|v| v.split(','))
+                .any(|c| c.trim().eq_ignore_ascii_case("calendar-auto-schedule"))
     }
 
     async fn sync_round(
@@ -453,10 +510,19 @@ impl CollectionSource for DavSource {
             let Some(configured) = configured else {
                 continue;
             };
-            for (collection, url, depth) in self.collections_of(kind, configured).await? {
+            for listed in self.collections_of(kind, configured).await? {
+                let collection = listed.collection;
                 if seen.insert(collection.id.clone()) {
-                    found.insert(collection.id.clone(), (url, kind));
-                    if let Some(depth) = depth {
+                    found.insert(
+                        collection.id.clone(),
+                        Found {
+                            url: listed.url,
+                            kind,
+                            auto_schedule: listed.auto_schedule,
+                            max_size: listed.max_size,
+                        },
+                    );
+                    if let Some(depth) = listed.push {
                         push.insert(collection.id.clone(), depth);
                     }
                     out.push(collection);

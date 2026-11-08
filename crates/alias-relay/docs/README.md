@@ -6,7 +6,7 @@ Firefox Relay. `RelayDetector` recognises mail Relay forwarded; `RelayDirectory`
 
 - Relay drops the original header fields and sets `From` to the mask with a name ending in `[via Relay]` (`"Ada <ada@example.com> [via Relay]" <mask@mozmail.com>`), and `Resent-From` to the sender.
 - The alias is the `From` address, when it is on `mozmail.com`, `relay.firefox.com` (or below them) or `[aliases] relay_domains`. The sender is `Resent-From`, named from the display name when it repeats the same address.
-- Replies go to one address for every sender (`replies@relay.firefox.com`), so there is no reverse alias.
+- Replies go to one address for every sender (`replies@relay.firefox.com`), so there is no reverse alias. Replies use the `reply_header` strategy (premium accounts reply through `Reply-To`), and the API does not say which address masks forward to, so `RemoteAlias.mailboxes` is empty.
 - `signed`: DKIM of a mask domain.
 
 ## Directory

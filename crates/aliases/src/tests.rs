@@ -253,3 +253,222 @@ async fn a_new_key_is_checked_before_it_is_kept() {
     assert_eq!(renamed.sealed_key, service.sealed_key);
     assert!(f.manager.sync_service(service.id).await.is_ok());
 }
+
+struct Plus;
+
+impl AliasDetector for Plus {
+    fn provider(&self) -> &str {
+        "plus"
+    }
+
+    fn version(&self) -> String {
+        "1".into()
+    }
+
+    fn detect(&self, _mail: &holtmail_alias::Mail) -> Option<holtmail_alias::AliasHit> {
+        None
+    }
+
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::ReverseAlias
+    }
+
+    fn encode_reverse(&self, alias: &str, contact: &str) -> Option<String> {
+        let (local, domain) = alias.split_once('@')?;
+        Some(format!("{local}+{}@{domain}", contact.replace('@', "=")).to_ascii_lowercase())
+    }
+}
+
+fn by_hand(address: &str, provider: &str) -> KnownAlias {
+    KnownAlias {
+        address: address.into(),
+        provider: provider.into(),
+        service_id: None,
+        remote_id: None,
+        enabled: None,
+        note: None,
+        name: None,
+        for_domain: None,
+        mailboxes: Vec::new(),
+        created_at: None,
+        forwarded: None,
+        blocked: None,
+        replied: None,
+    }
+}
+
+#[tokio::test]
+async fn reverse_aliases_come_from_the_service_or_the_detector() {
+    let f = fixture().await;
+    let manager = f.manager.clone().with_detectors(vec![Arc::new(Plus)]);
+    f.fake.seed("shop@alias.example").await;
+    manager
+        .add_service(f.archive, "fake", "", None, "good-key")
+        .await
+        .unwrap();
+
+    let first = manager
+        .reverse_alias(f.archive, "Shop@alias.example", "Bob <bob@example.org>")
+        .await
+        .unwrap();
+    assert!(first.starts_with("reverse") && first.ends_with("@alias.example"));
+    assert_eq!(
+        manager
+            .reverse_alias(f.archive, "shop@alias.example", "bob@example.org")
+            .await
+            .unwrap(),
+        first
+    );
+    assert_eq!(f.fake.reverse_aliases_made().await, 1);
+    assert_eq!(
+        f.store
+            .reverse_alias_contact(f.archive, &first)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("bob@example.org"),
+        "the pair is recorded for People"
+    );
+    assert!(
+        manager
+            .can_reverse(f.archive, "shop@alias.example")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        f.fake.reverse_aliases_made().await,
+        1,
+        "asking makes nothing"
+    );
+
+    f.store
+        .put_alias(f.archive, &by_hand("news@plus.example.org", "plus"))
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .reverse_alias(f.archive, "news@plus.example.org", "Bob <Bob@example.org>")
+            .await
+            .unwrap(),
+        "news+bob=example.org@plus.example.org"
+    );
+    assert!(
+        manager
+            .can_reverse(f.archive, "News@plus.example.org")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !f.manager
+            .can_reverse(f.archive, "news@plus.example.org")
+            .await
+            .unwrap()
+    );
+
+    f.store
+        .put_alias(
+            f.archive,
+            &by_hand("quiet.river@icloud.example.org", "apple"),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        manager
+            .reverse_alias(
+                f.archive,
+                "quiet.river@icloud.example.org",
+                "bob@example.org"
+            )
+            .await,
+        Err(ManageError::Invalid(_))
+    ));
+    assert!(matches!(
+        f.manager
+            .reverse_alias(f.archive, "news@plus.example.org", "bob@example.org")
+            .await,
+        Err(ManageError::Invalid(_))
+    ));
+    assert!(matches!(
+        manager
+            .reverse_alias(f.archive, "nobody@plus.example.org", "bob@example.org")
+            .await,
+        Err(ManageError::Invalid(m)) if m.contains("not a known alias")
+    ));
+}
+
+fn strategy(scope: StrategyScope, key: &str, strategy: &str) -> AliasStrategy {
+    AliasStrategy {
+        scope,
+        key: key.into(),
+        strategy: strategy.into(),
+    }
+}
+
+#[test]
+fn the_most_specific_override_wins() {
+    let overrides = vec![
+        strategy(StrategyScope::Service, "simplelogin", "direct"),
+        strategy(StrategyScope::Domain, "sl.example.org", "reply_header"),
+        strategy(StrategyScope::Alias, "shop@sl.example.org", "reverse_alias"),
+        strategy(StrategyScope::Alias, "odd@sl.example.org", "teleport"),
+    ];
+    let pick = |alias: &str, provider: &str| {
+        let e = effective_strategy(&overrides, alias, provider, ReplyStrategy::ReverseAlias);
+        (e.strategy, e.source)
+    };
+    assert_eq!(
+        pick("Shop@SL.example.org", "simplelogin"),
+        (ReplyStrategy::ReverseAlias, StrategySource::Alias)
+    );
+    assert_eq!(
+        pick("news@sl.example.org", "simplelogin"),
+        (ReplyStrategy::ReplyHeader, StrategySource::Domain)
+    );
+    assert_eq!(
+        pick("odd@sl.example.org", "simplelogin"),
+        (ReplyStrategy::ReplyHeader, StrategySource::Domain),
+        "an unknown strategy name is skipped"
+    );
+    assert_eq!(
+        pick("news@other.example.org", "SimpleLogin"),
+        (ReplyStrategy::Direct, StrategySource::Service)
+    );
+    assert_eq!(
+        pick("news@other.example.org", "addy"),
+        (ReplyStrategy::ReverseAlias, StrategySource::Default)
+    );
+    assert_eq!(StrategySource::Domain.as_str(), "domain");
+}
+
+#[tokio::test]
+async fn the_stored_override_beats_the_detector() {
+    let f = fixture().await;
+    let manager = f.manager.clone().with_detectors(vec![Arc::new(Plus)]);
+    assert_eq!(
+        manager.default_strategy("plus"),
+        ReplyStrategy::ReverseAlias
+    );
+    assert_eq!(manager.default_strategy("unknown"), ReplyStrategy::Direct);
+    let before = manager
+        .reply_strategy(f.archive, "news@plus.example.org", "plus")
+        .await
+        .unwrap();
+    assert_eq!(before.source, StrategySource::Default);
+    f.store
+        .set_alias_strategy(
+            f.archive,
+            StrategyScope::Domain,
+            "plus.example.org",
+            Some("direct"),
+        )
+        .await
+        .unwrap();
+    let after = manager
+        .reply_strategy(f.archive, "news@plus.example.org", "plus")
+        .await
+        .unwrap();
+    assert_eq!(
+        (after.strategy, after.source),
+        (ReplyStrategy::Direct, StrategySource::Domain)
+    );
+}

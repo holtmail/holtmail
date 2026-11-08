@@ -7,6 +7,7 @@ addy.io, formerly AnonAddy. `AddyDetector` recognises mail addy.io forwarded; `A
 - Forwarded mail carries `X-AnonAddy-Original-Sender` or a `Feedback-ID` ending in `:anonaddy`.
 - addy.io writes the reverse alias as `alias+sender=example.com@alias-domain` (the last `=` stands for `@`) into `From`, or into `Reply-To` when the account sends replies there. It gives the alias (`alias@alias-domain`) and the sender. There is no header with the alias itself.
 - The sender's name comes from `X-AnonAddy-Original-From-Header`, the address from it or from `X-AnonAddy-Original-Sender`, else from the reverse alias.
+- `encode_reverse(alias, contact)` writes `alias+contact=domain@alias-domain` (`shop@ada.addy.example.org` and `news@example.com` give `shop+news=example.com@ada.addy.example.org`), and `decode_reverse` reads the contact back; an alias that already has a `+`, or a contact whose domain has no dot, gives `None`. The encoder works for any alias address, so callers use it only for aliases they know are addy.io's. Replies use the `reverse_alias` strategy.
 - `signed`: DKIM of `addy.io`, `anonaddy.com`, `anonaddy.me` or `addymail.com`, plus `[aliases] addy_signing_domains` (self-hosted, or custom domains that sign as themselves).
 
 ## Directory
@@ -25,4 +26,4 @@ Capabilities: everything except `for_domain`. `422` answers come back as `Invali
 
 ## Tests
 
-Invented fixtures: a reverse alias in `From` with a signature, one in `Reply-To`, and a plus address without addy.io's fields. The directory runs the conformance suite against an in-process fake, plus paging over 230 aliases, the default domain first and a refused key.
+Unit tests encode and decode reverse aliases both ways. Invented fixtures: a reverse alias in `From` with a signature, one in `Reply-To`, and a plus address without addy.io's fields. The directory runs the conformance suite against an in-process fake, plus paging over 230 aliases, the default domain first and a refused key.

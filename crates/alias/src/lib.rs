@@ -40,6 +40,43 @@ pub struct AliasHit {
     pub signed: bool,
 }
 
+/// How a reply to mail that came through an alias leaves, so the recipient sees the alias and
+/// never the real mailbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReplyStrategy {
+    /// `To:` the reverse alias, `From:` a mailbox the alias forwards to; the service rewrites
+    /// `From` to the alias. SimpleLogin, addy.io, DuckDuckGo, Apple Hide My Email.
+    ReverseAlias,
+    /// `From:` the alias itself, through a transport allowed to send as it. Fastmail Masked
+    /// Email, own domains and catch-all rules, and any alias without a detector.
+    Direct,
+    /// `To:` the `Reply-To` the service set, `From:` the real mailbox. Firefox Relay.
+    ReplyHeader,
+}
+
+impl ReplyStrategy {
+    /// The name used in config, the API and route explanations: `reverse_alias`, `direct`,
+    /// `reply_header`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ReverseAlias => "reverse_alias",
+            Self::Direct => "direct",
+            Self::ReplyHeader => "reply_header",
+        }
+    }
+
+    /// The strategy named `name` (as [`ReplyStrategy::as_str`] writes it), `None` for any
+    /// other text.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.trim() {
+            "reverse_alias" => Some(Self::ReverseAlias),
+            "direct" => Some(Self::Direct),
+            "reply_header" => Some(Self::ReplyHeader),
+            _ => None,
+        }
+    }
+}
+
 /// Recognises mail forwarded by one alias service.
 ///
 /// Implementations must be deterministic (the same mail always gives the same answer), must
@@ -55,6 +92,31 @@ pub trait AliasDetector: Send + Sync {
 
     /// The alias the message was forwarded to, or `None` when this service did not forward it.
     fn detect(&self, mail: &Mail) -> Option<AliasHit>;
+
+    /// How replies to this service's mail leave by default; the same answer for the
+    /// detector's lifetime. Without an override it is [`ReplyStrategy::Direct`], which never
+    /// shows the real mailbox and is refused by any transport not allowed to send as the alias.
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::Direct
+    }
+
+    /// The reverse alias through which `alias` reaches `contact`, for services that encode the
+    /// contact in the address. Lowercase; `None` when the service does not encode addresses,
+    /// `alias` is not one of its aliases or either address cannot be encoded. Pure: the same
+    /// arguments always give the same answer, and a result given to
+    /// [`AliasDetector::decode_reverse`] gives `contact` back.
+    fn encode_reverse(&self, alias: &str, contact: &str) -> Option<String> {
+        let _ = (alias, contact);
+        None
+    }
+
+    /// The contact a reverse alias of this service stands for, lowercase, when the service
+    /// encodes it in the address; `None` otherwise. A display hint only: anyone can write an
+    /// address of this shape.
+    fn decode_reverse(&self, address: &str) -> Option<String> {
+        let _ = address;
+        None
+    }
 }
 
 /// Where a service forwards an alias's mail.
@@ -209,6 +271,13 @@ pub trait AliasDirectory: Send + Sync {
     /// What this directory can do besides listing. The same answer for the directory's lifetime.
     fn capabilities(&self) -> Capabilities;
 
+    /// The `reverse` capability: [`AliasDirectory::reverse_alias`] gives the reverse alias for
+    /// a contact an alias has never heard from. `false` by default; the same answer for the
+    /// directory's lifetime.
+    fn reverse(&self) -> bool {
+        false
+    }
+
     /// Every alias of the account, each once, in no particular order. Deleted aliases are not
     /// listed.
     async fn aliases(&self) -> Result<Vec<RemoteAlias>, AliasError>;
@@ -228,4 +297,60 @@ pub trait AliasDirectory: Send + Sync {
     /// Deletes the alias at the service; mail to it is no longer forwarded. `NotFound` for an
     /// unknown id. `Unsupported` without the `delete` capability.
     async fn delete(&self, id: &str) -> Result<(), AliasError>;
+
+    /// The reverse alias through which the alias `id` reaches `contact` (an address), lowercase.
+    /// Idempotent: asking again for the same contact gives the same address, made at the
+    /// service the first time. `NotFound` for an unknown alias, `Invalid` for an address the
+    /// service refuses, `Unsupported` without the [`AliasDirectory::reverse`] capability (the
+    /// default).
+    async fn reverse_alias(&self, id: &str, contact: &str) -> Result<String, AliasError> {
+        let _ = (id, contact);
+        Err(AliasError::Unsupported)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Plain;
+
+    impl AliasDetector for Plain {
+        fn provider(&self) -> &str {
+            "plain"
+        }
+
+        fn version(&self) -> String {
+            "1".into()
+        }
+
+        fn detect(&self, _mail: &Mail) -> Option<AliasHit> {
+            None
+        }
+    }
+
+    #[test]
+    fn strategies_have_stable_names() {
+        for strategy in [
+            ReplyStrategy::ReverseAlias,
+            ReplyStrategy::Direct,
+            ReplyStrategy::ReplyHeader,
+        ] {
+            assert_eq!(ReplyStrategy::parse(strategy.as_str()), Some(strategy));
+        }
+        assert_eq!(ReplyStrategy::parse("forward"), None);
+    }
+
+    #[test]
+    fn defaults_are_direct_and_no_reverse_aliases() {
+        assert_eq!(Plain.reply_strategy(), ReplyStrategy::Direct);
+        assert_eq!(
+            Plain.encode_reverse("shop@alias.example.org", "bob@example.org"),
+            None
+        );
+        assert_eq!(
+            Plain.decode_reverse("shop+bob=example.org@alias.example.org"),
+            None
+        );
+    }
 }

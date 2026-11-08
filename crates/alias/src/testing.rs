@@ -12,15 +12,18 @@ use crate::{
 use holtmail_core::Address;
 
 /// An in-memory alias account with every capability, on the domain `alias.example`, with two
-/// mailboxes `1` (`owner@example.org`) and `2` (`other@example.org`).
+/// mailboxes `1` (`owner@example.org`) and `2` (`other@example.org`). Reverse aliases are
+/// `reverse<n>@alias.example`.
 pub struct FakeDirectory {
     capabilities: Capabilities,
+    reverse: bool,
     state: Mutex<FakeState>,
 }
 
 #[derive(Default)]
 struct FakeState {
     aliases: BTreeMap<String, RemoteAlias>,
+    contacts: BTreeMap<(String, String), String>,
     next: u64,
     refuse_key: bool,
 }
@@ -32,9 +35,9 @@ impl Default for FakeDirectory {
 }
 
 impl FakeDirectory {
-    /// An empty account with every capability.
+    /// An empty account with every capability, `reverse` included.
     pub fn new() -> Self {
-        Self::with_capabilities(Capabilities {
+        let mut fake = Self::with_capabilities(Capabilities {
             create_random: true,
             create_custom: true,
             note: true,
@@ -43,15 +46,23 @@ impl FakeDirectory {
             switch: true,
             mailboxes: true,
             delete: true,
-        })
+        });
+        fake.reverse = true;
+        fake
     }
 
-    /// An empty account that can do only what `capabilities` says.
+    /// An empty account that can do only what `capabilities` says, without `reverse`.
     pub fn with_capabilities(capabilities: Capabilities) -> Self {
         Self {
             capabilities,
+            reverse: false,
             state: Mutex::new(FakeState::default()),
         }
+    }
+
+    /// Reverse aliases made so far.
+    pub async fn reverse_aliases_made(&self) -> usize {
+        self.state.lock().await.contacts.len()
     }
 
     /// Adds an alias as if made elsewhere and returns its id.
@@ -227,11 +238,38 @@ impl AliasDirectory for FakeDirectory {
         if !self.capabilities.delete {
             return Err(AliasError::Unsupported);
         }
+        state.contacts.retain(|(alias, _), _| alias != id);
         state
             .aliases
             .remove(id)
             .map(|_| ())
             .ok_or(AliasError::NotFound)
+    }
+
+    fn reverse(&self) -> bool {
+        self.reverse
+    }
+
+    async fn reverse_alias(&self, id: &str, contact: &str) -> Result<String, AliasError> {
+        let mut state = self.checked().await?;
+        if !self.reverse {
+            return Err(AliasError::Unsupported);
+        }
+        if !state.aliases.contains_key(id) {
+            return Err(AliasError::NotFound);
+        }
+        let contact = crate::parse_mailbox(contact)
+            .map(|a| a.email.to_ascii_lowercase())
+            .filter(|e| e.contains('@'))
+            .ok_or_else(|| AliasError::Invalid(format!("{contact} is not an address")))?;
+        let key = (id.to_owned(), contact);
+        if let Some(found) = state.contacts.get(&key) {
+            return Ok(found.clone());
+        }
+        state.next += 1;
+        let made = format!("reverse{}@alias.example", state.next);
+        state.contacts.insert(key, made.clone());
+        Ok(made)
     }
 }
 
@@ -294,6 +332,13 @@ pub mod conformance {
             "provider id {provider:?} is lowercase ASCII"
         );
         assert_eq!(detector.version(), detector.version(), "version is stable");
+        assert_eq!(
+            detector.reply_strategy(),
+            detector.reply_strategy(),
+            "reply strategy is stable"
+        );
+        assert_eq!(detector.decode_reverse(""), None, "an empty reverse alias");
+        assert_eq!(detector.encode_reverse("", ""), None, "empty addresses");
         assert_eq!(detector.detect(&Mail::default()), None, "empty mail");
         let plain = mail(&[
             ("Received", "from mx.example.net by mx.example.org"),
@@ -335,6 +380,17 @@ pub mod conformance {
                 assert!(hit.alias.contains('@'), "case {}", case.name);
                 if let Some(reverse) = &hit.reverse_alias {
                     assert_eq!(reverse, &reverse.to_ascii_lowercase(), "case {}", case.name);
+                }
+                if let Some(sender) = &hit.sender
+                    && let Some(encoded) = detector.encode_reverse(&hit.alias, &sender.email)
+                {
+                    assert_eq!(encoded, encoded.to_ascii_lowercase(), "case {}", case.name);
+                    assert_eq!(
+                        detector.decode_reverse(&encoded),
+                        Some(sender.email.to_ascii_lowercase()),
+                        "case {}: decoding an encoded reverse alias gives the contact back",
+                        case.name
+                    );
                 }
             }
         }
@@ -509,6 +565,36 @@ pub mod conformance {
             assert_eq!(
                 directory.update("no-such-alias-0", &probe).await,
                 Err(AliasError::NotFound)
+            );
+        }
+
+        if directory.reverse() {
+            let first = directory
+                .reverse_alias(&target.id, "bob@example.org")
+                .await
+                .expect("reverse alias");
+            assert_eq!(first, first.to_ascii_lowercase());
+            assert!(first.contains('@') && first != target.address, "{first}");
+            assert_eq!(
+                directory.reverse_alias(&target.id, "bob@example.org").await,
+                Ok(first.clone()),
+                "the same contact gives the same reverse alias"
+            );
+            let other = directory
+                .reverse_alias(&target.id, "carol@example.org")
+                .await
+                .expect("another reverse alias");
+            assert_ne!(other, first, "another contact gets its own reverse alias");
+            assert_eq!(
+                directory
+                    .reverse_alias("no-such-alias-0", "bob@example.org")
+                    .await,
+                Err(AliasError::NotFound)
+            );
+        } else {
+            assert_eq!(
+                directory.reverse_alias(&target.id, "bob@example.org").await,
+                Err(AliasError::Unsupported)
             );
         }
 

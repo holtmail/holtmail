@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 #[derive(Default)]
 struct Fake {
     aliases: Vec<Value>,
+    contacts: Vec<(i64, String, String)>,
     next: i64,
 }
 
@@ -146,6 +147,65 @@ async fn toggle(State(fake): State<Shared>, headers: HeaderMap, Path(id): Path<i
     axum::Json(json!({ "enabled": enabled })).into_response()
 }
 
+async fn contact(
+    State(fake): State<Shared>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    axum::Json(body): axum::Json<Value>,
+) -> Response {
+    if !authorized(&headers) {
+        return denied();
+    }
+    let mut fake = fake.lock().await;
+    if !fake.aliases.iter().any(|a| a["id"] == id) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(json!({"error": "Forbidden"})),
+        )
+            .into_response();
+    }
+    let Some(address) = body["contact"]
+        .as_str()
+        .filter(|c| c.contains('@'))
+        .map(str::to_owned)
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(json!({"error": "invalid contact email"})),
+        )
+            .into_response();
+    };
+    if address == "limit@example.org" {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(json!({"error": "Please upgrade to create a reverse-alias"})),
+        )
+            .into_response();
+    }
+    let answer = |reverse: &str, existed: bool| {
+        json!({
+            "id": 7, "contact": address, "creation_timestamp": 1_741_000_000,
+            "last_email_sent_timestamp": null,
+            "reverse_alias": format!("\"{} \" <{reverse}>", address.replace('@', " at ")),
+            "reverse_alias_address": reverse, "existed": existed,
+        })
+    };
+    if let Some((_, _, reverse)) = fake
+        .contacts
+        .iter()
+        .find(|(alias, c, _)| *alias == id && *c == address)
+    {
+        return (StatusCode::OK, axum::Json(answer(reverse, true))).into_response();
+    }
+    let reverse = format!(
+        "{}_{}@sl.example.org",
+        address.replace(['@', '.'], "_"),
+        fake.contacts.len()
+    );
+    fake.contacts.push((id, address.clone(), reverse.clone()));
+    (StatusCode::CREATED, axum::Json(answer(&reverse, false))).into_response()
+}
+
 async fn options(headers: HeaderMap) -> Response {
     if !authorized(&headers) {
         return denied();
@@ -241,6 +301,7 @@ async fn start(fake: Shared) -> String {
         .route("/api/v2/aliases", get(list))
         .route("/api/aliases/{id}", get(one).patch(patch).delete(remove))
         .route("/api/aliases/{id}/toggle", post(toggle))
+        .route("/api/aliases/{id}/contacts", post(contact))
         .route("/api/v5/alias/options", get(options))
         .route("/api/v2/mailboxes", get(mailboxes))
         .route("/api/v3/alias/custom/new", post(custom))
@@ -324,4 +385,49 @@ async fn a_wrong_key_is_auth() {
     let directory = SimpleLoginDirectory::new(&base, "wrong", &TlsRoots::default()).unwrap();
     assert_eq!(directory.options().await, Err(AliasError::Auth));
     assert_eq!(directory.aliases().await, Err(AliasError::Auth));
+}
+
+#[tokio::test]
+async fn makes_reverse_aliases_once_per_contact() {
+    let fake = Shared::default();
+    let base = start(fake.clone()).await;
+    let directory = SimpleLoginDirectory::new(&base, "sl-key", &TlsRoots::default()).unwrap();
+    assert!(directory.reverse());
+    let alias = directory.create(&NewAlias::default()).await.unwrap();
+    assert_eq!(alias.mailboxes[0].email, "owner@example.org");
+    let first = directory
+        .reverse_alias(&alias.id, "Bob <Bob@Example.org>")
+        .await
+        .unwrap();
+    assert_eq!(first, "bob_example_org_0@sl.example.org");
+    assert_eq!(
+        directory
+            .reverse_alias(&alias.id, "bob@example.org")
+            .await
+            .unwrap(),
+        first
+    );
+    assert_eq!(fake.lock().await.contacts.len(), 1);
+    assert_eq!(
+        directory.reverse_alias(&alias.id, "not an address").await,
+        Err(AliasError::Invalid(
+            "not an address is not an address".into()
+        ))
+    );
+    assert_eq!(
+        directory.reverse_alias("999", "bob@example.org").await,
+        Err(AliasError::NotFound)
+    );
+    assert_eq!(
+        directory
+            .reverse_alias(&alias.id, "limit@example.org")
+            .await,
+        Err(AliasError::Invalid(
+            "Please upgrade to create a reverse-alias".into()
+        ))
+    );
+    assert_eq!(
+        directory.reverse_alias("x", "bob@example.org").await,
+        Err(AliasError::NotFound)
+    );
 }

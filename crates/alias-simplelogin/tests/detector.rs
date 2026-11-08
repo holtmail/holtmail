@@ -95,3 +95,12 @@ fn the_hosted_service_signs_with_its_own_domain() {
         SimpleLoginDetector::new(&["sl.example.org".into()]).version()
     );
 }
+
+#[test]
+fn replies_by_the_service_default() {
+    use holtmail_alias::{AliasDetector, ReplyStrategy};
+    assert_eq!(
+        SimpleLoginDetector::default().reply_strategy(),
+        ReplyStrategy::ReverseAlias
+    );
+}

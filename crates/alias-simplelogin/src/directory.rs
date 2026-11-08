@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use holtmail_alias::{
     AliasChange, AliasDirectory, AliasDomain, AliasError, AliasOptions, Capabilities, Mailbox,
-    NewAlias, RemoteAlias,
+    NewAlias, RemoteAlias, parse_mailbox,
 };
 use holtmail_core::{Timestamp, TlsRoots};
 use holtmail_json_http::{HttpError, JsonHttp, Method};
@@ -18,7 +18,7 @@ const MAX_PAGES: u32 = 5000;
 
 /// One SimpleLogin account, reached with an API key from its settings. Lists, creates (random
 /// or with a chosen prefix and suffix), switches, edits (note, display name, mailboxes) and
-/// deletes aliases.
+/// deletes aliases, and makes reverse aliases for new contacts through the contacts API.
 #[derive(Clone)]
 pub struct SimpleLoginDirectory {
     http: JsonHttp,
@@ -198,6 +198,12 @@ struct SlAliases {
 }
 
 #[derive(Deserialize)]
+struct SlContact {
+    reverse_alias: Option<String>,
+    reverse_alias_address: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct SlSuffix {
     suffix: String,
     signed_suffix: String,
@@ -360,6 +366,45 @@ impl AliasDirectory for SimpleLoginDirectory {
                 .map_err(error)?;
         }
         self.alias(id).await
+    }
+
+    fn reverse(&self) -> bool {
+        true
+    }
+
+    async fn reverse_alias(&self, id: &str, contact: &str) -> Result<String, AliasError> {
+        let contact = parse_mailbox(contact)
+            .map(|a| a.email.trim().to_ascii_lowercase())
+            .filter(|e| e.contains('@'))
+            .ok_or_else(|| AliasError::Invalid(format!("{} is not an address", contact.trim())))?;
+        let answer: SlContact = self
+            .http
+            .call(
+                Method::POST,
+                &format!("api/aliases/{}/contacts", number(id)?),
+                Some(&json!({ "contact": contact })),
+            )
+            .await
+            .map_err(|e| match e {
+                HttpError::Status {
+                    status: 403,
+                    message: Some(message),
+                } if !message.eq_ignore_ascii_case("forbidden") => AliasError::Invalid(message),
+                HttpError::Status { status: 403, .. } => AliasError::NotFound,
+                other => error(other),
+            })?;
+        answer
+            .reverse_alias_address
+            .or_else(|| {
+                answer
+                    .reverse_alias
+                    .as_deref()
+                    .and_then(parse_mailbox)
+                    .map(|a| a.email)
+            })
+            .map(|a| a.trim().to_ascii_lowercase())
+            .filter(|a| a.contains('@'))
+            .ok_or_else(|| AliasError::Protocol("the contact has no reverse alias".into()))
     }
 
     async fn delete(&self, id: &str) -> Result<(), AliasError> {

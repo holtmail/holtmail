@@ -3,7 +3,7 @@
 
 mod directory;
 
-use holtmail_alias::{AliasDetector, AliasHit, Mail, parse_mailbox};
+use holtmail_alias::{AliasDetector, AliasHit, Mail, ReplyStrategy, parse_mailbox};
 use holtmail_core::Address;
 
 pub use directory::{AddyDirectory, DEFAULT_URL};
@@ -62,6 +62,20 @@ fn split_reverse(address: &str) -> Option<(String, String)> {
     ))
 }
 
+/// `shop@domain` and `news@example.com` as `shop+news=example.com@domain`, the mirror of
+/// [`split_reverse`].
+fn join_reverse(alias: &str, contact: &str) -> Option<String> {
+    let alias = alias.trim().to_ascii_lowercase();
+    let contact = contact.trim().to_ascii_lowercase();
+    let (alias_local, domain) = alias.rsplit_once('@')?;
+    let (contact_local, contact_domain) = contact.rsplit_once('@')?;
+    if alias_local.contains('+') || contact_local.contains('@') {
+        return None;
+    }
+    let joined = format!("{alias_local}+{contact_local}={contact_domain}@{domain}");
+    (split_reverse(&joined)? == (alias, contact)).then_some(joined)
+}
+
 impl AliasDetector for AddyDetector {
     fn provider(&self) -> &str {
         PROVIDER
@@ -105,6 +119,18 @@ impl AliasDetector for AddyDetector {
             signed: mail.dkim_pass(&signing),
         })
     }
+
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::ReverseAlias
+    }
+
+    fn encode_reverse(&self, alias: &str, contact: &str) -> Option<String> {
+        join_reverse(alias, contact)
+    }
+
+    fn decode_reverse(&self, address: &str) -> Option<String> {
+        split_reverse(address).map(|(_, contact)| contact)
+    }
 }
 
 #[cfg(test)]
@@ -130,5 +156,42 @@ mod tests {
         assert_eq!(split_reverse("shop@alias.example.com"), None);
         assert_eq!(split_reverse("shop+tag@alias.example.com"), None);
         assert_eq!(split_reverse("+a=b.c@alias.example.com"), None);
+    }
+
+    #[test]
+    fn encodes_what_it_decodes() {
+        let detector = AddyDetector::default();
+        for (alias, contact) in [
+            ("Shop@ada.anonaddy.example", "News@Example.com"),
+            ("shop@alias.example.com", "first.last@mail.example.org"),
+            ("shop@alias.example.com", "a=b@example.org"),
+        ] {
+            let encoded = detector.encode_reverse(alias, contact).unwrap();
+            assert_eq!(
+                split_reverse(&encoded),
+                Some((alias.to_ascii_lowercase(), contact.to_ascii_lowercase()))
+            );
+            assert_eq!(
+                detector.decode_reverse(&encoded),
+                Some(contact.to_ascii_lowercase())
+            );
+        }
+        assert_eq!(
+            detector
+                .encode_reverse("shop@ada.anonaddy.example", "news@example.com")
+                .as_deref(),
+            Some("shop+news=example.com@ada.anonaddy.example")
+        );
+        assert_eq!(
+            detector.encode_reverse("shop+tag@alias.example.com", "news@example.com"),
+            None
+        );
+        assert_eq!(
+            detector.encode_reverse("shop@alias.example.com", "news@localhost"),
+            None
+        );
+        assert_eq!(detector.encode_reverse("shop", "news@example.com"), None);
+        assert_eq!(detector.decode_reverse("shop@alias.example.com"), None);
+        assert_eq!(detector.reply_strategy(), ReplyStrategy::ReverseAlias);
     }
 }

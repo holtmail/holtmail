@@ -3,7 +3,7 @@
 //!
 //! Each [`Rule`] is one [`RuleDetector`] with the rule's provider id.
 
-use holtmail_alias::{AliasDetector, AliasHit, Mail, parse_mailbox};
+use holtmail_alias::{AliasDetector, AliasHit, Mail, ReplyStrategy, parse_mailbox};
 use serde::Deserialize;
 
 /// One rule, as `[[aliases.rules]]` in the config.
@@ -108,6 +108,10 @@ impl AliasDetector for RuleDetector {
         format!("rule;{:?}", self.rule)
     }
 
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::Direct
+    }
+
     fn detect(&self, mail: &Mail) -> Option<AliasHit> {
         if let Some(header) = &self.rule.header
             && mail.header(header).is_none()
@@ -162,6 +166,21 @@ mod tests {
     use holtmail_alias::Address;
     use holtmail_alias::testing::conformance::{Case, detector};
     use holtmail_alias::testing::mail;
+
+    #[test]
+    fn replies_directly_from_the_alias() {
+        let rule = RuleDetector::new(Rule {
+            provider: "mine".into(),
+            domains: vec!["alias.example.org".into()],
+            ..Rule::default()
+        })
+        .unwrap();
+        assert_eq!(rule.reply_strategy(), ReplyStrategy::Direct);
+        assert_eq!(
+            rule.encode_reverse("shop@alias.example.org", "bob@example.org"),
+            None
+        );
+    }
 
     #[test]
     fn refuses_unusable_rules() {

@@ -25,4 +25,5 @@ signing_domains = ["fwd.example.org"]
 - The alias is `alias_header`, else the first recipient on one of `domains`. Mail sent from the alias itself is not recognised.
 - The sender is `sender_header` when given; there is no reverse alias.
 - `signed` only with `signing_domains` and a passing DKIM signature of one of them.
+- Replies use the `direct` strategy: from the alias itself, through a transport allowed to send as it.
 - `version()` covers the whole rule, so changing a rule makes the server detect stored mail again.

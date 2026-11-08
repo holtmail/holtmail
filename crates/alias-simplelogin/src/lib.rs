@@ -4,7 +4,7 @@
 
 mod directory;
 
-use holtmail_alias::{AliasDetector, AliasHit, Mail, parse_mailbox};
+use holtmail_alias::{AliasDetector, AliasHit, Mail, ReplyStrategy, parse_mailbox};
 use holtmail_core::Address;
 
 pub use directory::{DEFAULT_URL, SimpleLoginDirectory};
@@ -51,6 +51,10 @@ impl AliasDetector for SimpleLoginDetector {
 
     fn version(&self) -> String {
         format!("1;{}", self.signing.join(","))
+    }
+
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::ReverseAlias
     }
 
     fn detect(&self, mail: &Mail) -> Option<AliasHit> {

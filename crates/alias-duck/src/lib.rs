@@ -3,7 +3,7 @@
 //!
 //! DuckDuckGo has no public API for listing addresses, so there is no directory.
 
-use holtmail_alias::{AliasDetector, AliasHit, Mail};
+use holtmail_alias::{AliasDetector, AliasHit, Mail, ReplyStrategy};
 use holtmail_core::Address;
 
 /// The provider id.
@@ -43,6 +43,22 @@ fn sender_of(local: &str) -> Option<String> {
         return None;
     }
     Some(format!("{sender_local}@{domain}"))
+}
+
+impl DuckDetector {
+    /// `ada@example.com` written to `jane@duck.com` as `ada_at_example.com_jane@duck.com`, the
+    /// mirror of [`sender_of`].
+    fn join(&self, alias: &str, contact: &str) -> Option<String> {
+        let alias = alias.trim().to_ascii_lowercase();
+        let contact = contact.trim().to_ascii_lowercase();
+        let (user, domain) = alias.rsplit_once('@')?;
+        if domain != self.domain || user.is_empty() || user.contains("_at_") {
+            return None;
+        }
+        let (contact_local, contact_domain) = contact.rsplit_once('@')?;
+        let local = format!("{contact_local}_at_{contact_domain}_{user}");
+        (sender_of(&local)? == contact).then(|| format!("{local}@{domain}"))
+    }
 }
 
 impl AliasDetector for DuckDetector {
@@ -85,6 +101,23 @@ impl AliasDetector for DuckDetector {
             signed: mail.dkim_pass(&[self.domain.as_str()]),
         })
     }
+
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::ReverseAlias
+    }
+
+    fn encode_reverse(&self, alias: &str, contact: &str) -> Option<String> {
+        self.join(alias, contact)
+    }
+
+    fn decode_reverse(&self, address: &str) -> Option<String> {
+        let address = address.trim().to_ascii_lowercase();
+        let (local, domain) = address.rsplit_once('@')?;
+        if domain != self.domain {
+            return None;
+        }
+        sender_of(local)
+    }
 }
 
 #[cfg(test)]
@@ -104,5 +137,40 @@ mod tests {
         assert_eq!(sender_of("jane"), None);
         assert_eq!(sender_of("ada_at_example_jane"), None);
         assert_eq!(sender_of("_at_example.com_jane"), None);
+    }
+
+    #[test]
+    fn encodes_what_it_decodes() {
+        let detector = DuckDetector::default();
+        for contact in ["Ada@Example.com", "first_last@mail.example.org"] {
+            let encoded = detector.encode_reverse("Jane@duck.com", contact).unwrap();
+            assert_eq!(
+                detector.decode_reverse(&encoded),
+                Some(contact.to_ascii_lowercase())
+            );
+        }
+        assert_eq!(
+            detector
+                .encode_reverse("jane@duck.com", "ada@example.com")
+                .as_deref(),
+            Some("ada_at_example.com_jane@duck.com")
+        );
+        assert_eq!(
+            detector.encode_reverse("jane@example.org", "ada@example.com"),
+            None
+        );
+        assert_eq!(
+            detector.encode_reverse("ada_at_example.com_jane@duck.com", "bob@example.org"),
+            None
+        );
+        assert_eq!(
+            detector.encode_reverse("jane@duck.com", "ada@localhost"),
+            None
+        );
+        assert_eq!(
+            detector.decode_reverse("ada_at_example.com_jane@example.org"),
+            None
+        );
+        assert_eq!(detector.reply_strategy(), ReplyStrategy::ReverseAlias);
     }
 }

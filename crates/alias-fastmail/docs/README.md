@@ -14,7 +14,7 @@ Fastmail Masked Email through JMAP (`https://www.fastmail.com/dev/maskedemail`).
 | `update` | `MaskedEmail/set` update of `state` (`enabled`/`disabled`), `description`, `forDomain` |
 | `delete` | `MaskedEmail/set` with `state: deleted`: mail to it bounces |
 
-Capabilities: `create_random`, `create_custom`, `note`, `for_domain`, `switch`, `delete`. SetErrors: `notFound` → `NotFound`, `rateLimit` → `Unavailable`, `forbidden` → `Auth`, others → `Invalid`.
+Capabilities: `create_random`, `create_custom`, `note`, `for_domain`, `switch`, `delete`. SetErrors: `notFound` → `NotFound`, `rateLimit` → `Unavailable`, `forbidden` → `Auth`, others → `Invalid`. Masked addresses forward to the account itself, so `RemoteAlias.mailboxes` is empty; there is no detector, and replies use the `direct` strategy (from the masked address, through a transport allowed to send as it).
 
 ## Tests
 

@@ -65,3 +65,12 @@ fn keeps_the_contract_on_the_fixtures() {
         ],
     );
 }
+
+#[test]
+fn replies_by_the_service_default() {
+    use holtmail_alias::{AliasDetector, ReplyStrategy};
+    assert_eq!(
+        RelayDetector::new(&["relay.example.org".into()]).reply_strategy(),
+        ReplyStrategy::ReplyHeader
+    );
+}

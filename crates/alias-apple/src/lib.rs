@@ -4,7 +4,7 @@
 //! Apple has no public API for either, so there is no directory; the owner can add the
 //! addresses by hand.
 
-use holtmail_alias::{AliasDetector, AliasHit, Mail, parse_mailbox};
+use holtmail_alias::{AliasDetector, AliasHit, Mail, ReplyStrategy, parse_mailbox};
 use holtmail_core::Address;
 
 /// The provider id.
@@ -67,6 +67,10 @@ impl AliasDetector for AppleDetector {
 
     fn version(&self) -> String {
         format!("1;{};{}", self.relay, self.signing.join(","))
+    }
+
+    fn reply_strategy(&self) -> ReplyStrategy {
+        ReplyStrategy::ReverseAlias
     }
 
     fn detect(&self, mail: &Mail) -> Option<AliasHit> {

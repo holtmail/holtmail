@@ -21,9 +21,10 @@ SimpleLogin, and Proton Pass aliases, which run on it. `SimpleLoginDetector` rec
 | `create`, custom | `POST /api/v3/alias/custom/new` with `alias_prefix`, `signed_suffix`, `mailbox_ids` (the default mailbox when none), `note`, `name` |
 | `update` | `PATCH /api/aliases/{id}` (`note`, `name`, `mailbox_ids`), `POST /api/aliases/{id}/toggle` when the switch differs |
 | `delete` | `DELETE /api/aliases/{id}` |
+| `reverse_alias` | `POST /api/aliases/{id}/contacts` with `contact` (the address only); `201` for a new contact, `200` with `existed` for one the alias has; the answer's `reverse_alias_address`, else the address in `reverse_alias` |
 
-Capabilities: everything except `for_domain`. A signed suffix expires: a `412` comes back as `Invalid`, and the web app reads the options again. `429` (50 requests a minute) is `Unavailable`.
+Capabilities: everything except `for_domain`, plus `reverse`. `RemoteAlias.mailboxes` are the alias's mailboxes from the listing; SimpleLogin accepts replies only from them, with passing DKIM. On the contacts call a `403` with words other than `Forbidden` (a free plan: "Please upgrade to create a reverse-alias") is `Invalid` with those words, and a bare `403` (an alias of another account or none) is `NotFound`. A signed suffix expires: a `412` comes back as `Invalid`, and the web app reads the options again. `429` (50 requests a minute) is `Unavailable`.
 
 ## Tests
 
-Invented fixtures in `tests/fixtures/`: with `Original-From` and a signature, with only the rewritten name (encoded words), forged fields signed by another domain, and a reply. The directory runs the conformance suite against an in-process fake of the API, plus paging over 45 aliases and a refused key.
+Invented fixtures in `tests/fixtures/`: with `Original-From` and a signature, with only the rewritten name (encoded words), forged fields signed by another domain, and a reply. The directory runs the conformance suite against an in-process fake of the API, plus paging over 45 aliases, a refused key, and reverse aliases: one per contact however often asked, a refused address, a plan limit and an unknown alias. Replies use the `reverse_alias` strategy.

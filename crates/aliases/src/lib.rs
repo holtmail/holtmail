@@ -8,11 +8,12 @@
 use std::sync::Arc;
 
 use holtmail_alias::{
-    AliasChange, AliasDirectory, AliasError, AliasOptions, Capabilities, NewAlias, RemoteAlias,
+    AliasChange, AliasDetector, AliasDirectory, AliasError, AliasOptions, Capabilities, NewAlias,
+    RemoteAlias, ReplyStrategy,
 };
 use holtmail_core::{AliasServiceId, ArchiveId, Timestamp};
 use holtmail_secret::SecretBox;
-use holtmail_store::{AliasService, KnownAlias, Store, StoreError};
+use holtmail_store::{AliasService, AliasStrategy, KnownAlias, Store, StoreError, StrategyScope};
 
 /// Builds a directory for `(provider, base_url, key)`. `Invalid` for an unknown provider or an
 /// address that cannot be used.
@@ -91,6 +92,86 @@ pub fn known(remote: RemoteAlias, provider: &str, service: AliasServiceId) -> Kn
     }
 }
 
+/// Where an alias's effective reply strategy comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrategySource {
+    /// An override for the alias address.
+    Alias,
+    /// An override for the alias's domain.
+    Domain,
+    /// An override for the provider.
+    Service,
+    /// The detector's default.
+    Default,
+}
+
+impl StrategySource {
+    /// The stable lowercase name used in the API: `alias`, `domain`, `service` or `default`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Alias => "alias",
+            Self::Domain => "domain",
+            Self::Service => "service",
+            Self::Default => "default",
+        }
+    }
+}
+
+/// The reply strategy that applies to an alias, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectiveStrategy {
+    /// The strategy.
+    pub strategy: ReplyStrategy,
+    /// Where it comes from.
+    pub source: StrategySource,
+}
+
+/// The strategy for `alias` of `provider`: the override for the alias address, else for its
+/// domain, else for the provider, else `default`. Addresses, domains and provider ids compare
+/// lowercase; overrides naming an unknown strategy are skipped.
+pub fn effective_strategy(
+    overrides: &[AliasStrategy],
+    alias: &str,
+    provider: &str,
+    default: ReplyStrategy,
+) -> EffectiveStrategy {
+    let alias = alias.trim().to_ascii_lowercase();
+    let domain = alias.rsplit_once('@').map(|(_, d)| d.to_owned());
+    let provider = provider.trim().to_ascii_lowercase();
+    let pick = |scope: StrategyScope, key: Option<&str>| {
+        let key = key?;
+        overrides
+            .iter()
+            .filter(|o| o.scope == scope && o.key.eq_ignore_ascii_case(key))
+            .find_map(|o| ReplyStrategy::parse(&o.strategy))
+    };
+    [
+        (
+            StrategyScope::Alias,
+            Some(alias.as_str()),
+            StrategySource::Alias,
+        ),
+        (
+            StrategyScope::Domain,
+            domain.as_deref(),
+            StrategySource::Domain,
+        ),
+        (
+            StrategyScope::Service,
+            Some(provider.as_str()),
+            StrategySource::Service,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(scope, key, source)| {
+        pick(scope, key).map(|strategy| EffectiveStrategy { strategy, source })
+    })
+    .unwrap_or(EffectiveStrategy {
+        strategy: default,
+        source: StrategySource::Default,
+    })
+}
+
 /// Alias services of every archive. Cheap to clone.
 #[derive(Clone)]
 pub struct AliasManager {
@@ -98,6 +179,7 @@ pub struct AliasManager {
     secrets: Arc<dyn SecretBox>,
     providers: Arc<Vec<ProviderInfo>>,
     connect: Connect,
+    detectors: Arc<Vec<Arc<dyn AliasDetector>>>,
 }
 
 impl AliasManager {
@@ -114,7 +196,15 @@ impl AliasManager {
             secrets,
             providers: Arc::new(providers),
             connect,
+            detectors: Arc::new(Vec::new()),
         }
+    }
+
+    /// The same manager, also encoding reverse aliases with `detectors` for services that write
+    /// the contact into the address ([`AliasManager::reverse_alias`]).
+    pub fn with_detectors(mut self, detectors: Vec<Arc<dyn AliasDetector>>) -> Self {
+        self.detectors = Arc::new(detectors);
+        self
     }
 
     /// The providers, as given.
@@ -353,6 +443,148 @@ impl AliasManager {
         Ok(changed)
     }
 
+    /// The detector's default reply strategy for `provider`: the first detector of that
+    /// provider, `direct` when none is known.
+    pub fn default_strategy(&self, provider: &str) -> ReplyStrategy {
+        self.detectors
+            .iter()
+            .find(|d| d.provider() == provider)
+            .map(|d| d.reply_strategy())
+            .unwrap_or(ReplyStrategy::Direct)
+    }
+
+    /// The reply strategy for `alias` of `provider` in `archive`, see [`effective_strategy`],
+    /// with [`AliasManager::default_strategy`] as the default.
+    pub async fn reply_strategy(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        provider: &str,
+    ) -> Result<EffectiveStrategy, ManageError> {
+        let overrides = self.store.alias_strategies(archive).await?;
+        Ok(effective_strategy(
+            &overrides,
+            alias,
+            provider,
+            self.default_strategy(provider),
+        ))
+    }
+
+    async fn reverse_source(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+    ) -> Result<Reverser, ManageError> {
+        let known = self
+            .store
+            .known_aliases_among(archive, std::slice::from_ref(&alias.to_owned()))
+            .await?
+            .into_iter()
+            .next();
+        if let Some(KnownAlias {
+            service_id: Some(service_id),
+            remote_id: Some(remote_id),
+            ..
+        }) = &known
+        {
+            let service = self.service(*service_id).await?;
+            let directory = self.directory(&service)?;
+            if directory.reverse() {
+                return Ok(Reverser::Directory(directory, remote_id.clone()));
+            }
+        }
+        let provider = match known {
+            Some(known) => Some(known.provider),
+            None => self
+                .store
+                .aliases(archive)
+                .await?
+                .into_iter()
+                .find(|a| a.address == alias)
+                .map(|a| a.provider),
+        };
+        Ok(match provider {
+            Some(provider) => Reverser::Detector(provider),
+            None => Reverser::None,
+        })
+    }
+
+    /// Whether [`AliasManager::reverse_alias`] can give a reverse alias for `alias`: its
+    /// service has the `reverse` capability, or a detector of its provider writes contacts into
+    /// addresses. Asks no service.
+    pub async fn can_reverse(&self, archive: ArchiveId, alias: &str) -> Result<bool, ManageError> {
+        let alias = alias.trim().to_ascii_lowercase();
+        Ok(match self.reverse_source(archive, &alias).await? {
+            Reverser::Directory(..) => true,
+            Reverser::Detector(provider) => self
+                .detectors
+                .iter()
+                .filter(|d| d.provider() == provider)
+                .any(|d| d.encode_reverse(&alias, "contact@example.org").is_some()),
+            Reverser::None => false,
+        })
+    }
+
+    /// The address through which `alias` reaches `contact`, lowercase, so a first message to
+    /// someone the alias never heard from still leaves through the service. A known alias whose
+    /// service has the `reverse` capability asks the service (which makes the contact there the
+    /// first time and gives the same address after); otherwise the detector of the alias's
+    /// provider encodes it, for services that write the contact into the address. `Invalid`
+    /// when neither can: an alias neither known nor seen in mail, a service without either, or
+    /// a service that refused. The pair is recorded in the store
+    /// ([`holtmail_store::AliasStore::put_reverse_alias`]) so People and the reader show the
+    /// contact for the reverse alias.
+    pub async fn reverse_alias(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        contact: &str,
+    ) -> Result<String, ManageError> {
+        let alias = alias.trim().to_ascii_lowercase();
+        let made = self.make_reverse_alias(archive, &alias, contact).await?;
+        let contact = holtmail_alias::parse_mailbox(contact)
+            .map(|a| a.email)
+            .unwrap_or_else(|| contact.trim().to_owned());
+        self.store
+            .put_reverse_alias(archive, &alias, &contact, &made, Timestamp::now())
+            .await?;
+        Ok(made.trim().to_ascii_lowercase())
+    }
+
+    async fn make_reverse_alias(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        contact: &str,
+    ) -> Result<String, ManageError> {
+        let provider = match self.reverse_source(archive, alias).await? {
+            Reverser::Directory(directory, remote_id) => {
+                return directory
+                    .reverse_alias(&remote_id, contact)
+                    .await
+                    .map_err(refused);
+            }
+            Reverser::Detector(provider) => provider,
+            Reverser::None => {
+                return Err(ManageError::Invalid(format!(
+                    "{alias} is not a known alias"
+                )));
+            }
+        };
+        let contact = holtmail_alias::parse_mailbox(contact)
+            .map(|a| a.email)
+            .ok_or_else(|| ManageError::Invalid(format!("{} is not an address", contact.trim())))?;
+        self.detectors
+            .iter()
+            .filter(|d| d.provider() == provider)
+            .find_map(|d| d.encode_reverse(alias, &contact))
+            .ok_or_else(|| {
+                ManageError::Invalid(format!(
+                    "{provider} gives no reverse alias for {alias}; reply from the alias itself"
+                ))
+            })
+    }
+
     /// Forgets an alias; with `at_service`, deletes it at its service first.
     pub async fn delete_alias(
         &self,
@@ -373,6 +605,12 @@ impl AliasManager {
         self.store.remove_alias(archive, address).await?;
         Ok(())
     }
+}
+
+enum Reverser {
+    Directory(Arc<dyn AliasDirectory>, String),
+    Detector(String),
+    None,
 }
 
 #[cfg(test)]

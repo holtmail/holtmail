@@ -1,19 +1,21 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
-use holtmail_core::{ArchiveId, CollectionId, ItemId, MessageId};
+use axum::{Extension, Json};
+use holtmail_core::{AccountId, ArchiveId, CollectionId, ItemId, MessageId};
 use holtmail_pim::{Method, Normalized};
 use holtmail_store::{
-    CollectionSummary, ItemKind, ItemOrder, ItemQuery, ItemSummary, ItemVersion, Message,
-    PageCursor, RemovedFilter,
+    Capability, CollectionSummary, ItemKind, ItemOrder, ItemQuery, ItemSummary, ItemVersion,
+    Message, PageCursor, RemovedFilter, WriteMode,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::dto::ErrorDto;
-use crate::{ApiError, ApiResult, ApiState};
+use crate::write::{Scopes, may_write};
+use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
 type AppState = State<Arc<ApiState>>;
 
@@ -41,6 +43,12 @@ pub struct CollectionDto {
     pub items: u64,
     /// Items marked removed.
     pub removed_items: u64,
+    /// `read_only`, `held` (edits stay in Holtmail) or `write_through` (edits are sent to the
+    /// account).
+    pub write_mode: String,
+    /// Whether the current user may create, change and delete its items now: it belongs to an
+    /// account, is not `read_only` and not removed, and every lock for `pim.edit` is open.
+    pub editable: bool,
 }
 
 impl From<CollectionSummary> for CollectionDto {
@@ -59,6 +67,8 @@ impl From<CollectionSummary> for CollectionDto {
             removed_at: c.removed_at.map(|t| t.as_millis()),
             items: summary.items,
             removed_items: summary.removed_items,
+            write_mode: c.write_mode.as_str().into(),
+            editable: false,
         }
     }
 }
@@ -97,6 +107,8 @@ pub struct ItemSummaryDto {
     pub emails: Vec<String>,
     /// A contact's phone numbers in E.164 form.
     pub phones: Vec<String>,
+    /// Set when what is served comes from a change made in Holtmail or on a device.
+    pub local_edit: Option<crate::pim_edit::LocalEditDto>,
 }
 
 impl From<&ItemSummary> for ItemSummaryDto {
@@ -122,6 +134,7 @@ impl From<&ItemSummary> for ItemSummaryDto {
             organizer: index.and_then(|i| i.organizer.clone()),
             emails: index.map(|i| i.emails.clone()).unwrap_or_default(),
             phones: index.map(|i| i.phones.clone()).unwrap_or_default(),
+            local_edit: None,
         }
     }
 }
@@ -189,7 +202,8 @@ pub struct ItemVersionDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ItemDetail {
     pub item: ItemSummaryDto,
-    /// The normalized view of the latest version: `{"type": "contact", ...}`,
+    /// The normalized view of what is served: the open change when there is one (see
+    /// `item.local_edit`), else the latest version: `{"type": "contact", ...}`,
     /// `{"type": "calendar", "components": [...]}` or `{"type": "unreadable"}`. For an event
     /// found in mail, the versions merged: the latest invitation with later instance changes,
     /// every attendee's latest answer, and `status` `CANCELLED` once cancelled.
@@ -197,6 +211,8 @@ pub struct ItemDetail {
     pub data: serde_json::Value,
     /// Oldest first.
     pub versions: Vec<ItemVersionDto>,
+    /// Versions and changes made in Holtmail or on devices, interleaved, oldest first.
+    pub timeline: Vec<crate::pim_edit::TimelineEntryDto>,
 }
 
 /// Paging and filters of a contact or event list.
@@ -226,25 +242,41 @@ fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
 )]
 pub(crate) async fn list_collections(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
 ) -> ApiResult<Json<Vec<CollectionDto>>> {
     let archive: ArchiveId = id(&raw, "archive")?;
     let collections = state.store.list_collections(archive).await?;
     let accounts = state.store.list_accounts(archive).await?;
-    Ok(Json(
-        collections
-            .into_iter()
-            .map(|summary| {
-                let account = summary.collection.account_id;
-                let mut dto = CollectionDto::from(summary);
-                dto.account_name = accounts
-                    .iter()
-                    .find(|a| Some(a.id) == account)
-                    .map(|a| a.name.clone());
-                dto
-            })
-            .collect(),
-    ))
+    let mut editors: HashMap<AccountId, bool> = HashMap::new();
+    let mut out = Vec::with_capacity(collections.len());
+    for summary in collections {
+        let account = summary.collection.account_id;
+        let open = summary.collection.write_mode != WriteMode::ReadOnly
+            && summary.collection.removed_at.is_none();
+        let editable = match account {
+            Some(account) if open => match editors.get(&account) {
+                Some(editable) => *editable,
+                None => {
+                    let editable = may_write(&state, &user, &scopes, account, Capability::PimEdit)
+                        .await
+                        .is_ok();
+                    editors.insert(account, editable);
+                    editable
+                }
+            },
+            _ => false,
+        };
+        let mut dto = CollectionDto::from(summary);
+        dto.editable = editable;
+        dto.account_name = accounts
+            .iter()
+            .find(|a| Some(a.id) == account)
+            .map(|a| a.name.clone());
+        out.push(dto);
+    }
+    Ok(Json(out))
 }
 
 async fn list(
@@ -286,8 +318,38 @@ async fn list(
             holtmail_store::StoreError::Invalid(message) => ApiError::bad_request(message),
             other => other.into(),
         })?;
+    let open = state
+        .store
+        .open_changes(&holtmail_store::ItemChangeQuery {
+            archive_id: archive,
+            collection_id,
+            states: Vec::new(),
+            flagged_only: false,
+            limit: 500,
+        })
+        .await?;
+    let mut collections: Vec<holtmail_store::Collection> = Vec::new();
+    let mut items = Vec::with_capacity(page.items.len());
+    for summary in &page.items {
+        let mut dto = ItemSummaryDto::from(summary);
+        if let Some(change) = open
+            .iter()
+            .rev()
+            .find(|c| c.item_id == Some(summary.item.id))
+        {
+            if !collections.iter().any(|c| c.id == change.collection_id)
+                && let Some(found) = state.store.get_collection(change.collection_id).await?
+            {
+                collections.push(found);
+            }
+            if let Some(collection) = collections.iter().find(|c| c.id == change.collection_id) {
+                dto.local_edit = crate::pim_edit::local_edit(state, collection, Some(change)).await;
+            }
+        }
+        items.push(dto);
+    }
     Ok(Json(ItemPage {
-        items: page.items.iter().map(ItemSummaryDto::from).collect(),
+        items,
         next: page.next.map(|c| c.0),
     }))
 }
@@ -390,8 +452,9 @@ pub struct InvitationDto {
     /// Lowercase `STATUS` of the event now, such as `confirmed` or `cancelled`.
     pub status: Option<String>,
     pub cancelled: bool,
-    /// The answer of the attendee whose address is one of the archive's account addresses, when
-    /// one matches.
+    /// The answer of the attendee whose address is one of the archive's own (an account's, an
+    /// identity's or an own alias), when one matches. An answer given through the RSVP API
+    /// shows here once its iMIP reply has left and is archived.
     pub my_status: Option<String>,
     /// How many versions the item has.
     pub version_count: u32,
@@ -413,12 +476,11 @@ pub(crate) async fn invitations(
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-    let mine: Vec<String> = state
-        .store
-        .list_accounts(message.archive_id)
+    let mine: Vec<String> = crate::pim_edit::edits(state)
+        .own_addresses(message.archive_id)
         .await?
-        .into_iter()
-        .filter_map(|a| a.address.as_deref().and_then(holtmail_pim::normalize_email))
+        .iter()
+        .filter_map(|a| holtmail_pim::normalize_email(a))
         .collect();
     let mut out: Vec<InvitationDto> = Vec::new();
     for source in sources {
@@ -502,10 +564,26 @@ pub(crate) async fn get_item(
         .await?
         .ok_or_else(|| ApiError::not_found("item"))?;
     let (latest, versions, _) = history(&state, item_id, summary.item.kind).await?;
+    let mut item = ItemSummaryDto::from(&summary);
+    let mut data = serde_json::to_value(&latest).unwrap_or(serde_json::Value::Null);
+    let effective = state
+        .store
+        .effective(&holtmail_store::ChangeTarget::Item { item: item_id })
+        .await?;
+    if let Some(effective) = effective.filter(|e| e.change.is_some())
+        && let Some(collection) = state.store.get_collection(effective.collection_id).await?
+    {
+        item.local_edit =
+            crate::pim_edit::local_edit(&state, &collection, effective.change.as_ref()).await;
+        if let Some(served) = summary.index.as_ref().filter(|_| effective.served) {
+            data = served.data.clone();
+        }
+    }
     Ok(Json(ItemDetail {
-        item: ItemSummaryDto::from(&summary),
-        data: serde_json::to_value(&latest).unwrap_or(serde_json::Value::Null),
+        item,
+        data,
         versions,
+        timeline: crate::pim_edit::timeline(&state, item_id).await?,
     }))
 }
 

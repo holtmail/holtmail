@@ -17,6 +17,13 @@ use tower::ServiceExt;
 
 use super::*;
 
+mod devices;
+mod invitations;
+mod mail;
+mod pim_edit;
+mod send;
+mod write;
+
 const NEWSLETTER: &[u8] = b"From: News <news@example.com>\r\nTo: ada@example.com\r\nSubject: Weekly news\r\nMessage-ID: <n1@example.com>\r\nDate: Mon, 10 Mar 2025 08:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=r\r\n\r\n--r\r\nContent-Type: text/html\r\n\r\n<p onclick=\"x()\">Hello <img src=\"cid:logo@example.com\"><img src=\"https://tracker.example.com/p.gif\"></p>\r\n--r\r\nContent-Type: image/png\r\nContent-ID: <logo@example.com>\r\nContent-Disposition: inline\r\n\r\nPNGDATA\r\n--r\r\nContent-Type: text/html; name=\"evil.html\"\r\nContent-Disposition: attachment; filename=\"evil.html\"\r\n\r\n<script>alert(1)</script>\r\n--r--\r\n";
 const PLAIN: &[u8] = b"From: Bob <bob@example.org>\r\nTo: ada@example.com\r\nSubject: Re: Weekly news\r\nIn-Reply-To: <n1@example.com>\r\nDate: Tue, 11 Mar 2025 08:00:00 +0000\r\n\r\nThanks <3\r\n";
 
@@ -51,6 +58,7 @@ struct FakeMailboxes {
     changed: std::sync::Mutex<Vec<holtmail_core::ArchiveId>>,
     fresh: std::sync::OnceLock<FreshInsights>,
     freshened: std::sync::Mutex<Vec<holtmail_core::MessageId>>,
+    scheduling: std::sync::Mutex<Option<crate::SchedulingProbe>>,
 }
 
 struct FreshInsights {
@@ -79,8 +87,7 @@ impl holtmail_secret::SecretBox for PlainSecrets {
 struct FakeAliases(holtmail_aliases::AliasManager);
 
 impl FakeAliases {
-    fn new(store: Arc<dyn Store>) -> Self {
-        let directory = Arc::new(holtmail_alias::testing::FakeDirectory::new());
+    fn new(store: Arc<dyn Store>, directory: Arc<holtmail_alias::testing::FakeDirectory>) -> Self {
         let caps = holtmail_alias::AliasDirectory::capabilities(&*directory);
         let connect: holtmail_aliases::Connect = Arc::new(move |_, _, key| {
             if key == "good-key" {
@@ -89,20 +96,25 @@ impl FakeAliases {
                 Err(holtmail_alias::AliasError::Auth)
             }
         });
-        Self(holtmail_aliases::AliasManager::new(
-            store,
-            Arc::new(PlainSecrets),
-            vec![holtmail_aliases::ProviderInfo {
-                id: "fake".into(),
-                name: "Fake".into(),
-                default_url: Some("https://alias.example".into()),
-                capabilities: Some(caps),
-                key_label: "API key".into(),
-                key_help: "Settings".into(),
-                detects: false,
-            }],
-            connect,
-        ))
+        Self(
+            holtmail_aliases::AliasManager::new(
+                store,
+                Arc::new(PlainSecrets),
+                vec![holtmail_aliases::ProviderInfo {
+                    id: "fake".into(),
+                    name: "Fake".into(),
+                    default_url: Some("https://alias.example".into()),
+                    capabilities: Some(caps),
+                    key_label: "API key".into(),
+                    key_help: "Settings".into(),
+                    detects: false,
+                }],
+                connect,
+            )
+            .with_detectors(vec![Arc::new(
+                holtmail_alias_simplelogin::SimpleLoginDetector::new(&[]),
+            )]),
+        )
     }
 }
 
@@ -200,6 +212,32 @@ impl Aliases for FakeAliases {
     ) -> Result<(), MailboxError> {
         self.0
             .delete_alias(archive, address, at_service)
+            .await
+            .map_err(manage_error)
+    }
+    fn default_strategy(&self, provider: &str) -> holtmail_alias::ReplyStrategy {
+        self.0.default_strategy(provider)
+    }
+
+    async fn can_reverse(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        alias: &str,
+    ) -> Result<bool, MailboxError> {
+        self.0
+            .can_reverse(archive, alias)
+            .await
+            .map_err(manage_error)
+    }
+
+    async fn reverse_alias(
+        &self,
+        archive: holtmail_core::ArchiveId,
+        alias: &str,
+        contact: &str,
+    ) -> Result<String, MailboxError> {
+        self.0
+            .reverse_alias(archive, alias, contact)
             .await
             .map_err(manage_error)
     }
@@ -397,6 +435,13 @@ impl holtmail_fetch::Fetcher for FakeFetcher {
 
 #[async_trait::async_trait]
 impl Mailboxes for FakeMailboxes {
+    async fn scheduling(&self, _: &holtmail_store::Collection) -> crate::SchedulingProbe {
+        self.scheduling
+            .lock()
+            .unwrap()
+            .unwrap_or(crate::SchedulingProbe::NoServer)
+    }
+
     async fn add_imap(
         &self,
         archive: holtmail_core::ArchiveId,
@@ -561,6 +606,7 @@ impl Mailboxes for FakeMailboxes {
                 .as_str()
                 .map(str::to_owned),
             needs_sign_in: account.settings["oauth"]["needs_sign_in"] == json!(true),
+            sign_in_reason: None,
             contacts_calendars: (account.kind != holtmail_store::AccountKind::Import).then(|| {
                 let dav = &account.settings["dav"];
                 holtmail_api_contacts(dav)
@@ -756,6 +802,7 @@ impl Mailboxes for FakeMailboxes {
 
 struct Fixture {
     app: Router,
+    state: ApiState,
     mailboxes: Arc<FakeMailboxes>,
     fetcher: Arc<FakeFetcher>,
     store: Arc<dyn Store>,
@@ -766,6 +813,8 @@ struct Fixture {
     archive: String,
     folder: String,
     progress: Arc<InsightProgress>,
+    submitted: send::Submitted,
+    directory: Arc<holtmail_alias::testing::FakeDirectory>,
     _dir: tempfile::TempDir,
 }
 
@@ -883,19 +932,30 @@ async fn empty_fixture_with(insights: Option<InsightsConfig>) -> Fixture {
     });
     let _ = mailboxes.store.set(store.clone());
     let fetcher = Arc::new(FakeFetcher::default());
+    let (sending, submitted) = send::fake_sending(store.clone(), blobs.clone(), ingest.clone());
+    let directory = Arc::new(holtmail_alias::testing::FakeDirectory::new());
+    let state = ApiState {
+        blobs: blobs.clone(),
+        store: store.clone(),
+        index,
+        auth: auth.clone(),
+        mailboxes: mailboxes.clone(),
+        operations: mailboxes.clone(),
+        aliases: Arc::new(FakeAliases::new(store.clone(), directory.clone())),
+        fetcher: fetcher.clone(),
+        secure_cookies: false,
+        insights,
+        write: WriteSwitches::default(),
+        sending: Some(sending),
+        devices: Arc::new(holtmail_device_local::LocalDeviceAuth::new(
+            store.clone(),
+            holtmail_device_local::Options::default(),
+        )),
+        serve: crate::ServeOptions::default(),
+    };
     Fixture {
-        app: router(ApiState {
-            blobs: blobs.clone(),
-            store: store.clone(),
-            index,
-            auth: auth.clone(),
-            mailboxes: mailboxes.clone(),
-            operations: mailboxes.clone(),
-            aliases: Arc::new(FakeAliases::new(store.clone())),
-            fetcher: fetcher.clone(),
-            secure_cookies: false,
-            insights,
-        }),
+        app: router(state.clone()),
+        state,
         mailboxes,
         fetcher,
         store,
@@ -906,6 +966,8 @@ async fn empty_fixture_with(insights: Option<InsightsConfig>) -> Fixture {
         archive: archive.to_string(),
         folder: folder.to_string(),
         progress,
+        submitted,
+        directory,
         _dir: dir,
     }
 }
@@ -1272,6 +1334,7 @@ fn declares_the_refusal_of_members_on_every_write() {
         "/api/logout",
         "/api/me",
         "/api/me/password",
+        "/api/devices/{id}",
         "/api/push/dav/{id}",
     ];
     let mut checked = 0;
@@ -3421,7 +3484,7 @@ async fn groups_people_with_sources_mail_and_meetings() {
         .to_owned();
     assert_eq!(
         f.json(&format!("/api/messages/{plain}")).await["people"],
-        json!([{ "email": "ada@example.com", "person_id": person }])
+        json!([{ "email": "ada@example.com", "person_id": person, "has_card": true }])
     );
 
     for missing in [

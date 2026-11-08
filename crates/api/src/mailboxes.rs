@@ -125,6 +125,21 @@ pub trait Mailboxes: Send + Sync {
         false
     }
 
+    /// Held edits of contacts or events in `archive` were recorded or decided: wakes the writer
+    /// that sends them upstream and refreshes the archive's people. Returns without waiting.
+    /// The default does nothing.
+    fn pim_changed(&self, archive: ArchiveId) {
+        let _ = archive;
+    }
+
+    /// How the server holding `collection` schedules and what the account's writer can do in
+    /// it, whatever the write mode, the switches and the capabilities say. The RSVP and
+    /// organizer routes are chosen from it. The default answers [`SchedulingProbe::NoServer`].
+    async fn scheduling(&self, collection: &holtmail_store::Collection) -> SchedulingProbe {
+        let _ = collection;
+        SchedulingProbe::NoServer
+    }
+
     /// Derived categories of `archive` may be stale: an override or a trust list changed. Wakes
     /// the stage-B pass and returns without waiting for it; repeated calls may be coalesced. The
     /// default does nothing.
@@ -550,8 +565,13 @@ pub struct AccountDetails {
     pub min_age_days: Option<u32>,
     /// `google` or `microsoft` for accounts that sign in with OAuth.
     pub oauth_provider: Option<String>,
-    /// The provider no longer accepts the sign-in; syncs stop until someone signs in again.
+    /// Someone has to sign in again: the provider no longer accepts the sign-in (syncs stop
+    /// until then), or a capability that was turned on needs consent the sign-in lacks (see
+    /// `sign_in_reason`; syncs go on).
     pub needs_sign_in: bool,
+    /// Why signing in again is needed when it is not a revoked sign-in, for people, such as
+    /// consent to send mail; `None` otherwise.
+    pub sign_in_reason: Option<String>,
     /// Contacts and calendars; `None` for accounts that cannot have them yet (import accounts,
     /// and Microsoft accounts until Graph contacts and calendars arrive).
     pub contacts_calendars: Option<ContactsCalendars>,
@@ -582,4 +602,26 @@ pub enum MailboxError {
     /// Something failed on the server's side.
     #[error("{0}")]
     Backend(String),
+}
+
+/// What [`Mailboxes::scheduling`] found out about a collection's server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchedulingProbe {
+    /// No server holds the collection (no account, an import account): nothing will ever
+    /// schedule for it.
+    NoServer,
+    /// It has a server that cannot be asked now (unreachable, sign-in failed, contacts and
+    /// calendars off): that server may or may not schedule once the change reaches it.
+    Unknown,
+    /// The server answered.
+    Known(Scheduling),
+}
+
+/// What [`Mailboxes::scheduling`] knows about a collection's server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Scheduling {
+    /// Whether and how the server schedules.
+    pub host: holtmail_pim_edit::Host,
+    /// What the account's writer can do in the collection.
+    pub caps: holtmail_collection::WriteCaps,
 }

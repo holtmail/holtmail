@@ -82,6 +82,7 @@ pub(crate) async fn list_accounts(
     State(state): AppState,
     Path(raw): Path<String>,
     Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<crate::Scopes>,
 ) -> ApiResult<Json<Vec<AccountDto>>> {
     let archive: ArchiveId = id(&raw, "archive")?;
     let accounts = state.store.list_accounts(archive).await?;
@@ -98,8 +99,17 @@ pub(crate) async fn list_accounts(
         } else {
             (None, None)
         };
+        let writable = crate::write::writable(&state, &user, &scopes, &account).await?;
+        let consent = crate::write::write_consent_reason(&state, &account).await?;
         let mut dto = bare_account_dto(&state, account);
         (dto.trusted_authserv_ids, dto.suggested_authserv_id) = trust;
+        dto.writable = writable;
+        if let Some(reason) = consent
+            && !dto.needs_sign_in
+        {
+            dto.needs_sign_in = true;
+            dto.sign_in_reason = Some(reason);
+        }
         if !manages {
             dto.connection = None;
             dto.jmap = None;
@@ -123,13 +133,15 @@ pub(crate) async fn list_accounts(
 )]
 pub(crate) async fn create_archive(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<crate::Scopes>,
     Json(request): Json<NewArchiveRequest>,
 ) -> ApiResult<(StatusCode, Json<ArchiveDto>)> {
     let name = name(&request.name, "the name")?;
     let archive = state.store.create_archive(&name).await?;
     Ok((
         StatusCode::CREATED,
-        Json(crate::routes::archive_dto(&state, archive).await?),
+        Json(crate::routes::archive_dto(&state, &user, &scopes, archive).await?),
     ))
 }
 
@@ -359,6 +371,8 @@ fn conflict(message: &str) -> ApiError {
 )]
 pub(crate) async fn update_archive(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<crate::Scopes>,
     Path(raw): Path<String>,
     Json(request): Json<ArchiveUpdateRequest>,
 ) -> ApiResult<Json<ArchiveDto>> {
@@ -375,7 +389,9 @@ pub(crate) async fn update_archive(
         .get_archive(archive_id)
         .await?
         .ok_or_else(|| ApiError::not_found("archive"))?;
-    Ok(Json(crate::routes::archive_dto(&state, archive).await?))
+    Ok(Json(
+        crate::routes::archive_dto(&state, &user, &scopes, archive).await?,
+    ))
 }
 
 #[utoipa::path(

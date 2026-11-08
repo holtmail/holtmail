@@ -29,6 +29,7 @@ fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
 pub(crate) async fn list_archives(
     State(state): AppState,
     Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<crate::Scopes>,
 ) -> ApiResult<Json<Vec<ArchiveDto>>> {
     let readable = crate::access::readable(&state, &user).await?;
     let mut out = Vec::new();
@@ -36,7 +37,7 @@ pub(crate) async fn list_archives(
         if !readable.contains(&archive.id) {
             continue;
         }
-        out.push(archive_dto(&state, archive).await?);
+        out.push(archive_dto(&state, &user, &scopes, archive).await?);
     }
     Ok(Json(out))
 }
@@ -49,6 +50,8 @@ pub(crate) async fn list_archives(
 )]
 pub(crate) async fn get_archive(
     State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Extension(scopes): Extension<crate::Scopes>,
     Path(raw): Path<String>,
 ) -> ApiResult<Json<ArchiveDto>> {
     let archive_id: ArchiveId = id(&raw, "archive")?;
@@ -57,13 +60,43 @@ pub(crate) async fn get_archive(
         .get_archive(archive_id)
         .await?
         .ok_or_else(|| ApiError::not_found("archive"))?;
-    Ok(Json(archive_dto(&state, archive).await?))
+    Ok(Json(archive_dto(&state, &user, &scopes, archive).await?))
+}
+
+pub(crate) async fn archive_rights(
+    state: &ApiState,
+    user: &User,
+    scopes: &crate::Scopes,
+    archive: ArchiveId,
+) -> ApiResult<ArchiveRightsDto> {
+    let role = crate::write::role_in(state, user, archive)
+        .await?
+        .unwrap_or(holtmail_store::GrantRole::Reader);
+    let compose = state.sending.is_some()
+        && state.write.enabled
+        && state.write.send
+        && role >= holtmail_store::GrantRole::Sender
+        && scopes.has(crate::write::Scope::SendMail)
+        && state
+            .store
+            .user_identities(user.id, archive)
+            .await?
+            .iter()
+            .any(|i| i.fields.active);
+    Ok(ArchiveRightsDto {
+        role: role.as_str().into(),
+        manage: crate::access::manages(user),
+        compose,
+    })
 }
 
 pub(crate) async fn archive_dto(
     state: &ApiState,
+    user: &User,
+    scopes: &crate::Scopes,
     archive: holtmail_store::Archive,
 ) -> ApiResult<ArchiveDto> {
+    let rights = archive_rights(state, user, scopes, archive.id).await?;
     let stats = state.store.archive_stats(archive.id).await?;
     let totals = state.store.remote_copy_totals(archive.id).await?;
     let older_pending = match archive.save_remote_images_since {
@@ -82,7 +115,7 @@ pub(crate) async fn archive_dto(
         failed: totals.failed,
         older_pending,
     };
-    Ok(ArchiveDto::new(archive, stats, remote_images))
+    Ok(ArchiveDto::new(archive, stats, remote_images, rights))
 }
 
 #[utoipa::path(
@@ -300,6 +333,9 @@ async fn detail(
         cc: addresses(&message.cc),
         bcc: addresses(&message.bcc),
         reply_to,
+        list_post: parsed
+            .as_ref()
+            .and_then(|p| holtmail_compose::Original::from_parsed(p).list_post),
         date: message.date.as_millis(),
         sent_at: message.sent_at.map(|t| t.as_millis()),
         received_at: message.received_at.map(|t| t.as_millis()),
@@ -326,6 +362,8 @@ async fn detail(
         people,
         alias,
         insights,
+        pending: crate::mail_changes::pending(state, message.id).await?,
+        failed: crate::mail_changes::failed(state, message.id).await?,
     })
 }
 

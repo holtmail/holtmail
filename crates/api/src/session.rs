@@ -8,6 +8,7 @@ use axum::http::{Extensions, HeaderMap, HeaderValue, Method, StatusCode, header}
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use holtmail_auth::{AuthError, SignedIn, Signup};
+use holtmail_serve_net::TrustedProxies;
 use holtmail_store::User;
 use serde::de::DeserializeOwned;
 
@@ -70,7 +71,7 @@ pub(crate) fn auth_error(failure: AuthError) -> Refusal {
     }
 }
 
-fn session_token(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn session_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get_all(header::COOKIE)
         .iter()
@@ -110,11 +111,43 @@ pub(crate) fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Refusal> {
         .map_err(|_| error(StatusCode::BAD_REQUEST, "malformed request body"))
 }
 
-fn client_ip(extensions: &Extensions) -> IpAddr {
-    extensions
+fn client_ip(state: &ApiState, headers: &HeaderMap, extensions: &Extensions) -> IpAddr {
+    let peer = extensions
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0.ip())
-        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+    if state.serve.trusted_proxies.contains(peer) {
+        forwarded_client(headers, &state.serve.trusted_proxies).unwrap_or(peer)
+    } else {
+        peer
+    }
+}
+
+/// The client address a trusted proxy reports in `X-Forwarded-For`: the rightmost hop that is not
+/// itself a trusted proxy, or the leftmost one when all are. Hops to the left of a malformed one
+/// are not believed.
+pub(crate) fn forwarded_client(headers: &HeaderMap, trusted: &TrustedProxies) -> Option<IpAddr> {
+    let hops = headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .map(|value| value.to_str().ok())
+        .collect::<Option<Vec<_>>>()?
+        .join(",");
+    let mut client = None;
+    for hop in hops.rsplit(',').map(str::trim) {
+        let Some(ip) = hop
+            .parse::<IpAddr>()
+            .ok()
+            .or_else(|| hop.parse::<SocketAddr>().ok().map(|socket| socket.ip()))
+        else {
+            break;
+        };
+        client = Some(ip.to_canonical());
+        if !trusted.contains(ip) {
+            break;
+        }
+    }
+    client
 }
 
 pub(crate) fn signed_in(state: &ApiState, headers: &HeaderMap, session: SignedIn) -> Response {
@@ -216,7 +249,11 @@ pub(crate) async fn login(
     let request: LoginRequest = body(&bytes)?;
     let session = state
         .auth
-        .login(client_ip(&extensions), &request.email, &request.password)
+        .login(
+            client_ip(&state, &headers, &extensions),
+            &request.email,
+            &request.password,
+        )
         .await
         .map_err(auth_error)?;
     Ok(signed_in(&state, &headers, session))
@@ -254,6 +291,7 @@ pub(crate) async fn require_session(
     match user {
         Some(user) => {
             request.extensions_mut().insert(CurrentUser(user));
+            request.extensions_mut().insert(crate::Scopes::all());
             next.run(request).await
         }
         None => unauthorized().into_response(),

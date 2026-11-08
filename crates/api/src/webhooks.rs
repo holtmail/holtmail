@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use holtmail_core::WebhookId;
 use holtmail_store::{Webhook, WebhookDelivery};
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use utoipa::ToSchema;
 
 use crate::dto::ErrorDto;
 use crate::manage::refused;
+use crate::session::no_store;
 use crate::{ApiError, ApiResult, ApiState};
 
 type AppState = State<Arc<ApiState>>;
@@ -148,18 +150,21 @@ pub(crate) async fn list(State(state): AppState) -> ApiResult<Json<WebhookListDt
 pub(crate) async fn create(
     State(state): AppState,
     Json(request): Json<NewWebhookRequest>,
-) -> ApiResult<(StatusCode, Json<WebhookCreatedDto>)> {
+) -> ApiResult<Response> {
     let (hook, secret) = state
         .operations
         .create_webhook(&request.url, &request.events)
         .await
         .map_err(refused)?;
-    Ok((
-        StatusCode::CREATED,
-        Json(WebhookCreatedDto {
-            webhook: dto(hook, None),
-            secret,
-        }),
+    Ok(no_store(
+        (
+            StatusCode::CREATED,
+            Json(WebhookCreatedDto {
+                webhook: dto(hook, None),
+                secret,
+            }),
+        )
+            .into_response(),
     ))
 }
 
@@ -212,17 +217,14 @@ pub(crate) async fn remove(
     params(("id" = String, Path, description = "Webhook id")),
     responses((status = 200, body = WebhookSecretDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such webhook", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
 )]
-pub(crate) async fn rotate(
-    State(state): AppState,
-    Path(raw): Path<String>,
-) -> ApiResult<Json<WebhookSecretDto>> {
+pub(crate) async fn rotate(State(state): AppState, Path(raw): Path<String>) -> ApiResult<Response> {
     let hook = find(&state, &raw).await?;
     let secret = state
         .operations
         .rotate_webhook_secret(hook.id)
         .await
         .map_err(refused)?;
-    Ok(Json(WebhookSecretDto { secret }))
+    Ok(no_store(Json(WebhookSecretDto { secret }).into_response()))
 }
 
 #[utoipa::path(

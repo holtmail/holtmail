@@ -38,7 +38,11 @@ fn forbidden() -> Response {
 }
 
 /// Lets owners and admins do everything; members may read the archives granted to them and
-/// change their own profile. Archives, messages, threads, contact or calendar items, events and
+/// change their own profile. Sending routes (transports, identities, drafts, the outbox and
+/// replies and forwards) and mailbox changes (flags, moves, deletes, restores, retrying and
+/// dismissing failed changes, an account's changes and retention) and contact and calendar
+/// edits (creating, changing and deleting items, a person's card, open changes and their
+/// resolution, write modes, answers to invitations) pass to their handlers, which check the grant themselves. Archives, messages, threads, contact or calendar items, events and
 /// people a member may not read answer `404`, as if they did not exist.
 pub(crate) async fn check(
     State(state): State<Arc<ApiState>>,
@@ -55,11 +59,31 @@ pub(crate) async fn check(
     let parts: Vec<&str> = path.split('/').collect();
     let read = matches!(*request.method(), Method::GET | Method::HEAD);
     let archive = match parts.as_slice() {
-        ["me", ..] => return next.run(request).await,
+        ["me" | "devices", ..] => return next.run(request).await,
         ["insights", "data"] if read => return next.run(request).await,
+        ["transports" | "identities" | "drafts" | "outbox", ..]
+        | [
+            "archives",
+            _,
+            "transports" | "identities" | "default-identity" | "drafts" | "outbox",
+            ..,
+        ]
+        | [
+            "messages",
+            _,
+            "reply" | "forward" | "changes" | "restore" | "rsvp",
+        ]
+        | ["mail", "changes"]
+        | ["mail-changes", _, "retry" | "dismiss"]
+        | ["accounts", _, "mail-changes" | "retention"]
+        | ["collections", _, "items" | "write-mode" | "organizing"]
+        | ["items", _, "content" | "rsvp"]
+        | ["pim", "changes", ..]
+        | ["people", _, "card"] => return next.run(request).await,
+        ["items", _] if *request.method() == Method::DELETE => return next.run(request).await,
         [
             "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth" | "ledger"
-            | "deletions" | "webhooks" | "smtp" | "alias-providers" | "alias-services",
+            | "deletions" | "webhooks" | "smtp" | "alias-providers" | "alias-services" | "audit",
             ..,
         ] => return forbidden(),
         _ if !read => return forbidden(),

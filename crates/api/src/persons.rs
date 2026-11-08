@@ -276,6 +276,10 @@ pub struct PersonDetailDto {
     pub meetings: Vec<MeetingDto>,
     /// Splits and joins made by hand that touch one of their cards or addresses, oldest first.
     pub overrides: Vec<crate::overrides::PersonOverrideDto>,
+    /// The card edits of this person go to (`PUT /api/people/{id}/card`): their card in the
+    /// editable address book stored first; absent when they have none, and a save then makes a
+    /// new card.
+    pub primary_card: Option<String>,
 }
 
 /// An address that belongs to a person.
@@ -284,6 +288,9 @@ pub struct AddressPersonDto {
     /// The address as the message writes it.
     pub email: String,
     pub person_id: String,
+    /// The person has a contact card that is not removed, as opposed to being known from mail
+    /// alone.
+    pub has_card: bool,
 }
 
 /// The people of `emails` in the archive, each address once.
@@ -298,16 +305,29 @@ pub(crate) async fn address_people(
             unique.push(email);
         }
     }
-    Ok(state
-        .store
-        .people_by_email(archive, &unique)
-        .await?
-        .into_iter()
-        .map(|(email, id)| AddressPersonDto {
+    let found = state.store.people_by_email(archive, &unique).await?;
+    let mut carded: Vec<(PersonId, bool)> = Vec::new();
+    let mut out = Vec::with_capacity(found.len());
+    for (email, id) in found {
+        let has_card = match carded.iter().find(|(p, _)| *p == id) {
+            Some((_, has)) => *has,
+            None => {
+                let has = state
+                    .store
+                    .get_person(id)
+                    .await?
+                    .is_some_and(|p| p.cards.iter().any(|c| !c.removed));
+                carded.push((id, has));
+                has
+            }
+        };
+        out.push(AddressPersonDto {
             email,
             person_id: id.to_string(),
-        })
-        .collect())
+            has_card,
+        });
+    }
+    Ok(out)
 }
 
 fn id<T: std::str::FromStr>(raw: &str, what: &str) -> ApiResult<T> {
@@ -522,7 +542,11 @@ pub(crate) async fn get_person(
     let correspondence = correspondence(&state, &person).await?;
     let meetings = meetings(&state, &person).await?;
     let overrides = crate::overrides::touching(&state, &person).await?;
+    let primary_card = crate::pim_edit::primary_card(&state, &person)
+        .await?
+        .map(|(item, _)| item.to_string());
     Ok(Json(PersonDetailDto {
+        primary_card,
         person: PersonSummaryDto::from(&person),
         fields,
         cards: card_dtos,

@@ -19,6 +19,22 @@ pub struct ArchiveDto {
     pub save_remote_images: bool,
     pub stats: StatsDto,
     pub remote_images: RemoteImagesDto,
+    /// What the current user may do in it.
+    pub rights: ArchiveRightsDto,
+}
+
+/// The current user's rights in an archive, as the server checks them now.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ArchiveRightsDto {
+    /// The user's grant: `reader`, `editor` or `sender`; each includes the ones before it.
+    pub role: String,
+    /// Whether the user manages the archive: accounts, capabilities, transports and identities.
+    pub manage: bool,
+    /// Whether the user may write drafts and send here: the server sends mail, the `[write]`
+    /// switches allow sending, the grant is `sender`, the credentials carry `send:mail` and the
+    /// user may send as at least one active identity of the archive. Each send is still checked
+    /// against the transport and its account.
+    pub compose: bool,
 }
 
 /// Remote images an archive keeps.
@@ -125,8 +141,12 @@ pub struct AccountDto {
     pub min_age_days: Option<u32>,
     /// `google` or `microsoft` when it signs in with OAuth; `null` for a password.
     pub oauth_provider: Option<String>,
-    /// The provider no longer accepts the sign-in: it does not sync until someone signs in again.
+    /// Someone has to sign in again: the provider no longer accepts the sign-in (it does not sync
+    /// until then), or sending or changing mail needs consent the sign-in lacks
+    /// (`sign_in_reason` says so; it keeps syncing).
     pub needs_sign_in: bool,
+    /// Why signing in again is needed when the sign-in itself still works; `null` otherwise.
+    pub sign_in_reason: Option<String>,
     /// Whether its contacts and calendars are archived; `null` for accounts that cannot have
     /// them yet (import accounts; Microsoft accounts until Microsoft Graph contacts arrive).
     pub contacts_calendars: Option<ContactsCalendarsDto>,
@@ -139,6 +159,12 @@ pub struct AccountDto {
     /// `trusted_authserv_ids` while that list is empty; never used for trust on its own. `null`
     /// when there is none, for import accounts and for members.
     pub suggested_authserv_id: Option<String>,
+    /// The mailbox capabilities (`mail.flags`, `mail.move`, `mail.delete`, `mail.expunge`,
+    /// `mail.append`) the current user may use on this account now: the instance switch, the
+    /// account's capability, the grant and the credentials' scope all allow it. Filled in the
+    /// archive's account list; empty in other answers. Every change is checked again when it is
+    /// asked for.
+    pub writable: Vec<String>,
 }
 
 /// Whether and where an account's contacts and calendars are archived.
@@ -428,6 +454,16 @@ pub struct PersonDto {
     pub created_at: i64,
     /// Archives granted to the user. Owners and admins read every archive regardless.
     pub archives: Vec<String>,
+    /// The same archives with the role of each grant.
+    pub grants: Vec<GrantDto>,
+}
+
+/// One archive granted to a user.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct GrantDto {
+    pub archive: String,
+    /// `reader`, `editor` or `sender`; each includes the ones before it.
+    pub role: String,
 }
 
 /// A user to add.
@@ -673,6 +709,9 @@ pub struct MessageDetail {
     pub cc: Vec<AddressDto>,
     pub bcc: Vec<AddressDto>,
     pub reply_to: Vec<AddressDto>,
+    /// The list address from `List-Post`, without `mailto:`; `null` when the message names no
+    /// list to post to. A list reply is offered only when this is set.
+    pub list_post: Option<String>,
     pub date: i64,
     pub sent_at: Option<i64>,
     pub received_at: Option<i64>,
@@ -702,6 +741,12 @@ pub struct MessageDetail {
     pub alias: Option<crate::aliases::MessageAliasDto>,
     /// Codes and unsubscribe links found in it; absent when the server computes no insights.
     pub insights: Option<crate::insights::MessageInsightsDto>,
+    /// The held mark: changes to it on its servers that are not confirmed there yet (`held` or
+    /// `sending`), oldest first. The locations above still show what the server last showed.
+    pub pending: Vec<crate::mail_changes::MailChangeDto>,
+    /// Changes to it that failed and nobody dismissed, oldest first: retry them with
+    /// `POST /api/mail-changes/{id}/retry`, hide them with `POST /api/mail-changes/{id}/dismiss`.
+    pub failed: Vec<crate::mail_changes::MailChangeDto>,
 }
 
 /// A conversation, oldest message first.
@@ -922,8 +967,14 @@ impl From<ImageProxy> for ImageProxyDto {
 }
 
 impl ArchiveDto {
-    pub fn new(archive: Archive, stats: ArchiveStats, remote_images: RemoteImagesDto) -> Self {
+    pub fn new(
+        archive: Archive,
+        stats: ArchiveStats,
+        remote_images: RemoteImagesDto,
+        rights: ArchiveRightsDto,
+    ) -> Self {
         Self {
+            rights,
             id: archive.id.to_string(),
             name: archive.name,
             created_at: archive.created_at.as_millis(),
@@ -982,6 +1033,7 @@ impl AccountDto {
             min_age_days: details.min_age_days,
             oauth_provider: details.oauth_provider,
             needs_sign_in: details.needs_sign_in,
+            sign_in_reason: details.sign_in_reason,
             contacts_calendars: details.contacts_calendars.map(|c| ContactsCalendarsDto {
                 enabled: c.enabled,
                 contacts_url: c.contacts_url,
@@ -999,6 +1051,7 @@ impl AccountDto {
             }),
             trusted_authserv_ids: None,
             suggested_authserv_id: None,
+            writable: Vec::new(),
         }
     }
 }
@@ -1099,4 +1152,132 @@ impl From<Location> for LocationDto {
             removed_at: location.removed_at.map(|t| t.as_millis()),
         }
     }
+}
+
+/// A device: one client installation with its own app password.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DeviceDto {
+    pub id: String,
+    pub name: String,
+    /// The archive IMAP and SMTP serve to it.
+    pub mail_archive: Option<String>,
+    /// The archives JMAP and DAV may see; `null` means every archive the user can read.
+    pub archives: Option<Vec<String>>,
+    /// Any of `imap`, `smtp`, `jmap`, `dav` and `api`.
+    pub protocols: Vec<String>,
+    /// Any of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`.
+    pub scopes: Vec<String>,
+    /// Whether fetching a whole body marks a message read.
+    pub implicit_seen: bool,
+    /// Whether it has an app password. The password itself is never shown again.
+    pub has_secret: bool,
+    /// Unix milliseconds.
+    pub created_at: i64,
+    /// Unix milliseconds of the start (UTC) of the last day it was used.
+    pub last_used_day: Option<i64>,
+    /// The protocol of its latest use.
+    pub last_protocol: Option<String>,
+    /// Unix milliseconds of its revocation, which is permanent.
+    pub revoked_at: Option<i64>,
+    /// Unix milliseconds of the last raise of its rights after it was made.
+    pub raised_at: Option<i64>,
+}
+
+impl From<holtmail_store::Device> for DeviceDto {
+    fn from(device: holtmail_store::Device) -> Self {
+        let settings = device.settings;
+        Self {
+            id: device.id.to_string(),
+            name: settings.name,
+            mail_archive: settings.mail_archive.map(|id| id.to_string()),
+            archives: settings
+                .archives
+                .map(|list| list.iter().map(ToString::to_string).collect()),
+            protocols: settings
+                .protocols
+                .iter()
+                .map(|p| p.as_str().to_owned())
+                .collect(),
+            scopes: settings
+                .scopes
+                .iter()
+                .map(|s| s.as_str().to_owned())
+                .collect(),
+            implicit_seen: settings.implicit_seen,
+            has_secret: device.has_secret,
+            created_at: device.created_at.as_millis(),
+            last_used_day: device.last_used_day.map(|at| at.as_millis()),
+            last_protocol: device.last_protocol.map(|p| p.as_str().to_owned()),
+            revoked_at: device.revoked_at.map(|at| at.as_millis()),
+            raised_at: device.raised_at.map(|at| at.as_millis()),
+        }
+    }
+}
+
+/// One place a device can connect to.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DeviceServerDto {
+    /// `smtp` or `imap`.
+    pub protocol: String,
+    /// The name to connect to; `null` when the server has no name of its own to give.
+    pub host: Option<String>,
+    pub port: u16,
+    /// `tls` from the first byte, or `starttls`.
+    pub security: String,
+}
+
+/// What this server offers to devices.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DeviceSetupDto {
+    /// Whether this user may make devices and raise their rights.
+    pub can_create: bool,
+    /// The configured listeners, implicit TLS first; empty when none is.
+    pub servers: Vec<DeviceServerDto>,
+}
+
+/// A new device.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateDeviceRequest {
+    /// Shown in lists and audit entries; 1 to 100 characters.
+    pub name: String,
+    /// The archive IMAP and SMTP serve; required with either protocol.
+    pub mail_archive: Option<String>,
+    /// The archives JMAP and DAV may see; missing or `null` means every archive the user can read.
+    pub archives: Option<Vec<String>>,
+    /// At least one of `imap`, `smtp`, `jmap`, `dav` and `api`.
+    pub protocols: Vec<String>,
+    /// Any of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`, at least one;
+    /// `["read"]` when missing.
+    pub scopes: Option<Vec<String>>,
+    /// Whether fetching a whole body marks a message read; off when missing.
+    pub implicit_seen: Option<bool>,
+}
+
+/// A device that was just made, with its app password.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreatedDeviceDto {
+    pub device: DeviceDto,
+    /// The app password: `hm_` plus 32 characters. Shown only here, once.
+    pub secret: String,
+}
+
+/// Changes to a device; what is missing stays as it is.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateDeviceRequest {
+    /// A new name, 1 to 100 characters.
+    pub name: Option<String>,
+    /// The archive IMAP and SMTP serve; `null` clears it, which needs neither protocol to remain.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    pub mail_archive: Option<Option<String>>,
+    /// The archives JMAP and DAV may see; `null` means every archive the user can read.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Vec<String>>)]
+    pub archives: Option<Option<Vec<String>>>,
+    /// At least one of `imap`, `smtp`, `jmap`, `dav` and `api`.
+    pub protocols: Option<Vec<String>>,
+    /// At least one of `read`, `write:mail`, `send:mail`, `write:pim` and `notify`.
+    pub scopes: Option<Vec<String>>,
+    /// Whether fetching a whole body marks a message read.
+    pub implicit_seen: Option<bool>,
 }

@@ -11,27 +11,36 @@ mod aliases;
 mod calendar;
 mod categories;
 mod deletion;
+mod devices;
+mod drafts;
 mod dto;
 mod export;
 mod insights;
 mod insights_data;
+mod invitations;
 mod ledger;
+mod mail_changes;
 mod mailboxes;
 mod manage;
 mod oauth;
 mod operations;
+mod outbox;
 mod overrides;
 mod people;
 mod persons;
 mod pim;
+mod pim_edit;
 mod push;
+mod relay;
 mod remote;
 mod routes;
+mod send;
 mod session;
 mod smtp;
 mod tasks;
 mod unsubscribe;
 mod webhooks;
+mod write;
 
 use std::sync::Arc;
 
@@ -40,9 +49,10 @@ use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, delete, get, patch, post};
+use axum::routing::{any, delete, get, patch, post, put};
 use holtmail_auth::Auth;
 use holtmail_blob::BlobStore;
+use holtmail_device::DeviceAuth;
 use holtmail_fetch::Fetcher;
 use holtmail_index::SearchIndex;
 use holtmail_store::Store;
@@ -51,6 +61,7 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 pub use aliases::{AliasProvider, Aliases, NewService, ServiceChange};
 pub use categories::trusted_authserv_preset;
+pub use devices::{ServeEndpoint, ServeOptions};
 use dto::*;
 pub use insights::{InsightProgress, InsightsConfig};
 pub use insights_data::{
@@ -61,14 +72,16 @@ pub use mailboxes::{
     ContactsCalendarsChange, ContactsCalendarsRun, ContactsProtocol, ImageProxy, ImapConnection,
     JmapConnection, JmapConnectionChange, MailboxError, Mailboxes, NewImapAccount, NewJmapAccount,
     OAuthFinished, OAuthProvider, OAuthStart, OAuthStarted, OAuthTarget, RemoteImageJob,
-    SyncSchedule, Task, TaskKind, TaskLevel, TaskLine, TaskState, WatchMode, WatchSettings,
-    WatchState,
+    Scheduling, SchedulingProbe, SyncSchedule, Task, TaskKind, TaskLevel, TaskLine, TaskState,
+    WatchMode, WatchSettings, WatchState,
 };
 pub use operations::{
     DeletionReview, DeletionSelection, LedgerStatus, LedgerVerification, MAX_DELETION, Operations,
     SmtpRoute, SmtpStatus, VerifyLedger,
 };
+pub use send::Sending;
 pub use session::{CurrentUser, SESSION_COOKIE};
+pub use write::{IDEMPOTENCY_WINDOW, Scope, Scopes, WriteSwitches};
 
 /// What the API reads from.
 #[derive(Clone)]
@@ -94,6 +107,15 @@ pub struct ApiState {
     pub secure_cookies: bool,
     /// Message insights; `None` when the server runs no insights runner.
     pub insights: Option<InsightsConfig>,
+    /// The instance switches for writing, from the `[write]` config.
+    pub write: WriteSwitches,
+    /// The outbox and transports; `None` when the server sends no mail, and every sending route
+    /// answers `503`.
+    pub sending: Option<Sending>,
+    /// App passwords: who they sign in, and revoking them.
+    pub devices: Arc<dyn DeviceAuth>,
+    /// What the `[serve]` config says about devices and proxies.
+    pub serve: ServeOptions,
 }
 
 /// The API routes under `/api`.
@@ -133,6 +155,87 @@ pub fn router(state: ApiState) -> Router {
             post(manage::add_jmap_account),
         )
         .route("/api/accounts/{id}/sync", post(manage::sync_account))
+        .route(
+            "/api/accounts/{id}/capabilities",
+            get(write::get_capabilities).put(write::put_capabilities),
+        )
+        .route(
+            "/api/users/{id}/grants/{archive}",
+            put(write::put_grant).delete(write::delete_grant),
+        )
+        .route("/api/audit", get(write::list_audit))
+        .route(
+            "/api/devices",
+            get(devices::list_devices).post(devices::create_device),
+        )
+        .route("/api/devices/setup", get(devices::device_setup))
+        .route(
+            "/api/devices/{id}",
+            patch(devices::update_device).delete(devices::revoke_device),
+        )
+        .route(
+            "/api/archives/{id}/transports",
+            get(send::list_transports).post(send::create_transport),
+        )
+        .route(
+            "/api/transports",
+            get(send::list_instance_transports).post(send::create_instance_transport),
+        )
+        .route(
+            "/api/transports/{id}",
+            patch(send::update_transport).delete(send::delete_transport),
+        )
+        .route(
+            "/api/transports/{id}/grants",
+            put(send::put_transport_grants),
+        )
+        .route("/api/transports/{id}/check", post(send::check_transport))
+        .route(
+            "/api/archives/{id}/identities",
+            get(send::list_identities).post(send::create_identity),
+        )
+        .route(
+            "/api/archives/{id}/identities/suggestions",
+            get(send::identity_suggestions),
+        )
+        .route(
+            "/api/identities/{id}",
+            patch(send::update_identity).delete(send::delete_identity),
+        )
+        .route("/api/identities/{id}/users", put(send::put_identity_users))
+        .route(
+            "/api/archives/{id}/default-identity",
+            put(send::put_default_identity),
+        )
+        .route(
+            "/api/archives/{id}/drafts",
+            get(drafts::list_drafts).post(drafts::create_draft),
+        )
+        .route(
+            "/api/drafts/{id}",
+            get(drafts::get_draft)
+                .put(drafts::save_draft)
+                .delete(drafts::delete_draft),
+        )
+        .route("/api/drafts/{id}/versions", get(drafts::draft_versions))
+        .route(
+            "/api/drafts/{id}/reverse-alias",
+            post(drafts::reverse_alias),
+        )
+        .route(
+            "/api/drafts/{id}/attachments",
+            post(drafts::upload_attachment)
+                .layer(DefaultBodyLimit::max(drafts::MAX_ATTACHMENT + 1)),
+        )
+        .route("/api/drafts/{id}/send", post(outbox::send_draft))
+        .route("/api/messages/{id}/reply", post(drafts::reply))
+        .route("/api/messages/{id}/forward", post(drafts::forward))
+        .route("/api/archives/{id}/outbox", get(outbox::list_outbox))
+        .route("/api/outbox/{id}", get(outbox::get_outbox))
+        .route("/api/outbox/{id}/undo", post(outbox::undo))
+        .route("/api/outbox/{id}/cancel", post(outbox::cancel))
+        .route("/api/outbox/{id}/retry", post(outbox::retry))
+        .route("/api/outbox/{id}/resend", post(outbox::resend))
         .route("/api/oauth/providers", get(oauth::providers))
         .route("/api/oauth/start", post(oauth::start))
         .route("/api/oauth/finish", post(oauth::finish))
@@ -174,6 +277,28 @@ pub fn router(state: ApiState) -> Router {
             get(export::export_calendar),
         )
         .route("/api/messages/{id}", get(routes::get_message))
+        .route(
+            "/api/messages/{id}/changes",
+            post(mail_changes::change_message),
+        )
+        .route("/api/messages/{id}/restore", post(mail_changes::restore))
+        .route("/api/mail/changes", post(mail_changes::change_bulk))
+        .route(
+            "/api/mail-changes/{id}/retry",
+            post(mail_changes::retry_change),
+        )
+        .route(
+            "/api/mail-changes/{id}/dismiss",
+            post(mail_changes::dismiss_change),
+        )
+        .route(
+            "/api/accounts/{id}/mail-changes",
+            get(mail_changes::list_mail_changes),
+        )
+        .route(
+            "/api/accounts/{id}/retention",
+            get(mail_changes::get_retention).put(mail_changes::put_retention),
+        )
         .route("/api/messages/{id}/body", get(routes::get_body))
         .route("/api/messages/{id}/raw", get(routes::get_raw))
         .route("/api/messages/{id}/pdf", get(routes::get_pdf))
@@ -214,6 +339,10 @@ pub fn router(state: ApiState) -> Router {
             post(aliases::add_alias_service),
         )
         .route(
+            "/api/archives/{id}/alias-strategies",
+            get(aliases::list_alias_strategies).put(aliases::set_alias_strategy),
+        )
+        .route(
             "/api/alias-services/{id}",
             patch(aliases::update_alias_service).delete(aliases::remove_alias_service),
         )
@@ -251,7 +380,44 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/archives/{id}/collections", get(pim::list_collections))
         .route("/api/archives/{id}/contacts", get(pim::list_contacts))
         .route("/api/archives/{id}/events", get(pim::list_events))
-        .route("/api/items/{id}", get(pim::get_item))
+        .route(
+            "/api/items/{id}",
+            get(pim::get_item).merge(delete(pim_edit::delete_item).layer(from_fn(write::detached))),
+        )
+        .route("/api/items/{id}/edit", get(pim_edit::get_edit))
+        .route(
+            "/api/items/{id}/content",
+            put(pim_edit::edit_item).layer(from_fn(write::detached)),
+        )
+        .route(
+            "/api/items/{id}/rsvp",
+            get(invitations::rsvp_item_options)
+                .merge(post(invitations::rsvp_item).layer(from_fn(write::detached))),
+        )
+        .route(
+            "/api/messages/{id}/rsvp",
+            get(invitations::rsvp_message_options)
+                .merge(post(invitations::rsvp_message).layer(from_fn(write::detached))),
+        )
+        .route(
+            "/api/collections/{id}/organizing",
+            get(invitations::organizing),
+        )
+        .route(
+            "/api/collections/{id}/items",
+            post(pim_edit::create_item).layer(from_fn(write::detached)),
+        )
+        .route(
+            "/api/collections/{id}/write-mode",
+            get(pim_edit::get_write_mode).put(pim_edit::put_write_mode),
+        )
+        .route("/api/pim/changes", get(pim_edit::list_changes))
+        .route("/api/pim/changes/{id}/diff", get(pim_edit::change_diff))
+        .route(
+            "/api/pim/changes/{id}/resolve",
+            post(pim_edit::resolve_change),
+        )
+        .route("/api/people/{id}/card", put(pim_edit::edit_person_card))
         .route("/api/archives/{id}/people", get(persons::list_people))
         .route("/api/people/{id}", get(persons::get_person))
         .route("/api/people/{id}/split", post(overrides::split))
@@ -275,6 +441,7 @@ pub fn router(state: ApiState) -> Router {
             get(pim::get_version_raw),
         )
         .route("/api/{*rest}", any(routes::unknown))
+        .route_layer(from_fn_with_state(state.clone(), write::idempotency))
         .route_layer(from_fn_with_state(state.clone(), access::check))
         .route_layer(from_fn_with_state(state.clone(), session::require_session));
     Router::new()
@@ -322,6 +489,43 @@ pub fn openapi_json() -> String {
         manage::add_jmap_account,
         manage::import_file,
         manage::sync_account,
+        write::get_capabilities,
+        write::put_capabilities,
+        write::put_grant,
+        write::delete_grant,
+        write::list_audit,
+        send::list_transports,
+        send::create_transport,
+        send::list_instance_transports,
+        send::create_instance_transport,
+        send::update_transport,
+        send::delete_transport,
+        send::put_transport_grants,
+        send::check_transport,
+        send::list_identities,
+        send::identity_suggestions,
+        send::create_identity,
+        send::update_identity,
+        send::delete_identity,
+        send::put_identity_users,
+        send::put_default_identity,
+        drafts::list_drafts,
+        drafts::create_draft,
+        drafts::get_draft,
+        drafts::save_draft,
+        drafts::draft_versions,
+        drafts::delete_draft,
+        drafts::upload_attachment,
+        drafts::reply,
+        drafts::forward,
+        drafts::reverse_alias,
+        outbox::send_draft,
+        outbox::list_outbox,
+        outbox::get_outbox,
+        outbox::undo,
+        outbox::cancel,
+        outbox::retry,
+        outbox::resend,
         oauth::providers,
         oauth::start,
         oauth::finish,
@@ -337,6 +541,11 @@ pub fn openapi_json() -> String {
         people::delete_user,
         people::update_me,
         people::change_password,
+        devices::list_devices,
+        devices::device_setup,
+        devices::create_device,
+        devices::update_device,
+        devices::revoke_device,
         routes::list_folders,
         routes::list_labels,
         routes::list_messages,
@@ -351,6 +560,14 @@ pub fn openapi_json() -> String {
         export::export_contacts,
         export::export_calendar,
         routes::get_message,
+        mail_changes::change_message,
+        mail_changes::change_bulk,
+        mail_changes::retry_change,
+        mail_changes::dismiss_change,
+        mail_changes::restore,
+        mail_changes::list_mail_changes,
+        mail_changes::get_retention,
+        mail_changes::put_retention,
         routes::get_body,
         routes::get_raw,
         routes::get_pdf,
@@ -378,6 +595,8 @@ pub fn openapi_json() -> String {
         aliases::sync_alias_service,
         aliases::alias_options,
         aliases::create_alias,
+        aliases::list_alias_strategies,
+        aliases::set_alias_strategy,
         webhooks::list,
         webhooks::create,
         webhooks::update,
@@ -395,6 +614,21 @@ pub fn openapi_json() -> String {
         pim::list_events,
         pim::get_item,
         pim::get_version_raw,
+        pim_edit::create_item,
+        pim_edit::get_edit,
+        pim_edit::edit_item,
+        pim_edit::delete_item,
+        pim_edit::list_changes,
+        pim_edit::resolve_change,
+        pim_edit::change_diff,
+        pim_edit::get_write_mode,
+        pim_edit::put_write_mode,
+        pim_edit::edit_person_card,
+        invitations::rsvp_item,
+        invitations::rsvp_message,
+        invitations::rsvp_item_options,
+        invitations::rsvp_message_options,
+        invitations::organizing,
         persons::list_people,
         persons::get_person,
         overrides::split,
@@ -417,6 +651,53 @@ pub fn openapi_json() -> String {
         ImapAccountRequest,
         JmapAccountRequest,
         PersonDto,
+        GrantDto,
+        write::AccountCapabilitiesDto,
+        write::AccountCapabilitiesRequest,
+        write::WriteSwitchesDto,
+        DeviceDto,
+        DeviceServerDto,
+        DeviceSetupDto,
+        CreateDeviceRequest,
+        CreatedDeviceDto,
+        UpdateDeviceRequest,
+        write::GrantRequest,
+        write::AuditEntryDto,
+        send::TransportLimitsDto,
+        send::TransportDto,
+        send::TransportRequest,
+        send::TransportUpdateRequest,
+        send::TransportGrantsRequest,
+        send::TransportCheckDto,
+        send::IdentityDto,
+        send::RewrittenFromDto,
+        send::IdentityRequest,
+        send::IdentityUpdateRequest,
+        send::IdentityUsersRequest,
+        send::DefaultIdentityRequest,
+        send::IdentitySuggestionDto,
+        drafts::MailboxDto,
+        drafts::ReverseAliasRequest,
+        drafts::ReverseContact,
+        drafts::DraftAttachment,
+        drafts::DraftContext,
+        drafts::DraftPayload,
+        drafts::RouteReasonDto,
+        drafts::RouteDto,
+        drafts::RouteErrorDto,
+        drafts::LeakDto,
+        outbox::LeaksDto,
+        drafts::DraftDto,
+        drafts::DraftVersionDto,
+        drafts::NewDraftRequest,
+        drafts::DraftSaveRequest,
+        drafts::ReplyRequest,
+        drafts::ForwardRequest,
+        outbox::OutboxRecipientDto,
+        outbox::OutboxDto,
+        outbox::SendRequest,
+        outbox::ResendRequest,
+        outbox::UndoDto,
         NewUserRequest,
         UserUpdateRequest,
         ProfileRequest,
@@ -455,6 +736,10 @@ pub fn openapi_json() -> String {
         aliases::AliasAccountDto,
         aliases::AliasDto,
         aliases::AliasListDto,
+        aliases::AliasStrategyDto,
+        aliases::ProviderStrategyDto,
+        aliases::AliasStrategiesDto,
+        aliases::AliasStrategyRequest,
         aliases::MessageAliasDto,
         aliases::NewAliasServiceRequest,
         aliases::AliasServiceUpdateRequest,
@@ -481,6 +766,15 @@ pub fn openapi_json() -> String {
         AttachmentDto,
         LocationDto,
         MessageDetail,
+        mail_changes::MailChangeDto,
+        mail_changes::MailChangeOp,
+        mail_changes::MessageChangeRequest,
+        mail_changes::BulkChangeRequest,
+        mail_changes::SkippedDto,
+        mail_changes::MailChangesDto,
+        mail_changes::RestoreRequest,
+        mail_changes::RetentionDto,
+        mail_changes::RetentionRequest,
         insights::MessageInsightsDto,
         insights::InsightStatusDto,
         insights::TrustDto,
@@ -534,6 +828,29 @@ pub fn openapi_json() -> String {
         pim::EventTimeDto,
         pim::ParticipantDto,
         pim::InvitationDto,
+        pim_edit::PersonFormDto,
+        pim_edit::AlarmFormDto,
+        pim_edit::EventFormDto,
+        pim_edit::LabeledDto,
+        pim_edit::NamePartsDto,
+        pim_edit::PostalAddressDto,
+        pim_edit::ContactFormDto,
+        pim_edit::ItemContentRequest,
+        invitations::RsvpRequest,
+        invitations::RsvpDto,
+        invitations::RsvpOptionsDto,
+        invitations::RsvpOccurrenceDto,
+        invitations::OrganizingDto,
+        pim_edit::ServedStateDto,
+        pim_edit::LocalEditDto,
+        pim_edit::PimChangeDto,
+        pim_edit::ItemEditDto,
+        pim_edit::WriteModeDto,
+        pim_edit::FieldDiffDto,
+        pim_edit::ChangeDiffDto,
+        pim_edit::WriteModeRequest,
+        pim_edit::ResolveRequest,
+        pim_edit::TimelineEntryDto,
         persons::PersonSummaryDto,
         persons::PersonPage,
         persons::ValueSourceDto,

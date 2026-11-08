@@ -4,9 +4,11 @@ use async_trait::async_trait;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use holtmail_alias::{AliasChange, AliasOptions, Capabilities, NewAlias};
+use holtmail_alias::{AliasChange, AliasOptions, Capabilities, NewAlias, ReplyStrategy};
 use holtmail_core::{AliasServiceId, ArchiveId, MessageId};
-use holtmail_store::{AliasService, AliasSummary, KnownAlias, MessageAlias};
+use holtmail_store::{
+    AliasService, AliasStrategy, AliasSummary, KnownAlias, MessageAlias, StrategyScope,
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -122,6 +124,25 @@ pub trait Aliases: Send + Sync {
         address: &str,
         at_service: bool,
     ) -> Result<(), MailboxError>;
+
+    /// The reply strategy the detector of `provider` suggests; `direct` for a provider without
+    /// a detector.
+    fn default_strategy(&self, provider: &str) -> ReplyStrategy;
+
+    /// Whether [`Aliases::reverse_alias`] can give a reverse alias for `alias`. Asks no
+    /// service.
+    async fn can_reverse(&self, archive: ArchiveId, alias: &str) -> Result<bool, MailboxError>;
+
+    /// The address through which `alias` reaches `contact`, lowercase: from the alias's service
+    /// when it has the `reverse` capability (which may create the contact there; the same
+    /// contact gives the same address), else encoded by the provider's detector. `Invalid` when
+    /// neither can.
+    async fn reverse_alias(
+        &self,
+        archive: ArchiveId,
+        alias: &str,
+        contact: &str,
+    ) -> Result<String, MailboxError>;
 }
 
 /// What an alias service API can do.
@@ -224,6 +245,10 @@ pub struct AliasDto {
     pub last_at: Option<i64>,
     /// Accounts its mail was archived from, most first.
     pub accounts: Vec<AliasAccountDto>,
+    /// How replies to its mail are sent: `reverse_alias`, `direct` or `reply_header`.
+    pub reply_strategy: String,
+    /// `alias`, `domain` or `service` for an override, `default` for the detector's.
+    pub reply_strategy_source: String,
 }
 
 /// The aliases and alias services of an archive.
@@ -370,7 +395,17 @@ pub(crate) fn service_dto(state: &ApiState, s: AliasService) -> AliasServiceDto 
     }
 }
 
-async fn alias_dto(state: &ApiState, summary: AliasSummary) -> ApiResult<AliasDto> {
+async fn alias_dto(
+    state: &ApiState,
+    summary: AliasSummary,
+    overrides: &[AliasStrategy],
+) -> ApiResult<AliasDto> {
+    let effective = holtmail_aliases::effective_strategy(
+        overrides,
+        &summary.address,
+        &summary.provider,
+        state.aliases.default_strategy(&summary.provider),
+    );
     let known = summary.known.clone();
     let source = match &known {
         Some(k) if k.service_id.is_some() => "service",
@@ -414,6 +449,8 @@ async fn alias_dto(state: &ApiState, summary: AliasSummary) -> ApiResult<AliasDt
         first_at: millis(summary.mail.first_at),
         last_at: millis(summary.mail.last_at),
         accounts,
+        reply_strategy: effective.strategy.as_str().into(),
+        reply_strategy_source: effective.source.as_str().into(),
     })
 }
 
@@ -542,9 +579,10 @@ pub(crate) async fn list_aliases(
     Path(raw): Path<String>,
 ) -> ApiResult<Json<AliasListDto>> {
     let archive = archive(&state, &raw).await?;
+    let overrides = state.store.alias_strategies(archive).await?;
     let mut aliases = Vec::new();
     for summary in state.store.aliases(archive).await? {
-        aliases.push(alias_dto(&state, summary).await?);
+        aliases.push(alias_dto(&state, summary, &overrides).await?);
     }
     let services = state
         .store
@@ -704,7 +742,8 @@ async fn summary_of(state: &ApiState, archive: ArchiveId, address: &str) -> ApiR
         .into_iter()
         .find(|s| s.address == address)
         .ok_or_else(|| ApiError::not_found("alias"))?;
-    alias_dto(state, summary).await
+    let overrides = state.store.alias_strategies(archive).await?;
+    alias_dto(state, summary, &overrides).await
 }
 
 #[utoipa::path(
@@ -860,4 +899,134 @@ pub(crate) async fn remove_alias(
         .map_err(refused)?;
     people_later(&state, archive);
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A reply strategy override.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AliasStrategyDto {
+    /// `alias`, `domain` or `service`.
+    pub scope: String,
+    /// The alias address, the domain or the provider id, lowercase.
+    pub key: String,
+    /// `reverse_alias`, `direct` or `reply_header`.
+    pub strategy: String,
+}
+
+/// The strategy a provider's detector suggests.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ProviderStrategyDto {
+    pub provider: String,
+    pub strategy: String,
+}
+
+/// How replies to mail received through aliases are sent in an archive.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AliasStrategiesDto {
+    /// Overrides, most specific scope first, then by key. An alias uses the override for its
+    /// address, else for its domain, else for its provider, else its provider's default.
+    pub overrides: Vec<AliasStrategyDto>,
+    /// The default of every provider the server knows.
+    pub defaults: Vec<ProviderStrategyDto>,
+}
+
+/// An override to set or, with `strategy` `null`, remove.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AliasStrategyRequest {
+    /// `alias`, `domain` or `service`.
+    pub scope: String,
+    /// An alias address for `alias`, a domain for `domain`, a provider id for `service`.
+    pub key: String,
+    /// `reverse_alias`, `direct`, `reply_header`, or `null` to remove the override.
+    #[serde(default)]
+    pub strategy: Option<String>,
+}
+
+async fn strategies_dto(state: &ApiState, archive: ArchiveId) -> ApiResult<AliasStrategiesDto> {
+    let overrides = state
+        .store
+        .alias_strategies(archive)
+        .await?
+        .into_iter()
+        .map(|o| AliasStrategyDto {
+            scope: o.scope.as_str().into(),
+            key: o.key,
+            strategy: o.strategy,
+        })
+        .collect();
+    let defaults = state
+        .aliases
+        .providers()
+        .into_iter()
+        .map(|p| ProviderStrategyDto {
+            strategy: state.aliases.default_strategy(&p.id).as_str().into(),
+            provider: p.id,
+        })
+        .collect();
+    Ok(AliasStrategiesDto {
+        overrides,
+        defaults,
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/archives/{id}/alias-strategies",
+    params(("id" = String, Path, description = "Archive id")),
+    responses((status = 200, body = AliasStrategiesDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto)),
+)]
+pub(crate) async fn list_alias_strategies(
+    State(state): AppState,
+    Path(raw): Path<String>,
+) -> ApiResult<Json<AliasStrategiesDto>> {
+    let archive = archive(&state, &raw).await?;
+    Ok(Json(strategies_dto(&state, archive).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/archives/{id}/alias-strategies",
+    params(("id" = String, Path, description = "Archive id")),
+    request_body = AliasStrategyRequest,
+    responses((status = 200, description = "Every override and default after the change", body = AliasStrategiesDto), (status = 400, description = "An unknown scope or strategy, or a key that does not fit the scope", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Not an owner or admin", body = ErrorDto), (status = 404, description = "No such archive", body = ErrorDto)),
+)]
+pub(crate) async fn set_alias_strategy(
+    State(state): AppState,
+    Path(raw): Path<String>,
+    Json(request): Json<AliasStrategyRequest>,
+) -> ApiResult<Json<AliasStrategiesDto>> {
+    let archive = archive(&state, &raw).await?;
+    let scope = StrategyScope::parse(&request.scope)
+        .ok_or_else(|| ApiError::bad_request("scope is alias, domain or service"))?;
+    let key = request.key.trim().to_ascii_lowercase();
+    let fits = match scope {
+        StrategyScope::Alias => holtmail_alias::parse_mailbox(&key).is_some_and(|m| m.email == key),
+        StrategyScope::Domain => {
+            !key.is_empty() && !key.contains('@') && !key.contains(char::is_whitespace)
+        }
+        StrategyScope::Service => {
+            !key.is_empty() && key.len() <= 100 && !key.contains(char::is_whitespace)
+        }
+    };
+    if !fits {
+        return Err(ApiError::bad_request(match scope {
+            StrategyScope::Alias => "the key is not an address",
+            StrategyScope::Domain => "the key is not a domain",
+            StrategyScope::Service => "the key is not a provider id",
+        }));
+    }
+    let strategy = match request.strategy.as_deref() {
+        None => None,
+        Some(name) => Some(
+            ReplyStrategy::parse(name.trim())
+                .ok_or_else(|| {
+                    ApiError::bad_request("strategy is reverse_alias, direct or reply_header")
+                })?
+                .as_str(),
+        ),
+    };
+    state
+        .store
+        .set_alias_strategy(archive, scope, &key, strategy)
+        .await?;
+    Ok(Json(strategies_dto(&state, archive).await?))
 }

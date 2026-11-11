@@ -1,8 +1,14 @@
-//! Parsing the Holtmail search language into a [`SearchQuery`].
+//! Parsing the Holtmail search language into a [`SearchQuery`], and testing a parsed query
+//! against one message with a [`Matcher`].
 //!
 //! ```text
 //! from:ada@example.com has:attachment before:2024-01-01 "quarterly report" -in:trash
 //! ```
+
+mod matcher;
+mod words;
+
+pub use matcher::{AttachmentFacts, Matcher, MessageFacts, Verdict};
 
 use holtmail_category::{MessageKind, Topic};
 use holtmail_core::Timestamp;

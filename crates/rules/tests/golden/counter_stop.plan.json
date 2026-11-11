@@ -1,0 +1,34 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "flood",
+      "type": "counter",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "notify",
+      "type": "notify",
+      "outcome": "planned",
+      "action": 0
+    },
+    {
+      "node": "stop",
+      "type": "stop",
+      "outcome": "stopped"
+    }
+  ],
+  "actions": [
+    {
+      "node": "notify",
+      "needs_confirmation": false,
+      "action": {
+        "type": "notify",
+        "title": "Many messages from dave@example.org",
+        "body": "Latest: Again"
+      }
+    }
+  ],
+  "stopped": true
+}

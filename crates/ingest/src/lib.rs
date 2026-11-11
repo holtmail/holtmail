@@ -52,8 +52,8 @@ pub struct Placement {
     pub live: bool,
 }
 
-/// Told about every message [`Ingest::ingest`] adds to an archive, after it is stored and
-/// located and before it is indexed.
+/// Told about every message [`Ingest::ingest`] adds to an archive, after it is stored, located,
+/// categorized and its index document written (or that failed), before the index commit.
 #[async_trait]
 pub trait Observer: Send + Sync {
     /// `message` was just added to `archive` with these bytes, as parsed, placed as
@@ -439,6 +439,15 @@ impl Ingest {
         if let Some(labels) = &placement.labels {
             self.store.set_labels(inserted.message_id, labels).await?;
         }
+        self.categorize(inserted.message_id, archive).await;
+        let alias = if inserted.created {
+            alias
+        } else {
+            self.store.message_alias(inserted.message_id).await?
+        };
+        let indexed = self
+            .index_parsed(inserted.message_id, &parsed, alias.as_ref())
+            .await;
         if inserted.created {
             for observer in &self.observers {
                 observer
@@ -446,14 +455,7 @@ impl Ingest {
                     .await;
             }
         }
-        self.categorize(inserted.message_id, archive).await;
-        let alias = if inserted.created {
-            alias
-        } else {
-            self.store.message_alias(inserted.message_id).await?
-        };
-        self.index_parsed(inserted.message_id, &parsed, alias.as_ref())
-            .await?;
+        indexed?;
         Ok(inserted)
     }
 

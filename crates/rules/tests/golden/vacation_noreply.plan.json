@@ -1,0 +1,27 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "hours",
+      "type": "time_window",
+      "outcome": "branch",
+      "port": "no"
+    },
+    {
+      "node": "person",
+      "type": "sender_is_person",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "reply",
+      "type": "reply",
+      "outcome": "skipped",
+      "reason": {
+        "code": "no_reply_sender"
+      }
+    }
+  ],
+  "actions": [],
+  "stopped": false
+}

@@ -1,0 +1,22 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "hours",
+      "type": "time_window",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "reply",
+      "type": "reply",
+      "outcome": "skipped",
+      "reason": {
+        "code": "replied_recently",
+        "until": "2026-11-09T08:00:00Z"
+      }
+    }
+  ],
+  "actions": [],
+  "stopped": false
+}

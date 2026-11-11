@@ -1,0 +1,21 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "hours",
+      "type": "time_window",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "reply",
+      "type": "reply",
+      "outcome": "skipped",
+      "reason": {
+        "code": "mailing_list"
+      }
+    }
+  ],
+  "actions": [],
+  "stopped": false
+}

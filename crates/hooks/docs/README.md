@@ -4,7 +4,7 @@ What Holtmail tells webhooks: the events, the JSON body of each delivery, its si
 
 ## Events
 
-`EVENTS` lists what a webhook can subscribe to; `webhook.test` is sent on request whatever it subscribed to. Payloads carry ids, counts, states and hashes, never message content, subjects or addresses.
+`EVENTS` lists what a webhook can subscribe to; `webhook.test` is sent on request and `flow.run` when a rule's `webhook` action names the webhook, which only a webhook subscribed to `flow.run` may be (checked when the flow is saved and when it runs). Payloads carry ids, counts, states and hashes, never message content, subjects or addresses.
 
 | Event | `data` |
 | --- | --- |
@@ -12,6 +12,9 @@ What Holtmail tells webhooks: the events, the JSON body of each delivery, its si
 | `account.needs_sign_in` | `account_id`, `archive_id`, `provider` (`google`, `microsoft`) |
 | `messages.deleted` | `archive_id`, `messages`, `by` (user id, `null` from the CLI), `ledger_seq`, `ledger_hash` |
 | `ledger.verified` | `ok`, `entries`, `problems`, `ledger_seq`, `ledger_hash` |
+| `flow.paused` | `flow_id`, `archive_id`, `reason` (`circuit_breaker`): the circuit breaker paused a rule flow |
+| `flow.notified` | `flow_id`, `archive_id`, `run_id`: a rule's `notify` action ran; its title and body stay in the runs log |
+| `flow.run` | `flow_id`, `archive_id`, `run_id`, `message_id`: a rule's `webhook` action, sent only to the webhook it names; subscribing is what lets rules name the webhook |
 | `webhook.test` | `{}` |
 
 ## API

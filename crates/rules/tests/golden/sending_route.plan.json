@@ -1,0 +1,50 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "external",
+      "type": "header",
+      "outcome": "branch",
+      "port": "no"
+    },
+    {
+      "node": "alias",
+      "type": "alias",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "strategy",
+      "type": "set_alias_strategy",
+      "outcome": "planned",
+      "action": 0
+    },
+    {
+      "node": "bcc",
+      "type": "add_bcc",
+      "outcome": "planned",
+      "action": 1
+    }
+  ],
+  "actions": [
+    {
+      "node": "strategy",
+      "capability": "mail.send",
+      "needs_confirmation": false,
+      "action": {
+        "type": "set_alias_strategy",
+        "strategy": "reverse_alias"
+      }
+    },
+    {
+      "node": "bcc",
+      "capability": "mail.send",
+      "needs_confirmation": true,
+      "action": {
+        "type": "add_bcc",
+        "address": "archive@example.com"
+      }
+    }
+  ],
+  "stopped": false
+}

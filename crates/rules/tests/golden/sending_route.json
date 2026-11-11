@@ -1,0 +1,21 @@
+{
+  "flow": {
+    "trigger": { "type": "message.sending", "next": "external" },
+    "nodes": [
+      { "id": "external", "type": "header", "params": { "name": "X-Classification", "op": "equals", "value": "confidential" }, "next": { "yes": "block", "no": "alias" } },
+      { "id": "block", "type": "block", "params": { "reason": "Confidential mail stays inside." } },
+      { "id": "alias", "type": "alias", "params": { "service": "simplelogin" }, "next": { "yes": "strategy" } },
+      { "id": "strategy", "type": "set_alias_strategy", "params": { "strategy": "reverse_alias" }, "next": { "next": "bcc" } },
+      { "id": "bcc", "type": "add_bcc", "params": { "address": "archive@example.com" }, "confirm": true }
+    ]
+  },
+  "event": { "id": "outbox-77", "trigger": "message.sending", "at": "2026-11-10T12:00:00Z" },
+  "facts": {
+    "message": {
+      "id": "draft-77",
+      "subject": "Re: your listing",
+      "headers": [["X-Classification", "public"]],
+      "alias": { "address": "shop.abc@aleeas.example.com", "service": "simplelogin" }
+    }
+  }
+}

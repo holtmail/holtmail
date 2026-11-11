@@ -1,0 +1,37 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "shop",
+      "type": "query",
+      "outcome": "branch",
+      "port": "no"
+    },
+    {
+      "node": "invite",
+      "type": "has_invitation",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "rsvp",
+      "type": "rsvp",
+      "outcome": "planned",
+      "action": 0
+    }
+  ],
+  "actions": [
+    {
+      "node": "rsvp",
+      "capability": "pim.respond",
+      "needs_confirmation": true,
+      "action": {
+        "type": "rsvp",
+        "message": "m1002",
+        "uid": "event-42@example.org",
+        "answer": "tentative"
+      }
+    }
+  ],
+  "stopped": false
+}

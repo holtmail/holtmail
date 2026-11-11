@@ -1,0 +1,21 @@
+{
+  "flow": {
+    "trigger": { "type": "message.archived", "next": "hours" },
+    "nodes": [
+      { "id": "hours", "type": "time_window", "params": { "days": ["sat", "sun"], "from": "00:00", "to": "23:59", "timezone": "Europe/Berlin" }, "next": { "yes": "reply", "no": "person" } },
+      { "id": "person", "type": "sender_is_person", "next": { "yes": "reply" } },
+      { "id": "reply", "type": "reply", "params": { "identity": "personal", "body": "Hello {{ sender.name or sender.address }},\nI am away until Monday.{% if insights.code %} Your code was {{ insights.code }}.{% endif %}", "days": 4 } }
+    ]
+  },
+  "event": { "id": "msg-2001", "trigger": "message.archived", "at": "2026-11-07T15:00:00Z", "live": true },
+  "facts": {
+    "message": {
+      "id": "m2001",
+      "sender": { "name": "Carol Example", "address": "Carol@Example.org" },
+      "subject": "Lunch?",
+      "headers": [["Auto-Submitted", "no"]]
+    },
+    "last_reply": "2026-11-01T08:00:00Z",
+    "own_addresses": ["ada@example.com"]
+  }
+}

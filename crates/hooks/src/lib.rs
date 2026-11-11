@@ -24,6 +24,9 @@ pub const EVENTS: &[&str] = &[
     "account.needs_sign_in",
     "messages.deleted",
     "ledger.verified",
+    "flow.paused",
+    "flow.notified",
+    "flow.run",
 ];
 
 const MAX_URL: usize = 2_000;
@@ -113,18 +116,50 @@ pub enum Event {
         /// Its hash; keep it to prove later that nothing up to it changed.
         ledger_hash: Option<String>,
     },
+    /// The circuit breaker paused a rule flow after too many actions in an hour.
+    FlowPaused {
+        /// The flow.
+        flow_id: String,
+        /// Its archive.
+        archive_id: ArchiveId,
+        /// Why, such as `circuit_breaker`.
+        reason: String,
+    },
+    /// A rule's `notify` action ran; its title and body stay in the runs log.
+    FlowNotified {
+        /// The flow.
+        flow_id: String,
+        /// Its archive.
+        archive_id: ArchiveId,
+        /// The run.
+        run_id: String,
+    },
+    /// A rule's `webhook` action, sent only to the webhook it names, which must subscribe to it.
+    FlowRun {
+        /// The flow.
+        flow_id: String,
+        /// Its archive.
+        archive_id: ArchiveId,
+        /// The run.
+        run_id: String,
+        /// The event's message, if any.
+        message_id: Option<String>,
+    },
     /// Sent on request to check a webhook.
     Test {},
 }
 
 impl Event {
-    /// The event's name, as in [`EVENTS`] or `webhook.test`.
+    /// The event's name, as in [`EVENTS`], or `webhook.test`.
     pub fn name(&self) -> &'static str {
         match self {
             Self::TaskFinished { .. } => "task.finished",
             Self::AccountNeedsSignIn { .. } => "account.needs_sign_in",
             Self::MessagesDeleted { .. } => "messages.deleted",
             Self::LedgerVerified { .. } => "ledger.verified",
+            Self::FlowPaused { .. } => "flow.paused",
+            Self::FlowNotified { .. } => "flow.notified",
+            Self::FlowRun { .. } => "flow.run",
             Self::Test {} => "webhook.test",
         }
     }

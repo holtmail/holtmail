@@ -1,0 +1,20 @@
+[package]
+name = "holtmail-rules"
+description = "Rules as flows: the flow model, the node catalogue, validation, evaluation to a plan and sandboxed templates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono = { workspace = true, features = ["serde"] }
+chrono-tz.workspace = true
+minijinja.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

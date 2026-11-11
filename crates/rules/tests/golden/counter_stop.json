@@ -1,0 +1,16 @@
+{
+  "flow": {
+    "trigger": { "type": "message.archived", "next": "flood" },
+    "nodes": [
+      { "id": "flood", "type": "counter", "params": { "scope": "sender", "window": "day", "above": 3 }, "next": { "yes": "notify", "no": "flags" } },
+      { "id": "notify", "type": "notify", "params": { "title": "Many messages from {{ sender.address }}", "body": "Latest: {{ subject }}" }, "next": { "next": "stop" } },
+      { "id": "stop", "type": "stop" },
+      { "id": "flags", "type": "set_flags", "params": { "set": ["flagged"] } }
+    ]
+  },
+  "event": { "id": "msg-3001", "trigger": "message.archived", "at": "2026-11-10T18:00:00Z", "live": true },
+  "facts": {
+    "message": { "id": "m3001", "sender": { "address": "dave@example.org" }, "subject": "Again" },
+    "counters": [{ "scope": "sender", "window": "day", "count": 5 }]
+  }
+}

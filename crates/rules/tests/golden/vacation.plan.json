@@ -1,0 +1,35 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "hours",
+      "type": "time_window",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "reply",
+      "type": "reply",
+      "outcome": "planned",
+      "action": 0
+    }
+  ],
+  "actions": [
+    {
+      "node": "reply",
+      "capability": "mail.send",
+      "needs_confirmation": false,
+      "action": {
+        "type": "reply",
+        "message": "m2001",
+        "identity": "personal",
+        "to": "carol@example.org",
+        "subject": "Re: Lunch?",
+        "body": "Hello Carol Example,\nI am away until Monday.",
+        "days": 4,
+        "auto_submitted": "auto-replied"
+      }
+    }
+  ],
+  "stopped": false
+}

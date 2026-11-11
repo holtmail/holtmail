@@ -23,7 +23,7 @@ ingest.derive_categories(message).await?; // stage B again in place; true when a
 
 `Placement::live` marks a message that arrived while its folder was followed (a watch, an incremental poll, an SMTP delivery), not a backfill, an import or a rebuild. Ingest itself does nothing with it; observers do.
 
-`Ingest::with_observer(observer)` adds an `Observer`, told about every message `ingest` adds (`added(archive, message, raw, parsed, placement)`), after it is stored, its alias recorded and its location and labels set, before categories and the index. Bytes the archive already had are not reported. Observers run in the order they were added and handle their own errors, so they never fail ingest. `apps/server` uses one to match provider copies of sent mail and bounces against the outbox.
+`Ingest::with_observer(observer)` adds an `Observer`, told about every message `ingest` adds (`added(archive, message, raw, parsed, placement)`), after it is stored, its alias recorded, its location and labels set, its categories derived and its index document written with its attachment text (also when indexing failed, before ingest returns that error), so an observer reads every derived fact; the index commit comes later. Bytes the archive already had are not reported. Observers run in the order they were added and handle their own errors, so they never fail ingest. `apps/server` uses one to match provider copies of sent mail and bounces against the outbox.
 
 ## What `ingest` does
 

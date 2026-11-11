@@ -1,0 +1,24 @@
+{
+  "flow": {
+    "format": 1,
+    "trigger": { "type": "message.archived", "next": "shop" },
+    "nodes": [
+      { "id": "shop", "type": "query", "params": { "query": "from:*@shop.example.com category:purchases" }, "next": { "yes": "label", "no": "invite" } },
+      { "id": "label", "type": "label", "params": { "name": "Orders" }, "next": { "next": "forward" } },
+      { "id": "forward", "type": "forward", "params": { "to": ["accounting@example.org"], "identity": "work", "note": "Order from {{ sender.name }}: {{ subject }}" } },
+      { "id": "invite", "type": "has_invitation", "next": { "yes": "rsvp" } },
+      { "id": "rsvp", "type": "rsvp", "params": { "answer": "tentative" }, "confirm": true }
+    ]
+  },
+  "event": { "id": "msg-1001", "trigger": "message.archived", "at": "2026-11-10T09:30:00Z", "live": true },
+  "facts": {
+    "message": {
+      "id": "m1001",
+      "sender": { "name": "Example Shop", "address": "orders@shop.example.com" },
+      "subject": "Your order 4711",
+      "headers": [["From", "Example Shop <orders@shop.example.com>"]]
+    },
+    "own_addresses": ["ada@example.com"]
+  },
+  "queries": { "from:*@shop.example.com category:purchases": true }
+}

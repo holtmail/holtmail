@@ -1,0 +1,51 @@
+{
+  "ran": true,
+  "path": [
+    {
+      "node": "shop",
+      "type": "query",
+      "outcome": "branch",
+      "port": "yes"
+    },
+    {
+      "node": "label",
+      "type": "label",
+      "outcome": "planned",
+      "action": 0
+    },
+    {
+      "node": "forward",
+      "type": "forward",
+      "outcome": "planned",
+      "action": 1
+    }
+  ],
+  "actions": [
+    {
+      "node": "label",
+      "needs_confirmation": false,
+      "action": {
+        "type": "label",
+        "message": "m1001",
+        "name": "Orders"
+      }
+    },
+    {
+      "node": "forward",
+      "capability": "mail.send",
+      "needs_confirmation": false,
+      "action": {
+        "type": "forward",
+        "message": "m1001",
+        "identity": "work",
+        "to": [
+          "accounting@example.org"
+        ],
+        "note": "Order from Example Shop: Your order 4711",
+        "as_attachment": false,
+        "auto_submitted": "auto-generated"
+      }
+    }
+  ],
+  "stopped": false
+}

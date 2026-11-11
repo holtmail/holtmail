@@ -85,7 +85,11 @@ pub struct ImapSource {
     tls: Arc<tokio_rustls::rustls::ClientConfig>,
     timeout: Duration,
     idle_renew: Duration,
+    own_instance: Option<String>,
 }
+
+/// The `ID` field a Holtmail IMAP server names its instance in.
+pub const INSTANCE_ID_FIELD: &str = "holtmail-instance";
 
 impl ImapSource {
     /// A source for the server in `settings`. A password signs in with `LOGIN`, an access token
@@ -97,7 +101,17 @@ impl ImapSource {
             tls: Arc::new(tls_config(&TlsRoots::default()).expect("the built-in roots are usable")),
             timeout: COMMAND_TIMEOUT,
             idle_renew: IDLE_RENEW,
+            own_instance: None,
         }
+    }
+
+    /// Refuses a server whose `ID` response names this instance (`holtmail-instance` equal to
+    /// `token`): an account pointing at this Holtmail itself would archive its own view of the
+    /// archive in a loop. Such a server fails every connect with a `Config` error. A server
+    /// without `ID`, one that refuses it, or another Holtmail instance is not affected.
+    pub fn refusing_instance(mut self, token: impl Into<String>) -> Self {
+        self.own_instance = Some(token.into());
+        self
     }
 
     /// Renews a watch's `IDLE` after `renew` instead of ten minutes.
@@ -203,6 +217,21 @@ impl ImapSource {
         let capabilities = timed(self.timeout, session.capabilities())
             .await?
             .map_err(convert)?;
+        if let Some(token) = &self.own_instance
+            && capabilities.has_str("ID")
+        {
+            match timed(self.timeout, session.id_nil()).await? {
+                Ok(Some(fields)) if fields.get(INSTANCE_ID_FIELD) == Some(token) => {
+                    let _ = timed(self.timeout, session.logout()).await;
+                    return Err(SourceError::Config(
+                        "this server is this Holtmail instance itself; add the upstream mail server instead".into(),
+                    ));
+                }
+                Ok(_) | Err(async_imap::error::Error::No(_) | async_imap::error::Error::Bad(_)) => {
+                }
+                Err(other) => return Err(convert(other)),
+            }
+        }
         let gmail = capabilities.has_str("X-GM-EXT-1");
         let condstore = capabilities.has_str("CONDSTORE") || capabilities.has_str("QRESYNC");
         if condstore && capabilities.has_str("ENABLE") {

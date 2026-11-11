@@ -720,3 +720,61 @@ async fn names_a_plain_port_reached_with_tls() {
     let error = connect_error(connecting(plain, Security::Tls)).await;
     assert!(error.contains("plain or STARTTLS"), "{error}");
 }
+
+async fn serve_holtmail(instance: &'static str) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let (read, mut write) = socket.into_split();
+                let mut lines = BufReader::new(read).lines();
+                write.write_all(b"* OK ready\r\n").await.unwrap();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let (tag, rest) = line.split_once(' ').unwrap_or((&line, ""));
+                    let upper = rest.to_ascii_uppercase();
+                    let out = if upper.starts_with("CAPABILITY") {
+                        format!("* CAPABILITY IMAP4rev1 ID\r\n{tag} OK done\r\n")
+                    } else if upper.starts_with("ID") {
+                        format!(
+                            "* ID (\"name\" \"Holtmail\" \"holtmail-instance\" \"{instance}\")\r\n{tag} OK done\r\n"
+                        )
+                    } else if upper.starts_with("LOGOUT") {
+                        format!("* BYE bye\r\n{tag} OK done\r\n")
+                    } else {
+                        format!("{tag} OK done\r\n")
+                    };
+                    if write.write_all(out.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    port
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn refuses_a_server_that_is_this_instance() {
+    let port = serve_holtmail("instance-a").await;
+    let error = source(port, "secret")
+        .refusing_instance("instance-a")
+        .connect()
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(error, SourceError::Config(_)), "{error:?}");
+    assert!(!error.is_transient());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn accepts_another_holtmail_instance() {
+    let port = serve_holtmail("instance-b").await;
+    let session = source(port, "secret")
+        .refusing_instance("instance-a")
+        .connect()
+        .await;
+    assert!(session.is_ok());
+    let plain = source(port, "secret").connect().await;
+    assert!(plain.is_ok());
+}

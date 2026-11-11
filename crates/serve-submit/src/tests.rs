@@ -134,6 +134,15 @@ impl Submission for Recording {
         self.inner.undo(actor, id).await
     }
 
+    async fn release(
+        &self,
+        actor: &Actor,
+        id: OutboxId,
+        undo_window: Option<std::time::Duration>,
+    ) -> Result<Submitted, SubmissionError> {
+        self.inner.release(actor, id, undo_window).await
+    }
+
     async fn status(&self, actor: &Actor, id: OutboxId) -> Result<Submitted, SubmissionError> {
         self.inner.status(actor, id).await
     }
@@ -160,6 +169,16 @@ async fn start_on(
     proxy: bool,
     options: impl FnOnce(&mut Settings),
 ) -> Server {
+    start_with(setup, tls, proxy, options, None).await
+}
+
+async fn start_with(
+    setup: Setup,
+    tls: PortTls,
+    proxy: bool,
+    options: impl FnOnce(&mut Settings),
+    scheduler: Option<Arc<dyn Scheduler>>,
+) -> Server {
     let world = FakeSubmission::world(setup);
     let devices = Arc::new(Devices {
         principal: Device {
@@ -181,7 +200,12 @@ async fn start_on(
     let mut settings = Settings::new("mail.example.com");
     settings.instance_token = Some(TOKEN.into());
     options(&mut settings);
-    let server = SubmitServer::new(submission, devices.clone(), settings);
+    let server = match scheduler {
+        Some(scheduler) => {
+            SubmitServer::with_scheduler(submission, devices.clone(), settings, scheduler)
+        }
+        None => SubmitServer::new(submission, devices.clone(), settings),
+    };
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let trusted = if proxy {
@@ -677,5 +701,111 @@ async fn the_undo_window_comes_from_the_settings() {
     assert_eq!(
         server.seen.lock().unwrap().requests[0].undo_window,
         Some(Duration::from_secs(30))
+    );
+}
+
+struct JustSent(holtmail_schedule::ItipKey);
+
+#[async_trait]
+impl Scheduler for JustSent {
+    async fn prepare(
+        &self,
+        _: &holtmail_schedule::ClientPut,
+    ) -> Result<holtmail_schedule::Prepared, holtmail_schedule::ScheduleError> {
+        Err(holtmail_schedule::ScheduleError::Invalid("unused".into()))
+    }
+
+    async fn deliver(
+        &self,
+        _: &holtmail_schedule::Change,
+    ) -> Result<holtmail_schedule::Delivery, holtmail_schedule::ScheduleError> {
+        Err(holtmail_schedule::ScheduleError::Invalid("unused".into()))
+    }
+
+    async fn confirm(
+        &self,
+        _: &Actor,
+        _: &holtmail_schedule::Delivery,
+    ) -> Result<(), holtmail_schedule::ScheduleError> {
+        Ok(())
+    }
+
+    async fn withdraw(
+        &self,
+        _: &Actor,
+        _: &holtmail_schedule::Delivery,
+    ) -> Result<(), holtmail_schedule::ScheduleError> {
+        Ok(())
+    }
+
+    async fn incoming(
+        &self,
+        _: &holtmail_schedule::IncomingItip,
+    ) -> Result<holtmail_schedule::Incoming, holtmail_schedule::ScheduleError> {
+        Err(holtmail_schedule::ScheduleError::Invalid("unused".into()))
+    }
+
+    async fn just_sent(
+        &self,
+        _: ArchiveId,
+        key: &holtmail_schedule::ItipKey,
+        recipients: &[String],
+    ) -> Result<bool, holtmail_schedule::ScheduleError> {
+        Ok(*key == self.0
+            && !recipients.is_empty()
+            && recipients
+                .iter()
+                .all(|r| r.eq_ignore_ascii_case("bob@example.org")))
+    }
+}
+
+fn imip(id: &str, sequence: u32) -> String {
+    mail(
+        id,
+        &format!(
+            "MIME-Version: 1.0\r\nContent-Type: text/calendar; charset=utf-8; method=REQUEST\r\n\r\nBEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:lunch@example.com\r\nSEQUENCE:{sequence}\r\nDTSTAMP:20261108T100000Z\r\nDTSTART:20261110T120000Z\r\nORGANIZER:mailto:{IDENTITY_ADDRESS}\r\nATTENDEE:mailto:bob@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR"
+        ),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drops_an_imip_message_the_scheduler_just_sent() {
+    let scheduler = Arc::new(JustSent(holtmail_schedule::ItipKey {
+        uid: "lunch@example.com".into(),
+        sequence: 1,
+        method: holtmail_schedule::ItipMethod::Request,
+        recurrence_id: None,
+        partstat: None,
+    }));
+    let server = start_with(
+        Setup::default(),
+        PortTls::Starttls(None),
+        false,
+        |_| {},
+        Some(scheduler),
+    )
+    .await;
+    let mut client = Client::signed_in(server.port).await;
+    let answer = client
+        .transaction(&["bob@example.org"], &imip("dup", 1))
+        .await;
+    assert!(answer.starts_with("250"), "{answer}");
+    assert!(
+        server.seen.lock().unwrap().requests.is_empty(),
+        "the duplicate is accepted and dropped"
+    );
+    let answer = client
+        .transaction(&["bob@example.org"], &imip("newer", 2))
+        .await;
+    assert!(answer.starts_with("250"), "{answer}");
+    assert_eq!(server.seen.lock().unwrap().requests.len(), 1);
+    let answer = client
+        .transaction(&["carol@example.org"], &imip("carol", 1))
+        .await;
+    assert!(answer.starts_with("250"), "{answer}");
+    assert_eq!(
+        server.seen.lock().unwrap().requests.len(),
+        2,
+        "a recipient the scheduler did not tell gets the device's message"
     );
 }

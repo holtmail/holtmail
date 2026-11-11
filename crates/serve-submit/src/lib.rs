@@ -6,6 +6,7 @@
 //! This crate only speaks the protocol: it holds no writer, transport or store handle.
 
 mod fixup;
+mod itip;
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use holtmail_core::ArchiveId;
 use holtmail_device::{DeviceAuth, DeviceAuthError, Principal as Device};
+use holtmail_schedule::Scheduler;
 use holtmail_serve_net::{
     ClientSource, ConnectionHandler, ConnectionLimiter, LimitPlace, ListenerOptions,
     TlsCertificates, TlsMode, TrustedProxies,
@@ -123,6 +125,34 @@ fn refusal(error: SubmissionError) -> Refused {
 struct Submitting {
     submission: Arc<dyn Submission>,
     undo_window: Duration,
+    scheduler: Option<Arc<dyn Scheduler>>,
+}
+
+impl Submitting {
+    /// Whether the message is an iMIP message the scheduler delivered itself, to every one of
+    /// `recipients`, within [`holtmail_schedule::RECENT`]: a client that also mails its own
+    /// invitations would send them twice. Another answer, another instance or a recipient the
+    /// scheduler did not tell makes it a message of its own.
+    async fn already_scheduled(
+        &self,
+        archive: ArchiveId,
+        message: &[u8],
+        recipients: &[String],
+    ) -> bool {
+        let Some(scheduler) = &self.scheduler else {
+            return false;
+        };
+        let Some(key) = itip::key(message) else {
+            return false;
+        };
+        match scheduler.just_sent(archive, &key, recipients).await {
+            Ok(sent) => sent,
+            Err(error) => {
+                tracing::warn!(%error, "scheduler not asked about a submitted iMIP message");
+                false
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -185,6 +215,13 @@ impl Handler for Submitting {
             .rsplit_once('@')
             .map_or("invalid", |(_, domain)| domain);
         let prepared = fixup::prepare(&data, domain);
+        if self
+            .already_scheduled(archive, &prepared.bytes, &envelope.recipients)
+            .await
+        {
+            tracing::info!(device = %device.device, "duplicate iMIP message dropped");
+            return Ok(());
+        }
         let key = fixup::idempotency_key(
             &device.device,
             &envelope.recipients,
@@ -205,6 +242,7 @@ impl Handler for Submitting {
                 idempotency_key: Some(key),
                 allow_leaks: false,
                 route: None,
+                hold: false,
             })
             .await
             .map_err(refusal)?;
@@ -276,6 +314,27 @@ impl SubmitServer {
             handler: Submitting {
                 submission,
                 undo_window: settings.undo_window,
+                scheduler: None,
+            },
+            devices,
+            settings,
+        })
+    }
+
+    /// The same server, dropping a client's iMIP message (accepted with `250`, never queued)
+    /// when `scheduler` delivered one with the same `UID`, `SEQUENCE` and method within the
+    /// last 10 minutes.
+    pub fn with_scheduler(
+        submission: Arc<dyn Submission>,
+        devices: Arc<dyn DeviceAuth>,
+        settings: Settings,
+        scheduler: Arc<dyn Scheduler>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            handler: Submitting {
+                submission,
+                undo_window: settings.undo_window,
+                scheduler: Some(scheduler),
             },
             devices,
             settings,

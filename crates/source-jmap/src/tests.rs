@@ -46,6 +46,7 @@ struct Fake {
     created: u32,
     sets: Vec<Value>,
     interfere: usize,
+    instance: Option<String>,
 }
 
 impl Fake {
@@ -91,6 +92,9 @@ async fn session(State(fake): State<Shared>, headers: HeaderMap) -> Response {
         "uploadUrl": format!("{base}/jmap/upload/{{accountId}}/"),
         "state": "1",
     });
+    if let Some(token) = &fake.instance {
+        session["capabilities"]["urn:holtmail:params:jmap:instance"] = json!({ "token": token });
+    }
     if !fake.no_events {
         session["eventSourceUrl"] = json!(format!(
             "{base}/jmap/events/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}"
@@ -518,6 +522,28 @@ fn password_source(url: &str) -> JmapSource {
         Credentials::Password(PASSWORD.into()),
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn refuses_its_own_instance_and_reads_another() {
+    let (fake, base) = serve(2, 2).await;
+    fake.lock().unwrap().instance = Some("own-token".into());
+    let refused = password_source(&base)
+        .refusing_instance("own-token")
+        .connect()
+        .await;
+    assert!(matches!(refused, Err(SourceError::Config(_))));
+    let watched = password_source(&base)
+        .refusing_instance("own-token")
+        .watch(&[])
+        .await;
+    assert!(matches!(watched, Err(SourceError::Config(_))));
+    let mut other = password_source(&base)
+        .refusing_instance("other-token")
+        .connect()
+        .await
+        .unwrap();
+    assert!(!other.folders().await.unwrap().is_empty());
 }
 
 #[tokio::test]

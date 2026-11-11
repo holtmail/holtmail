@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 holtmail-core.workspace = true
 holtmail-device.workspace = true
+holtmail-mime.workspace = true
+holtmail-schedule.workspace = true
 holtmail-serve-net.workspace = true
 holtmail-smtp.workspace = true
 holtmail-submission.workspace = true
@@ -30,7 +32,6 @@ holtmail-device = { workspace = true, features = ["testing"] }
 holtmail-submission = { workspace = true, features = ["testing"] }
 holtmail-submit.workspace = true
 holtmail-submit-smtp.workspace = true
-holtmail-mime.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "io-util"] }
 
 [lints]

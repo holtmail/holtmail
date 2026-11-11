@@ -6,6 +6,7 @@ SMTP submission for the user's own mail clients. A client signs in with a device
 
 ```rust
 SubmitServer::new(submission: Arc<dyn Submission>, devices: Arc<dyn DeviceAuth>, settings: Settings) -> Arc<Self>
+SubmitServer::with_scheduler(submission, devices, settings, scheduler: Arc<dyn Scheduler>) -> Arc<Self>
 submit_server.serve(listener, tls: PortTls, proxy_protocol, trusted_proxies, limiter).await
 pub struct Settings { hostname, instance_token, undo_window, sign_in_timeout, idle_timeout }
 pub enum PortTls { Implicit(TlsCertificates), Starttls(Option<TlsCertificates>) }
@@ -22,6 +23,7 @@ pub const MAX_SIZE: usize; // 50 MiB
 4. **Retries:** the idempotency key is a hash of the device, the lowercased recipients and the client's `Message-ID`, or the bytes when it has none. A retry after a lost `250` is one message, and one message sent in several transactions, such as one for the Bcc recipients, still reaches them all.
 5. **The undo window** is `Settings::undo_window`.
 6. **The loop guard:** the greeting carries `holtmail-instance=<token>`, which `submit-smtp` refuses.
+7. **No double invitations** (with `with_scheduler`): a message whose first `text/calendar` part carries an iTIP `REQUEST`, `REPLY` or `CANCEL` that the scheduler already delivered in the device's mail archive within the last 10 minutes, to every one of the envelope recipients (`Scheduler::just_sent`), is answered `250` and never queued. The key is the first event's `UID`, `SEQUENCE` (0 when missing), method, `RECURRENCE-ID` and, for a `REPLY`, the attendee's `PARTSTAT`: a different answer (accept in the web app, then decline from the phone), another instance, or a recipient the scheduler did not tell (a `SCHEDULE-AGENT=CLIENT` attendee, a forward to someone new) makes it a message of its own, which is queued as usual. A dropped message is recorded by an info line with the device id. A client such as Thunderbird with its own scheduling on next to Holtmail's CalDAV scheduling therefore cannot send an invitation twice. A scheduler that cannot answer lets the message through.
 
 ## Replies
 
@@ -43,7 +45,8 @@ pub const MAX_SIZE: usize; // 50 MiB
 - `DSN`, `CHUNKING` and `BINARYMIME` are not offered.
 - Failures after `250` reach the user as a report in the archive, made by the outbox ([holtmail-outbox](../../outbox/docs/README.md#reports-for-mail-clients)).
 - Logs carry device and outbox ids and counts, never addresses, subjects or secrets.
+- The drop is remembered as long as the scheduler remembers its deliveries (in memory, see `holtmail-schedule-itip`): after a restart a client's copy within the window goes out.
 
 ## Tests
 
-`cargo test -p holtmail-serve-submit` drives real loopback sockets against `FakeSubmission` with SMTP dialogues (Bcc removal, RFC 6409 additions, a retry being one message, split transactions, wrong `MAIL FROM`, null return path, wrong `From`, `SIZE`, `SMTPUTF8`, used-up limits, the leak guard, revocation, the per-user connection limit, `STARTTLS` required of a remote client through PROXY v2) and `submit-smtp` as the client over plain loopback, `STARTTLS` and implicit TLS, including the loop guard. `tests/integration/tests/serve_submit.rs` runs the real binary against GreenMail with `submit-smtp` and curl.
+`cargo test -p holtmail-serve-submit` drives real loopback sockets against `FakeSubmission` with SMTP dialogues (Bcc removal, RFC 6409 additions, a retry being one message, split transactions, wrong `MAIL FROM`, null return path, wrong `From`, `SIZE`, `SMTPUTF8`, used-up limits, the leak guard, revocation, the per-user connection limit, `STARTTLS` required of a remote client through PROXY v2) and `submit-smtp` as the client over plain loopback, `STARTTLS` and implicit TLS, including the loop guard, and an iMIP message the scheduler just sent accepted and dropped while a later `SEQUENCE` and the same message to a recipient the scheduler did not tell go through. `src/itip.rs` tests reading the key of a `REQUEST` and of a per-instance `REPLY`. `tests/integration/tests/serve_submit.rs` runs the real binary against GreenMail with `submit-smtp` and curl.

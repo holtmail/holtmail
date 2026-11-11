@@ -37,6 +37,7 @@ use url::Url;
 use http::Http;
 
 const CORE: &str = "urn:ietf:params:jmap:core";
+const INSTANCE: &str = "urn:holtmail:params:jmap:instance";
 const MAIL: &str = "urn:ietf:params:jmap:mail";
 const MAX_OBJECTS: usize = 500;
 const MAX_CALLS: usize = 16;
@@ -112,6 +113,7 @@ pub struct JmapSource {
     settings: JmapSettings,
     http: Http,
     ping: Duration,
+    own_instance: Option<String>,
 }
 
 impl JmapSource {
@@ -142,7 +144,16 @@ impl JmapSource {
             http: Http::new(auth, Duration::from_secs(300))?,
             settings,
             ping: watch::PING,
+            own_instance: None,
         })
+    }
+
+    /// Refuses a server whose session carries `token` as its Holtmail instance token, with
+    /// [`SourceError::Config`]: that server is this very instance, and reading it into itself
+    /// would archive the archive. Another Holtmail instance is read like any server.
+    pub fn refusing_instance(mut self, token: impl Into<String>) -> Self {
+        self.own_instance = Some(token.into());
+        self
     }
 
     /// Asks the event source for a ping every `ping` instead of every minute; a watch that hears
@@ -159,6 +170,20 @@ impl JmapSource {
             base = self.http.resolve(base).await?;
         }
         let session = self.http.session(&base).await?;
+        if let Some(own) = &self.own_instance {
+            let token = session
+                .pointer(&format!(
+                    "/capabilities/{}/token",
+                    INSTANCE.replace('/', "~1")
+                ))
+                .and_then(Value::as_str);
+            if token == Some(own.as_str()) {
+                return Err(SourceError::Config(
+                    "this JMAP server is this Holtmail instance; it cannot be its own upstream"
+                        .into(),
+                ));
+            }
+        }
         JmapSession::from_session(self.http.clone(), &base, &session)
     }
 }

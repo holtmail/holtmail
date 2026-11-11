@@ -11,6 +11,7 @@ Reads mail from JMAP servers (RFC 8620 for the core, RFC 8621 for mail), such as
 | `session_url(input)` | The session address for what someone typed: `https://` is added when the scheme is missing; an address without a path gets `/.well-known/jmap`. Only `https`, or `http` to a loopback address; no credentials in the address. `Config` otherwise |
 | `JmapSource::with_roots(roots)` | Also trusts the CA certificates in `TlsRoots` besides the system's roots; verification stays on. `Config` for an unusable certificate |
 | `JmapSource::new(settings, credentials)` | `Credentials::Password` signs in with Basic as `username` (`Config` without one), `Credentials::AccessToken` with a bearer token. `Config` for an unusable address |
+| `JmapSource::refusing_instance(token)` | Refuses, with `Config` and before anything is listed or watched, a server whose session carries `token` under the `urn:holtmail:params:jmap:instance` capability (`{"token": ...}`): that server is this Holtmail instance, which cannot be its own upstream. Another Holtmail instance is read like any server |
 | `JmapSource::with_push_ping(ping)` | Asks the event source to ping every `ping` (at least a second) instead of every minute |
 | `JmapSource::writer()` | A `JmapWriter` for the same account, signing in the same way and trusting the same roots |
 | `JmapWriter` | `MailboxWriter` for the account. Capabilities: the four system flags and keywords, moves and appends report UIDs; no `unchanged_since`, no labels, no marking deleted without expunging. Details in [Writing](#writing) |

@@ -1,0 +1,47 @@
+[package]
+name = "holtmail-serve-jmap"
+description = "JMAP for mail clients: sessions, mail methods, submission, blobs and push over the mail view"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-device.workspace = true
+holtmail-mailview.workspace = true
+holtmail-serve-net.workspace = true
+holtmail-submission.workspace = true
+async-trait.workspace = true
+axum = { workspace = true, features = ["ws"] }
+base64.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures.workspace = true
+mail-builder.workspace = true
+mail-parser.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "macros", "rt"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+holtmail-core = { workspace = true, features = ["testing"] }
+holtmail-device = { workspace = true, features = ["testing"] }
+holtmail-mailview = { workspace = true, features = ["testing"] }
+holtmail-source.workspace = true
+holtmail-source-jmap.workspace = true
+holtmail-submit.workspace = true
+holtmail-submit-jmap.workspace = true
+holtmail-submission = { workspace = true, features = ["testing"] }
+jmap-client.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
+tokio-tungstenite.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true

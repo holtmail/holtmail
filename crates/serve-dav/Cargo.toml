@@ -1,0 +1,49 @@
+[package]
+name = "holtmail-serve-dav"
+description = "CalDAV and CardDAV for calendar and contacts apps over the archive's collections and held edits"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-access.workspace = true
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-device.workspace = true
+holtmail-index.workspace = true
+holtmail-ingest.workspace = true
+holtmail-mime.workspace = true
+holtmail-pim.workspace = true
+holtmail-pim-edit.workspace = true
+holtmail-pim-sync.workspace = true
+holtmail-recur.workspace = true
+holtmail-schedule.workspace = true
+holtmail-serve-net.workspace = true
+holtmail-store.workspace = true
+holtmail-submission.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+calcard.workspace = true
+quick-xml.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-store = { workspace = true, features = ["testing"] }
+holtmail-schedule = { workspace = true, features = ["testing"] }
+holtmail-blob-fs.workspace = true
+holtmail-collection.workspace = true
+holtmail-collection-dav.workspace = true
+holtmail-device-local.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-store-sqlite.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
+tower.workspace = true
+
+[lints]
+workspace = true

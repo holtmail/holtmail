@@ -1,0 +1,34 @@
+[package]
+name = "holtmail-serve-imap"
+description = "IMAP for mail clients: device sign-in and the served mail view"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-core.workspace = true
+holtmail-device.workspace = true
+holtmail-mailview.workspace = true
+holtmail-mime.workspace = true
+holtmail-serve-net.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+imap-codec.workspace = true
+imap-next.workspace = true
+imap-types.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time", "macros", "rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-device = { workspace = true, features = ["testing"] }
+holtmail-mailview = { workspace = true, features = ["testing"] }
+holtmail-source.workspace = true
+holtmail-source-imap.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "io-util", "test-util"] }
+
+[lints]
+workspace = true

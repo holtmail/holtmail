@@ -11,6 +11,7 @@
 - [Native clients](CLIENTS.md) — Tauri apps and PWA around the SPA: devices, live stream, Web Push with autopush-rs, contacts and calendars over DAV with edits held from native apps, offline subset
 - [Writing](WRITE.md) — sending, replies through identities, shared transports and alias services, flags and folders on the server, contacts and calendars edited from the web, rules as flows with a visual editor
 - [Serving](SERVE.md) — Holtmail as an account for standard clients: IMAP, JMAP, SMTP submission, CalDAV and CardDAV with calendar-auto-schedule, device credentials
+- [Deploying](DEPLOY.md) — ports, TLS, PROXY v2 behind Caddy L4 and HAProxy, the firewall, SRV and autoconfig for your own mail domain, backups
 - [Integration test plan](TESTPLAN.md) — the second test tier against real servers in local containers
 - [Still to verify](VERIFY.md) — what tests could not prove and needs real services, real data or a person
 - [Release notes](RELEASES.md) — what changes for people on upgrade: new operators, changed meaning, one-time rebuilds
@@ -28,6 +29,12 @@
 | `holtmail-hooks` | [Webhook events, payloads, signatures and retries](../crates/hooks/docs/README.md) |
 | `holtmail-proxy-protocol` | [PROXY protocol v2 headers: client addresses and the SSL TLV](../crates/proxy-protocol/docs/README.md) |
 | `holtmail-serve-submit` | [SMTP submission for mail clients: device sign-in, identity checks, RFC 6409 fix-ups, the loop guard](../crates/serve-submit/docs/README.md) |
+| `holtmail-serve-imap` | [IMAP for mail clients: device sign-in, the mail view's tree, served UIDs, CONDSTORE and QRESYNC, IDLE, and writes through `MailActions`](../crates/serve-imap/docs/README.md) |
+| `holtmail-serve-jmap` | [JMAP for mail clients: session, mail methods over the mail view, submission with undo, blobs, EventSource and WebSocket push, CORS](../crates/serve-jmap/docs/README.md) |
+| `holtmail-serve-dav` | [CalDAV and CardDAV for calendar and contacts apps: discovery, reports, sync tokens, held creates and edits through `pim-edit` and the write locks, calendar-auto-schedule with the schedule inbox and outbox](../crates/serve-dav/docs/README.md) |
+| `holtmail-schedule` | [Contract for calendar scheduling: client writes prepared, iTIP for recorded changes with `SCHEDULE-STATUS`, incoming iTIP decisions, the recent-send check](../crates/schedule/docs/README.md) |
+| `holtmail-schedule-itip` | [Scheduling over iMIP: `pim-edit`'s iTIP objects and routes, `compose` and `Submission`, duplicates dropped](../crates/schedule-itip/docs/README.md) |
+| `holtmail-client-setup` | [Client configuration: Apple `.mobileconfig`, Thunderbird autoconfig, DAVx5 link, SRV records](../crates/client-setup/docs/README.md) |
 | `holtmail-serve-net` | [Shared TCP listener for protocol front ends: PROXY v2, connection limits, TLS, STARTTLS, certificate reload](../crates/serve-net/docs/README.md) |
 | `holtmail-access` | [The one decision for every write: switch, capability, grant, scope and consent](../crates/access/docs/README.md) |
 | `holtmail-smtp` | [SMTP server for inbound mail and submission](../crates/smtp/docs/README.md) |
@@ -35,6 +42,8 @@
 | `holtmail-device-local` | [Device credentials over the store: BLAKE3 app passwords, sign-in limits, revocation feed](../crates/device-local/docs/README.md) |
 | `holtmail-submission` | [Contract for accepting mail from clients: identity checks, queue, undo, status](../crates/submission/docs/README.md) |
 | `holtmail-submission-outbox` | [Submission over the outbox: identities, the five locks, per-user limits, the leak guard](../crates/submission-outbox/docs/README.md) |
+| `holtmail-mailview` | [Contract for the served mail view: mailbox tree, served UIDs and `MODSEQ`, flags, fetch, search, changes, and client writes that are held, applied or refused](../crates/mailview/docs/README.md) |
+| `holtmail-mailview-archive` | [The served mail view over the archive: store, blobs, search index and the write locks](../crates/mailview-archive/docs/README.md) |
 | `holtmail-submit` | [Contract for handing prebuilt messages to a submission server](../crates/submit/docs/README.md) |
 | `holtmail-submit-smtp` | [SMTP submission with TLS, STARTTLS and PLAIN, LOGIN or XOAUTH2](../crates/submit-smtp/docs/README.md) |
 | `holtmail-submit-jmap` | [JMAP submission with `Email/import`, `EmailSubmission` and `onSuccessUpdateEmail`](../crates/submit-jmap/docs/README.md) |
@@ -54,7 +63,7 @@
 | `holtmail-remote` | [Saving remote images into the archive](../crates/remote/docs/README.md) |
 | `holtmail-index` | [Contract for search](../crates/index/docs/README.md) |
 | `holtmail-index-tantivy` | [Search on Tantivy](../crates/index-tantivy/docs/README.md) |
-| `holtmail-query` | [Search language](../crates/query/docs/README.md) |
+| `holtmail-query` | [Search language and matcher](../crates/query/docs/README.md) |
 | `holtmail-extract` | [Contract for text from attachments](../crates/extract/docs/README.md) |
 | `holtmail-extract-basic` | [Text from PDF, office files, HTML and plain text](../crates/extract-basic/docs/README.md) |
 | `holtmail-thumbnail` | [Previews of image attachments](../crates/thumbnail/docs/README.md) |
@@ -73,6 +82,7 @@
 | `holtmail-aliases` | [Alias services connected to archives](../crates/aliases/docs/README.md) |
 | `holtmail-route` | [How a draft is sent: identity, From, transport, alias strategies, reasons and the leak guard](../crates/route/docs/README.md) |
 | `holtmail-outbox` | [The outgoing queue: undo window, scheduled send, retries, uncertain sends](../crates/outbox/docs/README.md) |
+| `holtmail-rules` | [Rules as flows: the flow model, the node catalogue with schemas and docs, validation, `evaluate` to a plan, RFC 3834 auto-replies, the template sandbox, cron](../crates/rules/docs/README.md) |
 | `holtmail-mail-writeback` | [Sending held flags, labels, moves, deletes and appends to the mail server; confirmation by sync](../crates/mail-writeback/docs/README.md) |
 | `holtmail-auth-results` | [Authentication-Results and DKIM-Signature grammar](../crates/auth-results/docs/README.md) |
 | `holtmail-html-scan` | [Bounded scan of message HTML for visible anchors, text and structured data](../crates/html-scan/docs/README.md) |

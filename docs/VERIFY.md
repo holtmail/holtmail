@@ -373,8 +373,42 @@ Answering an invitation from mail with an iMIP `REPLY` through GreenMail, an org
 - [ ] An organizer's event in a calendar whose server schedules but with attendees marked `SCHEDULE-AGENT=CLIENT` (raw tab): only they get Holtmail's mail
 - [ ] Undoing an answer inside the undo window (the web's _Undo_: the outbox message cancelled and the recorded change on the copy discarded) leaves the organizer untold, "From mail" without the answer and the copy as it was
 - [ ] A `REPLY` that arrives while the calendar's server is down is applied once it is back (Stop Radicale, deliver a reply, start Radicale, wait a few minutes: the attendee's `PARTSTAT` lands); the queue itself is proved by the store's conformance suite
-- [ ] Killing the server between recording an answer and releasing its mail (hard to time; a debugger or a sleep patched in): after the restart the reply is queued in the undo window
+- [ ] Killing the server between recording an answer and releasing its mail (hard to time; a debugger or a sleep patched in): the reply leaves after a restart (`recover_held`), and killing it between queueing and recording leaves the message held, never sent (scheduler messages are held until `confirm` since the Phase 74 review)
 - [ ] By eye: invitation emails Holtmail sends (subject, readable part, the calendar part as the last alternative) in Apple Mail, Outlook, Gmail and Thunderbird
+
+## Rules (Phase 63)
+
+An auto-reply flow on live mail delivered to the binary's SMTP listener, with its reply through GreenMail (one per sender, `Auto-Submitted: auto-replied`, none to a list, the reply to an own alias address leaving from that alias) and the `holtmail rules` commands are proved by `tests/integration/tests/rules.rs`; the store contract by the conformance area `rules`; versions, dry runs, test mode, held actions, drafts, the circuit breaker, `message.sending` and manual runs by the API's `tests/rules.rs`. The Phase 63 review fixes are proved there too: a test-mode `stop` and test runs never touching later flows or the breaker, a retried event keeping an earlier stop, negated words on mail without attachments, one of two concurrent confirmations winning (store compare-and-set raced in the conformance area), replies only to the sender checked and the per-identity limit for `auto`, sending flows staying with their saver, an editor refused turning on or running another user's sending flow, manual runs on a search, `move` and `delete`, `schedule` and `event.upcoming` through `Rules::tick` counted once, `invitation.received` with `rsvp`, `create_event`, `create_contact`, `notify` and `webhook` through recording hooks, and forwards of automatic mail skipped (`holtmail-rules`).
+
+- [x] Live mail answered once per sender through GreenMail, never a list, through an own alias address (`rules`)
+- [ ] An auto-reply to mail that came through SimpleLogin, addy.io or Apple Hide My Email: the reply goes to the reverse alias from the alias's mailbox (the same path as a hand-written reply, proved for those by `alias_reply`), so the sender sees the alias
+- [ ] Gmail, Outlook and Fastmail as the receiving side of auto-replies: no second auto-reply loop with their own vacation responders (both sides send `Auto-Submitted`)
+- [ ] A flow on a real archive left in test mode for a day: the runs log reads sensibly, queries over categories, insights and attachment text agree with the search box (ingest now tells the executor after it derived them; a message whose attachment text extraction failed still takes free-text and `attachment:` queries as no match)
+- [ ] Two archives (or two instances) forwarding to each other with rules: the second hop is skipped as `auto_submitted` and nothing loops
+- [ ] A webhook subscribed to `flow.run` in Settings → Webhooks receiving a rule's call, and a flow naming an unsubscribed one refused on save
+- [ ] Insight values in templates on real order, invoice and parcel mail (`{{ insights.order_number }}`, `{{ insights.parcel_number }}`), and an upcoming event's location and organizer from a real CalDAV calendar
+- [ ] `schedule` and `event.upcoming` firing at the right minute across a daylight-saving change, and after a restart within the hour (the tick resumes from `rules.ticked_through`)
+- [ ] The circuit breaker on a real flow (a forward loop between two archives): the flow pauses, the `flow.paused` webhook arrives, and turning it on again works
+- [ ] RSVP, `create_event` and `create_contact` actions against Radicale and Stalwart (proved only through the API's own RSVP and create paths)
+
+## Rules editor (Phase 64)
+
+The editor's logic (catalogue and flow reading, schema fields, palette, editing operations, layout, graph, issues, strings, list mode, plans and highlights, diffs, import and export) is proved by `apps/web/src/lib/rules.test.ts`, `rules-list.test.ts`, `rules-plan.test.ts` and `rules-json.test.ts`; the template preview route by the API's `previews_a_template_against_a_message` and the `access` suite. By eye, in light and dark themes:
+
+- [ ] Settings → Rules: flows in run order, the mode select, the paused badge, Run earlier and later, Delete, New flow opening the editor; a member with only a reader grant sees the line about the right
+- [ ] The canvas looks like design.md: square boxes, hairline borders and step edges, square handles, no shadows or rounded corners anywhere (including React Flow's attribution and selection box), accent on selection, danger on a step with problems
+- [ ] Dragging from a port to a step links it, a second link from the same port replaces the first, Delete removes a selected link or step but never the trigger, dragging a palette step drops it under the pointer, and clicking a palette step adds and links it after the selected step
+- [ ] The inspector for every step type of the catalogue: each field's input, the identity, transport, calendar, address book, folder and webhook lists, the time zone list, empty fields removing the parameter, Wait for confirmation, and the About panel in English and Russian (`<html lang="ru">`)
+- [ ] The query field's count matches the search box for the same query; the template preview with and without a picked message, and a syntax error shown in place
+- [ ] Save with a problem puts it on the step; a save from a second tab in between gives the conflict line and Open again loads the other version; leaving with unsaved changes asks first
+- [ ] Keyboard only: palette search and add, tabbing through nodes, Delete on a focused step
+- [ ] Test with a message: the path and the ports it took drawn in the accent on the canvas and marked in the list, the stale line after an edit, Not new mail and a message from another trigger explained, a 422 putting problems on the steps
+- [ ] Runs: a real run of each status, Test mode runs, Show on the flow, Confirm and Dismiss of a held action (and the held send staying a draft in the outbox), Older runs after 50
+- [ ] Versions: the diff of two versions reads well (added lines with a green hairline, removed struck through, folded unchanged lines), Only the layout changed after a move, Open in the editor followed by Save making a new version
+- [ ] Import and export: Download saves `<name>.json` that `holtmail rules import` takes, Copy, a file and a paste put the flow in the editor unsaved, broken JSON and JSON without a trigger explained
+- [ ] List mode: a linear flow opens in it and a branching one on the canvas, the List switch is off for a branching flow, When/If/Then/And words, Move up and down (a Stop stays last), adding from the palette before a closing Stop, the step's settings opening under it; on a phone (below 45rem) only the list, and a branching flow says to use a wider screen while testing, runs, versions and export still work
+- [ ] The test mode line under the top bar: Turn on (off while unsaved), Run again on a paused flow, and the mode badge and Settings → Rules list following
+- [ ] Phase 64 review fixes by eye: Reply, Forward and Send disabled in the palette with "Needs a sender grant on this archive" for an editor grant; the weekday and flag checkboxes read as a named group by VoiceOver; a picked message keeps its label; Show on the flow hidden after an edit or for a run of an older version, with the line saying whose path it was; Run by hand on a search and on one message for a manual flow, its runs appearing in the log, and _Being confirmed_ on an action mid-confirmation
 
 ## Devices (Phase 65)
 
@@ -391,8 +425,86 @@ Sending through Holtmail with `submit-smtp` and curl, the refusals, retries and 
 - [ ] Apple Mail, iOS Mail, Thunderbird, Outlook and K-9 send through 465 and 587 with an app password
 - [ ] A client that does not repeat `EHLO` after `AUTH` sends fine within its transport's limits, and gets a readable refusal over them
 - [ ] A certificate renewed by certbot is picked up by a running listener
-- [ ] A delivery report shows up in a mail client's inbox once Phase 67 places it there
+- [ ] A delivery report shows up in a mail client's inbox (Phase 67 files it as a local place in the device user's served `INBOX`; checked by an outbox unit test, not by a client, since no IMAP server exists before Phase 68)
 - [ ] A client whose open session ends with `421` after its device lost a right reconnects without showing the person an error
+
+## The mail view (Phase 67)
+
+The endpoints behind Settings → Devices are covered by `crates/api` tests; the page was checked with types, lint, tests and builds only. By hand:
+
+- [ ] Settings → Devices, _In mail apps_, by eye in English and Russian, light and dark: the progress bar and line while a large archive's served mailboxes build (it refreshes every 3 seconds and turns into "Ready in mail apps"), the local flags count, Show with the flag words, Clear on one message and Clear all with its confirmation, and the note when `[serve] local_flags = false`
+- [ ] A draft saved by a mail client opens in compose like "Edit as new" (recipients, subject, text, attachments) and saving it on top keeps one draft
+- [ ] Change log pruning on a real instance: after 90 days the `changes` table shrinks every six hours, served views behind the mark rescan once (clients refetch flags), and nothing else that reads the log (DAV sync tokens from Phase 72 on) needs older rows; proved only by store and server unit tests with written timestamps
+- [ ] A search for a common word (the user's own address in From or To) in `All Mail` of an archive with more than 100 000 matching messages answers `MailViewError::TooMany` rather than an incomplete list, and a narrow mailbox (last month's INBOX) still answers; proved with a cap of 1 in a unit test, not on a large archive
+- [ ] A Sent `APPEND` from Apple Mail on an account without `mail.append` lands as a local place without the endless retry loop, and one from a read-only device is refused with `NO [CANNOT]` (Phase 69 wires IMAP; the mail view decision is covered by the conformance suite)
+
+## IMAP (Phases 68 and 69)
+
+Proved on the real binary over a Dovecot account by `tests/integration/tests/serve_imap.rs`: a `doveadm backup -R imapc:` mirror with QRESYNC that leaves mail unread, curl over `imaps://`, a second Holtmail archiving the first through `source-imap`, the instance refusing itself as an account, `IDLE` waking on a synced delivery, `\Seen` and a held move reaching Dovecot with the served UID kept, `VANISHED (EARLIER)` after expunges, and a Sent `APPEND` answered with the outbox's own message. `serve-imap` unit tests replay invented Thunderbird, Apple Mail, Outlook and K-9 sessions. By hand:
+
+- [ ] Apple Mail (macOS) and iOS Mail: add the account by hand on 993 with an app password; folders with their special-use roles, read state kept until a message is opened, flags and moves reaching the upstream, a Sent copy after sending through port 465 or 587 showing once (not twice) in Sent, drafts autosaved without piling up in Drafts
+- [ ] Thunderbird: the same, plus `IDLE` showing new mail within seconds, CONDSTORE/QRESYNC resync after being offline, deleting to Trash
+- [ ] Outlook (classic and new; the new one reaches the server from Microsoft's cloud, so the instance must be on the internet): `AUTH=LOGIN` sign-in, folder list, reading and moving
+- [ ] K-9 Mail / Thunderbird for Android with push on two folders, aerc and mutt (read, flag, move, delete with expunge)
+- [ ] A `[serve.imap]` listener behind a TLS-terminating proxy with PROXY v2 (the PROXY path is covered by `holtmail-serve-net` tests only)
+- [ ] Dovecot `imaptest` for compliance and stress: the stack has no image for it, so it has not been run
+- [ ] Thunderbird's `FETCH 1:* (BODYSTRUCTURE)` on a large folder, twice: the second pass reads no blobs (structure cache) and one user's sync does not slow another user's (two expensive steps per user); unit tests prove the cache and the turns, not the timing
+- [ ] A large archive (100 000 messages) served to a fresh client: the first `SELECT` of `All Mail` while `build_ahead` is still working answers `NO [UNAVAILABLE]` and the client retries; memory stays bounded by the response byte budget during a full `FETCH BODY[]`
+
+## JMAP (Phases 70 and 71)
+
+Proved on the real binary over Dovecot, Stalwart and GreenMail by `tests/integration/tests/serve_jmap.rs`: the well-known redirect, `401` and CORS over curl, `jmap-client` listing the inbox Dovecot holds and downloading bytes that match their BLAKE3 blob id, an EventSource `StateChange` after an SMTP delivery, `$seen` reaching Dovecot and Stalwart, a move and an expunging destroy on Dovecot, `stateMismatch`, and `EmailSubmission` into GreenMail with the sent copy archived and an undone submission that never left. `serve-jmap` loopback tests cover `source-jmap`, its `JmapWriter`, `submit-jmap`, `jmap-client` and a WebSocket session. By hand:
+
+- [ ] Twake Mail (web, CORS from its own origin): sign in with an app password through `/.well-known/jmap`, read, search, flag, move, compose and send with undo, the draft gone and the sent copy in Sent
+- [ ] aerc with its JMAP backend: folder list, reading, flags, moves, delete, sending through `EmailSubmission`
+- [ ] Ltt.rs on Android: setup by address, push through EventSource, reading and sending
+- [ ] JMAP behind the TLS-terminating reverse proxy with an https `public_url`: the session's URLs, the EventSource stream not buffered (`X-Accel-Buffering: no`), WebSocket upgrade through the proxy, client addresses from `X-Forwarded-For` with `[serve] trusted_proxies`
+- [ ] Settings → Devices shows the JMAP row (the full `https://…/.well-known/jmap` address, port and TLS) by eye, and a JMAP client accepts that address as typed
+- [ ] A restart while a client is connected: `EmailSubmission/changes` from an old state answers `cannotCalculateChanges` and the client recovers with a full fetch; an upload made before the restart can no longer be imported and `<data_dir>/jmap-uploads` is empty after the start
+- [ ] Opening the JMAP address in Chrome, Firefox and Safari shows no password prompt (the `Bearer` challenge), and Twake Mail from its own origin still signs in with an explicit `Authorization` header; a page on another site cannot open `/jmap/ws` or post to `/jmap/api` (unit tests send the headers browsers send; no browser was used)
+
+## CalDAV and CardDAV (Phases 72 and 73)
+
+Proved on the real binary over a Radicale account by `tests/integration/tests/serve_dav.rs` with curl and plain DAV requests: discovery, sign-in, byte-for-byte `GET`, vCard 3.0, queries, `sync-collection` across an upstream addition, `valid-sync-token` after pruning, display names, held creates and edits, `412` only on Holtmail's own ETag, an upstream conflict, write-through edits, creates and deletes reaching Radicale. `serve-dav` unit tests replay Apple, DAVx5 and Thunderbird request shapes, and a loopback test runs `collection-dav` against it. By hand:
+
+- [ ] vdirsyncer against the instance (not installed on the test machine, so the suite sends its requests with curl and reqwest instead): a two-way sync of one calendar and one address book, then a change on each side
+- [ ] Apple Calendar and Contacts (macOS and iOS): add a CalDAV and a CardDAV account by hand with an app password; People as the one address book iOS shows, events and cards readable, an edit of a held calendar answered without an error and shown as edited, a stale edit answered `412` and refetched without a duplicate, display names and colours kept
+- [ ] DAVx5 on Android: discovery from the base address, every collection listed, a two-way sync with an edit and a delete, a read-only collection greyed out
+- [ ] Thunderbird, Evolution and GNOME Calendar: discovery, a write-through edit reaching the upstream server, a held edit staying in Holtmail
+- [ ] A client that synced "From mail" while Google later added the same invitation to its own calendar: the From-mail copy disappears on the next incremental sync and comes back if the event leaves that calendar (proved with SQLite in unit tests, not with Google or a real client)
+- [ ] DAV behind the TLS-terminating reverse proxy with an https `public_url`: absolute hrefs and redirects on the public address, client addresses from `X-Forwarded-For` with `[serve] trusted_proxies`
+- [ ] Settings → Devices shows the CalDAV and CardDAV row (the full `https://…/dav/` address, port and TLS) by eye, and DAVx5, Thunderbird and Apple Calendar accept that address as typed
+- [ ] By eye, in English and Russian: a device row whose protocol has no listener says it cannot connect that way; the form marks protocols this server does not offer; a DAV edit in Settings → Contacts and calendars and a failed IMAP or JMAP change under a message say "Made on <device>"
+
+## calendar-auto-schedule (Phase 74)
+
+Proved on the real binary by `tests/integration/tests/serve_schedule.rs` over a `write_through` Radicale calendar with plain CalDAV requests, `submit-smtp` and GreenMail as the attendee's mailbox: advertising, the organizer's `REQUEST` with `SCHEDULE-STATUS=1.1` and no ETag, a client's own iMIP copy dropped by submission, an unauthenticated `REPLY` left in the schedule inbox until _Apply anyway_ merges it without changing the `Schedule-Tag`, an incoming `REQUEST` in the inbox and "From mail", an own-address invitation not taken in. `serve-dav`, `serve-submit`, `schedule-itip` and API unit tests cover the rest. By hand:
+
+- [ ] Apple Calendar (macOS and iOS) organizing a meeting with a Gmail and an Outlook attendee through Holtmail's CalDAV with scheduling on: one invitation each, the attendee's answer shown on the event, a moved meeting sending an update, no 412 loop after an answer was merged, "Revert to Server" never offered
+- [ ] iOS RSVP: accepting and declining an invitation in iOS Calendar sends one `REPLY` (as the alias when the invitation came through one) and the web app's buttons then show the answer
+- [ ] Thunderbird with `calendar.caldav.sched.enabled` on (Holtmail schedules, Thunderbird mails nothing) and off (Thunderbird mails its own iMIP through Holtmail's submission, which drops the duplicate within 10 minutes): exactly one invitation reaches the attendee either way
+- [ ] A Stalwart user as the attendee (the suite uses GreenMail as the attendee's mailbox; Stalwart's own iTIP processing of an incoming `REQUEST` is not exercised), and Holtmail as the attendee of a Stalwart organizer
+- [ ] Apple CalDAVTester (Apache-2.0) scheduling and sync scripts: no container image of it is available on the test machine, so the spike did not run
+- [ ] A real receiving server's `Authentication-Results` (Gmail, Fastmail, a self-hosted Rspamd) on an attendee's answer: applied with DKIM or DMARC pass, held with _Apply anyway_ otherwise; the web card's note and button by eye in English and Russian
+- [ ] Free-busy from Apple Calendar's availability panel against the schedule outbox
+- [ ] An answer to an invitation that came through SimpleLogin or addy.io, from the web app: the `REPLY` reaches the alias service's reverse alias and arrives at the organizer from the alias (unit tests cover the recipient; the services' own handling of an iMIP reply is not proved)
+- [ ] Apple Calendar editing a meeting right after an attendee's answer was merged (its copy older than the merge, `If-Schedule-Tag-Match` with the pinned tag): the edit is saved and the answer stays (unit-tested with the fake scheduler and with `schedule-itip`; Apple's exact request shape is not)
+- [ ] A calendar server taken down while Apple Calendar or Thunderbird edits a meeting: the client gets 503 and retries, the capability stays advertised, and the attendees hear once the server is back
+- [ ] An attendee answer by mail on an account whose provider strips forged `Authentication-Results` (set that provider's authserv-id on the account): applied on its own; on an account without a trusted id it waits for _Apply anyway_
+
+## Client setup (Phase 75)
+
+Proved on the real binary by `tests/integration/tests/devices.rs`: the profile link works once, the profile names the configured servers and carries a fresh app password that signs in over IMAP and DAV while the old one stops, autoconfig answers for `[serve] mail_domains` only, and `holtmail dns` prints the records. Golden files in `holtmail-client-setup` fix the rendered bytes. By hand:
+
+- [ ] The profile on iOS (Safari download, Settings → General → VPN & Device Management, "Not Verified" shown) and macOS (System Settings → Profiles): Mail, Calendar and Contacts accounts appear, "People" is the contacts account's name, mail sends and receives, and downloading a new profile for the same device replaces the installed one instead of adding a second
+- [ ] The profile link opened from the web app added to the iOS home screen (the dialog offers only _Copy link_ and says to open it in Safari; check whether opening it there installs the profile after all, and bring _Download profile_ back if so), and from a Mac to install on an iPhone (copy link)
+- [ ] The confirmation page's button in iOS Safari and macOS Safari: the form `POST` answered with `application/x-apple-aspen-config` starts the profile installation (Apple documents this for downloads, not for form posts); a link pasted into iMessage, Slack and a mail client with link scanning still works after the preview was fetched
+- [ ] The confirmation page by eye (English only, server-rendered) in light and dark
+- [ ] Thunderbird autoconfig: adding `someone@<own domain>` with `autoconfig.<domain>` pointed at Holtmail, and with only `https://<domain>/.well-known/autoconfig/...` proxied, finds IMAP, SMTP and (Thunderbird 128+) the CalDAV and CardDAV entries
+- [ ] Android end to end: K-9/Thunderbird for Android with the SRV records, and DAVx5 opened from the Settings → Devices link with the login filled in and the app password pasted
+- [ ] The `holtmail dns` records in a real zone, checked with `dig SRV _imaps._tcp.<domain>` and a client that reads RFC 6186 records
+- [ ] The Caddy L4 and HAProxy examples in DEPLOY.md in front of a real instance: IMAP and submission sign-in limits count the client's address, not the proxy's
+- [ ] Settings → Devices by eye in English and Russian: the profile dialog, the setup notes, the Thunderbird autoconfig line with one and with two mail domains, and the DAVx5 link
 
 ## The web app, by eye
 
@@ -454,3 +566,13 @@ None of these screens has been opened in a browser; they were checked with types
 - 2026-11-07: Phase 62 review fixes: a forged reply ignored, a JMAP calendar mailing once and an RFC 6638 attendee on Stalwart proved by tests/integration/tests/invitations.rs; a reply retried after an outage, recovery after a crash and the new web states added as open items.
 - 2026-11-07: Phases 65 and 66 review fixes: SMTP sign-in over the real binary (web password refused, the limit, revoking and lowering ending an open session) proved by tests/integration/tests/devices.rs; PROXY v2 from a real proxy and clients reconnecting after `421` added as open items.
 - 2026-11-08: SMTP submission (Phase 66) added; `submit-smtp` and curl proved it into GreenMail by tests/integration/tests/serve_submit.rs. Open by hand: Apple Mail, iOS Mail, Thunderbird, Outlook and K-9 sending through port 465 and 587 with an app password (a client that does not repeat `EHLO` after `AUTH` sees 50 MiB and no `SMTPUTF8` until the limits refuse at `MAIL`); a real certificate from certbot picked up by a running listener; the delivery report, once Phase 67 places it in `INBOX`, showing up in a mail client.
+- 2026-11-11: Phase 67 review fixes: change log pruning, too-broad searches, the Sent local-place locks and delivery reports in the served INBOX added as open items under The mail view; all proved only by unit and conformance tests until the IMAP and JMAP front ends exist.
+- 2026-11-11: IMAP serving (Phases 68 and 69) wired into the binary and proved against Dovecot, curl, `doveadm backup` and a second Holtmail by tests/integration/tests/serve_imap.rs. Fixed: `[CLOSED]` was only sent with QRESYNC enabled, which made Dovecot's `imapc` drop the connection. Mail clients by hand, `imaptest` and a large archive stay open under IMAP.
+- 2026-11-11: JMAP serving (Phases 70 and 71) mounted in the binary and proved against Dovecot, Stalwart, GreenMail, curl and `jmap-client` by tests/integration/tests/serve_jmap.rs. Fixed: `EmailSubmission` queued messages built by `Email/set` without a final CRLF, which the outbox refuses. Twake Mail, aerc, Ltt.rs and the proxy setup stay open under JMAP.
+- 2026-11-11: CalDAV and CardDAV serving (Phases 72 and 73) mounted in the binary and proved against Radicale with curl and plain DAV requests; vdirsyncer (not installed) and real clients by hand.
+- 2026-11-11: Phases 68 to 73 web: served addresses (`url`) in Settings → Devices, protocols without a listener named on the form and on device rows, the device behind served edits and failed mail changes; types, lint, `bun test` and the build only, by eye left above.
+- 2026-11-07: Phases 68 to 73 review fixes: structure cache and per-user turns, JMAP browser guards and the upload store, the From-mail sync item; the `devices` suite now proves revocation inside `IDLE` and of an open EventSource stream.
+- 2026-11-11: calendar-auto-schedule (Phase 74) wired into serve-dav, the API's RSVP and organizer routes, the incoming iTIP hook and SMTP submission, and proved by tests/integration/tests/serve_schedule.rs against Radicale and GreenMail; Apple clients, Thunderbird, Stalwart as attendee and CalDAVTester by hand.
+- 2026-11-07: Phases 74 and 75 review fixes: held scheduler messages, trusted `Authentication-Results` for replies, the profile link's confirmation page; unit, conformance and integration tests only, the client checks above by hand.
+- 2026-11-11: rules engine (Phase 63) server, API and CLI added; auto-replies proved against GreenMail through the SMTP listener by tests/integration/tests/rules.rs.
+- 2026-11-07: Phases 63 and 64 review fixes: test-mode stops, retried stops, attachment text and ingest order, compare-and-set confirmations, per-identity limits for `auto`, replies to the checked sender, forward loops, per-user sending flows, the sender grant for starting a sending flow, webhooks subscribed to `flow.run`, manual runs on a search, insight values in templates; proved by the API's rules tests and the store conformance area, the rest added as open items.

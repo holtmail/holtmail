@@ -574,7 +574,7 @@ How it runs, per archive:
 - The walk runs once in the start-up chain, **after `people::build_if_needed`** (`main.rs:1315-1323`; CONVERSATIONS §8.7).
 - It then waits on `WalkWake`, a coalescing notify like `PeopleRefresh`. These signal it: override edits, the stage-B pass, data-file loads, `refresh_alias` changes and deletion reviews (§9).
 - A timer also signals it hourly, so the anti-joins catch rows lost to a crash between `insert_message` and `set_message_insights` while the server runs.
-- `derive_if_needed` (§6.5) runs as part of each wake, before the `index` step drains the queue.
+- `derive_if_needed` (§6.5) runs after each walk; when it queued anything, the walk runs again at once as a new task.
 
 **Progress.**
 

@@ -9,6 +9,7 @@
 mod aliases;
 mod calendar;
 mod categories;
+mod changes;
 mod deletion;
 mod devices;
 mod insights;
@@ -17,9 +18,13 @@ mod ledger;
 mod mail_changes;
 mod people;
 mod pim;
+mod rules;
+mod schedule;
 mod send;
+mod serve;
 mod types;
 mod unsubscribe;
+mod view;
 mod webhooks;
 mod write;
 
@@ -38,6 +43,7 @@ use holtmail_core::{
 pub use aliases::*;
 pub use calendar::*;
 pub use categories::*;
+pub use changes::*;
 pub use deletion::*;
 pub use devices::*;
 pub use insights::*;
@@ -46,9 +52,13 @@ pub use ledger::*;
 pub use mail_changes::*;
 pub use people::*;
 pub use pim::*;
+pub use rules::*;
+pub use schedule::*;
 pub use send::*;
+pub use serve::*;
 pub use types::*;
 pub use unsubscribe::*;
+pub use view::*;
 pub use webhooks::*;
 pub use write::*;
 
@@ -534,7 +544,9 @@ pub trait PimStore: Send + Sync {
     /// the latest version's; then the item's kind and key and its normalized fields follow the new
     /// version. The same bytes again change nothing, except that an item marked removed is no
     /// longer and the item's current tag (see [`PimStore::item_etags`]) becomes `etag`. Versions
-    /// are never removed or rewritten. `NotFound` for an unknown collection.
+    /// are never removed or rewritten. A created item, a new version or a return from removal
+    /// writes an `item` change-log row with no item change in the same transaction; the same
+    /// bytes again write none. `NotFound` for an unknown collection.
     async fn record_version(&self, version: NewItemVersion) -> Result<RecordedVersion, StoreError>;
 
     /// Records that message `message_id` carried these bytes of the item `remote_id`, as an
@@ -549,8 +561,10 @@ pub trait PimStore: Send + Sync {
     /// added version is the latest, the item's kind, key and normalized fields follow `version`;
     /// callers
     /// that derive the fields from several versions replace them afterwards with
-    /// [`PimStore::set_pim_index`]. An item marked removed is no longer. `NotFound` for an
-    /// unknown collection or message; `Invalid` when the message is in another archive.
+    /// [`PimStore::set_pim_index`]. An item marked removed is no longer. A created item, an added
+    /// version or a return from removal writes an `item` change-log row with no item change in
+    /// the same transaction; linking another message to stored bytes writes none. `NotFound` for
+    /// an unknown collection or message; `Invalid` when the message is in another archive.
     async fn record_mail_version(
         &self,
         version: NewMailVersion,
@@ -576,7 +590,8 @@ pub trait PimStore: Send + Sync {
     ) -> Result<Vec<(String, Option<String>)>, StoreError>;
 
     /// Marks the collection's items with these `remote_id`s as removed at `at`, unless they
-    /// already are. Unknown ids are ignored. Returns how many were newly marked.
+    /// already are. Unknown ids are ignored. Returns how many were newly marked; each writes an
+    /// `item` change-log row with no item change in the same transaction.
     async fn mark_items_removed(
         &self,
         collection: CollectionId,
@@ -729,6 +744,10 @@ pub trait InventoryStore: Send + Sync {
         after: Option<&BlobId>,
         limit: u32,
     ) -> Result<Vec<BlobId>, StoreError>;
+
+    /// Whether some record references `blob`, by the same rule as
+    /// [`InventoryStore::referenced_blobs`]: `true` exactly when that listing holds it.
+    async fn is_referenced(&self, blob: &BlobId) -> Result<bool, StoreError>;
 }
 
 /// The whole metadata store.
@@ -757,6 +776,11 @@ pub trait Store:
     + MailChangeStore
     + ItemChangeStore
     + DeviceStore
+    + ChangeStore
+    + MailViewStore
+    + ServeStore
+    + ScheduleStore
+    + RuleStore
 {
 }
 
@@ -785,5 +809,10 @@ impl<T> Store for T where
         + MailChangeStore
         + ItemChangeStore
         + DeviceStore
+        + ChangeStore
+        + MailViewStore
+        + ServeStore
+        + ScheduleStore
+        + RuleStore
 {
 }

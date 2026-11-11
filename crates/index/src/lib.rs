@@ -212,6 +212,25 @@ pub struct ItemResults {
     pub total: u64,
 }
 
+/// The largest `cap` [`SearchIndex::matching`] honours; a larger one counts as this.
+pub const MAX_MATCHES: u32 = 100_000;
+
+/// Every message matching a query, as found by [`SearchIndex::matching`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Matches {
+    /// The newest matching messages, newest first, each once; at most the requested cap.
+    pub ids: Vec<MessageId>,
+    /// How many messages match in total; more than `ids.len()` exactly when `ids` was cut.
+    pub total: u64,
+}
+
+impl Matches {
+    /// True exactly when more messages match than `ids` holds.
+    pub fn is_cut(&self) -> bool {
+        self.total > self.ids.len() as u64
+    }
+}
+
 /// Why an index operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
@@ -258,6 +277,53 @@ pub trait SearchIndex: Send + Sync {
         limit: u32,
     ) -> Result<SearchResults, IndexError>;
 
+    /// Every message of `archive` that matches `query`, up to `cap` of them, for callers that
+    /// need the whole set rather than a page (IMAP `SEARCH`, JMAP `Email/query`).
+    ///
+    /// Matches exactly the messages [`SearchIndex::search`] finds for the same query and the same
+    /// committed state, never items and never messages of another archive. When more than `cap`
+    /// match, `ids` keeps the newest `cap` and `total` still counts them all; a `cap` above
+    /// [`MAX_MATCHES`] counts as [`MAX_MATCHES`], and a `cap` of 0 only counts.
+    ///
+    /// The provided implementation pages through [`SearchIndex::search`] newest first; an
+    /// implementation should override it with one query.
+    async fn matching(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        cap: u32,
+    ) -> Result<Matches, IndexError> {
+        let cap = cap.min(MAX_MATCHES) as usize;
+        let mut ids = Vec::new();
+        let mut offset = 0u32;
+        loop {
+            let room = cap - ids.len();
+            let page = self
+                .search(
+                    archive,
+                    query,
+                    SortOrder::Newest,
+                    offset,
+                    room.clamp(1, 1000) as u32,
+                )
+                .await?;
+            if room == 0 || page.hits.is_empty() {
+                return Ok(Matches {
+                    ids,
+                    total: page.total,
+                });
+            }
+            offset += page.hits.len() as u32;
+            ids.extend(page.hits.into_iter().take(room));
+            if ids.len() == cap || u64::from(offset) >= page.total {
+                return Ok(Matches {
+                    ids,
+                    total: page.total,
+                });
+            }
+        }
+    }
+
     /// Contacts and events of `archive` that match `query`, skipping `offset` and returning at
     /// most `limit`. Words match as in [`SearchIndex::search`]. [`SortOrder::Newest`] lists
     /// events by start, the latest first, then contacts; [`SortOrder::Relevance`] the best match
@@ -275,6 +341,85 @@ pub trait SearchIndex: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Paged(Vec<MessageId>);
+
+    #[async_trait]
+    impl SearchIndex for Paged {
+        async fn put(&self, _: Vec<IndexDocument>) -> Result<(), IndexError> {
+            Ok(())
+        }
+        async fn remove(&self, _: &[MessageId]) -> Result<(), IndexError> {
+            Ok(())
+        }
+        async fn put_items(&self, _: Vec<ItemDocument>) -> Result<(), IndexError> {
+            Ok(())
+        }
+        async fn remove_items(&self, _: &[ItemId]) -> Result<(), IndexError> {
+            Ok(())
+        }
+        async fn commit(&self) -> Result<(), IndexError> {
+            Ok(())
+        }
+        async fn search(
+            &self,
+            _: ArchiveId,
+            _: &SearchQuery,
+            _: SortOrder,
+            offset: u32,
+            limit: u32,
+        ) -> Result<SearchResults, IndexError> {
+            let limit = limit.clamp(1, 1000) as usize;
+            Ok(SearchResults {
+                hits: self
+                    .0
+                    .iter()
+                    .skip(offset as usize)
+                    .take(limit)
+                    .copied()
+                    .collect(),
+                total: self.0.len() as u64,
+                attachment_hits: Vec::new(),
+            })
+        }
+        async fn search_items(
+            &self,
+            _: ArchiveId,
+            _: &SearchQuery,
+            _: SortOrder,
+            _: u32,
+            _: u32,
+        ) -> Result<ItemResults, IndexError> {
+            Ok(ItemResults {
+                hits: Vec::new(),
+                total: 0,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn the_provided_matching_pages_through_search() {
+        let ids: Vec<MessageId> = (0..2_345).map(|_| MessageId::new()).collect();
+        let index = Paged(ids.clone());
+        let query = SearchQuery::default();
+        let archive = ArchiveId::new();
+        for (cap, kept) in [(0, 0), (1, 1), (999, 999), (1_000, 1_000), (2_001, 2_001)] {
+            let found = index.matching(archive, &query, cap).await.unwrap();
+            assert_eq!(found.ids, ids[..kept], "cap {cap}");
+            assert_eq!(found.total, 2_345);
+            assert!(found.is_cut());
+        }
+        for cap in [2_345, 5_000, u32::MAX] {
+            let found = index.matching(archive, &query, cap).await.unwrap();
+            assert_eq!(found.ids, ids, "cap {cap}");
+            assert!(!found.is_cut());
+        }
+        let none = Paged(Vec::new())
+            .matching(archive, &query, 10)
+            .await
+            .unwrap();
+        assert_eq!(none, Matches::default());
+    }
 
     #[test]
     fn knows_which_clauses_read_insights() {

@@ -8,10 +8,9 @@ use sqlx::{Sqlite, Transaction};
 
 use crate::SqliteStore;
 use crate::pim::{ITEM_COLUMNS, item_summary, version, write_index};
-use crate::rows::{backend, get, json, parse, unsigned};
+use crate::rows::{backend, get, json, parse};
 
 const MAX_PAGE: u32 = 500;
-const MAX_LOG: u32 = 1_000;
 const OPEN: &str = "('held', 'sending', 'conflict', 'rejected')";
 
 type Tx<'a> = Transaction<'a, Sqlite>;
@@ -96,20 +95,17 @@ async fn fetch(tx: &mut Tx<'_>, id: &str) -> Result<Option<ItemChange>, StoreErr
 }
 
 async fn log(tx: &mut Tx<'_>, change: &ItemChange, at: Timestamp) -> Result<(), StoreError> {
-    sqlx::query(
-        "INSERT INTO changes (archive_id, collection_id, item_id, href, item_change_id, at)
-         VALUES (?, ?, ?, ?, ?, ?)",
+    crate::changes::log(
+        tx,
+        crate::changes::Row::new(ChangeKind::Item, change.archive_id).item(
+            change.collection_id,
+            change.item_id.map(|i| i.to_string()),
+            change.href.clone(),
+            change.id,
+        ),
+        at,
     )
-    .bind(change.archive_id.to_string())
-    .bind(change.collection_id.to_string())
-    .bind(change.item_id.map(|i| i.to_string()))
-    .bind(&change.href)
-    .bind(change.id.to_string())
-    .bind(at.as_millis())
-    .execute(&mut **tx)
     .await
-    .map_err(backend)?;
-    Ok(())
 }
 
 /// Flags the open changes of `item` after a newer upstream version landed; `restored` also
@@ -521,12 +517,16 @@ impl ItemChangeStore for SqliteStore {
                 }
                 Some(_) => {}
             }
-            sqlx::query("UPDATE collections SET write_mode = ? WHERE id = ?")
-                .bind(mode.as_str())
-                .bind(&id)
-                .execute(&self.pool)
-                .await
-                .map_err(backend)?;
+            sqlx::query(
+                "UPDATE collections SET previous_write_mode = write_mode, write_mode = ?1,
+                 write_mode_changed_at = ?2 WHERE id = ?3 AND write_mode <> ?1",
+            )
+            .bind(mode.as_str())
+            .bind(Timestamp::now().as_millis())
+            .bind(&id)
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
         }
         self.get_collection(collection)
             .await?
@@ -639,6 +639,29 @@ impl ItemChangeStore for SqliteStore {
         .execute(&mut *tx)
         .await
         .map_err(backend)?;
+        if let Key::Item(item) = &at.key {
+            match (new.origin, &new.schedule_tag) {
+                (ChangeOrigin::Itip, None) => {}
+                (ChangeOrigin::Itip, Some(tag)) => {
+                    sqlx::query("UPDATE items SET schedule_tag = ? WHERE id = ?")
+                        .bind(tag)
+                        .bind(item)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(backend)?;
+                }
+                _ => {
+                    sqlx::query(
+                        "UPDATE items SET schedule_tag = NULL
+                         WHERE id = ? AND schedule_tag IS NOT NULL",
+                    )
+                    .bind(item)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(backend)?;
+                }
+            }
+        }
         for message in &new.messages {
             sqlx::query("INSERT INTO item_change_messages (outbox_id, change_id) VALUES (?, ?)")
                 .bind(message.to_string())
@@ -806,6 +829,7 @@ impl ItemChangeStore for SqliteStore {
              AND (?2 IS NULL OR collection_id = ?2)
              AND state IN (SELECT value FROM json_each(?3))
              AND (?4 = 0 OR upstream_changed = 1 OR upstream_deleted = 1)
+             AND (?6 IS NULL OR id > ?6)
              ORDER BY id LIMIT ?5",
         )
         .bind(query.archive_id.to_string())
@@ -813,6 +837,7 @@ impl ItemChangeStore for SqliteStore {
         .bind(json(&states)?)
         .bind(query.flagged_only)
         .bind(i64::from(query.limit.clamp(1, MAX_PAGE)))
+        .bind(query.after.map(|a| a.to_string()))
         .fetch_all(&self.pool)
         .await
         .map_err(backend)?
@@ -1088,35 +1113,5 @@ impl ItemChangeStore for SqliteStore {
         }
         tx.commit().await.map_err(backend)?;
         Ok(released)
-    }
-
-    async fn changes_since(
-        &self,
-        archive: ArchiveId,
-        after: Option<u64>,
-        limit: u32,
-    ) -> Result<Vec<ChangeLogEntry>, StoreError> {
-        let rows = sqlx::query(
-            "SELECT * FROM changes WHERE archive_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-        )
-        .bind(archive.to_string())
-        .bind(after.map_or(0, |a| i64::try_from(a).unwrap_or(i64::MAX)))
-        .bind(i64::from(limit.clamp(1, MAX_LOG)))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(backend)?;
-        rows.iter()
-            .map(|row| {
-                Ok(ChangeLogEntry {
-                    seq: unsigned(get(row, "seq")?),
-                    archive_id: parse(&get::<String>(row, "archive_id")?)?,
-                    collection_id: optional(row, "collection_id")?,
-                    item_id: optional(row, "item_id")?,
-                    href: get(row, "href")?,
-                    item_change_id: optional(row, "item_change_id")?,
-                    at: Timestamp::from_millis(get(row, "at")?),
-                })
-            })
-            .collect()
     }
 }

@@ -5,6 +5,7 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Sqlite, Transaction};
 
 use crate::SqliteStore;
+use crate::changes::{self, Row};
 use crate::rows::{backend, get, json, parse, signed, unsigned};
 
 const MAX_PAGE: u32 = 500;
@@ -71,6 +72,33 @@ async fn folder_account(tx: &mut Tx<'_>, folder: FolderId) -> Result<String, Sto
         .ok_or(StoreError::NotFound("folder"))
 }
 
+/// Writes the rows a change's place or flags need: its folder, and a move's target too.
+async fn log(tx: &mut Tx<'_>, change: &MailChange, at: Timestamp) -> Result<(), StoreError> {
+    let archive: String = sqlx::query_scalar("SELECT archive_id FROM accounts WHERE id = ?")
+        .bind(change.new.account_id.to_string())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(backend)?
+        .ok_or(StoreError::NotFound("account"))?;
+    let kind = if change.new.op.needs_confirmation() {
+        ChangeKind::Flags
+    } else {
+        ChangeKind::Place
+    };
+    let mut folders = vec![change.new.folder_id];
+    if let MailOp::Move { target } = change.new.op {
+        folders.push(target);
+    }
+    for folder in folders {
+        let mut row = Row::new(kind, &archive).folder(folder);
+        if let Some(message) = change.new.message_id {
+            row = row.message(message);
+        }
+        changes::log(tx, row, at).await?;
+    }
+    Ok(())
+}
+
 fn invalid(reason: &str) -> StoreError {
     StoreError::Invalid(reason.to_owned())
 }
@@ -124,6 +152,42 @@ async fn check(tx: &mut Tx<'_>, new: &NewMailChange) -> Result<(), StoreError> {
     Ok(())
 }
 
+async fn insert(tx: &mut Tx<'_>, new: &NewMailChange) -> Result<MailChange, StoreError> {
+    let id = MailChangeId::new().to_string();
+    let blob = match &new.op {
+        MailOp::Append { blob_id, .. } => Some(blob_id.to_string()),
+        _ => None,
+    };
+    check(tx, new).await?;
+    sqlx::query(
+        "INSERT INTO mail_changes (id, account_id, folder_id, message_id, uid, kind, payload,
+         blob_id, origin, user_id, device, outbox_id, created_at, state, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'held', ?)",
+    )
+    .bind(&id)
+    .bind(new.account_id.to_string())
+    .bind(new.folder_id.to_string())
+    .bind(new.message_id.map(|m| m.to_string()))
+    .bind(new.uid.map(signed).transpose()?)
+    .bind(new.op.kind())
+    .bind(json(&new.op)?)
+    .bind(blob)
+    .bind(new.origin.as_str())
+    .bind(new.user_id.map(|u| u.to_string()))
+    .bind(new.device_id.map(|d| d.to_string()))
+    .bind(new.outbox_id.map(|o| o.to_string()))
+    .bind(new.at.as_millis())
+    .bind(new.at.as_millis())
+    .execute(&mut **tx)
+    .await
+    .map_err(backend)?;
+    let change = fetch(tx, &id)
+        .await?
+        .ok_or(StoreError::NotFound("mail change"))?;
+    log(tx, &change, new.at).await?;
+    Ok(change)
+}
+
 fn has(names: &[String], name: &str) -> bool {
     names.iter().any(|n| n.eq_ignore_ascii_case(name))
 }
@@ -150,9 +214,9 @@ impl SqliteStore {
         let id = id.to_string();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
-        if fetch(&mut tx, &id).await?.is_none() {
+        let Some(before) = fetch(&mut tx, &id).await? else {
             return Err(StoreError::NotFound("mail change"));
-        }
+        };
         let done = bind(sqlx::query(sql).bind(id.clone()))
             .execute(&mut *tx)
             .await
@@ -161,6 +225,11 @@ impl SqliteStore {
             return Ok(None);
         }
         let changed = fetch(&mut tx, &id).await?;
+        if let Some(changed) = &changed
+            && changed.state.is_open() != before.state.is_open()
+        {
+            log(&mut tx, changed, changed.updated_at).await?;
+        }
         tx.commit().await.map_err(backend)?;
         Ok(changed)
     }
@@ -169,41 +238,52 @@ impl SqliteStore {
 #[async_trait]
 impl MailChangeStore for SqliteStore {
     async fn enqueue_mail_change(&self, new: &NewMailChange) -> Result<MailChange, StoreError> {
-        let id = MailChangeId::new().to_string();
-        let blob = match &new.op {
-            MailOp::Append { blob_id, .. } => Some(blob_id.to_string()),
-            _ => None,
-        };
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
-        check(&mut tx, new).await?;
-        sqlx::query(
-            "INSERT INTO mail_changes (id, account_id, folder_id, message_id, uid, kind, payload,
-             blob_id, origin, user_id, device, outbox_id, created_at, state, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'held', ?)",
-        )
-        .bind(&id)
-        .bind(new.account_id.to_string())
-        .bind(new.folder_id.to_string())
-        .bind(new.message_id.map(|m| m.to_string()))
-        .bind(new.uid.map(signed).transpose()?)
-        .bind(new.op.kind())
-        .bind(json(&new.op)?)
-        .bind(blob)
-        .bind(new.origin.as_str())
-        .bind(new.user_id.map(|u| u.to_string()))
-        .bind(new.device_id.map(|d| d.to_string()))
-        .bind(new.outbox_id.map(|o| o.to_string()))
-        .bind(new.at.as_millis())
-        .bind(new.at.as_millis())
-        .execute(&mut *tx)
-        .await
-        .map_err(backend)?;
-        let change = fetch(&mut tx, &id)
-            .await?
-            .ok_or(StoreError::NotFound("mail change"))?;
+        let change = insert(&mut tx, new).await?;
         tx.commit().await.map_err(backend)?;
         Ok(change)
+    }
+
+    async fn replace_held_mail_changes(
+        &self,
+        cancel: &[MailChangeId],
+        error: &str,
+        enqueue: &[NewMailChange],
+        at: Timestamp,
+    ) -> Result<Option<Vec<MailChange>>, StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        for id in cancel {
+            let id = id.to_string();
+            if fetch(&mut tx, &id).await?.is_none() {
+                return Err(StoreError::NotFound("mail change"));
+            }
+            let done = sqlx::query(
+                "UPDATE mail_changes SET state = 'failed', next_attempt_at = NULL, last_error = ?2,
+                 dismissed_at = ?3, updated_at = ?3
+                 WHERE id = ?1 AND state = 'held'",
+            )
+            .bind(&id)
+            .bind(error)
+            .bind(at.as_millis())
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+            if done.rows_affected() == 0 {
+                return Ok(None);
+            }
+            let failed = fetch(&mut tx, &id)
+                .await?
+                .ok_or(StoreError::NotFound("mail change"))?;
+            log(&mut tx, &failed, at).await?;
+        }
+        let mut out = Vec::with_capacity(enqueue.len());
+        for new in enqueue {
+            out.push(insert(&mut tx, new).await?);
+        }
+        tx.commit().await.map_err(backend)?;
+        Ok(Some(out))
     }
 
     async fn get_mail_change(&self, id: MailChangeId) -> Result<Option<MailChange>, StoreError> {
@@ -345,6 +425,10 @@ impl MailChangeStore for SqliteStore {
             return Ok(None);
         }
         let changed = fetch(&mut tx, &id).await?;
+        if let Some(changed) = &changed {
+            log(&mut tx, &found, at).await?;
+            log(&mut tx, changed, at).await?;
+        }
         tx.commit().await.map_err(backend)?;
         Ok(changed)
     }
@@ -433,7 +517,10 @@ impl MailChangeStore for SqliteStore {
             .execute(&mut *tx)
             .await
             .map_err(backend)?;
-            closed.extend(fetch(&mut tx, &id).await?);
+            if let Some(change) = fetch(&mut tx, &id).await? {
+                log(&mut tx, &change, read_at).await?;
+                closed.push(change);
+            }
         }
         tx.commit().await.map_err(backend)?;
         Ok(closed)
@@ -446,17 +533,24 @@ impl MailChangeStore for SqliteStore {
         at: Timestamp,
     ) -> Result<u64, StoreError> {
         let _write = self.writer.lock().await;
-        let done = sqlx::query(
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let ids: Vec<String> = sqlx::query_scalar(
             "UPDATE mail_changes SET state = 'applied', updated_at = ?3
-             WHERE account_id = ?1 AND state = 'sending' AND sent_at < ?2",
+             WHERE account_id = ?1 AND state = 'sending' AND sent_at < ?2 RETURNING id",
         )
         .bind(account.to_string())
         .bind(sent_before.as_millis())
         .bind(at.as_millis())
-        .execute(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(backend)?;
-        Ok(done.rows_affected())
+        for id in &ids {
+            if let Some(change) = fetch(&mut tx, id).await? {
+                log(&mut tx, &change, at).await?;
+            }
+        }
+        tx.commit().await.map_err(backend)?;
+        Ok(ids.len() as u64)
     }
 
     async fn release_mail_changes(&self, at: Timestamp) -> Result<Vec<MailChange>, StoreError> {

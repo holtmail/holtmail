@@ -32,12 +32,20 @@ fn collection(row: &SqliteRow) -> Result<Collection, StoreError> {
             WriteMode::parse(&mode)
                 .ok_or_else(|| StoreError::Invalid(format!("unknown write mode {mode:?}")))?
         },
+        write_mode_changed_at: get::<Option<i64>>(row, "write_mode_changed_at")?
+            .map(Timestamp::from_millis),
+        previous_write_mode: get::<Option<String>>(row, "previous_write_mode")?
+            .map(|mode| {
+                WriteMode::parse(&mode)
+                    .ok_or_else(|| StoreError::Invalid(format!("unknown write mode {mode:?}")))
+            })
+            .transpose()?,
     })
 }
 
 pub(crate) const ITEM_COLUMNS: &str =
     "i.id, i.collection_id, i.archive_id, i.remote_id, i.kind, i.key,
-    i.first_seen_at, i.removed_at, i.versions, i.dav_name, p.version AS p_version, p.readable, p.title,
+    i.first_seen_at, i.removed_at, i.versions, i.dav_name, i.schedule_tag, p.version AS p_version, p.readable, p.title,
     p.starts_at, p.ends_at, p.all_day, p.time_zone, p.recurring, p.sequence, p.uid, p.organizer,
     p.emails, p.phones, p.data";
 
@@ -55,6 +63,7 @@ pub(crate) fn item_summary(row: &SqliteRow) -> Result<ItemSummary, StoreError> {
         removed_at: get::<Option<i64>>(row, "removed_at")?.map(Timestamp::from_millis),
         versions: u32::try_from(get::<i64>(row, "versions")?).unwrap_or(0),
         dav_name: get(row, "dav_name")?,
+        schedule_tag: get(row, "schedule_tag")?,
     };
     let index = match get::<Option<i64>>(row, "p_version")? {
         None => None,
@@ -125,6 +134,21 @@ fn source(row: &SqliteRow) -> Result<VersionSource, StoreError> {
         number: u32::try_from(get::<i64>(row, "number")?).unwrap_or(0),
         message_id: parse(&get::<String>(row, "message_id")?)?,
     })
+}
+
+async fn log_item(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    archive: &str,
+    collection: &str,
+    item: &str,
+    at: Timestamp,
+) -> Result<(), StoreError> {
+    crate::changes::log(
+        tx,
+        crate::changes::Row::new(ChangeKind::Item, archive).upstream_item(collection, item),
+        at,
+    )
+    .await
 }
 
 pub(crate) async fn write_index(
@@ -483,9 +507,24 @@ impl PimStore for SqliteStore {
             let mut index = new.index.clone();
             index.version = u32::try_from(number).unwrap_or(u32::MAX);
             write_index(&mut tx, &item, &index).await?;
+            sqlx::query(
+                "UPDATE items SET schedule_tag = NULL
+                 WHERE id = ?1 AND schedule_tag IS NOT NULL AND NOT EXISTS (
+                     SELECT 1 FROM item_changes c WHERE c.item_id = ?1 AND c.origin = 'itip'
+                     AND c.blob_id = ?2 AND c.created_at = (
+                         SELECT MAX(created_at) FROM item_changes WHERE item_id = ?1))",
+            )
+            .bind(&item)
+            .bind(&blob)
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
         }
         if !created_item && (!same || restored) {
             crate::item_changes::flag_upstream(&mut tx, &item, restored, new.seen_at).await?;
+        }
+        if created_item || !same || restored {
+            log_item(&mut tx, &archive, &collection_id, &item, new.seen_at).await?;
         }
         tx.commit().await.map_err(backend)?;
         Ok(RecordedVersion {
@@ -662,6 +701,16 @@ impl PimStore for SqliteStore {
         .execute(&mut *tx)
         .await
         .map_err(backend)?;
+        if created_item || latest != versions || restored {
+            log_item(
+                &mut tx,
+                &archive,
+                &collection_id,
+                &item,
+                new.version.seen_at,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(backend)?;
         Ok(RecordedVersion {
             item_id: parse(&item)?,
@@ -739,8 +788,26 @@ impl PimStore for SqliteStore {
         let id = collection.to_string();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
+        let archive: Option<String> =
+            sqlx::query_scalar("SELECT archive_id FROM collections WHERE id = ?")
+                .bind(&id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?;
         let mut marked = 0;
         for remote in remote_ids {
+            let live: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM items WHERE collection_id = ? AND remote_id = ? AND removed_at IS NULL",
+            )
+            .bind(&id)
+            .bind(remote)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?;
+            let (Some(item), Some(archive)) = (live, archive.as_deref()) else {
+                continue;
+            };
+            log_item(&mut tx, archive, &id, &item, at).await?;
             sqlx::query(
                 "UPDATE item_changes SET upstream_deleted = 1, updated_at = ?1
                  WHERE state IN ('held', 'sending', 'conflict', 'rejected') AND item_id IN

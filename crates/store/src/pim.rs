@@ -63,6 +63,10 @@ pub struct Collection {
     pub removed_at: Option<Timestamp>,
     /// Whether devices and the web app may change it, and whether changes go upstream.
     pub write_mode: crate::WriteMode,
+    /// When `set_write_mode` last changed `write_mode`; `None` while it never did.
+    pub write_mode_changed_at: Option<Timestamp>,
+    /// The write mode before that change; `None` while it never changed.
+    pub previous_write_mode: Option<crate::WriteMode>,
 }
 
 /// Fields of a collection to create or update.
@@ -154,6 +158,12 @@ pub struct Item {
     /// The href a client created it under, kept for good once the upstream id is known;
     /// `None` for items that came from upstream.
     pub dav_name: Option<String>,
+    /// The CalDAV `Schedule-Tag` pinned by a merged iTIP `REPLY`; `None` while the tag follows
+    /// the served bytes. Set with [`crate::NewItemChange::schedule_tag`] or
+    /// [`crate::ScheduleStore::set_schedule_tag`]; cleared by every recorded change whose origin
+    /// is not `itip`, and by every new upstream version except one whose bytes are exactly those
+    /// of the item's newest change when that change is the merged reply (its own write-back).
+    pub schedule_tag: Option<String>,
 }
 
 impl Item {

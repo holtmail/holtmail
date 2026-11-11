@@ -12,10 +12,14 @@ use serde_json::json;
 
 use crate::*;
 
+mod changes;
 mod devices;
 mod item_changes;
 mod mail_changes;
+mod rules;
 mod send;
+mod serve;
+mod view;
 mod write;
 
 /// Checks that `store` keeps the [`Store`] contract. Panics on the first violation.
@@ -64,6 +68,10 @@ pub async fn conformance(store: Arc<dyn Store>) {
     mail_changes::run(&*store).await;
     item_changes::run(&*store).await;
     devices::run(&*store).await;
+    view::run(&*store).await;
+    rules::run(store.clone()).await;
+    serve::run(store.clone()).await;
+    changes::run(store).await;
 }
 
 fn pim_index(title: Option<&str>, starts: Option<i64>) -> PimIndex {
@@ -803,11 +811,31 @@ async fn mail_versions(store: &dyn Store) {
         .unwrap()
         .message_id;
 
+    let item_rows = |since: u64| async move {
+        store
+            .changes_since(archive, Some(since), 1000)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.kind == crate::ChangeKind::Item)
+            .collect::<Vec<_>>()
+    };
+    let before = store.latest_seq().await.unwrap();
     let cancel = mail_version(calendar, ids[3], "cancel", "CANCEL", 2, 1_700_000_300);
     let first = store.record_mail_version(cancel.clone()).await.unwrap();
     assert!(first.created_item && first.new_version);
     assert_eq!(first.number, 1);
     let item = first.item_id;
+    let logged = item_rows(before).await;
+    assert_eq!(logged.len(), 1, "a new mail-carried item is logged");
+    assert_eq!(
+        (
+            logged[0].collection_id,
+            logged[0].item_id,
+            logged[0].item_change_id
+        ),
+        (Some(calendar), Some(item), None)
+    );
     let request = mail_version(calendar, ids[0], "request", "REQUEST", 0, 1_700_000_000);
     let added = store.record_mail_version(request).await.unwrap();
     assert!(!added.created_item && added.new_version);
@@ -847,12 +875,17 @@ async fn mail_versions(store: &dyn Store) {
     assert_eq!(summary.item.versions, 4);
     assert_eq!(summary.item.kind, ItemKind::Event);
 
+    let added_rows = store.latest_seq().await.unwrap();
     let again = mail_version(calendar, ids[4], "moved", "REQUEST", 1, 1_700_000_400);
     let same = store.record_mail_version(again.clone()).await.unwrap();
     assert!(!same.new_version && !same.created_item);
     assert_eq!(same.number, 4);
     store.record_mail_version(again).await.unwrap();
     assert_eq!(store.item_versions(item).await.unwrap().len(), 4);
+    assert!(
+        item_rows(added_rows).await.is_empty(),
+        "a version already stored is not logged again"
+    );
 
     let sources: Vec<_> = store
         .version_messages(item)
@@ -902,6 +935,43 @@ async fn mail_versions(store: &dyn Store) {
             .await
             .unwrap()
             .is_empty()
+    );
+
+    let trimmed = store.latest_seq().await.unwrap();
+    store
+        .delete_messages(archive, &[ids[3]], None)
+        .await
+        .unwrap();
+    let logged = item_rows(trimmed).await;
+    assert_eq!(logged.len(), 1, "an item that lost a version is logged");
+    assert_eq!(
+        (logged[0].item_id, logged[0].href.as_deref()),
+        (Some(item), None)
+    );
+    let href = store
+        .get_item(item)
+        .await
+        .unwrap()
+        .unwrap()
+        .item
+        .href()
+        .to_owned();
+    let purged = store.latest_seq().await.unwrap();
+    store
+        .delete_messages(archive, &[ids[0], ids[1], ids[2], ids[4]], None)
+        .await
+        .unwrap();
+    assert!(store.get_item(item).await.unwrap().is_none());
+    let logged = item_rows(purged).await;
+    assert_eq!(logged.len(), 1, "an item deleted for good is logged");
+    assert_eq!(
+        (
+            logged[0].collection_id,
+            logged[0].item_id,
+            logged[0].href.as_deref()
+        ),
+        (Some(calendar), Some(item), Some(href.as_str())),
+        "with the href it was served under"
     );
 
     store.delete_archive(archive).await.unwrap();
@@ -1167,6 +1237,18 @@ async fn inventory(store: &dyn Store) {
         }
     }
     assert_eq!(paged, all, "paging visits every blob exactly once");
+    for blob in &all {
+        assert!(
+            store.is_referenced(blob).await.unwrap(),
+            "{blob} is referenced"
+        );
+    }
+    assert!(
+        !store
+            .is_referenced(&BlobId::of(b"inventory: bytes nothing names"))
+            .await
+            .unwrap()
+    );
     assert!(
         store
             .referenced_blobs(all.last(), 10)

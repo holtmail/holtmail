@@ -526,6 +526,40 @@ impl Inner {
         })
     }
 
+    fn matching(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        cap: u32,
+    ) -> Result<Matches, IndexError> {
+        let query = self.query(archive, query, true, Target::Mail)?;
+        let searcher = self.reader.searcher();
+        let cap = cap.min(MAX_MATCHES) as usize;
+        if cap == 0 {
+            let total = searcher.search(&query, &Count).map_err(backend)?;
+            return Ok(Matches {
+                ids: Vec::new(),
+                total: total as u64,
+            });
+        }
+        let top = TopDocs::with_limit(cap).order_by_fast_field::<i64>("date", Order::Desc);
+        let (docs, total) = searcher.search(&query, &(top, Count)).map_err(backend)?;
+        let mut ids = Vec::with_capacity(docs.len());
+        for (_, address) in docs {
+            let doc: TantivyDocument = searcher.doc(address).map_err(backend)?;
+            ids.push(
+                doc.get_first(self.fields.message_id)
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<MessageId>().ok())
+                    .ok_or_else(|| IndexError::Invalid("document without a message id".into()))?,
+            );
+        }
+        Ok(Matches {
+            ids,
+            total: total as u64,
+        })
+    }
+
     fn attachment_hits(
         &self,
         archive: ArchiveId,
@@ -722,6 +756,17 @@ impl SearchIndex for TantivyIndex {
         let query = query.clone();
         blocking(move || inner.search(archive, &query, sort, offset, limit)).await
     }
+
+    async fn matching(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        cap: u32,
+    ) -> Result<Matches, IndexError> {
+        let inner = self.inner.clone();
+        let query = query.clone();
+        blocking(move || inner.matching(archive, &query, cap)).await
+    }
 }
 
 fn has_words(clauses: &[Clause]) -> bool {
@@ -833,6 +878,109 @@ mod tests {
         assert!(index.was_emptied());
         drop(index);
         assert!(!TantivyIndex::open(dir.path()).unwrap().was_emptied());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn matching_agrees_with_search() {
+        let index = TantivyIndex::in_memory().unwrap();
+        let archive = ArchiveId::new();
+        let words = ["harbour", "lamp", "invoice", "quarterly", "кофе", "picnic"];
+        let docs: Vec<IndexDocument> = (0..2_600)
+            .map(|n: usize| IndexDocument {
+                message_id: MessageId::new(),
+                archive_id: if n.is_multiple_of(13) {
+                    ArchiveId::new()
+                } else {
+                    archive
+                },
+                thread_id: holtmail_core::ThreadId::new(),
+                subject: format!("{} note {n}", words[n % words.len()]),
+                from: vec![holtmail_core::Address {
+                    name: Some(format!("Sender {}", n % 7)),
+                    email: format!("sender{}@example.org", n % 7),
+                }],
+                recipients: Vec::new(),
+                body: format!("{} and {}", words[n % 5], words[n % 4]),
+                attachment_names: Vec::new(),
+                attachment_text: if n.is_multiple_of(11) {
+                    "lighthouse schedule".into()
+                } else {
+                    String::new()
+                },
+                folders: vec![
+                    if n.is_multiple_of(3) {
+                        "inbox"
+                    } else {
+                        "archive"
+                    }
+                    .into(),
+                ],
+                flags: if n.is_multiple_of(2) {
+                    vec!["\\Seen".into()]
+                } else {
+                    Vec::new()
+                },
+                labels: Vec::new(),
+                date: holtmail_core::Timestamp::from_secs(n as i64 * 60),
+                has_attachments: n.is_multiple_of(11),
+                insights: Vec::new(),
+                categories: Vec::new(),
+            })
+            .collect();
+        index.put(docs).await.unwrap();
+        index.commit().await.unwrap();
+
+        let not = |c: Clause| Clause::Not(Box::new(c));
+        let queries: Vec<Vec<Clause>> = vec![
+            vec![],
+            vec![Clause::Text("harbour".into())],
+            vec![Clause::Text("lamp invoice".into())],
+            vec![Clause::Text("quart".into())],
+            vec![Clause::Text("кофе".into())],
+            vec![Clause::Phrase("lamp and harbour".into())],
+            vec![Clause::Subject("picnic".into())],
+            vec![Clause::Body("invoice".into())],
+            vec![Clause::From("sender3".into())],
+            vec![Clause::Text("lighthouse".into())],
+            vec![
+                Clause::In("inbox".into()),
+                not(Clause::Flag("\\Seen".into())),
+            ],
+            vec![Clause::After(holtmail_core::Timestamp::from_secs(90_000))],
+            vec![
+                Clause::Text("harbour".into()),
+                Clause::Before(holtmail_core::Timestamp::from_secs(60_000)),
+            ],
+            vec![Clause::Text("nowhere".into())],
+        ];
+        for clauses in queries {
+            let query = SearchQuery { clauses };
+            let mut paged = Vec::new();
+            loop {
+                let page = index
+                    .search(archive, &query, SortOrder::Newest, paged.len() as u32, 1000)
+                    .await
+                    .unwrap();
+                if page.hits.is_empty() {
+                    break;
+                }
+                paged.extend(page.hits);
+            }
+            let matched = index.matching(archive, &query, MAX_MATCHES).await.unwrap();
+            assert_eq!(matched.ids, paged, "{:?}", query.clauses);
+            assert_eq!(matched.total, paged.len() as u64, "{:?}", query.clauses);
+            assert!(!matched.is_cut());
+
+            let cap = (paged.len() / 2) as u32;
+            let cut = index.matching(archive, &query, cap).await.unwrap();
+            assert_eq!(cut.ids, paged[..cap as usize], "{:?}", query.clauses);
+            assert_eq!(cut.total, paged.len() as u64);
+        }
+        let all = index
+            .matching(archive, &SearchQuery::default(), u32::MAX)
+            .await
+            .unwrap();
+        assert_eq!(all.total, 2_400);
     }
 
     #[tokio::test(flavor = "multi_thread")]

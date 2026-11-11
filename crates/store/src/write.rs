@@ -191,11 +191,13 @@ pub enum AuditKind {
     DeviceChanged,
     /// A device credential revoked.
     DeviceRevoked,
+    /// A fresh app password given to a device, replacing its old one.
+    DeviceSecretIssued,
 }
 
 impl AuditKind {
     /// Every kind, in a fixed order.
-    pub const ALL: [AuditKind; 16] = [
+    pub const ALL: [AuditKind; 17] = [
         Self::CapabilitiesChanged,
         Self::GrantChanged,
         Self::MailFlags,
@@ -212,6 +214,7 @@ impl AuditKind {
         Self::DeviceCreated,
         Self::DeviceChanged,
         Self::DeviceRevoked,
+        Self::DeviceSecretIssued,
     ];
 
     /// The stable lowercase name used in storage and the API.
@@ -233,6 +236,7 @@ impl AuditKind {
             Self::DeviceCreated => "device_created",
             Self::DeviceChanged => "device_changed",
             Self::DeviceRevoked => "device_revoked",
+            Self::DeviceSecretIssued => "device_secret_issued",
         }
     }
 

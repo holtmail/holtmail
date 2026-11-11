@@ -108,6 +108,8 @@ impl DeletionStore for SqliteStore {
                 "DELETE FROM message_topics WHERE message_id = ?",
                 "DELETE FROM message_categories WHERE message_id = ?",
                 "DELETE FROM insight_reindex WHERE message_id = ?",
+                "DELETE FROM schedule_inbox_hidden WHERE message_id = ?",
+                "DELETE FROM schedule_inbox WHERE message_id = ?",
                 "UPDATE unsubscribe_requests SET message_id = NULL WHERE message_id = ?",
                 "DELETE FROM messages WHERE id = ?",
             ] {
@@ -127,6 +129,12 @@ impl DeletionStore for SqliteStore {
                     blob_id: Some(parse(&blob)?),
                     actor,
                 },
+            )
+            .await?;
+            crate::changes::log(
+                &mut tx,
+                crate::changes::Row::new(ChangeKind::Message, archive).message(id),
+                now,
             )
             .await?;
             out.messages.push(*id);
@@ -178,6 +186,20 @@ impl DeletionStore for SqliteStore {
             .await
             .map_err(backend)?;
             let id: ItemId = parse(&item)?;
+            let (collection, item_archive, href): (String, String, String) = sqlx::query_as(
+                "SELECT collection_id, archive_id, COALESCE(dav_name, remote_id) FROM items
+                 WHERE id = ?",
+            )
+            .bind(&item)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(backend)?;
+            let row = crate::changes::Row::new(ChangeKind::Item, item_archive);
+            let row = match left.is_empty() {
+                true => row.purged_item(collection, &item, href),
+                false => row.upstream_item(collection, &item),
+            };
+            crate::changes::log(&mut tx, row, now).await?;
             if left.is_empty() {
                 for statement in [
                     "DELETE FROM occurrences WHERE item_id = ?",

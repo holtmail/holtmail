@@ -13,6 +13,8 @@ pub(super) async fn run(store: &dyn Store) {
     writeback(store).await;
     successors(store).await;
     log_and_blobs(store).await;
+    schedule_tags(store).await;
+    schedule_inbox(store).await;
 }
 
 fn t(secs: i64) -> Timestamp {
@@ -116,6 +118,7 @@ fn update(item: ItemId, base: u32, bytes: &str, class: ChangeClass, at: i64) -> 
         at: t(at),
         not_before: None,
         messages: Vec::new(),
+        schedule_tag: None,
     }
 }
 
@@ -140,6 +143,7 @@ fn at_href(collection: CollectionId, href: &str, op: ChangeOp, at: i64) -> NewIt
         at: t(at),
         not_before: None,
         messages: Vec::new(),
+        schedule_tag: None,
     }
 }
 
@@ -201,11 +205,30 @@ async fn modes(store: &dyn Store) {
             .write_mode,
         WriteMode::ReadOnly
     );
+    let fresh = store.get_collection(s.calendar).await.unwrap().unwrap();
+    assert_eq!(
+        (fresh.write_mode_changed_at, fresh.previous_write_mode),
+        (None, None),
+        "a mode never changed has no change time"
+    );
+    let before = Timestamp::now();
     let changed = store
         .set_write_mode(s.calendar, WriteMode::WriteThrough)
         .await
         .unwrap();
     assert_eq!(changed.write_mode, WriteMode::WriteThrough);
+    assert_eq!(changed.previous_write_mode, Some(fresh.write_mode));
+    let at = changed.write_mode_changed_at.expect("the change time");
+    assert!(at >= before);
+    let same = store
+        .set_write_mode(s.calendar, WriteMode::WriteThrough)
+        .await
+        .unwrap();
+    assert_eq!(
+        (same.write_mode_changed_at, same.previous_write_mode),
+        (Some(at), Some(fresh.write_mode)),
+        "the same mode again changes nothing"
+    );
     assert_eq!(
         store
             .get_collection(s.calendar)
@@ -524,6 +547,7 @@ async fn resolving(store: &dyn Store) {
             collection_id: Some(s.calendar),
             states: vec![ItemChangeState::Conflict],
             flagged_only: false,
+            after: None,
             limit: 10,
         })
         .await
@@ -560,6 +584,7 @@ async fn resolving(store: &dyn Store) {
                 collection_id: None,
                 states: vec![],
                 flagged_only: false,
+                after: None,
                 limit: 10,
             })
             .await
@@ -573,6 +598,7 @@ async fn resolving(store: &dyn Store) {
                 collection_id: None,
                 states: vec![ItemChangeState::Discarded],
                 flagged_only: false,
+                after: None,
                 limit: 10,
             })
             .await
@@ -623,9 +649,18 @@ async fn upstream_flags(store: &dyn Store) {
         collection_id: None,
         states: vec![],
         flagged_only: true,
+        after: None,
         limit: 10,
     };
     assert_eq!(store.open_changes(&query).await.unwrap().len(), 1);
+    let after = ItemChangeQuery {
+        after: Some(change.id),
+        ..query.clone()
+    };
+    assert!(
+        store.open_changes(&after).await.unwrap().is_empty(),
+        "a page starts after the id it is given"
+    );
     let served = store.effective(&item(s.item)).await.unwrap().unwrap();
     assert_eq!(served.state.version, Some(2));
     assert_eq!(served.state.change, Some(change.id));
@@ -1095,7 +1130,22 @@ async fn successors(store: &dyn Store) {
 async fn log_and_blobs(store: &dyn Store) {
     let s = setup(store, "Edit log").await;
     let before = store.changes_since(s.archive, None, 1000).await.unwrap();
-    assert!(before.is_empty());
+    assert_eq!(before.len(), 1, "a new upstream item is logged: {before:?}");
+    assert!(
+        before[0].kind == ChangeKind::Item
+            && before[0].item_id == Some(s.item)
+            && before[0].collection_id == Some(s.calendar)
+            && before[0].item_change_id.is_none()
+    );
+    store
+        .record_version(upstream(s.calendar, "/cal/a.ics", "Edit log a v1"))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.changes_since(s.archive, None, 1000).await.unwrap(),
+        before,
+        "the same version again is not logged"
+    );
     let change = record(
         store,
         &update(
@@ -1113,7 +1163,10 @@ async fn log_and_blobs(store: &dyn Store) {
         .await
         .unwrap()
         .unwrap();
-    let log = store.changes_since(s.archive, None, 1000).await.unwrap();
+    let log = store
+        .changes_since(s.archive, Some(before[0].seq), 1000)
+        .await
+        .unwrap();
     assert_eq!(log.len(), 2, "recording and every state change are logged");
     assert!(log.windows(2).all(|w| w[0].seq < w[1].seq));
     assert!(log.iter().all(|e| e.item_change_id == Some(change.id)
@@ -1135,6 +1188,33 @@ async fn log_and_blobs(store: &dyn Store) {
             .unwrap(),
         vec![log[1].clone()]
     );
+
+    store
+        .record_version(upstream(s.calendar, "/cal/a.ics", "Edit log a v2"))
+        .await
+        .unwrap();
+    let removed_twice = vec!["/cal/a.ics".to_owned(), "/cal/a.ics".to_owned()];
+    store
+        .mark_items_removed(s.calendar, &removed_twice, t(3))
+        .await
+        .unwrap();
+    store
+        .record_version(upstream(s.calendar, "/cal/a.ics", "Edit log a v2"))
+        .await
+        .unwrap();
+    let upstream_rows = store
+        .changes_since(s.archive, Some(log[1].seq), 1000)
+        .await
+        .unwrap();
+    assert_eq!(
+        upstream_rows.len(),
+        3,
+        "a new version, one removal and the return are logged: {upstream_rows:?}"
+    );
+    assert!(upstream_rows.iter().all(|e| e.kind == ChangeKind::Item
+        && e.item_id == Some(s.item)
+        && e.item_change_id.is_none()));
+    assert_eq!(upstream_rows[1].at, t(3));
 
     let blob = BlobId::of(b"Edit log: only in a change");
     let mut all = Vec::new();
@@ -1164,4 +1244,181 @@ async fn log_and_blobs(store: &dyn Store) {
             .unwrap()
             .is_empty()
     );
+}
+
+async fn schedule_tags(store: &dyn Store) {
+    let s = setup(store, "schedule tags").await;
+    assert_eq!(
+        tag_of(store, s.item).await,
+        None,
+        "a new item follows its bytes"
+    );
+    store
+        .set_schedule_tag(s.item, Some("pinned-1"))
+        .await
+        .unwrap();
+    assert_eq!(tag_of(store, s.item).await.as_deref(), Some("pinned-1"));
+    let mut merged = update(s.item, 1, "merged reply", ChangeClass::Edit, 10);
+    merged.origin = ChangeOrigin::Itip;
+    record(store, &merged, Expect::Any).await;
+    assert_eq!(
+        tag_of(store, s.item).await.as_deref(),
+        Some("pinned-1"),
+        "a merged reply keeps the tag"
+    );
+    record(
+        store,
+        &update(s.item, 1, "client edit", ChangeClass::Edit, 20),
+        Expect::Any,
+    )
+    .await;
+    assert_eq!(
+        tag_of(store, s.item).await,
+        None,
+        "any other change clears the tag"
+    );
+    let mut pinned = update(s.item, 1, "merged again", ChangeClass::Edit, 30);
+    pinned.origin = ChangeOrigin::Itip;
+    pinned.schedule_tag = Some("pinned-2".into());
+    record(store, &pinned, Expect::Any).await;
+    assert_eq!(
+        tag_of(store, s.item).await.as_deref(),
+        Some("pinned-2"),
+        "a merged reply pins its tag in the same step"
+    );
+    let mut ignored = update(s.item, 1, "client edit again", ChangeClass::Edit, 40);
+    ignored.schedule_tag = Some("not-itip".into());
+    record(store, &ignored, Expect::Any).await;
+    assert_eq!(
+        tag_of(store, s.item).await,
+        None,
+        "only an itip change pins"
+    );
+    let mut echoed = update(s.item, 1, "merged once more", ChangeClass::Edit, 50);
+    echoed.origin = ChangeOrigin::Itip;
+    echoed.schedule_tag = Some("pinned-3".into());
+    record(store, &echoed, Expect::Any).await;
+    store
+        .record_version(upstream(s.calendar, "/cal/a.ics", "merged once more"))
+        .await
+        .unwrap();
+    assert_eq!(
+        tag_of(store, s.item).await.as_deref(),
+        Some("pinned-3"),
+        "the write-back of the merged reply keeps the tag"
+    );
+    store
+        .record_version(upstream(
+            s.calendar,
+            "/cal/a.ics",
+            "moved by the organizer elsewhere",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        tag_of(store, s.item).await,
+        None,
+        "another upstream version clears the tag"
+    );
+    assert!(matches!(
+        store.set_schedule_tag(ItemId::new(), Some("x")).await,
+        Err(StoreError::NotFound(_))
+    ));
+}
+
+async fn schedule_inbox(store: &dyn Store) {
+    let archive = store.create_archive("schedule inbox").await.unwrap().id;
+    let ada = store
+        .create_user(NewUser {
+            email: "inbox-ada@example.com".into(),
+            name: "Ada".into(),
+            role: InstanceRole::Owner,
+            password_hash: None,
+        })
+        .await
+        .unwrap()
+        .id;
+    let bob = store
+        .create_user(NewUser {
+            email: "inbox-bob@example.com".into(),
+            name: "Bob".into(),
+            role: InstanceRole::Member,
+            password_hash: None,
+        })
+        .await
+        .unwrap()
+        .id;
+    let first = store
+        .insert_message(super::message(archive, 7101, 1_795_000_000))
+        .await
+        .unwrap()
+        .message_id;
+    let second = store
+        .insert_message(super::message(archive, 7102, 1_795_000_100))
+        .await
+        .unwrap()
+        .message_id;
+    let entry = |message, part, note, at| ScheduleInboxEntry {
+        archive_id: archive,
+        message_id: message,
+        part,
+        method: "REPLY".into(),
+        uid: "lunch@example.com".into(),
+        note,
+        received_at: t(at),
+    };
+    store
+        .put_inbox_entry(&entry(first, 0, InboxNote::Unauthenticated, 0))
+        .await
+        .unwrap();
+    store
+        .put_inbox_entry(&entry(second, 0, InboxNote::Update, 50))
+        .await
+        .unwrap();
+    store
+        .put_inbox_entry(&entry(first, 0, InboxNote::Applied, 90))
+        .await
+        .unwrap();
+    let listed = store.inbox_entries(archive, ada).await.unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|e| (e.message_id, e.note, e.received_at))
+            .collect::<Vec<_>>(),
+        [
+            (second, InboxNote::Update, t(50)),
+            (first, InboxNote::Applied, t(0)),
+        ],
+        "newest first; recording again replaces the note and keeps the time"
+    );
+    assert!(store.hide_inbox_entry(ada, second, 0).await.unwrap());
+    assert!(store.hide_inbox_entry(ada, second, 0).await.unwrap());
+    assert!(!store.hide_inbox_entry(ada, second, 3).await.unwrap());
+    assert_eq!(store.inbox_entries(archive, ada).await.unwrap().len(), 1);
+    assert_eq!(
+        store.inbox_entries(archive, bob).await.unwrap().len(),
+        2,
+        "hiding is per user"
+    );
+    assert_eq!(store.inbox_entries_of(second).await.unwrap().len(), 1);
+    store
+        .delete_messages(archive, &[first], Some(ada))
+        .await
+        .unwrap();
+    assert!(store.inbox_entries_of(first).await.unwrap().is_empty());
+    assert_eq!(
+        store.inbox_entries(archive, bob).await.unwrap().len(),
+        1,
+        "entries go with their message"
+    );
+}
+
+async fn tag_of(store: &dyn Store, item: ItemId) -> Option<String> {
+    store
+        .get_item(item)
+        .await
+        .unwrap()
+        .unwrap()
+        .item
+        .schedule_tag
 }

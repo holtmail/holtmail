@@ -10,6 +10,7 @@ pub(super) async fn run(store: &dyn Store) {
     settings_replace(store).await;
     usage_is_kept_in_days(store).await;
     revocation(store).await;
+    secret_replaced(store).await;
     removal(store).await;
 }
 
@@ -339,6 +340,56 @@ async fn revocation(store: &dyn Store) {
             .await
             .unwrap()
             .is_empty()
+    );
+}
+
+async fn secret_replaced(store: &dyn Store) {
+    let user = owner(store, "devices-secret@example.com").await;
+    let device = store
+        .create_device(new(user, Some(21), settings(None)))
+        .await
+        .unwrap();
+    let other = store
+        .create_device(new(user, Some(22), settings(None)))
+        .await
+        .unwrap();
+    store
+        .replace_device_secret(device.id, &[23; 32])
+        .await
+        .unwrap();
+    assert_eq!(
+        store.find_device_by_secret(&[21; 32]).await.unwrap(),
+        None,
+        "the old secret is gone"
+    );
+    let found = store
+        .find_device_by_secret(&[23; 32])
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.id, device.id);
+    assert_eq!(found.settings, device.settings, "nothing else changes");
+    assert!(found.has_secret);
+    store
+        .replace_device_secret(device.id, &[23; 32])
+        .await
+        .expect("its own hash again is no clash");
+    invalid(store.replace_device_secret(device.id, &[22; 32]).await);
+    assert_eq!(
+        store
+            .find_device_by_secret(&[22; 32])
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        other.id
+    );
+    store.revoke_device(other.id, t(7000)).await.unwrap();
+    invalid(store.replace_device_secret(other.id, &[24; 32]).await);
+    not_found(
+        store
+            .replace_device_secret(DeviceId::new(), &[25; 32])
+            .await,
     );
 }
 

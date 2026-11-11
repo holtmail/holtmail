@@ -168,11 +168,15 @@ pub enum ChangeOrigin {
     Dav,
     /// The web app or another API client.
     Api,
+    /// The scheduler: an attendee's iTIP `REPLY` merged into the organizer's copy. The only
+    /// origin that keeps the item's [`crate::Item::schedule_tag`].
+    Itip,
 }
 
 names!(ChangeOrigin {
     Dav => "dav",
     Api => "api",
+    Itip => "itip",
 });
 
 /// What a change is about: an existing item, or an href in a collection. An href names the item
@@ -257,6 +261,10 @@ pub struct NewItemChange {
     /// tell which held messages belong to a recorded change
     /// ([`ItemChangeStore::held_change_messages`]).
     pub messages: Vec<OutboxId>,
+    /// For an `itip` change: the `Schedule-Tag` the item keeps, pinned in the same step as the
+    /// change is recorded, so no other change can slip in between. Ignored for other origins,
+    /// which always unpin it.
+    pub schedule_tag: Option<String>,
 }
 
 /// An incoming iMIP reply that could not be acted on yet and waits for another try.
@@ -437,27 +445,11 @@ pub struct ItemChangeQuery {
     pub states: Vec<ItemChangeState>,
     /// Only changes with `upstream_changed` or `upstream_deleted`.
     pub flagged_only: bool,
+    /// Only changes after this one; pages come in id order, so passing the last id of a page
+    /// gives the next page.
+    pub after: Option<ItemChangeId>,
     /// At most this many; implementations cap it at 500.
     pub limit: u32,
-}
-
-/// One row of the archive's change log: something served changed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChangeLogEntry {
-    /// Position in the log, counting up across the instance without reuse.
-    pub seq: u64,
-    /// The archive.
-    pub archive_id: ArchiveId,
-    /// The collection.
-    pub collection_id: Option<CollectionId>,
-    /// The item, when there is one.
-    pub item_id: Option<ItemId>,
-    /// The href of a change with no item.
-    pub href: Option<String>,
-    /// The change that was recorded or changed state.
-    pub item_change_id: Option<ItemChangeId>,
-    /// When.
-    pub at: Timestamp,
 }
 
 /// Edits to contacts and events from devices and the web app (CLIENTS.md, "Edits from native
@@ -465,7 +457,7 @@ pub struct ChangeLogEntry {
 ///
 /// Upstream versions stay what sources showed; edits are rows of their own that are never
 /// rewritten or deleted (only their state changes). A second edit of the same item supersedes
-/// the first. Every recorded change and every state change writes a [`ChangeLogEntry`] in the
+/// the first. Every recorded change and every state change writes a [`ChangeLogEntry`](crate::ChangeLogEntry) of kind `item` in the
 /// same transaction, and bytes referenced by changes count as referenced blobs. The store never
 /// parses the bytes: classification, patches and rebasing belong to the caller. It flags an
 /// open change when a newer upstream version of its item lands (`upstream_changed`) or the item
@@ -476,7 +468,9 @@ pub struct ChangeLogEntry {
 pub trait ItemChangeStore: Send + Sync {
     /// Sets the collection's write mode and returns it. `Invalid` for a mode other than
     /// `read_only` on a collection no account owns or one of an import account (imported files
-    /// stay read-only); `NotFound` for an unknown collection.
+    /// stay read-only); `NotFound` for an unknown collection. A different mode moves the old one
+    /// to `previous_write_mode` and sets `write_mode_changed_at` to now; the same mode again
+    /// changes nothing.
     async fn set_write_mode(
         &self,
         collection: CollectionId,
@@ -488,6 +482,9 @@ pub trait ItemChangeStore: Send + Sync {
     /// is superseded when it settles unless it is applied. The new change is `held`, except a
     /// delete of a create that never reached upstream (no item, nothing being sent), which is
     /// `applied` at once. The base ETag is taken from the base version.
+    ///
+    /// A change of an item with any origin but [`ChangeOrigin::Itip`] clears the item's
+    /// [`crate::Item::schedule_tag`] in the same transaction.
     ///
     /// The store does not check the write mode, roles or scopes; callers do. `Invalid` when the
     /// class, content or base do not fit the operation, a create names an existing item, an
@@ -583,13 +580,4 @@ pub trait ItemChangeStore: Send + Sync {
     /// Puts every `sending` change back to `held`, for a start after the process stopped
     /// mid-send, and returns them oldest first.
     async fn release_changes(&self, at: Timestamp) -> Result<Vec<ItemChange>, StoreError>;
-
-    /// The archive's change log after `after` (from the start when `None`), oldest first, at
-    /// most `limit` (capped at 1 000).
-    async fn changes_since(
-        &self,
-        archive: ArchiveId,
-        after: Option<u64>,
-        limit: u32,
-    ) -> Result<Vec<ChangeLogEntry>, StoreError>;
 }

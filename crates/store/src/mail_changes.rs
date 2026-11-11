@@ -359,6 +359,21 @@ pub trait MailChangeStore: Send + Sync {
         at: Timestamp,
     ) -> Result<Option<MailChange>, StoreError>;
 
+    /// Replaces held changes with new ones in one atomic step: every change in `cancel` is
+    /// failed with `error` as its code and dismissed, and every change in `enqueue` is recorded
+    /// as [`MailChangeState::Held`], checked as [`MailChangeStore::enqueue_mail_change`] checks it. When any change in `cancel`
+    /// is no longer held (a worker claimed it, or it closed), nothing is written and the
+    /// answer is `None`, so a change being sent is never failed under the worker. `Invalid`
+    /// and `NotFound` as [`MailChangeStore::enqueue_mail_change`] gives them, with nothing
+    /// written; `NotFound` for an unknown id in `cancel`. Returns the new changes in order.
+    async fn replace_held_mail_changes(
+        &self,
+        cancel: &[MailChangeId],
+        error: &str,
+        enqueue: &[NewMailChange],
+        at: Timestamp,
+    ) -> Result<Option<Vec<MailChange>>, StoreError>;
+
     /// The changes recorded for this outbox message (its sent copy), oldest first.
     async fn outbox_mail_changes(&self, outbox: OutboxId) -> Result<Vec<MailChange>, StoreError>;
 

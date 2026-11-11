@@ -13,6 +13,7 @@ pub(super) async fn run(store: &dyn Store) {
     outbox_and_retention(store).await;
     dismissal(store).await;
     following_moves(store).await;
+    replacing(store).await;
 }
 
 fn t(secs: i64) -> Timestamp {
@@ -1043,4 +1044,87 @@ async fn following_moves(store: &dyn Store) {
     assert_eq!(retargeted.new.folder_id, s.archive_folder);
     assert_eq!(retargeted.new.uid, Some(70));
     assert_eq!(retargeted.state, MailChangeState::Sending);
+}
+
+async fn replacing(store: &dyn Store) {
+    let s = setup(store, "Mail change replacing").await;
+    let m = message(store, s.archive, 8120).await;
+    let trash = store
+        .upsert_folder(s.account, "Trash", Some(FolderRole::Trash))
+        .await
+        .unwrap()
+        .id;
+    let moving = |target: FolderId, at: i64| NewMailChange {
+        op: MailOp::Move { target },
+        ..flags(&s, Some(m), 7, &[], at)
+    };
+    let held = store
+        .enqueue_mail_change(&moving(s.archive_folder, 1))
+        .await
+        .unwrap();
+    let replaced = store
+        .replace_held_mail_changes(&[held.id], "replaced", &[moving(trash, 2)], t(2))
+        .await
+        .unwrap()
+        .expect("a held change is replaced");
+    assert_eq!(replaced.len(), 1);
+    assert_eq!(replaced[0].new.op, MailOp::Move { target: trash });
+    let old = store.get_mail_change(held.id).await.unwrap().unwrap();
+    assert_eq!(old.state, MailChangeState::Failed);
+    assert_eq!(old.last_error.as_deref(), Some("replaced"));
+    assert!(
+        store.failed_mail_changes(m).await.unwrap().is_empty(),
+        "the replaced change is dismissed"
+    );
+    let pending = store.pending_mail_changes(m).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, replaced[0].id);
+
+    let claimed = store
+        .claim_mail_change(s.account, t(3))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(claimed.id, replaced[0].id);
+    assert!(
+        store
+            .replace_held_mail_changes(
+                &[claimed.id],
+                "replaced",
+                &[moving(s.archive_folder, 4)],
+                t(4)
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "a change being sent is not replaced"
+    );
+    let still = store.get_mail_change(claimed.id).await.unwrap().unwrap();
+    assert_eq!(still.state, MailChangeState::Sending, "nothing was written");
+    assert_eq!(store.pending_mail_changes(m).await.unwrap().len(), 1);
+
+    let other = store
+        .enqueue_mail_change(&flags(&s, Some(m), 7, &["\\Seen"], 5))
+        .await
+        .unwrap();
+    assert!(invalid(
+        store
+            .replace_held_mail_changes(&[other.id], "replaced", &[moving(s.inbox, 6)], t(6))
+            .await
+    ));
+    assert_eq!(
+        store
+            .get_mail_change(other.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        MailChangeState::Held,
+        "an invalid replacement writes nothing"
+    );
+    assert!(not_found(
+        store
+            .replace_held_mail_changes(&[MailChangeId::new()], "replaced", &[], t(7))
+            .await
+    ));
 }

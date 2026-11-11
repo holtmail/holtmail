@@ -32,7 +32,9 @@ pub trait DeletionStore: Send + Sync {
     /// remote image links, insights, categories, effective topics and reindex queue entries, the
     /// links of calendar versions to them, and calendar versions read only from them. Unsubscribe
     /// requests made from them stay, with no message. Records tombstones for their bytes and for
-    /// every folder and UID they had, and enters each message in the ledger as `deleted` by `actor`. Idempotent: ids already
+    /// every folder and UID they had, and enters each message in the ledger as `deleted` by `actor`.
+    /// Writes a `message` change-log row per message and an `item` row per calendar item that lost
+    /// versions (with its last served href when it is gone). Idempotent: ids already
     /// gone or in another archive are skipped.
     async fn delete_messages(
         &self,

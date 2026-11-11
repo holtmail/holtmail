@@ -8,6 +8,7 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Sqlite, Transaction};
 
 use crate::SqliteStore;
+use crate::changes::{self, Row};
 use crate::rows::{backend, get, json, parse, signed, unique, unsigned};
 
 const MAX_OUTBOX_PAGE: u32 = 500;
@@ -105,6 +106,7 @@ fn draft_version(row: &SqliteRow) -> Result<DraftVersion, StoreError> {
     Ok(DraftVersion {
         version: u32::try_from(get::<i64>(row, "version")?).unwrap_or(u32::MAX),
         payload: from_json(&get::<String>(row, "payload")?)?,
+        raw: optional_id(row, "raw_blob_id")?,
         blobs: from_json(&get::<String>(row, "blobs")?)?,
         saved_at: Timestamp::from_millis(get(row, "saved_at")?),
     })
@@ -297,8 +299,8 @@ async fn fetch_outbox(tx: &mut Tx<'_>, id: &str) -> Result<Option<OutboxEntry>, 
 
 async fn fetch_draft(tx: &mut Tx<'_>, id: &str) -> Result<Option<Draft>, StoreError> {
     sqlx::query(
-        "SELECT d.id, d.archive_id, d.user_id, d.created_at, v.version, v.payload, v.blobs,
-                v.saved_at
+        "SELECT d.id, d.archive_id, d.user_id, d.created_at, v.version, v.payload, v.raw_blob_id,
+                v.blobs, v.saved_at
          FROM drafts d JOIN draft_versions v ON v.draft_id = d.id AND v.version = d.version
          WHERE d.id = ?",
     )
@@ -316,19 +318,22 @@ async fn insert_version(
     id: &str,
     version: u32,
     payload: &serde_json::Value,
+    raw: Option<&BlobId>,
     blobs: &[BlobId],
     at: Timestamp,
 ) -> Result<(), StoreError> {
     let mut blobs = blobs.to_vec();
+    blobs.extend(raw.cloned());
     blobs.sort();
     blobs.dedup();
     sqlx::query(
-        "INSERT INTO draft_versions (draft_id, version, payload, blobs, saved_at)
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO draft_versions (draft_id, version, payload, raw_blob_id, blobs, saved_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(i64::from(version))
     .bind(payload.to_string())
+    .bind(raw.map(|b| b.to_string()))
     .bind(json(&blobs)?)
     .bind(at.as_millis())
     .execute(&mut **tx)
@@ -344,6 +349,63 @@ async fn insert_version(
             .map_err(backend)?;
     }
     Ok(())
+}
+
+async fn log_draft(tx: &mut Tx<'_>, draft: &Draft, at: Timestamp) -> Result<(), StoreError> {
+    changes::log(
+        tx,
+        Row::new(ChangeKind::Draft, draft.archive_id)
+            .draft(draft.id)
+            .user(draft.user_id),
+        at,
+    )
+    .await
+}
+
+async fn log_outbox(tx: &mut Tx<'_>, entry: &OutboxEntry, at: Timestamp) -> Result<(), StoreError> {
+    changes::log(
+        tx,
+        Row::new(ChangeKind::Submission, entry.new.archive_id).outbox(entry.id),
+        at,
+    )
+    .await
+}
+
+impl SqliteStore {
+    async fn start_draft(
+        &self,
+        archive: ArchiveId,
+        user: UserId,
+        payload: &serde_json::Value,
+        raw: Option<&BlobId>,
+        blobs: &[BlobId],
+        at: Timestamp,
+    ) -> Result<Draft, StoreError> {
+        let id = DraftId::new().to_string();
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        require(&mut tx, ARCHIVE, &archive.to_string(), "archive").await?;
+        require(&mut tx, USER, &user.to_string(), "user").await?;
+        sqlx::query(
+            "INSERT INTO drafts (id, archive_id, user_id, version, created_at, saved_at)
+             VALUES (?, ?, ?, 1, ?, ?)",
+        )
+        .bind(&id)
+        .bind(archive.to_string())
+        .bind(user.to_string())
+        .bind(at.as_millis())
+        .bind(at.as_millis())
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
+        insert_version(&mut tx, &id, 1, payload, raw, blobs, at).await?;
+        let draft = fetch_draft(&mut tx, &id)
+            .await?
+            .ok_or(StoreError::NotFound("draft"))?;
+        log_draft(&mut tx, &draft, at).await?;
+        tx.commit().await.map_err(backend)?;
+        Ok(draft)
+    }
 }
 
 #[async_trait]
@@ -820,29 +882,19 @@ impl SendStore for SqliteStore {
         blobs: &[BlobId],
         at: Timestamp,
     ) -> Result<Draft, StoreError> {
-        let id = DraftId::new().to_string();
-        let _write = self.writer.lock().await;
-        let mut tx = self.pool.begin().await.map_err(backend)?;
-        require(&mut tx, ARCHIVE, &archive.to_string(), "archive").await?;
-        require(&mut tx, USER, &user.to_string(), "user").await?;
-        sqlx::query(
-            "INSERT INTO drafts (id, archive_id, user_id, version, created_at, saved_at)
-             VALUES (?, ?, ?, 1, ?, ?)",
-        )
-        .bind(&id)
-        .bind(archive.to_string())
-        .bind(user.to_string())
-        .bind(at.as_millis())
-        .bind(at.as_millis())
-        .execute(&mut *tx)
-        .await
-        .map_err(backend)?;
-        insert_version(&mut tx, &id, 1, payload, blobs, at).await?;
-        let draft = fetch_draft(&mut tx, &id)
-            .await?
-            .ok_or(StoreError::NotFound("draft"))?;
-        tx.commit().await.map_err(backend)?;
-        Ok(draft)
+        self.start_draft(archive, user, payload, None, blobs, at)
+            .await
+    }
+
+    async fn create_raw_draft(
+        &self,
+        archive: ArchiveId,
+        user: UserId,
+        raw: &BlobId,
+        at: Timestamp,
+    ) -> Result<Draft, StoreError> {
+        self.start_draft(archive, user, &serde_json::Value::Null, Some(raw), &[], at)
+            .await
     }
 
     async fn get_draft(&self, id: DraftId) -> Result<Option<Draft>, StoreError> {
@@ -868,7 +920,8 @@ impl SendStore for SqliteStore {
             return Ok(DraftSave::Conflict(current));
         }
         let version = expected + 1;
-        insert_version(&mut tx, &id, version, payload, blobs, at).await?;
+        insert_version(&mut tx, &id, version, payload, None, blobs, at).await?;
+        log_draft(&mut tx, &current, at).await?;
         sqlx::query("UPDATE drafts SET version = ?, saved_at = ? WHERE id = ?")
             .bind(i64::from(version))
             .bind(at.as_millis())
@@ -906,8 +959,8 @@ impl SendStore for SqliteStore {
         user: UserId,
     ) -> Result<Vec<Draft>, StoreError> {
         sqlx::query(
-            "SELECT d.id, d.archive_id, d.user_id, d.created_at, v.version, v.payload, v.blobs,
-                    v.saved_at
+            "SELECT d.id, d.archive_id, d.user_id, d.created_at, v.version, v.payload, v.raw_blob_id,
+                    v.blobs, v.saved_at
              FROM drafts d JOIN draft_versions v ON v.draft_id = d.id AND v.version = d.version
              WHERE d.archive_id = ? AND d.user_id = ? ORDER BY d.saved_at DESC, d.id DESC",
         )
@@ -923,12 +976,17 @@ impl SendStore for SqliteStore {
 
     async fn delete_draft(&self, id: DraftId) -> Result<(), StoreError> {
         let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let Some(draft) = fetch_draft(&mut tx, &id.to_string()).await? else {
+            return Ok(());
+        };
         sqlx::query("DELETE FROM drafts WHERE id = ?")
             .bind(id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(backend)?;
-        Ok(())
+        log_draft(&mut tx, &draft, Timestamp::now()).await?;
+        tx.commit().await.map_err(backend)
     }
 
     async fn enqueue_outbox(
@@ -1003,6 +1061,7 @@ impl SendStore for SqliteStore {
         let stored = fetch_outbox(&mut tx, &id)
             .await?
             .ok_or(StoreError::NotFound("outbox message"))?;
+        log_outbox(&mut tx, &stored, entry.at).await?;
         tx.commit().await.map_err(backend)?;
         Ok((stored, true))
     }
@@ -1123,6 +1182,14 @@ impl SendStore for SqliteStore {
         .await
         .map_err(backend)?;
         let changed = fetch_outbox(&mut tx, &id).await?;
+        if let Some(changed) = &changed
+            && (OutboxEntry {
+                updated_at: current.updated_at,
+                ..changed.clone()
+            }) != current
+        {
+            log_outbox(&mut tx, changed, change.at).await?;
+        }
         tx.commit().await.map_err(backend)?;
         Ok(changed)
     }
@@ -1170,6 +1237,9 @@ impl SendStore for SqliteStore {
             return Ok(None);
         };
         let entry = fetch_outbox(&mut tx, &id).await?;
+        if let Some(entry) = &entry {
+            log_outbox(&mut tx, entry, now).await?;
+        }
         tx.commit().await.map_err(backend)?;
         Ok(entry)
     }
@@ -1209,6 +1279,9 @@ impl SendStore for SqliteStore {
         let mut entries = Vec::with_capacity(ids.len());
         for id in &ids {
             entries.extend(fetch_outbox(&mut tx, id).await?);
+        }
+        for entry in &entries {
+            log_outbox(&mut tx, entry, at).await?;
         }
         tx.commit().await.map_err(backend)?;
         entries.sort_by_key(|e| e.id);
@@ -1269,6 +1342,9 @@ impl SendStore for SqliteStore {
                 "the message is in another archive".into(),
             ));
         }
+        if current.synced_copy == Some(message) {
+            return Ok(current);
+        }
         sqlx::query("UPDATE outbox SET synced_copy = ?, updated_at = ? WHERE id = ?")
             .bind(message.to_string())
             .bind(at.as_millis())
@@ -1279,6 +1355,7 @@ impl SendStore for SqliteStore {
         let changed = fetch_outbox(&mut tx, &id)
             .await?
             .ok_or(StoreError::NotFound("outbox message"))?;
+        log_outbox(&mut tx, &changed, at).await?;
         tx.commit().await.map_err(backend)?;
         Ok(changed)
     }
@@ -1292,19 +1369,23 @@ impl SendStore for SqliteStore {
         let id = id.to_string();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
-        let done = sqlx::query("UPDATE outbox SET note = ?, updated_at = ? WHERE id = ?")
+        let current = fetch_outbox(&mut tx, &id)
+            .await?
+            .ok_or(StoreError::NotFound("outbox message"))?;
+        if current.note.as_deref() == note {
+            return Ok(current);
+        }
+        sqlx::query("UPDATE outbox SET note = ?, updated_at = ? WHERE id = ?")
             .bind(note)
             .bind(at.as_millis())
             .bind(&id)
             .execute(&mut *tx)
             .await
             .map_err(backend)?;
-        if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound("outbox message"));
-        }
         let changed = fetch_outbox(&mut tx, &id)
             .await?
             .ok_or(StoreError::NotFound("outbox message"))?;
+        log_outbox(&mut tx, &changed, at).await?;
         tx.commit().await.map_err(backend)?;
         Ok(changed)
     }

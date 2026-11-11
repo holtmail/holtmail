@@ -15,6 +15,7 @@ pub(super) async fn run(store: &dyn Store) {
     outbox_claims(store).await;
     outbox_copies(store).await;
     outbox_removal(store).await;
+    raw_drafts_and_log(store).await;
 }
 
 fn smtp(archive: Option<ArchiveId>) -> Transport {
@@ -985,6 +986,7 @@ async fn outbox_held_for_changes(store: &dyn Store) {
                 at: Timestamp::from_secs(4200),
                 not_before: Some(Timestamp::from_secs(4300)),
                 messages: vec![held.id],
+                schedule_tag: None,
             },
             Expect::Absent,
         )
@@ -1379,4 +1381,141 @@ async fn outbox_removal(store: &dyn Store) {
     assert!(released.contains(&queued.new.blob_id));
     assert!(store.get_outbox(queued.id).await.unwrap().is_none());
     store.delete_user(s.user).await.unwrap();
+}
+
+async fn kinds_since(store: &dyn Store, archive: ArchiveId, after: u64) -> Vec<ChangeLogEntry> {
+    store
+        .changes_since(archive, Some(after), 1000)
+        .await
+        .unwrap()
+}
+
+async fn raw_drafts_and_log(store: &dyn Store) {
+    let s = sending(store, "Raw drafts and log").await;
+    let t = Timestamp::from_secs;
+    let start = store.latest_seq().await.unwrap();
+
+    let raw = BlobId::of(b"From: ada@example.com\r\nSubject: Draft\r\n\r\nHello\r\n");
+    let draft = store
+        .create_raw_draft(s.archive, s.user, &raw, t(10))
+        .await
+        .unwrap();
+    assert_eq!(draft.current.raw, Some(raw));
+    assert_eq!(draft.current.payload, serde_json::Value::Null);
+    assert_eq!(
+        draft.current.blobs,
+        [raw],
+        "the raw bytes are kept as a draft blob"
+    );
+    assert_eq!(
+        store.get_draft(draft.id).await.unwrap(),
+        Some(draft.clone())
+    );
+    assert!(not_found(
+        store
+            .create_raw_draft(ArchiveId::new(), s.user, &raw, t(10))
+            .await
+    ));
+    let log = kinds_since(store, s.archive, start).await;
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].kind, ChangeKind::Draft);
+    assert_eq!(log[0].draft_id, Some(draft.id));
+    assert_eq!(
+        log[0].user_id,
+        Some(s.user),
+        "a draft row is its user's own"
+    );
+
+    let DraftSave::Saved(saved) = store
+        .save_draft(draft.id, 1, &json!({ "subject": "Edited" }), &[], t(20))
+        .await
+        .unwrap()
+    else {
+        panic!("the save conflicted");
+    };
+    assert_eq!(saved.current.raw, None, "a save stores a compose version");
+    assert_eq!(
+        store.draft_versions(draft.id).await.unwrap()[1].raw,
+        Some(raw),
+        "the raw version is kept"
+    );
+    let after_save = kinds_since(store, s.archive, start).await;
+    assert_eq!(after_save.len(), 2);
+    let DraftSave::Conflict(_) = store
+        .save_draft(draft.id, 1, &json!({}), &[], t(21))
+        .await
+        .unwrap()
+    else {
+        panic!("a stale save was stored");
+    };
+    assert_eq!(
+        kinds_since(store, s.archive, start).await.len(),
+        2,
+        "a conflict writes nothing"
+    );
+    store.delete_draft(draft.id).await.unwrap();
+    store.delete_draft(draft.id).await.unwrap();
+    let after_delete = kinds_since(store, s.archive, start).await;
+    assert_eq!(after_delete.len(), 3, "deleting twice writes one row");
+    assert!(after_delete.iter().all(|e| e.kind == ChangeKind::Draft));
+
+    let mark = store.latest_seq().await.unwrap();
+    let (queued, _) = store
+        .enqueue_outbox(&entry(&s, b"logged", 1000))
+        .await
+        .unwrap();
+    let (_, created) = store
+        .enqueue_outbox(&entry(&s, b"logged", 1000))
+        .await
+        .unwrap();
+    assert!(created, "without a key every enqueue adds a message");
+    let log = kinds_since(store, s.archive, mark).await;
+    assert_eq!(log.len(), 2);
+    assert!(
+        log.iter()
+            .all(|e| e.kind == ChangeKind::Submission && e.user_id.is_none())
+    );
+    assert_eq!(log[0].outbox_id, Some(queued.id));
+
+    let mark = store.latest_seq().await.unwrap();
+    assert!(
+        store
+            .change_outbox(
+                queued.id,
+                &[OutboxState::Sent],
+                &OutboxChange::to(OutboxState::Failed, t(1100))
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        kinds_since(store, s.archive, mark).await.is_empty(),
+        "a refused change writes nothing"
+    );
+    store
+        .change_outbox(
+            queued.id,
+            &[OutboxState::Queued],
+            &OutboxChange::to(OutboxState::Draft, t(1100)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(kinds_since(store, s.archive, mark).await.len(), 1);
+    let mark = store.latest_seq().await.unwrap();
+    store
+        .set_outbox_note(queued.id, Some("delayed"), t(1200))
+        .await
+        .unwrap();
+    store
+        .set_outbox_note(queued.id, Some("delayed"), t(1300))
+        .await
+        .unwrap();
+    assert_eq!(
+        kinds_since(store, s.archive, mark).await.len(),
+        1,
+        "the same note again writes nothing"
+    );
+    cleanup(store, s).await;
 }

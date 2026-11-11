@@ -170,7 +170,46 @@ async fn messages(index: &dyn SearchIndex) {
     for (clauses, expected) in cases {
         let found = search(index, archive, clauses.clone(), SortOrder::Newest).await;
         assert_eq!(found, expected, "wrong result for {clauses:?}");
+        let matched = index
+            .matching(
+                archive,
+                &SearchQuery {
+                    clauses: clauses.clone(),
+                },
+                100,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            matched.ids, expected,
+            "matching disagrees with search for {clauses:?}"
+        );
+        assert_eq!(matched.total, expected.len() as u64);
     }
+
+    let all = SearchQuery::default();
+    for (cap, kept) in [
+        (0, vec![]),
+        (2, vec![lunch.message_id, report.message_id]),
+        (
+            3,
+            vec![lunch.message_id, report.message_id, cafe.message_id],
+        ),
+        (
+            u32::MAX,
+            vec![lunch.message_id, report.message_id, cafe.message_id],
+        ),
+    ] {
+        let matched = index.matching(archive, &all, cap).await.unwrap();
+        assert_eq!(matched.ids, kept, "matching does not keep the newest {cap}");
+        assert_eq!(matched.total, 3, "matching miscounts under cap {cap}");
+        assert_eq!(matched.is_cut(), kept.len() < 3);
+    }
+    assert_eq!(
+        index.matching(ArchiveId::new(), &all, 100).await.unwrap(),
+        Matches::default(),
+        "matching found messages of another archive"
+    );
 
     for (clauses, expected) in [
         (
@@ -397,6 +436,17 @@ async fn items(index: &dyn SearchIndex) {
         .unwrap();
     assert_eq!(total.total, 3);
     assert_eq!(total.hits.len(), 1);
+
+    let matched = index
+        .matching(archive, &SearchQuery::default(), 100)
+        .await
+        .unwrap();
+    assert_eq!(
+        matched.ids,
+        [other_mail.message_id, mail.message_id],
+        "matching never finds items"
+    );
+    assert_eq!(matched.total, 2);
 
     let mail_cases: Vec<(Vec<Clause>, Vec<MessageId>)> = vec![
         (

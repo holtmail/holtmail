@@ -52,13 +52,14 @@ Words match after case folding and accent removal: `Zoë` finds `zoe`, `LUNCH` f
 | `remove_items(ids)` | Missing ids are ignored; visible after `commit`; messages stay |
 | `commit()` | Makes earlier changes of both kinds visible and durable |
 | `search(archive, query, sort, offset, limit)` | Hits in `Newest` or `Relevance` order and the total number of matches; never returns messages of another archive. `attachment_hits` lists the hits of the page that match only through `attachment_text` (without it they would not match), in hit order; empty when the query has no `Text` or `Phrase` |
+| `matching(archive, query, cap)` | The whole set of matching messages for IMAP `SEARCH` and JMAP `Email/query`: exactly the messages `search` finds for the same query and committed state, never items or other archives. `Matches.ids` holds the newest `cap` of them, newest first, each once; `Matches.total` counts them all, and `is_cut()` says whether `ids` was cut. A `cap` above `MAX_MATCHES` (100 000) counts as `MAX_MATCHES`; a `cap` of 0 only counts. The provided method pages through `search` newest first, so an existing implementation keeps the contract without change; implementations override it with one query |
 | `search_items(archive, query, sort, offset, limit)` | Contacts and events (`ItemHit { item_id, kind }`) and their total; `Newest` lists events by start, the latest first, then contacts |
 
 `IndexError::Invalid` for a query that cannot run (too many clauses), `IndexError::Backend` for failures that may succeed on retry.
 
 ## Writing an implementation
 
-Run `holtmail_index::testing::conformance(Arc::new(index))` from a multi-threaded test (it checks messages, then items: kinds, `With`, field clauses on items, order, replacement and removal, then `Insight` and `Category`: match and no match, letter case, whole values, `Not`, archive isolation, items never matching, and `put` dropping old values) with `holtmail-index = { workspace = true, features = ["testing"] }` in `[dev-dependencies]`.
+Run `holtmail_index::testing::conformance(Arc::new(index))` from a multi-threaded test (it checks messages, including that `matching` agrees with `search` on every case and keeps the newest `cap`, then items: kinds, `With`, field clauses on items, order, replacement and removal, then `Insight` and `Category`: match and no match, letter case, whole values, `Not`, archive isolation, items never matching, and `put` dropping old values) with `holtmail-index = { workspace = true, features = ["testing"] }` in `[dev-dependencies]`.
 
 ## Implementations
 

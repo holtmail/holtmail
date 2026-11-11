@@ -93,6 +93,15 @@ pub trait DeviceStore: Send + Sync {
         raised_at: Option<Timestamp>,
     ) -> Result<Device, StoreError>;
 
+    /// Replaces the device's app password hash, so the old secret stops verifying and the new
+    /// one verifies from the moment this returns. `NotFound` for an unknown device; `Invalid` for
+    /// a revoked device, or when another device has the hash.
+    async fn replace_device_secret(
+        &self,
+        id: DeviceId,
+        hash: &SessionHash,
+    ) -> Result<(), StoreError>;
+
     /// Records a use at `at`, kept only as its day and protocol. A use on an earlier day than
     /// the recorded one and any use of a revoked device change nothing. `NotFound` for an
     /// unknown device.

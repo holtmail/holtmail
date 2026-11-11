@@ -308,6 +308,44 @@ impl DeviceStore for SqliteStore {
         Ok(())
     }
 
+    async fn replace_device_secret(
+        &self,
+        id: DeviceId,
+        hash: &SessionHash,
+    ) -> Result<(), StoreError> {
+        let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let revoked: Option<Option<i64>> =
+            sqlx::query_scalar("SELECT revoked_at FROM devices WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?;
+        match revoked {
+            None => return Err(StoreError::NotFound("device")),
+            Some(Some(_)) => return Err(StoreError::Invalid("the device is revoked".into())),
+            Some(None) => {}
+        }
+        let taken =
+            sqlx::query_scalar::<_, i64>("SELECT 1 FROM devices WHERE secret_hash = ? AND id <> ?")
+                .bind(&hash[..])
+                .bind(id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?;
+        if taken.is_some() {
+            return Err(StoreError::Invalid("another device has this secret".into()));
+        }
+        sqlx::query("UPDATE devices SET secret_hash = ? WHERE id = ?")
+            .bind(hash.to_vec())
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(backend)?;
+        tx.commit().await.map_err(backend)?;
+        Ok(())
+    }
+
     async fn revoke_device(&self, id: DeviceId, at: Timestamp) -> Result<bool, StoreError> {
         let _write = self.writer.lock().await;
         let done =

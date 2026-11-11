@@ -153,6 +153,14 @@ id!(
     /// One client installation a user set up, such as a phone's mail app.
     DeviceId
 );
+id!(
+    /// A rule of an archive: a trigger and a graph of nodes, kept with every version saved.
+    FlowId
+);
+id!(
+    /// One run of one version of a flow for one event, kept in the runs log.
+    FlowRunId
+);
 
 /// A protocol a device may sign in over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

@@ -201,8 +201,11 @@ pub struct Identity {
 pub struct DraftVersion {
     /// From 1, growing by one with every save.
     pub version: u32,
-    /// What the compose window holds, as the API defines it.
+    /// What the compose window holds, as the API defines it; `null` for a raw version.
     pub payload: serde_json::Value,
+    /// For a raw version, the client's message bytes as they came (a draft saved over IMAP or
+    /// JMAP); `None` for a compose version. The blob is also among `blobs`.
+    pub raw: Option<BlobId>,
     /// Blobs the draft uses (attachments); kept from deletion while the version is kept.
     pub blobs: Vec<BlobId>,
     /// When it was saved.
@@ -461,6 +464,10 @@ pub struct OutboxQuery {
 
 /// Transports, identities with the users who may send as them, drafts with their versions, and
 /// the outbox.
+///
+/// Starting, saving and deleting a draft writes a `draft` change log row of the draft's user;
+/// adding an outbox message, and every change of one (state, claim, linked copy, note), writes
+/// a `submission` row, each in the same transaction and only when something changed.
 #[async_trait]
 pub trait SendStore: Send + Sync {
     /// Adds a transport. `Invalid` when the id is taken, when an account transport names no
@@ -563,6 +570,17 @@ pub trait SendStore: Send + Sync {
         user: UserId,
         payload: &serde_json::Value,
         blobs: &[BlobId],
+        at: Timestamp,
+    ) -> Result<Draft, StoreError>;
+
+    /// Starts a raw draft at version 1: `raw` holds the client's bytes, already in the blob
+    /// store, and the payload is `null`. A later [`SendStore::save_draft`] stores compose
+    /// versions on top. `NotFound` for an unknown archive or user.
+    async fn create_raw_draft(
+        &self,
+        archive: ArchiveId,
+        user: UserId,
+        raw: &BlobId,
         at: Timestamp,
     ) -> Result<Draft, StoreError>;
 

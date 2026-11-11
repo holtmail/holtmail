@@ -3,6 +3,7 @@
 mod aliases;
 mod calendar;
 mod categories;
+mod changes;
 mod deletion;
 mod devices;
 mod insights;
@@ -12,7 +13,11 @@ mod mail_changes;
 mod people;
 mod pim;
 mod rows;
+mod rules;
+mod schedule;
 mod send;
+mod serve;
+mod view;
 mod webhooks;
 mod write;
 
@@ -28,7 +33,7 @@ use holtmail_store::*;
 use rows::*;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{AssertSqlSafe, SqlitePool};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard, watch};
 
 const MAX_PAGE: u32 = 500;
 
@@ -38,7 +43,41 @@ const MAX_PAGE: u32 = 500;
 /// opened by one process at a time.
 pub struct SqliteStore {
     pool: SqlitePool,
-    writer: Mutex<()>,
+    writer: Writer,
+    poll: Duration,
+}
+
+/// Serializes writes and ticks after each one, so change watches look at the log.
+struct Writer {
+    lock: Mutex<()>,
+    tick: watch::Sender<u64>,
+}
+
+impl Writer {
+    fn new() -> Self {
+        Self {
+            lock: Mutex::new(()),
+            tick: watch::Sender::new(0),
+        }
+    }
+
+    async fn lock(&self) -> WriteGuard<'_> {
+        WriteGuard {
+            _lock: self.lock.lock().await,
+            tick: &self.tick,
+        }
+    }
+}
+
+struct WriteGuard<'a> {
+    _lock: MutexGuard<'a, ()>,
+    tick: &'a watch::Sender<u64>,
+}
+
+impl Drop for WriteGuard<'_> {
+    fn drop(&mut self) {
+        self.tick.send_modify(|n| *n = n.wrapping_add(1));
+    }
 }
 
 impl SqliteStore {
@@ -62,7 +101,8 @@ impl SqliteStore {
             .map_err(|error| StoreError::Backend(Box::new(error)))?;
         Ok(Self {
             pool,
-            writer: Mutex::new(()),
+            writer: Writer::new(),
+            poll: CHANGE_POLL,
         })
     }
 
@@ -230,8 +270,18 @@ impl ArchiveStore for SqliteStore {
             "DELETE FROM mail_changes WHERE account_id IN (SELECT id FROM accounts WHERE archive_id = ?1)",
             "DELETE FROM item_change_messages WHERE change_id IN (SELECT id FROM item_changes WHERE archive_id = ?1)",
             "DELETE FROM deferred_replies WHERE archive_id = ?1",
+            "DELETE FROM flow_actions WHERE flow_id IN (SELECT id FROM flows WHERE archive_id = ?1)",
+            "DELETE FROM flow_runs WHERE archive_id = ?1",
+            "DELETE FROM flow_versions WHERE flow_id IN (SELECT id FROM flows WHERE archive_id = ?1)",
+            "DELETE FROM flows WHERE archive_id = ?1",
+            "DELETE FROM rule_events WHERE archive_id = ?1",
+            "DELETE FROM schedule_inbox_hidden WHERE message_id IN (SELECT message_id FROM schedule_inbox WHERE archive_id = ?1)",
+            "DELETE FROM schedule_inbox WHERE archive_id = ?1",
             "DELETE FROM item_changes WHERE archive_id = ?1",
             "DELETE FROM changes WHERE archive_id = ?1",
+            "DELETE FROM local_flags WHERE archive_id = ?1",
+            "DELETE FROM local_places WHERE archive_id = ?1",
+            "DELETE FROM served_subscriptions WHERE archive_id = ?1",
             "DELETE FROM outbox WHERE archive_id = ?1",
             "DELETE FROM drafts WHERE archive_id = ?1",
             "DELETE FROM identity_defaults WHERE archive_id = ?1",
@@ -417,8 +467,26 @@ impl ArchiveStore for SqliteStore {
 
     async fn delete_account(&self, id: AccountId) -> Result<(), StoreError> {
         let id = id.to_string();
+        let now = Timestamp::now();
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
+        let gone = sqlx::query(
+            "SELECT f.id, a.archive_id FROM folders f JOIN accounts a ON a.id = f.account_id
+             WHERE f.account_id = ? ORDER BY f.id",
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(backend)?;
+        for row in &gone {
+            changes::log(
+                &mut tx,
+                changes::Row::new(ChangeKind::Mailbox, get::<String>(row, "archive_id")?)
+                    .folder(get::<String>(row, "id")?),
+                now,
+            )
+            .await?;
+        }
         for statement in [
             "DELETE FROM mail_changes WHERE account_id = ?1",
             "DELETE FROM sync_failures WHERE folder_id IN (SELECT id FROM folders WHERE account_id = ?1)",
@@ -456,7 +524,17 @@ impl ArchiveStore for SqliteStore {
         path: &str,
         role: Option<FolderRole>,
     ) -> Result<Folder, StoreError> {
+        let now = Timestamp::now();
         let _write = self.writer.lock().await;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let before = sqlx::query("SELECT * FROM folders WHERE account_id = ? AND path = ?")
+            .bind(account.to_string())
+            .bind(path)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(backend)?
+            .map(|row| folder(&row))
+            .transpose()?;
         sqlx::query(
             "INSERT INTO folders (id, account_id, path, role, created_at) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (account_id, path) DO UPDATE SET role = excluded.role",
@@ -465,17 +543,28 @@ impl ArchiveStore for SqliteStore {
         .bind(account.to_string())
         .bind(path)
         .bind(role.map(|r| r.as_str()))
-        .bind(Timestamp::now().as_millis())
-        .execute(&self.pool)
+        .bind(now.as_millis())
+        .execute(&mut *tx)
         .await
         .map_err(backend)?;
         let row = sqlx::query("SELECT * FROM folders WHERE account_id = ? AND path = ?")
             .bind(account.to_string())
             .bind(path)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(backend)?;
-        folder(&row)
+        let stored = folder(&row)?;
+        if before.as_ref().map(|f| f.role) != Some(stored.role) {
+            let archive = changes::folder_archive(&mut tx, &stored.id.to_string()).await?;
+            changes::log(
+                &mut tx,
+                changes::Row::new(ChangeKind::Mailbox, archive).folder(stored.id),
+                now,
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(backend)?;
+        Ok(stored)
     }
 
     async fn get_folder(&self, id: FolderId) -> Result<Option<Folder>, StoreError> {
@@ -581,18 +670,31 @@ impl MessageStore for SqliteStore {
             Some(oldest) => parse::<ThreadId>(oldest)?,
             None => ThreadId::new(),
         };
+        let archived_at = Timestamp::now();
         for other in threads.iter().skip(1) {
-            sqlx::query("UPDATE messages SET thread_id = ? WHERE archive_id = ? AND thread_id = ?")
-                .bind(thread.to_string())
-                .bind(&archive)
-                .bind(other)
-                .execute(&mut *tx)
-                .await
-                .map_err(backend)?;
+            let moved: Vec<String> = sqlx::query_scalar(
+                "UPDATE messages SET thread_id = ? WHERE archive_id = ? AND thread_id = ?
+                 RETURNING id",
+            )
+            .bind(thread.to_string())
+            .bind(&archive)
+            .bind(other)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(backend)?;
+            for message in moved {
+                changes::log(
+                    &mut tx,
+                    changes::Row::new(ChangeKind::Thread, &archive)
+                        .message(message)
+                        .thread(other),
+                    archived_at,
+                )
+                .await?;
+            }
         }
 
         let id = MessageId::new();
-        let archived_at = Timestamp::now();
         let date = new.sent_at.or(new.received_at).unwrap_or(archived_at);
         let attachment_count = new.attachments.iter().filter(|a| !a.inline).count();
         sqlx::query(
@@ -693,6 +795,14 @@ impl MessageStore for SqliteStore {
                 blob_id: Some(new.blob_id),
                 actor: None,
             },
+        )
+        .await?;
+        changes::log(
+            &mut tx,
+            changes::Row::new(ChangeKind::Message, &archive)
+                .message(id)
+                .thread(thread),
+            archived_at,
         )
         .await?;
 
@@ -963,6 +1073,23 @@ impl MessageStore for SqliteStore {
         let uid = uid.map(signed).transpose()?;
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
+        let archive = changes::folder_archive(&mut tx, &folder.to_string()).await?;
+        let before = sqlx::query(
+            "SELECT flags, removed_at FROM locations WHERE folder_id = ? AND message_id = ?",
+        )
+        .bind(folder.to_string())
+        .bind(message.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(backend)?;
+        let kind = match &before {
+            None => Some(ChangeKind::Place),
+            Some(row) if get::<Option<i64>>(row, "removed_at")?.is_some() => {
+                Some(ChangeKind::Place)
+            }
+            Some(row) => (flag_set(rows::flags(row)?) != flag_set(flags.to_vec()))
+                .then_some(ChangeKind::Flags),
+        };
         if let Some(uid) = uid {
             sqlx::query(
                 "UPDATE locations SET uid = NULL WHERE folder_id = ? AND uid = ? AND message_id != ?",
@@ -989,6 +1116,16 @@ impl MessageStore for SqliteStore {
         .execute(&mut *tx)
         .await
         .map_err(backend)?;
+        if let Some(kind) = kind {
+            changes::log(
+                &mut tx,
+                changes::Row::new(kind, archive)
+                    .message(message)
+                    .folder(folder),
+                seen_at,
+            )
+            .await?;
+        }
         tx.commit().await.map_err(backend)
     }
 
@@ -1043,17 +1180,34 @@ impl MessageStore for SqliteStore {
     ) -> Result<(), StoreError> {
         let _write = self.writer.lock().await;
         let mut tx = self.pool.begin().await.map_err(backend)?;
+        let mut archive = None;
         for uid in uids {
-            sqlx::query(
+            let removed: Option<String> = sqlx::query_scalar(
                 "UPDATE locations SET removed_at = ?
-                 WHERE folder_id = ? AND uid = ? AND removed_at IS NULL",
+                 WHERE folder_id = ? AND uid = ? AND removed_at IS NULL RETURNING message_id",
             )
             .bind(at.as_millis())
             .bind(folder.to_string())
             .bind(signed(*uid)?)
-            .execute(&mut *tx)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(backend)?;
+            if let Some(message) = removed {
+                let archive = match &archive {
+                    Some(archive) => archive,
+                    None => {
+                        archive.insert(changes::folder_archive(&mut tx, &folder.to_string()).await?)
+                    }
+                };
+                changes::log(
+                    &mut tx,
+                    changes::Row::new(ChangeKind::Place, archive.as_str())
+                        .message(message)
+                        .folder(folder),
+                    at,
+                )
+                .await?;
+            }
             sqlx::query("DELETE FROM deleted_locations WHERE folder_id = ? AND uid = ?")
                 .bind(folder.to_string())
                 .bind(signed(*uid)?)
@@ -1087,32 +1241,42 @@ impl MessageStore for SqliteStore {
         uid: u64,
         flags: &[String],
     ) -> Result<bool, StoreError> {
-        let mut wanted = flags.to_vec();
-        wanted.sort();
-        wanted.dedup();
+        let wanted = flag_set(flags.to_vec());
         let _write = self.writer.lock().await;
-        let Some(row) = sqlx::query("SELECT flags FROM locations WHERE folder_id = ? AND uid = ?")
-            .bind(folder.to_string())
-            .bind(signed(uid)?)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(backend)?
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        let Some(row) = sqlx::query(
+            "SELECT message_id, flags, removed_at FROM locations WHERE folder_id = ? AND uid = ?",
+        )
+        .bind(folder.to_string())
+        .bind(signed(uid)?)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(backend)?
         else {
             return Ok(false);
         };
-        let mut stored = rows::flags(&row)?;
-        stored.sort();
-        stored.dedup();
-        if stored == wanted {
+        if flag_set(rows::flags(&row)?) == wanted {
             return Ok(false);
         }
         sqlx::query("UPDATE locations SET flags = ? WHERE folder_id = ? AND uid = ?")
             .bind(json(&wanted)?)
             .bind(folder.to_string())
             .bind(signed(uid)?)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(backend)?;
+        if get::<Option<i64>>(&row, "removed_at")?.is_none() {
+            let archive = changes::folder_archive(&mut tx, &folder.to_string()).await?;
+            changes::log(
+                &mut tx,
+                changes::Row::new(ChangeKind::Flags, archive)
+                    .message(get::<String>(&row, "message_id")?)
+                    .folder(folder),
+                Timestamp::now(),
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(backend)?;
         Ok(true)
     }
 }
@@ -1181,6 +1345,12 @@ impl LabelStore for SqliteStore {
             .await
             .map_err(backend)?;
         }
+        changes::log(
+            &mut tx,
+            changes::Row::new(ChangeKind::Flags, &archive).message(message),
+            Timestamp::now(),
+        )
+        .await?;
         tx.commit().await.map_err(backend)?;
         Ok(true)
     }
@@ -1513,6 +1683,12 @@ impl TaskStore for SqliteStore {
         tx.commit().await.map_err(backend)?;
         Ok(old.len() as u64)
     }
+}
+
+fn flag_set(mut flags: Vec<String>) -> Vec<String> {
+    flags.sort();
+    flags.dedup();
+    flags
 }
 
 fn corrupt(value: &str) -> StoreError {
@@ -2213,6 +2389,26 @@ impl InventoryStore for SqliteStore {
         .await
         .map_err(backend)?;
         rows.iter().map(|blob| parse(blob)).collect()
+    }
+
+    async fn is_referenced(&self, blob: &BlobId) -> Result<bool, StoreError> {
+        let found: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM messages WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM attachments WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM remote_images WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM derived WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM item_versions WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM item_versions WHERE photo_blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM outbox WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM draft_blobs WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM mail_changes WHERE blob_id = ?1)
+                 OR EXISTS (SELECT 1 FROM item_changes WHERE blob_id = ?1)",
+        )
+        .bind(blob.to_string())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(found)
     }
 }
 

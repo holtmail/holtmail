@@ -30,6 +30,7 @@ holtmail-category = { path = "crates/category" }
 holtmail-category-data = { path = "crates/category-data" }
 holtmail-category-domains = { path = "crates/category-domains" }
 holtmail-category-signals = { path = "crates/category-signals" }
+holtmail-client-setup = { path = "crates/client-setup" }
 holtmail-collection = { path = "crates/collection" }
 holtmail-collection-merge = { path = "crates/collection-merge" }
 holtmail-collection-dav = { path = "crates/collection-dav" }
@@ -63,6 +64,8 @@ holtmail-hooks = { path = "crates/hooks" }
 holtmail-ingest = { path = "crates/ingest" }
 holtmail-json-http = { path = "crates/json-http" }
 holtmail-mail-writeback = { path = "crates/mail-writeback" }
+holtmail-mailview = { path = "crates/mailview" }
+holtmail-mailview-archive = { path = "crates/mailview-archive" }
 holtmail-mime = { path = "crates/mime" }
 holtmail-outbox = { path = "crates/outbox" }
 holtmail-oauth = { path = "crates/oauth" }
@@ -77,8 +80,11 @@ holtmail-query = { path = "crates/query" }
 holtmail-recur = { path = "crates/recur" }
 holtmail-remote = { path = "crates/remote" }
 holtmail-route = { path = "crates/route" }
+holtmail-rules = { path = "crates/rules" }
 holtmail-proxy-protocol = { path = "crates/proxy-protocol" }
 holtmail-sanitize = { path = "crates/sanitize" }
+holtmail-schedule = { path = "crates/schedule" }
+holtmail-schedule-itip = { path = "crates/schedule-itip" }
 holtmail-secret = { path = "crates/secret" }
 holtmail-secret-local = { path = "crates/secret-local" }
 holtmail-smtp = { path = "crates/smtp" }
@@ -88,6 +94,9 @@ holtmail-source-imap = { path = "crates/source-imap" }
 holtmail-source-jmap = { path = "crates/source-jmap" }
 holtmail-store = { path = "crates/store" }
 holtmail-store-sqlite = { path = "crates/store-sqlite" }
+holtmail-serve-dav = { path = "crates/serve-dav" }
+holtmail-serve-imap = { path = "crates/serve-imap" }
+holtmail-serve-jmap = { path = "crates/serve-jmap" }
 holtmail-serve-net = { path = "crates/serve-net" }
 holtmail-serve-submit = { path = "crates/serve-submit" }
 holtmail-sse = { path = "crates/sse" }
@@ -121,20 +130,42 @@ chacha20poly1305 = "0.11"
 ed25519-dalek = { version = "3", default-features = false }
 futures = "0.3"
 flate2 = "1"
+frostem = { version = "1.20260821", default-features = false, features = ["english", "russian"] }
 getrandom = "0.4"
 html5ever = "0.40"
 idna = "1"
+imap-codec = { version = "=2.0.0-alpha.10", features = [
+  "quirk_crlf_relaxed",
+  "ext_condstore_qresync",
+  "ext_id",
+  "ext_namespace",
+  "starttls",
+] }
+imap-next = { version = "=0.3.4", default-features = false }
+imap-types = { version = "=2.0.0-alpha.8", features = [
+  "ext_condstore_qresync",
+  "ext_id",
+  "ext_namespace",
+  "starttls",
+] }
 ipnet = "2"
+jmap-client = { version = "0.4.3", default-features = false, features = ["async"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 lopdf = { version = "0.47", default-features = false }
 mail-builder = { version = "1.0.0", default-features = false }
 mail-parser = { version = "1", features = ["full_encoding"] }
+minijinja = { version = "3.0.5", default-features = false, features = [
+  "builtins",
+  "fuel",
+  "serde",
+] }
 rustls-pki-types = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "socks"] }
 proptest = "1"
 publicsuffix = "2"
 quick-xml = "0.41"
 rcgen = "0.14"
+schemars = "1.2.2"
 object_store = { version = "0.14", features = ["aws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -160,6 +191,7 @@ tower-http = { version = "0.7", features = ["fs", "trace", "compression-gzip"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
+tokio-tungstenite = "0.29"
 tokio-rustls = { version = "0.26", default-features = false, features = [
   "ring",
   "tls12",

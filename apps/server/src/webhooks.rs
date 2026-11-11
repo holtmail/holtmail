@@ -111,6 +111,29 @@ impl Hooks {
         }
     }
 
+    /// The webhook `id` when rules may call it: it exists and subscribed to `flow.run`, so only
+    /// those who manage webhooks decide which endpoints rules reach.
+    pub async fn rule_target(&self, id: WebhookId) -> anyhow::Result<holtmail_store::Webhook> {
+        let hook = self
+            .store
+            .get_webhook(id)
+            .await?
+            .context("There is no such webhook.")?;
+        anyhow::ensure!(
+            hook.events.iter().any(|e| e == "flow.run"),
+            "The webhook is not subscribed to flow.run."
+        );
+        Ok(hook)
+    }
+
+    /// Queues `event` for the one webhook `id` if rules may call it ([`Hooks::rule_target`]) and
+    /// it is enabled.
+    pub async fn send_to(&self, id: WebhookId, event: Event) -> anyhow::Result<()> {
+        let hook = self.rule_target(id).await?;
+        anyhow::ensure!(hook.enabled, "The webhook is turned off.");
+        self.enqueue(&event, &[id]).await
+    }
+
     async fn enqueue(&self, event: &Event, hooks: &[WebhookId]) -> anyhow::Result<()> {
         let id = uuid::Uuid::now_v7().to_string();
         let at = Timestamp::now();

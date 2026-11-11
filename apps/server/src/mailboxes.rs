@@ -1461,6 +1461,19 @@ impl Mailboxes for Runner {
         }
     }
 
+    async fn apply_itip(
+        &self,
+        archive: ArchiveId,
+        message: holtmail_core::MessageId,
+    ) -> Result<Vec<holtmail_store::InboxNote>, MailboxError> {
+        self.0
+            .services
+            .replies
+            .apply_anyway(archive, message)
+            .await
+            .map_err(|error| MailboxError::Backend(error.to_string()))
+    }
+
     fn pim_changed(&self, archive: ArchiveId) {
         if let Some(writeback) = self.0.services.pim_writeback.get() {
             writeback.wake();

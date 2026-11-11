@@ -4,24 +4,30 @@ mod accounts;
 mod aliases;
 mod backup;
 mod category_data;
+mod client_setup;
 mod config;
 mod dav;
 mod deletion;
 mod derive;
 mod export;
 mod image_proxy;
+mod imap;
 mod import;
 mod insights;
+mod jmap;
 mod ledger;
 mod mailboxes;
+mod mailview;
 mod oauth;
 mod operations;
 mod people;
 mod pim_writeback;
 mod push;
 mod replies;
+mod rules;
 mod schedule;
 mod send;
+mod serve_dav;
 mod smtp;
 mod submit;
 mod tasks;
@@ -171,6 +177,9 @@ enum Command {
     },
     /// Print the API's OpenAPI description.
     Openapi,
+    /// Print the SRV and TXT records for the domains in `[serve] mail_domains`, as zone-file
+    /// lines, so mail clients find the servers from an address alone.
+    Dns,
     /// Delete the messages of an archive that a search finds, after showing what goes. They are
     /// never archived again. Needs the search index, so stop `serve` first.
     Delete {
@@ -226,6 +235,58 @@ enum Command {
     /// Look at outgoing mail, queue a message again or cancel it. Works while `serve` runs.
     #[command(subcommand)]
     Outbox(OutboxCommand),
+    /// List, dry-run, export and import rule flows. Works while `serve` runs.
+    #[command(subcommand)]
+    Rules(RulesCommand),
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// List flows in their order with mode, version and trigger.
+    List {
+        /// Archive name or id; every archive when missing.
+        #[arg(long)]
+        archive: Option<String>,
+    },
+    /// Print what a flow would do for a message, without doing it. Prints the plan as JSON.
+    Test {
+        /// The flow id.
+        flow: String,
+        /// The message id the event is about.
+        #[arg(long)]
+        message: Option<String>,
+        /// Test this flow JSON instead of the saved version (`-` reads standard input).
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Treat the message as a backfill rather than live mail.
+        #[arg(long)]
+        not_live: bool,
+    },
+    /// Print a flow's JSON.
+    Export {
+        /// The flow id.
+        flow: String,
+        /// This version instead of the current one.
+        #[arg(long)]
+        version: Option<u32>,
+    },
+    /// Create a flow from a JSON file (it starts in test mode), or save it as a new version.
+    Import {
+        /// The flow JSON (`-` reads standard input).
+        file: PathBuf,
+        /// Archive name or id of a new flow.
+        #[arg(long)]
+        archive: Option<String>,
+        /// Save as the next version of this flow instead.
+        #[arg(long)]
+        into: Option<String>,
+        /// Name of a new flow; the file name by default.
+        #[arg(long)]
+        name: Option<String>,
+        /// Email of the user the flow acts as; the instance owner by default.
+        #[arg(long)]
+        user: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -481,6 +542,12 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", holtmail_api::openapi_json());
             Ok(())
         }
+        Command::Dns => {
+            let config = Config::load(cli.config.as_deref())?;
+            config.serve.validate()?;
+            print!("{}", client_setup::zone(&config)?);
+            Ok(())
+        }
         Command::Serve => serve(Config::load(cli.config.as_deref())?).await,
         Command::Send {
             archive,
@@ -520,6 +587,40 @@ async fn main() -> anyhow::Result<()> {
                 OutboxCommand::Cancel { id } => send::OutboxArgs::Cancel(id),
             };
             send::outbox(&config, args).await
+        }
+        Command::Rules(command) => {
+            let config = Config::load(cli.config.as_deref())?;
+            let args = match command {
+                RulesCommand::List { archive } => rules::RulesArgs::List { archive },
+                RulesCommand::Test {
+                    flow,
+                    message,
+                    file,
+                    not_live,
+                } => rules::RulesArgs::Test {
+                    flow,
+                    message,
+                    file,
+                    not_live,
+                },
+                RulesCommand::Export { flow, version } => {
+                    rules::RulesArgs::Export { flow, version }
+                }
+                RulesCommand::Import {
+                    file,
+                    archive,
+                    into,
+                    name,
+                    user,
+                } => rules::RulesArgs::Import {
+                    archive,
+                    into,
+                    name,
+                    user,
+                    file,
+                },
+            };
+            rules::cli(&config, args).await
         }
         Command::Delete {
             archive,
@@ -1443,8 +1544,15 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         mailboxes::Runner::open(services.clone(), config.data_dir.join("uploads"), schedule)
             .await?;
     let (outbox, transports) = send::open(&services, &config);
+    let instance_token = submit::instance_token(&*services.store).await?;
     let serve_options = holtmail_api::ServeOptions {
-        servers: submit::endpoints(&config),
+        servers: imap::endpoints(&config)
+            .into_iter()
+            .chain(submit::endpoints(&config))
+            .chain(jmap::endpoints(&config))
+            .chain(serve_dav::endpoints(&config))
+            .collect(),
+        client: client_setup::api(&config, &instance_token),
         ..config.serve.api_options()?
     };
     let certificates = config.serve.certificates().await?;
@@ -1453,10 +1561,14 @@ async fn serve(config: Config) -> anyhow::Result<()> {
             services.store.clone(),
             holtmail_device_local::Options::default(),
         ));
-    let instance_token = submit::instance_token(&*services.store).await?;
     transports.refuse_own_instance(instance_token.clone());
     let submission = submit::submission(&services, &config, outbox.clone());
-    let mut app = holtmail_api::router(ApiState {
+    let scheduler: Arc<dyn holtmail_schedule::Scheduler> =
+        Arc::new(holtmail_schedule_itip::ItipScheduler::new(
+            submission.clone(),
+            holtmail_schedule::system_clock(),
+        ));
+    let state = ApiState {
         blobs: services.blobs.clone(),
         store: services.store.clone(),
         index: services.index.clone(),
@@ -1473,17 +1585,77 @@ async fn serve(config: Config) -> anyhow::Result<()> {
             transports,
             secrets: services.secrets.clone(),
             submission: submission.clone(),
+            scheduler: scheduler.clone(),
         }),
         devices: devices.clone(),
         serve: serve_options,
-    });
+        rule_hooks: Arc::new(rules::WebhookRuleHooks(services.hooks.clone())),
+    };
+    let rule_engine = holtmail_api::Rules::new(state.clone(), holtmail_api::RuleLimits::default());
+    services.rules.start(rule_engine.clone());
+    let mut app = holtmail_api::router(state);
+    tokio::spawn(rule_engine.run());
     tokio::spawn(send::run(outbox));
+    let hub = Arc::new(mailview::ChangeHub::default());
+    tokio::spawn(hub.clone().run(services.store.clone()));
+    tokio::spawn(mailview::run_pruning(services.store.clone()));
+    let view = mailview::open(&services, &config);
+    tokio::spawn(mailview::build_ahead(
+        view.clone(),
+        services.store.clone(),
+        hub.clone(),
+        config.write.into(),
+    ));
+    if let Some(router) = jmap::router(
+        &config,
+        jmap::Parts {
+            view: view.clone(),
+            actions: view.clone(),
+            submission: submission.clone(),
+            devices: devices.clone(),
+            uploads_dir: config.data_dir.join("jmap-uploads"),
+            store: services.store.clone(),
+            hub: hub.clone(),
+            instance_token: instance_token.clone(),
+        },
+    )
+    .await?
+    {
+        app = app.merge(router);
+    }
+    let dav_runner = runner.clone();
+    let dav = serve_dav::server(
+        &config,
+        services.store.clone(),
+        services.ingest(),
+        devices.clone(),
+        Arc::new(move |archive| {
+            holtmail_api::Mailboxes::pim_changed(&dav_runner, archive);
+        }),
+        Some((
+            scheduler.clone(),
+            Arc::new(serve_dav::Hosts(services.clone())),
+        )),
+    )?;
+    imap::start(
+        &config,
+        imap::Parts {
+            view: view.clone(),
+            actions: view,
+            devices: devices.clone(),
+            hub,
+            instance_token: instance_token.clone(),
+        },
+        certificates.as_ref(),
+    )
+    .await?;
     submit::start(
         &config,
         submission,
         devices,
         certificates.as_ref(),
         instance_token,
+        scheduler.clone(),
     )
     .await?;
     let mail_writeback = writeback::open(&services, &config);
@@ -1503,6 +1675,12 @@ async fn serve(config: Config) -> anyhow::Result<()> {
             writers.clone(),
             pim_writeback.clone(),
             config.write,
+            scheduler.clone(),
+            config
+                .smtp
+                .as_ref()
+                .map(|smtp| smtp.trusted_authserv_ids.clone())
+                .unwrap_or_default(),
         );
     }
     tokio::spawn(pim_writeback::run(pim_writeback));
@@ -1545,6 +1723,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         let index = web.join("index.html");
         app = app.fallback_service(ServeDir::new(web).fallback(ServeFile::new(index)));
     }
+    let app = serve_dav::mount(app, dav);
     let listener = tokio::net::TcpListener::bind(config.listen)
         .await
         .with_context(|| format!("listening on {}", config.listen))?;

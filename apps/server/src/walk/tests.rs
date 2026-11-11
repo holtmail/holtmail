@@ -146,6 +146,15 @@ impl SearchIndex for Watching {
             .await
     }
 
+    async fn matching(
+        &self,
+        archive: ArchiveId,
+        query: &SearchQuery,
+        cap: u32,
+    ) -> Result<holtmail_index::Matches, IndexError> {
+        self.inner.matching(archive, query, cap).await
+    }
+
     async fn search_items(
         &self,
         archive: ArchiveId,

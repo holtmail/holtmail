@@ -56,24 +56,26 @@ pub fn submission(
     ))
 }
 
-fn configured_host(section: &SubmitConfig, config: &Config) -> Option<String> {
-    section.hostname.clone().or_else(|| {
+/// The host clients are told to use: the section's own, else the host of `public_url`.
+pub fn configured_host(hostname: Option<&str>, config: &Config) -> Option<String> {
+    hostname.map(str::to_owned).or_else(|| {
         let url = config.public_url.as_deref()?;
         url::Url::parse(url).ok()?.host_str().map(str::to_owned)
     })
 }
 
 fn hostname(section: &SubmitConfig, config: &Config) -> String {
-    configured_host(section, config).unwrap_or_else(|| "localhost".to_owned())
+    configured_host(section.hostname.as_deref(), config).unwrap_or_else(|| "localhost".to_owned())
 }
 
-/// The ports `[serve.submit]` listens on, one row for each port and kind of TLS, implicit TLS
-/// first and in ascending port order within a kind.
-pub fn endpoints(config: &Config) -> Vec<holtmail_api::ServeEndpoint> {
-    let Some(section) = &config.serve.submit else {
-        return Vec::new();
-    };
-    let host = configured_host(section, config);
+/// One row for each port and kind of TLS, implicit TLS first and in ascending port order
+/// within a kind.
+pub fn endpoint_rows(
+    protocol: DeviceProtocol,
+    host: Option<String>,
+    listen_tls: &[SocketAddr],
+    listen_starttls: &[SocketAddr],
+) -> Vec<holtmail_api::ServeEndpoint> {
     let ports = |addresses: &[SocketAddr]| {
         addresses
             .iter()
@@ -81,20 +83,34 @@ pub fn endpoints(config: &Config) -> Vec<holtmail_api::ServeEndpoint> {
             .collect::<BTreeSet<_>>()
     };
     let row = |port, implicit_tls| holtmail_api::ServeEndpoint {
-        protocol: DeviceProtocol::Smtp,
+        protocol,
         host: host.clone(),
         port,
         implicit_tls,
+        url: None,
     };
-    ports(&section.listen_tls)
+    ports(listen_tls)
         .into_iter()
         .map(|port| row(port, true))
         .chain(
-            ports(&section.listen_starttls)
+            ports(listen_starttls)
                 .into_iter()
                 .map(|port| row(port, false)),
         )
         .collect()
+}
+
+/// The ports `[serve.submit]` listens on, as [`endpoint_rows`].
+pub fn endpoints(config: &Config) -> Vec<holtmail_api::ServeEndpoint> {
+    let Some(section) = &config.serve.submit else {
+        return Vec::new();
+    };
+    endpoint_rows(
+        DeviceProtocol::Smtp,
+        configured_host(section.hostname.as_deref(), config),
+        &section.listen_tls,
+        &section.listen_starttls,
+    )
 }
 
 /// Binds every `[serve.submit]` listener and serves it until the process ends; does nothing
@@ -105,6 +121,7 @@ pub async fn start(
     devices: Arc<dyn DeviceAuth>,
     certificates: Option<&TlsCertificates>,
     instance_token: String,
+    scheduler: Arc<dyn holtmail_schedule::Scheduler>,
 ) -> anyhow::Result<()> {
     let Some(section) = &config.serve.submit else {
         return Ok(());
@@ -112,7 +129,7 @@ pub async fn start(
     let mut settings = Settings::new(hostname(section, config));
     settings.instance_token = Some(instance_token);
     settings.undo_window = Duration::from_secs(section.undo_seconds);
-    let server = SubmitServer::new(submission, devices, settings);
+    let server = SubmitServer::with_scheduler(submission, devices, settings, scheduler);
     let trusted = config.serve.validate()?;
     let limiter = ConnectionLimiter::new(Limits::default());
     let mut ports = Vec::new();
@@ -151,6 +168,7 @@ mod tests {
             host: host.map(str::to_owned),
             port,
             implicit_tls,
+            url: None,
         }
     }
 

@@ -12,8 +12,8 @@ use holtmail_mail_writeback::{Writeback, WritebackConfig, Writers};
 use holtmail_secret::SecretBox;
 use holtmail_source::{MailboxWriter, SourceError};
 use holtmail_source_graph::{GraphSettings, GraphSource};
-use holtmail_source_imap::{ImapSettings, ImapSource};
-use holtmail_source_jmap::{JmapSettings, JmapSource};
+use holtmail_source_imap::ImapSettings;
+use holtmail_source_jmap::JmapSettings;
 use holtmail_store::{
     Account, AccountKind, AuditKind, FolderRole, MailOp, NewAuditEntry, Store, StoreError,
 };
@@ -112,16 +112,12 @@ impl ServerWriters {
         Ok(match account.kind {
             AccountKind::Imap => {
                 let settings = ImapSettings::from_json(&account.settings)?;
-                let source = ImapSource::new(settings, credentials).with_roots(&roots)?;
+                let source = accounts::imap_source(settings, credentials)?;
                 Arc::new(source.writer().await?)
             }
             AccountKind::Jmap => {
                 let settings = JmapSettings::from_json(&account.settings)?;
-                Arc::new(
-                    JmapSource::new(settings, credentials)?
-                        .with_roots(&roots)?
-                        .writer(),
-                )
+                Arc::new(accounts::jmap_source(settings, credentials)?.writer())
             }
             AccountKind::Graph => {
                 let settings = GraphSettings::from_json(&account.settings)?;

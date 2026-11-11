@@ -613,4 +613,80 @@ mod tests {
         let newer = serde_json::to_vec(&newer).unwrap();
         assert!(read(tar_of(&[(MANIFEST, &newer)])).is_err());
     }
+
+    #[tokio::test]
+    async fn served_tables_survive_a_backup_and_restore() {
+        use holtmail_store::{
+            InstanceRole, MailViewStore, NewUser, ServeStore, ServedKey, UserStore,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_at = |data: &Path| -> Config {
+            toml::from_str(&format!("data_dir = {:?}", data.display().to_string())).unwrap()
+        };
+        let live = config_at(&dir.path().join("live"));
+        std::fs::create_dir_all(&live.data_dir).unwrap();
+        let (archive, user, opened) = {
+            let store = SqliteStore::open(live.data_dir.join(DATABASE))
+                .await
+                .unwrap();
+            let archive = store.create_archive("Served").await.unwrap().id;
+            let user = store
+                .create_user(NewUser {
+                    email: "ada@example.com".into(),
+                    name: "Ada".into(),
+                    role: InstanceRole::Owner,
+                    password_hash: None,
+                })
+                .await
+                .unwrap()
+                .id;
+            let opened = store
+                .open_served_mailbox(archive, ServedKey::All, Timestamp::now())
+                .await
+                .unwrap();
+            store
+                .set_subscription(user, archive, "folder:projects", false, Timestamp::now())
+                .await
+                .unwrap();
+            store.close().await;
+            (archive, user, opened)
+        };
+        let file = dir.path().join("backup.tar");
+        backup(
+            &live,
+            BackupArgs {
+                output: file.clone(),
+                skip_blobs: false,
+                include_secret_key: false,
+            },
+        )
+        .await
+        .unwrap();
+        let restored = config_at(&dir.path().join("restored"));
+        restore(
+            &restored,
+            RestoreArgs {
+                input: file,
+                skip_reindex: true,
+            },
+        )
+        .await
+        .unwrap();
+        let store = SqliteStore::open(restored.data_dir.join(DATABASE))
+            .await
+            .unwrap();
+        let back = store
+            .served_mailbox(archive, ServedKey::All)
+            .await
+            .unwrap()
+            .expect("the served mailbox is restored");
+        assert_eq!(
+            (back.uidvalidity, back.uidnext, back.highest_modseq),
+            (opened.uidvalidity, opened.uidnext, opened.highest_modseq),
+            "clients see the same UIDVALIDITY, so they need no resync"
+        );
+        let subscriptions = store.subscriptions(user, archive).await.unwrap();
+        assert_eq!(subscriptions.len(), 1);
+    }
 }

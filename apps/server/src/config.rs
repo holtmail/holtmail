@@ -122,9 +122,71 @@ pub struct ServeConfig {
     /// the owner and admins.
     #[serde(default = "yes")]
     pub members: bool,
+    /// Keep flag changes a mail client makes that cannot go upstream (the account lacks
+    /// `mail.flags`, writing is off, or the message is only in Holtmail) as the user's own
+    /// local flags; `false` refuses them instead.
+    #[serde(default = "yes")]
+    pub local_flags: bool,
+    /// Mail domains the operator controls, such as `example.com`. Thunderbird autoconfig is
+    /// served only for addresses at these domains, and `holtmail dns` prints their records.
+    /// None by default.
+    #[serde(default)]
+    pub mail_domains: Vec<String>,
     /// SMTP submission for mail clients; off without this section.
     #[serde(default)]
     pub submit: Option<SubmitConfig>,
+    /// IMAP for mail clients; off without this section.
+    #[serde(default)]
+    pub imap: Option<ImapConfig>,
+    /// JMAP for mail clients on the main listener; off without this section.
+    #[serde(default)]
+    pub jmap: Option<JmapConfig>,
+    /// CalDAV and CardDAV for calendar and contacts apps on the main listener; off without
+    /// this section.
+    #[serde(default)]
+    pub dav: Option<DavConfig>,
+}
+
+/// `[serve.dav]`: CalDAV and CardDAV at `/dav`, `/.well-known/caldav` and
+/// `/.well-known/carddav`. Needs `public_url`, because redirects and hrefs are absolute.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DavConfig {
+    /// Mounts the routes; `true` by default, so an empty section turns DAV on.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Whether clients may write; `false` serves every collection read-only.
+    #[serde(default = "yes")]
+    pub edits: bool,
+    /// Whether calendar-auto-schedule may be offered: Holtmail then delivers the invitations
+    /// and answers calendar apps write, for devices with `write:pim` and `send:mail`.
+    #[serde(default = "yes")]
+    pub scheduling: bool,
+}
+
+/// `[serve.jmap]`: JMAP for mail clients at `/jmap` and `/.well-known/jmap`. Needs
+/// `public_url`, because the session resource carries absolute URLs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JmapConfig {
+    /// Mounts the routes; `true` by default, so an empty section turns JMAP on.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+}
+
+/// `[serve.imap]`: IMAP for mail clients.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImapConfig {
+    /// Addresses with TLS from the first byte, such as `0.0.0.0:993`.
+    #[serde(default)]
+    pub listen_tls: Vec<SocketAddr>,
+    /// Addresses with `STARTTLS`, such as `0.0.0.0:143`.
+    #[serde(default)]
+    pub listen_starttls: Vec<SocketAddr>,
+    /// The host clients are told to use; the host of `public_url` by default.
+    #[serde(default)]
+    pub hostname: Option<String>,
 }
 
 /// `[serve.submit]`: SMTP submission for mail clients.
@@ -168,7 +230,12 @@ impl Default for ServeConfig {
             proxy_protocol: false,
             trusted_proxies: Vec::new(),
             members: true,
+            local_flags: true,
+            mail_domains: Vec::new(),
             submit: None,
+            imap: None,
+            jmap: None,
+            dav: None,
         }
     }
 }
@@ -184,20 +251,54 @@ impl ServeConfig {
             !self.proxy_protocol || !self.trusted_proxies.is_empty(),
             "[serve] proxy_protocol needs trusted_proxies"
         );
-        if let Some(submit) = &self.submit {
+        for domain in self.mail_domains() {
             anyhow::ensure!(
-                !submit.listen_tls.is_empty() || !submit.listen_starttls.is_empty(),
-                "[serve.submit] needs listen_tls or listen_starttls"
-            );
-            let everything_local = submit.listen_tls.is_empty()
-                && submit.listen_starttls.iter().all(|a| a.ip().is_loopback());
-            anyhow::ensure!(
-                self.tls_cert.is_some() || everything_local,
-                "[serve.submit] needs [serve] tls_cert and tls_key, unless it only listens with \
-                 STARTTLS on loopback addresses"
+                !domain.is_empty()
+                    && domain.contains('.')
+                    && domain
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.'),
+                "[serve] mail_domains: {domain:?} is not a domain name"
             );
         }
+        if let Some(submit) = &self.submit {
+            self.check_listeners("serve.submit", &submit.listen_tls, &submit.listen_starttls)?;
+        }
+        if let Some(imap) = &self.imap {
+            self.check_listeners("serve.imap", &imap.listen_tls, &imap.listen_starttls)?;
+        }
         TrustedProxies::parse(&self.trusted_proxies).context("[serve] trusted_proxies")
+    }
+
+    fn check_listeners(
+        &self,
+        section: &str,
+        tls: &[SocketAddr],
+        starttls: &[SocketAddr],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !tls.is_empty() || !starttls.is_empty(),
+            "[{section}] needs listen_tls or listen_starttls"
+        );
+        let everything_local = tls.is_empty() && starttls.iter().all(|a| a.ip().is_loopback());
+        anyhow::ensure!(
+            self.tls_cert.is_some() || everything_local,
+            "[{section}] needs [serve] tls_cert and tls_key, unless it only listens with \
+             STARTTLS on loopback addresses"
+        );
+        Ok(())
+    }
+
+    /// `mail_domains`, trimmed and lowercase, without repeats.
+    pub fn mail_domains(&self) -> Vec<String> {
+        let mut domains: Vec<String> = Vec::new();
+        for domain in &self.mail_domains {
+            let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+            if !domains.contains(&domain) {
+                domains.push(domain);
+            }
+        }
+        domains
     }
 
     /// What the API acts on.
@@ -205,6 +306,7 @@ impl ServeConfig {
         Ok(holtmail_api::ServeOptions {
             members: self.members,
             trusted_proxies: self.validate()?,
+            local_flags: self.local_flags,
             ..holtmail_api::ServeOptions::default()
         })
     }
@@ -470,6 +572,14 @@ impl Config {
         }
         *TLS_ROOTS.write().expect("TLS roots lock") = config.tls_roots.clone();
         config.serve.validate()?;
+        anyhow::ensure!(
+            config.public_url.is_some() || !config.serve.jmap.as_ref().is_some_and(|j| j.enabled),
+            "[serve.jmap] needs public_url"
+        );
+        anyhow::ensure!(
+            config.public_url.is_some() || !config.serve.dav.as_ref().is_some_and(|d| d.enabled),
+            "[serve.dav] needs public_url"
+        );
         if let Some(url) = &config.public_url {
             anyhow::ensure!(
                 url.starts_with("http://") || url.starts_with("https://"),
@@ -612,6 +722,8 @@ pub struct Services {
     pub sent_mail: Arc<crate::send::SentMail>,
     /// Records attendees' iMIP replies on the user's own events once `serve` started it.
     pub replies: Arc<crate::replies::Replies>,
+    /// Hands live mail to the rules executor once `serve` started it.
+    pub rules: Arc<crate::rules::RulesObserver>,
 }
 
 /// Opens only the metadata store, so user commands work while `serve` holds the index.
@@ -718,6 +830,7 @@ impl Services {
         let blobs = open_blobs(config).await?;
         let secrets = open_secrets(config)?;
         let store = Arc::new(SqliteStore::open(config.data_dir.join("holtmail.db")).await?);
+        crate::accounts::refuse_own_instance(crate::submit::instance_token(&*store).await?);
         let index = Arc::new(TantivyIndex::open(config.data_dir.join("index"))?);
         if index.was_emptied() {
             tracing::warn!("the search index was from an older version and is rebuilt");
@@ -794,6 +907,7 @@ impl Services {
             category_data,
             sent_mail: Arc::default(),
             replies: Arc::default(),
+            rules: Arc::default(),
         })
     }
 
@@ -803,6 +917,7 @@ impl Services {
         let ingest = Ingest::new(self.blobs.clone(), self.store.clone(), self.index.clone())
             .with_observer(self.sent_mail.clone())
             .with_observer(self.replies.clone())
+            .with_observer(self.rules.clone())
             .with_extractor(self.extractor.clone())
             .with_alias_detectors(self.detectors.clone());
         match &self.insights {
@@ -830,13 +945,14 @@ mod tests {
     fn reads_the_serve_section() {
         let config: Config = toml::from_str("").unwrap();
         assert!(config.serve.members && !config.serve.proxy_protocol);
+        assert!(config.serve.local_flags);
         assert_eq!(config.serve.validate().unwrap(), TrustedProxies::default());
 
         let config: Config = toml::from_str(
-            "[serve]\ntls_cert = \"c.pem\"\ntls_key = \"k.pem\"\nproxy_protocol = true\ntrusted_proxies = [\"10.0.0.0/8\", \"192.0.2.1\"]\nmembers = false",
+            "[serve]\ntls_cert = \"c.pem\"\ntls_key = \"k.pem\"\nproxy_protocol = true\ntrusted_proxies = [\"10.0.0.0/8\", \"192.0.2.1\"]\nmembers = false\nlocal_flags = false",
         )
         .unwrap();
-        assert!(!config.serve.members);
+        assert!(!config.serve.members && !config.serve.local_flags);
         let trusted = config.serve.validate().unwrap();
         assert!(trusted.contains("10.1.2.3".parse().unwrap()));
         assert!(trusted.contains("192.0.2.1".parse().unwrap()));
@@ -880,6 +996,21 @@ mod tests {
         let local: Config =
             toml::from_str("[serve.submit]\nlisten_starttls = [\"127.0.0.1:2587\"]").unwrap();
         local.serve.validate().unwrap();
+        for bad in [
+            "[serve.imap]\nhostname = \"imap.example.org\"",
+            "[serve.imap]\nlisten_tls = [\"0.0.0.0:993\"]",
+            "[serve.imap]\nlisten_starttls = [\"0.0.0.0:143\"]",
+            "[serve.imap]\nlisten = [\"0.0.0.0:143\"]",
+        ] {
+            let config = toml::from_str::<Config>(bad);
+            assert!(
+                config.is_err() || config.unwrap().serve.validate().is_err(),
+                "{bad}"
+            );
+        }
+        let imap: Config =
+            toml::from_str("[serve.imap]\nlisten_starttls = [\"127.0.0.1:2143\"]").unwrap();
+        imap.serve.validate().unwrap();
     }
 
     #[tokio::test]

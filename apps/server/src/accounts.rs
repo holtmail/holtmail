@@ -228,11 +228,10 @@ pub fn jmap_sign_in_error(error: SourceError, settings: &JmapSettings) -> Mailbo
 
 /// Signs in to a JMAP server and lists its mailboxes, to check settings before they are stored.
 pub async fn check_jmap_sign_in(settings: &JmapSettings, secret: &str) -> Result<(), MailboxError> {
-    let source = JmapSource::new(
+    let source = jmap_source(
         settings.clone(),
         jmap_credentials(settings.auth, secret.to_owned()),
     )
-    .and_then(|source| source.with_roots(&config::tls_roots()))
     .map_err(|e| jmap_sign_in_error(e, settings))?;
     let mut session = source
         .connect()
@@ -497,6 +496,38 @@ fn moved_without_secret(token: bool) -> MailboxError {
 }
 
 /// How `account` signs in now: its sealed password, or a fresh access token for OAuth.
+static OWN_INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Makes every IMAP and JMAP source built from now on refuse a server that names this
+/// instance's token (SERVE.md, Loops). Set once at start; later calls change nothing.
+pub fn refuse_own_instance(token: String) {
+    let _ = OWN_INSTANCE.set(token);
+}
+
+/// An IMAP source with the stack's TLS roots and the loop guard.
+pub fn imap_source(
+    settings: ImapSettings,
+    credentials: Credentials,
+) -> Result<ImapSource, SourceError> {
+    let source = ImapSource::new(settings, credentials).with_roots(&config::tls_roots())?;
+    Ok(match OWN_INSTANCE.get() {
+        Some(token) => source.refusing_instance(token.clone()),
+        None => source,
+    })
+}
+
+/// A JMAP source with the stack's TLS roots and the loop guard.
+pub fn jmap_source(
+    settings: JmapSettings,
+    credentials: Credentials,
+) -> Result<JmapSource, SourceError> {
+    let source = JmapSource::new(settings, credentials)?.with_roots(&config::tls_roots())?;
+    Ok(match OWN_INSTANCE.get() {
+        Some(token) => source.refusing_instance(token.clone()),
+        None => source,
+    })
+}
+
 pub async fn credentials(
     account: &Account,
     store: &dyn Store,
@@ -526,16 +557,12 @@ pub async fn source_for(
         AccountKind::Imap => {
             let settings = ImapSettings::from_json(&account.settings)?;
             let credentials = credentials(account, store, secrets, oauth).await?;
-            Ok(Box::new(
-                ImapSource::new(settings, credentials).with_roots(&config::tls_roots())?,
-            ))
+            Ok(Box::new(imap_source(settings, credentials)?))
         }
         AccountKind::Jmap => {
             let settings = JmapSettings::from_json(&account.settings)?;
             let credentials = credentials(account, store, secrets, oauth).await?;
-            Ok(Box::new(
-                JmapSource::new(settings, credentials)?.with_roots(&config::tls_roots())?,
-            ))
+            Ok(Box::new(jmap_source(settings, credentials)?))
         }
         AccountKind::Graph => {
             let settings = GraphSettings::from_json(&account.settings)?;
@@ -862,8 +889,7 @@ pub async fn check_sign_in(
     credentials: Credentials,
 ) -> Result<(), MailboxError> {
     let oauth = matches!(credentials, Credentials::AccessToken(_));
-    let source = ImapSource::new(settings.clone(), credentials)
-        .with_roots(&config::tls_roots())
+    let source = imap_source(settings.clone(), credentials)
         .map_err(|e| sign_in_error(e, settings, oauth))?;
     let mut session = source
         .connect()

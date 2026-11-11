@@ -314,6 +314,13 @@ const en = {
       loading: 'Checking who sends the invitations…',
       failed: 'Could not check who sends the invitations. Try again.',
     },
+    unverified: {
+      lead: 'This answer was not applied: its sender could not be verified (no DKIM or DMARC pass). Apply it only if you trust it.',
+      apply: 'Apply anyway',
+      applying: 'Applying…',
+      applied: 'Applied to your event.',
+      failed: 'Could not apply the answer.',
+    },
   },
 }
 
@@ -606,6 +613,13 @@ const ru: EditStrings = {
         `Сервер календаря ${account} недоступен, поэтому Holtmail не знает, кто разошлёт приглашения. Повторите позже или отключите отправку.`,
       loading: 'Проверяем, кто разошлёт приглашения…',
       failed: 'Не удалось проверить, кто разошлёт приглашения. Повторите.',
+    },
+    unverified: {
+      lead: 'Этот ответ не применён: отправителя не удалось проверить (нет прохождения DKIM или DMARC). Применяйте, только если доверяете ему.',
+      apply: 'Всё равно применить',
+      applying: 'Применяем…',
+      applied: 'Применено к вашему событию.',
+      failed: 'Не удалось применить ответ.',
     },
   },
 }

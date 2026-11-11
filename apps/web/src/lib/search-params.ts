@@ -98,3 +98,12 @@ export function parseArchivesSettingsSearch(
   const add = search.add === 'connect' || search.add === 'import' ? search.add : undefined
   return { ...(archive ? { archive } : {}), ...(archive && add ? { add } : {}) }
 }
+
+export interface RulesSearch {
+  archive?: string
+}
+
+export function parseRulesSearch(search: Record<string, unknown>): RulesSearch {
+  const archive = text(search.archive)?.trim()
+  return archive ? { archive } : {}
+}

@@ -500,6 +500,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/archives/{id}/flows': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_flows']
+    put?: never
+    post: operations['create_flow']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/flows/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['preview_template']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/archives/{id}/flows/test': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['test_new_flow']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/archives/{id}/folders': {
     parameters: {
       query?: never
@@ -820,6 +868,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/devices/local-flags': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['local_flags']
+    put?: never
+    post?: never
+    delete: operations['drop_local_flags']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/devices/profile/{token}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['profile_page']
+    put?: never
+    post: operations['download_profile']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/devices/serving': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['serving']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/devices/setup': {
     parameters: {
       query?: never
@@ -850,6 +946,22 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['update_device']
+    trace?: never
+  }
+  '/api/devices/{id}/profile': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['profile_link']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/api/drafts/{id}': {
@@ -940,6 +1052,134 @@ export interface paths {
       cookie?: never
     }
     get: operations['get_event']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flow-runs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_run']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flow-runs/{id}/actions/{index}/confirm': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['confirm_action']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flow-runs/{id}/actions/{index}/dismiss': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['dismiss_action']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flows/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_flow']
+    put: operations['save_flow']
+    post?: never
+    delete: operations['delete_flow']
+    options?: never
+    head?: never
+    patch: operations['change_flow']
+    trace?: never
+  }
+  '/api/flows/{id}/run': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['run_manual']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flows/{id}/runs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['flow_runs']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flows/{id}/test': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['test_flow']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/flows/{id}/versions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['flow_versions']
     put?: never
     post?: never
     delete?: never
@@ -1327,6 +1567,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['forward']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/messages/{id}/itip/apply': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['apply_itip']
     delete?: never
     options?: never
     head?: never
@@ -1743,6 +1999,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['receive']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/rules/catalogue': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['catalogue']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -2450,8 +2722,8 @@ export interface components {
       /**
        * @description `capabilities_changed`, `grant_changed`, `mail_flags`, `mail_move`, `mail_delete`,
        *     `mail_append`, `mail_send`, `pim_edit`, `pim_respond`, `rule_changed`, `transport_changed`,
-       *     `identity_changed`, `outbox_changed`, `device_created`, `device_changed` or
-       *     `device_revoked`.
+       *     `identity_changed`, `outbox_changed`, `device_created`, `device_changed`,
+       *     `device_revoked` or `device_secret_issued`.
        */
       kind: string
       /** Format: int64 */
@@ -2758,6 +3030,15 @@ export interface components {
      * @enum {string}
      */
     ConfidenceDto: 'possible' | 'likely' | 'certain'
+    /**
+     * @description What a `message.sending` rule asked for a 409: the message waits for the sender's
+     *     confirmation.
+     */
+    ConfirmDto: {
+      error: string
+      /** @description The rule's reason, shown to the sender. */
+      reason: string
+    }
     /** @description A new connection for an IMAP account, checked by signing in before it is stored. */
     ConnectionRequest: {
       /** @description Folder paths not to archive. */
@@ -3154,15 +3435,29 @@ export interface components {
       host?: string | null
       /** Format: int32 */
       port: number
-      /** @description `smtp` or `imap`. */
+      /** @description `smtp`, `imap`, `jmap` or `dav`. */
       protocol: string
       /** @description `tls` from the first byte, or `starttls`. */
       security: string
+      /** @description For `jmap` and `dav`: the full address to give the client; absent for IMAP and SMTP. */
+      url?: string | null
     }
     /** @description What this server offers to devices. */
     DeviceSetupDto: {
+      /** @description Whether `POST /api/devices/{id}/profile` can make an Apple profile on this server. */
+      apple_profile: boolean
+      /**
+       * @description The mail domains Thunderbird finds this server for by itself from an address; empty
+       *     when autoconfig answers for none.
+       */
+      autoconfig: string[]
       /** @description Whether this user may make devices and raise their rights. */
       can_create: boolean
+      /**
+       * @description The link that opens DAVx5 with this server and the user's login filled in; `null` unless
+       *     DAV is served over https. It never carries a password.
+       */
+      davx5?: string | null
       /** @description The configured listeners, implicit TLS first; empty when none is. */
       servers: components['schemas']['DeviceServerDto'][]
     }
@@ -3268,6 +3563,11 @@ export interface components {
       saved_at: number
       /** Format: int32 */
       version: number
+    }
+    /** @description How many messages had their local flags dropped. */
+    DroppedLocalFlagsDto: {
+      /** Format: int64 */
+      dropped: number
     }
     /** @description An error. */
     ErrorDto: {
@@ -3459,6 +3759,106 @@ export interface components {
       sources: components['schemas']['ValueSourceDto'][]
       /** @description As the first card that says it writes it. */
       value: string
+    }
+    /** @description Changes to a flow's settings. */
+    FlowChangeRequest: {
+      /** @description `test`, `on` or `off`; any mode clears a pause. */
+      mode?: string | null
+      name?: string | null
+      /** Format: int32 */
+      position?: number | null
+    }
+    /** @description A flow of an archive as of its current version. */
+    FlowDto: {
+      archive: string
+      /** Format: int64 */
+      created_at: number
+      /** @description The current version's JSON. */
+      flow: Record<string, never>
+      id: string
+      /** @description `test` (runs are logged, nothing is carried out; new flows start here), `on` or `off`. */
+      mode: string
+      name: string
+      /**
+       * @description Set while the circuit breaker holds the flow (`circuit_breaker`); setting a mode clears
+       *     it.
+       */
+      paused?: string | null
+      /**
+       * Format: int64
+       * @description When it was paused, Unix milliseconds.
+       */
+      paused_at?: number | null
+      /**
+       * Format: int32
+       * @description Place in the archive's order, from 0; flows run in this order and `stop` ends the chain.
+       */
+      position: number
+      /** @description Who saved the current version; the flow's actions are limited by their rights. */
+      saved_by: string
+      /** @description The trigger type of the current version. */
+      trigger: string
+      /** Format: int64 */
+      updated_at: number
+      /** Format: int32 */
+      version: number
+    }
+    /** @description Why a flow was refused: every issue the validator found. */
+    FlowIssuesDto: {
+      error: string
+      issues: Record<string, never>[]
+    }
+    /** @description One run in the runs log. */
+    FlowRunDto: {
+      error?: string | null
+      event: string
+      /** Format: int64 */
+      finished_at?: number | null
+      flow: string
+      id: string
+      message?: string | null
+      plan?: Record<string, never> | null
+      /** @description What became of each planned action, in plan order. */
+      results: Record<string, never>[]
+      /** Format: int64 */
+      started_at: number
+      /** @description `running`, `done`, `failed` or `interrupted`. */
+      status: string
+      /** @description Evaluated only: the flow was in test mode. */
+      test: boolean
+      trigger: string
+      /** Format: int32 */
+      version: number
+    }
+    /** @description What a dry run planned. */
+    FlowTestDto: {
+      /** @description Why nothing could be planned; the plan is empty then. */
+      error?: string | null
+      /** @description The plan: `ran`, `ignored`, `path` (each node with its outcome), `actions`, `stopped`. */
+      plan: Record<string, never>
+    }
+    /** @description A dry run: what the flow would do for an event, nothing carried out or logged. */
+    FlowTestRequest: {
+      /**
+       * Format: int64
+       * @description When the event happens, Unix milliseconds; now by default.
+       */
+      at?: number | null
+      /** @description An unsaved flow to test instead of the saved one (required for the archive-wide test). */
+      flow?: Record<string, never> | null
+      /** @description Treat the message as live mail (default `true`). */
+      live?: boolean | null
+      /** @description The message the event is about. */
+      message?: string | null
+    }
+    /** @description A saved version. */
+    FlowVersionDto: {
+      flow: Record<string, never>
+      /** Format: int64 */
+      saved_at: number
+      saved_by: string
+      /** Format: int32 */
+      version: number
     }
     /** @description A folder with its message count. */
     FolderDto: {
@@ -3836,6 +4236,13 @@ export interface components {
       my_status?: string | null
       organizer?: components['schemas']['ParticipantDto'] | null
       recurring: boolean
+      /**
+       * @description What scheduling made of this message's iTIP part for the event, when it took the
+       *     message in: `applied`, `unauthenticated` (an attendee's answer without DKIM or DMARC
+       *     pass; "Apply anyway" can merge it), `not_from_attendee`, `no_copy`, `unchanged`, `update`,
+       *     `upstream_holds` or `own_organizer`.
+       */
+      schedule_note?: string | null
       start?: components['schemas']['EventTimeDto'] | null
       /** @description Lowercase `STATUS` of the event now, such as `confirmed` or `cancelled`. */
       status?: string | null
@@ -4060,6 +4467,15 @@ export interface components {
        */
       sequence?: number | null
     }
+    /** @description The schedule-inbox notes of a message after "Apply anyway". */
+    ItipApplyDto: {
+      /**
+       * @description One note per calendar part the scheduler took in, in part order: `applied`,
+       *     `unauthenticated`, `not_from_attendee`, `no_copy`, `unchanged`, `update`,
+       *     `upstream_holds` or `own_organizer`.
+       */
+      notes: string[]
+    }
     /** @description A JMAP account to add. */
     JmapAccountRequest: {
       /** @description `password` (default; HTTP Basic) or `token` (bearer token, such as a Fastmail API token). */
@@ -4254,6 +4670,36 @@ export interface components {
       /** @description The collection's write mode: `held` changes are never sent, `write_through` ones are. */
       write_mode: string
     }
+    /** @description One local flag: the user's own setting, kept only in Holtmail. */
+    LocalFlagDto: {
+      flag: string
+      /** @description `true` when set, `false` when cleared although the mail server still has it. */
+      present: boolean
+    }
+    /** @description A message with local flags. */
+    LocalFlaggedDto: {
+      /**
+       * Format: int64
+       * @description Unix milliseconds.
+       */
+      date: number
+      flags: components['schemas']['LocalFlagDto'][]
+      from: components['schemas']['AddressDto'][]
+      message_id: string
+      subject?: string | null
+    }
+    /** @description The user's local flags in one archive. */
+    LocalFlagsDto: {
+      /** @description Whether local flags apply on this server; when off they are kept but not shown to apps. */
+      enabled: boolean
+      /** @description The newest of them by date, at most 200. */
+      messages: components['schemas']['LocalFlaggedDto'][]
+      /**
+       * Format: int64
+       * @description Messages with local flags.
+       */
+      total: number
+    }
     /** @description A folder a message is in. */
     LocationDto: {
       flags: string[]
@@ -4281,6 +4727,8 @@ export interface components {
        * @description Unix milliseconds when it was asked for.
        */
       created_at: number
+      /** @description The device a mail app asked through; absent for the web app and the server itself. */
+      device_id?: string | null
       /** @description Whether a delete removes for good. */
       expunge?: boolean | null
       /** @description The folder it works in; for an append, where the bytes go. */
@@ -4371,6 +4819,13 @@ export interface components {
       note?: string | null
       /** @description A provider id, or any lowercase name. */
       provider: string
+    }
+    /** @description A manual run on a selection or a search: exactly one of the two. */
+    ManualRunRequest: {
+      /** @description Message ids of the flow's archive, at most 100. */
+      messages?: string[]
+      /** @description A search of the flow's archive in the search language; its newest 100 messages run. */
+      query?: string | null
     }
     /** @description An event a person organizes or attends. */
     MeetingDto: {
@@ -4603,6 +5058,12 @@ export interface components {
     /** @description A draft to start. */
     NewDraftRequest: {
       payload?: components['schemas']['DraftPayload']
+    }
+    /** @description A new flow. */
+    NewFlowRequest: {
+      /** @description The flow JSON (`holtmail-rules` format). */
+      flow: Record<string, never>
+      name: string
     }
     /** @description A user to add. */
     NewUserRequest: {
@@ -5081,6 +5542,8 @@ export interface components {
        * @description Unix milliseconds.
        */
       created_at: number
+      /** @description The device a calendar or contacts app saved through; absent for the web app. */
+      device_id?: string | null
       /** @description The href of a create before the item exists. */
       href?: string | null
       id: string
@@ -5134,6 +5597,19 @@ export interface components {
       region: string | null
       /** @default null */
       street: string | null
+    }
+    /** @description A one-time link to a device's Apple profile. */
+    ProfileLinkDto: {
+      /**
+       * Format: int64
+       * @description When the link stops working, in milliseconds since the epoch.
+       */
+      expires_at: number
+      /**
+       * @description The absolute address of the profile. It works once, without a session, until
+       *     `expires_at`; opening it gives the device a fresh app password.
+       */
+      url: string
     }
     /** @description Changes to your own profile; missing fields stay as they are. */
     ProfileRequest: {
@@ -5600,6 +6076,15 @@ export interface components {
       /** @description `MO`, `TU`, `WE`, `TH`, `FR`, `SA` or `SU`. */
       weekday: string
     }
+    /** @description A new version of a flow. */
+    SaveFlowRequest: {
+      flow: Record<string, never>
+      /**
+       * Format: int32
+       * @description The version the editor started from; another save in between answers `409`.
+       */
+      version: number
+    }
     /** @description One page of search results. */
     SearchResponse: {
       items: components['schemas']['MessageSummary'][]
@@ -5616,6 +6101,11 @@ export interface components {
       /** @description Send even though recipients would see the real mailbox behind an alias; audited. */
       allow_leaks?: boolean
       /**
+       * @description The sender confirmed what a `message.sending` rule asked to confirm (`409` with a
+       *     `reason`).
+       */
+      confirmed?: boolean
+      /**
        * Format: int64
        * @description Unix milliseconds; overrides the draft's `send_at`.
        */
@@ -5631,6 +6121,49 @@ export interface components {
       change?: string | null
       /** Format: int32 */
       version?: number | null
+    }
+    /** @description How mail apps are served from one archive to this user. */
+    ServingArchiveDto: {
+      archive_id: string
+      /**
+       * Format: int64
+       * @description Members with a UID, summed over every mailbox; a built one counts in full, so the sum
+       *     only grows while a build runs.
+       */
+      assigned: number
+      /**
+       * Format: int32
+       * @description Of those, the ones whose first build is done.
+       */
+      built: number
+      /**
+       * Format: int64
+       * @description Messages carrying local flags of this user.
+       */
+      local_flagged: number
+      /**
+       * Format: int32
+       * @description Served mailboxes this user reads: the shared ones and the user's own drafts.
+       */
+      mailboxes: number
+      /**
+       * Format: int64
+       * @description Members to give a UID, summed over every mailbox.
+       */
+      total: number
+    }
+    /** @description What Settings → Devices shows about serving mail to apps. */
+    ServingDto: {
+      /**
+       * @description Every readable archive with served mailboxes or local flags of this user, in the order
+       *     of the archive list.
+       */
+      archives: components['schemas']['ServingArchiveDto'][]
+      /**
+       * @description Whether flags a mail app cannot write upstream are kept as local flags (`[serve]
+       *     local_flags`).
+       */
+      local_flags: boolean
     }
     /** @description The signed-in user. */
     SessionDto: {
@@ -5789,6 +6322,32 @@ export interface components {
       /** @description `info`, `warning` or `error`. */
       level: string
       text: string
+    }
+    /** @description A rendered template, or why it does not render. */
+    TemplatePreviewDto: {
+      /**
+       * @description The values the template saw: `sender`, `subject`, `date`, `alias`, `insights`,
+       *     `invitation`, `event`, `now`.
+       */
+      context: Record<string, never>
+      /** @description Why the template does not render. */
+      error?: string | null
+      /** @description The rendered text; absent when the template fails. */
+      text?: string | null
+    }
+    /** @description A template to render against a message, as a rule with this trigger would. */
+    TemplatePreviewRequest: {
+      /**
+       * Format: int64
+       * @description When the event happens, Unix milliseconds; now by default.
+       */
+      at?: number | null
+      /** @description The message the event is about; without one, message fields are empty. */
+      message?: string | null
+      /** @description The template source. */
+      template: string
+      /** @description The trigger whose context the template sees (default `manual`). */
+      trigger?: string | null
     }
     /** @description A conversation, oldest message first. */
     ThreadDto: {
@@ -9006,6 +9565,263 @@ export interface operations {
       }
     }
   }
+  list_flows: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The archive's flows in their order */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  create_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewFlowRequest']
+      }
+    }
+    responses: {
+      /** @description Created in test mode at the end of the order */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowDto']
+        }
+      }
+      /** @description An empty name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, no rules scope, or a flow that sends without a sender grant */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The flow is not valid */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowIssuesDto']
+        }
+      }
+    }
+  }
+  preview_template: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TemplatePreviewRequest']
+      }
+    }
+    responses: {
+      /** @description The template rendered against the message, with the context it saw; nothing is stored */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TemplatePreviewDto']
+        }
+      }
+      /** @description Unknown trigger */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  test_new_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Archive id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FlowTestRequest']
+      }
+    }
+    responses: {
+      /** @description The plan of an unsaved flow for the event; nothing is carried out or logged */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowTestDto']
+        }
+      }
+      /** @description No flow given */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such archive or message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The flow is not valid */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowIssuesDto']
+        }
+      }
+    }
+  }
   list_folders: {
     parameters: {
       query?: never
@@ -10498,6 +11314,239 @@ export interface operations {
       }
     }
   }
+  local_flags: {
+    parameters: {
+      query: {
+        /** @description The archive. */
+        archive: string
+        /** @description Only this message; every message of the archive when left out. */
+        message?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The user's local flags in the archive, newest message first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['LocalFlagsDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description An archive the user cannot read */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  drop_local_flags: {
+    parameters: {
+      query: {
+        /** @description The archive. */
+        archive: string
+        /** @description Only this message; every message of the archive when left out. */
+        message?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Dropped; mail apps show the flags of the mail server again. Idempotent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DroppedLocalFlagsDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Credentials without `write:mail` */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description An archive the user cannot read, or a malformed message id */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  profile_page: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description The token of a link from `POST /api/devices/{id}/profile` */
+        token: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A page whose button posts back to the same address for the profile. Changes nothing, so link previews and scanners never use the link up */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'text/html': unknown
+        }
+      }
+      /** @description An unknown, used or expired link, or the device was revoked since */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  download_profile: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description The token of a link from `POST /api/devices/{id}/profile` */
+        token: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The Apple profile (`application/x-apple-aspen-config`) with a fresh app password for the device. Works once, needs no session; the device's old app password stops working and its sessions end */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/x-apple-aspen-config': unknown
+        }
+      }
+      /** @description An unknown, used or expired link, or the device was revoked since */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed; the link still works */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  serving: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Build progress of served mailboxes and local flag counts, per archive */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServingDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
   device_setup: {
     parameters: {
       query?: never
@@ -10636,6 +11685,83 @@ export interface operations {
         }
       }
       /** @description A raise of rights and the last sign-in is too old; sign in again and repeat */
+      428: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  profile_link: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Device id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description A one-time link to the device's Apple profile. Opening it gives the device a fresh app password, which the profile carries; the old one stops working */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ProfileLinkDto']
+        }
+      }
+      /** @description A revoked device, or one whose protocols this server cannot put in a profile (imap with smtp, or dav) */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such device of this user */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server has no public_url or an unusable host name */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The last sign-in is too old; sign in again and repeat */
       428: {
         headers: {
           [name: string]: unknown
@@ -11005,7 +12131,7 @@ export interface operations {
           'application/json': components['schemas']['ErrorDto']
         }
       }
-      /** @description Sending is off, the account does not allow it, or no sender grant */
+      /** @description Sending is off, the account does not allow it, no sender grant, or a message.sending rule blocks the message */
       403: {
         headers: {
           [name: string]: unknown
@@ -11023,7 +12149,7 @@ export interface operations {
           'application/json': components['schemas']['ErrorDto']
         }
       }
-      /** @description The draft was saved again since that version (ErrorDto), or recipients would see the real mailbox behind an alias and allow_leaks is not set (LeaksDto) */
+      /** @description The draft was saved again since that version (ErrorDto), recipients would see the real mailbox behind an alias and allow_leaks is not set (LeaksDto), or a message.sending rule asks to confirm and confirmed is not set (ConfirmDto) */
       409: {
         headers: {
           [name: string]: unknown
@@ -11127,6 +12253,639 @@ export interface operations {
       }
       /** @description The server failed */
       500: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_run: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Run id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowRunDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such run */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  confirm_action: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Run id */
+        id: string
+        /** @description The action's place in the plan, from 0 */
+        index: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The held action was carried out as the person confirming, with every lock checked for them (`confirmed`, or `failed` with the reason) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowRunDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such run or action */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The action is not pending */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  dismiss_action: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Run id */
+        id: string
+        /** @description The action's place in the plan, from 0 */
+        index: number
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The held action will never run (`dismissed`) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowRunDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such run or action */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The action is not pending */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  get_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  save_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveFlowRequest']
+      }
+    }
+    responses: {
+      /** @description Saved as the next version; the mode stays, a pause is cleared, and the saver's rights now limit its actions */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description As for creating */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Saved again since that version */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The flow is not valid */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowIssuesDto']
+        }
+      }
+    }
+  }
+  delete_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Removed with its versions and runs */
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  change_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FlowChangeRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowDto']
+        }
+      }
+      /** @description An unknown mode or an empty name */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, no rules scope, or turning on a flow that sends as someone else without a grant that allows sending */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  run_manual: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ManualRunRequest']
+      }
+    }
+    responses: {
+      /** @description One run per message (a selection in order, a search newest first); a flow in test mode only logs. A message the flow already ran on is left out */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowRunDto'][]
+        }
+      }
+      /** @description Neither or both of messages and query, more than 100 messages, a query that does not parse, or the flow's trigger is not manual */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, no rules scope, or the flow sends as someone else and the grant does not allow sending */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow or message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  flow_runs: {
+    parameters: {
+      query?: {
+        /** @description Only runs older than this run id. */
+        before?: string
+        /** @description At most this many, 50 by default and 200 at most. */
+        limit?: number
+      }
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description The runs log, newest first, kept 30 days */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowRunDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  test_flow: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FlowTestRequest']
+      }
+    }
+    responses: {
+      /** @description The plan for the event, with the path taken; nothing is carried out or logged */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowTestDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow or message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The unsaved flow is not valid */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowIssuesDto']
+        }
+      }
+    }
+  }
+  flow_versions: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Flow id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Every saved version, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['FlowVersionDto'][]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Rules are off, no editor grant, or no rules scope */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such flow */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -12746,6 +14505,73 @@ export interface operations {
       }
       /** @description No such message */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+    }
+  }
+  apply_itip: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Id of a message carrying an attendee's iTIP REPLY */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ItipApplyDto']
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description Writing is turned off on this server, or neither an editor of the archive nor an owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description No such message */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The message holds no answer that failed the authentication check */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
+      }
+      /** @description The server failed */
+      500: {
         headers: {
           [name: string]: unknown
         }
@@ -14409,6 +16235,35 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  catalogue: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Every node type: id, version, role, ports, capability, the triggers it may follow, template fields, whether confirm is offered, docs in English and Russian and the JSON Schema of its parameters (fields carry an x-holtmail hint for the editor) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': Record<string, never>[]
+        }
+      }
+      /** @description Not signed in */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ErrorDto']
+        }
       }
     }
   }

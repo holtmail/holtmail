@@ -111,6 +111,12 @@ export type Device = Schemas['DeviceDto']
 export type CreatedDevice = Schemas['CreatedDeviceDto']
 export type DeviceSetup = Schemas['DeviceSetupDto']
 export type DeviceServer = Schemas['DeviceServerDto']
+export type ProfileLink = Schemas['ProfileLinkDto']
+export type Serving = Schemas['ServingDto']
+export type ServingArchive = Schemas['ServingArchiveDto']
+export type LocalFlags = Schemas['LocalFlagsDto']
+export type LocalFlagged = Schemas['LocalFlaggedDto']
+export type LocalFlag = Schemas['LocalFlagDto']
 export type CreateDeviceRequest = Schemas['CreateDeviceRequest']
 export type UpdateDeviceRequest = Schemas['UpdateDeviceRequest']
 export type AliasProvider = Schemas['AliasProviderDto']
@@ -487,8 +493,18 @@ export const createDevice = async (request: CreateDeviceRequest) =>
 export const updateDevice = async (id: string, request: UpdateDeviceRequest) =>
   unwrap(await client.PATCH('/api/devices/{id}', { ...archivePath(id), body: request }))
 
+export const deviceProfileLink = async (id: string) =>
+  unwrap(await client.POST('/api/devices/{id}/profile', { ...archivePath(id), headers: json }))
+
 export const revokeDevice = async (id: string) =>
   done(await client.DELETE('/api/devices/{id}', archivePath(id)))
+
+export const dropLocalFlags = async (archive: string, message?: string) =>
+  unwrap(
+    await client.DELETE('/api/devices/local-flags', {
+      params: { query: message ? { archive, message } : { archive } },
+    }),
+  )
 
 export const addAliasService = async (archiveId: string, request: NewAliasServiceRequest) =>
   unwrap(
@@ -798,6 +814,22 @@ export const devicesQuery = queryOptions({
   queryKey: ['devices'],
   queryFn: async ({ signal }) => unwrap(await client.GET('/api/devices', { signal })),
 })
+
+export const servingQuery = queryOptions({
+  queryKey: ['devices', 'serving'],
+  queryFn: async ({ signal }) => unwrap(await client.GET('/api/devices/serving', { signal })),
+  refetchInterval: (query) =>
+    query.state.data?.archives.some((archive) => archive.built < archive.mailboxes) ? 3000 : false,
+})
+
+export const localFlagsQuery = (archive: string) =>
+  queryOptions({
+    queryKey: ['devices', 'local-flags', archive],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await client.GET('/api/devices/local-flags', { params: { query: { archive } }, signal }),
+      ),
+  })
 
 export const deviceSetupQuery = queryOptions({
   queryKey: ['device-setup'],
@@ -1607,6 +1639,15 @@ export const rsvpMessage = async (id: string, request: RsvpRequest, key = idempo
     }),
   )
 
+/** "Apply anyway": merges an attendee's answer that failed the authentication check into the
+ * organizer's copies; returns the message's schedule notes as they are now. */
+export const applyItip = async (messageId: string) =>
+  unwrap(
+    await client.POST('/api/messages/{id}/itip/apply', { ...idPath(messageId), headers: json }),
+  )
+
+export type ItipApply = Schemas['ItipApplyDto']
+
 export type RsvpOptions = Schemas['RsvpOptionsDto']
 export type RsvpOccurrence = Schemas['RsvpOccurrenceDto']
 export type Organizing = Schemas['OrganizingDto']
@@ -1695,3 +1736,169 @@ export const setWriteMode = async (collectionId: string, mode: WriteMode, confir
       body: { mode, confirm },
     }),
   )
+
+export type FlowRecord = Schemas['FlowDto']
+export type FlowVersion = Schemas['FlowVersionDto']
+export type FlowTestRequest = Schemas['FlowTestRequest']
+export type FlowTest = Schemas['FlowTestDto']
+export type FlowChangeRequest = Schemas['FlowChangeRequest']
+export type FlowRun = Schemas['FlowRunDto']
+export type TemplatePreviewRequest = Schemas['TemplatePreviewRequest']
+export type TemplatePreview = Schemas['TemplatePreviewDto']
+/** A flow mode: `test` (runs are logged, nothing is carried out), `on` or `off`. */
+export type FlowMode = 'test' | 'on' | 'off'
+
+/** Every node type as `holtmail-rules` describes it; the editor reads it with its own guards. */
+export const rulesCatalogueQuery = queryOptions({
+  queryKey: ['rules', 'catalogue'],
+  queryFn: async ({ signal }): Promise<unknown[]> =>
+    unwrap(await client.GET('/api/rules/catalogue', { signal })),
+  staleTime: Infinity,
+})
+
+export const flowsQuery = (archiveId: string) =>
+  queryOptions({
+    queryKey: ['archives', archiveId, 'flows'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/archives/{id}/flows', { ...idPath(archiveId), signal })),
+  })
+
+export const flowQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['flows', id],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/flows/{id}', { ...idPath(id), signal })),
+  })
+
+/** Creates a flow in `test` mode at the end of the archive's order; `422` carries the issues. */
+export const createFlow = async (archiveId: string, name: string, flow: unknown) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/flows', {
+      ...idPath(archiveId),
+      body: { name, flow: jsonObject(flow) },
+    }),
+  )
+
+/** Saves the next version as a compare-and-set on `version`: `409` when saved since, `422` with
+ * the issues when the flow is not valid. */
+export const saveFlow = async (id: string, version: number, flow: unknown) =>
+  unwrap(
+    await client.PUT('/api/flows/{id}', {
+      ...idPath(id),
+      body: { version, flow: jsonObject(flow) },
+    }),
+  )
+
+export const changeFlow = async (id: string, request: FlowChangeRequest) =>
+  unwrap(await client.PATCH('/api/flows/{id}', { ...idPath(id), body: request }))
+
+export const deleteFlow = async (id: string) =>
+  done(await client.DELETE('/api/flows/{id}', { ...idPath(id), headers: json }))
+
+/** Renders a template against a message as a rule with `trigger` would; nothing is stored. */
+export const previewTemplate = async (archiveId: string, request: TemplatePreviewRequest) =>
+  unwrap(
+    await client.POST('/api/archives/{id}/flows/preview', { ...idPath(archiveId), body: request }),
+  )
+
+/** A dry run of the flow for one event: the saved version, or `flow` when given (the editor's
+ * unsaved one). Nothing is carried out or logged; `422` carries the issues. */
+export const testFlow = async (
+  id: string,
+  request: { flow?: unknown; message?: string | null; live?: boolean },
+) =>
+  unwrap(
+    await client.POST('/api/flows/{id}/test', {
+      ...idPath(id),
+      body: {
+        flow: request.flow === undefined ? null : jsonObject(request.flow),
+        message: request.message ?? null,
+        live: request.live ?? true,
+      },
+    }),
+  )
+
+/** Runs a `manual` flow on a selection of messages or on the newest 100 of a search, one run
+ * per message; a flow in test mode only logs. */
+export const runFlow = async (id: string, request: { messages: string[] } | { query: string }) =>
+  unwrap(
+    await client.POST('/api/flows/{id}/run', {
+      ...idPath(id),
+      body: 'query' in request ? { query: request.query } : { messages: request.messages },
+    }),
+  )
+
+/** Every saved version of a flow, newest first. */
+export const flowVersionsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['flows', id, 'versions'],
+    queryFn: async ({ signal }) =>
+      unwrap(await client.GET('/api/flows/{id}/versions', { ...idPath(id), signal })),
+  })
+
+const runsPage = 50
+
+/** The runs log of a flow, newest first (kept 30 days), page by page. */
+export const flowRunsInfiniteQuery = (id: string) =>
+  infiniteQueryOptions({
+    queryKey: ['flows', id, 'runs'],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) =>
+      unwrap(
+        await client.GET('/api/flows/{id}/runs', {
+          params: { path: { id }, query: { before: pageParam, limit: runsPage } },
+          signal,
+        }),
+      ),
+    getNextPageParam: (page) => (page.length < runsPage ? undefined : page.at(-1)?.id),
+  })
+
+/** Carries out a held action of a run as the person confirming (`index` in plan order). */
+export const confirmFlowAction = async (runId: string, index: number) =>
+  unwrap(
+    await client.POST('/api/flow-runs/{id}/actions/{index}/confirm', {
+      params: { path: { id: runId, index } },
+      headers: json,
+    }),
+  )
+
+/** Dismisses a held action of a run: it will never run. */
+export const dismissFlowAction = async (runId: string, index: number) =>
+  unwrap(
+    await client.POST('/api/flow-runs/{id}/actions/{index}/dismiss', {
+      params: { path: { id: runId, index } },
+      headers: json,
+    }),
+  )
+
+/** The validator's issues of a flow refused with `422`; `null` for any other error. */
+export function flowIssues(error: unknown): FlowIssue[] | null {
+  if (!(error instanceof ApiError) || error.status !== 422) return null
+  const body = error.body
+  if (typeof body !== 'object' || body === null || !('issues' in body)) return null
+  const issues: unknown = body.issues
+  return Array.isArray(issues) && issues.every(isFlowIssue) ? issues : null
+}
+
+/** One problem the validator found: the node it is about (`trigger` for the trigger, absent for
+ * the whole flow), a stable `code` and a detail without message content. */
+export interface FlowIssue {
+  node?: string | null
+  code: string
+  detail: string
+}
+
+function isFlowIssue(value: unknown): value is FlowIssue {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = new Map(Object.entries(value))
+  const node = fields.get('node')
+  return (
+    typeof fields.get('code') === 'string' &&
+    typeof fields.get('detail') === 'string' &&
+    (node === undefined || node === null || typeof node === 'string')
+  )
+}
+
+function jsonObject(value: unknown): Record<string, never> {
+  return JSON.parse(JSON.stringify(value ?? {}))
+}

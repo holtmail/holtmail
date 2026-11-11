@@ -2,10 +2,13 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import {
   ApiError,
+  applyItip,
   bodyUrl,
   calendarExportUrl,
   calendarParams,
+  client,
   contactsExportUrl,
+  deviceProfileLink,
   exportUrl,
   fetchBody,
   idempotencyKey,
@@ -96,6 +99,30 @@ describe('fetchBody', () => {
     const error = await fetchBody('missing').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ status: 404, message: 'message not found' })
+  })
+})
+
+describe('body-less posts', () => {
+  test('a profile link and apply anyway send json, as the CSRF guard asks', async () => {
+    const realPost = client.POST
+    const post = mock(async (_path: string, _init?: { headers?: HeadersInit }) => ({
+      data: {},
+      response: new Response('{}'),
+    }))
+    client.POST = post as unknown as typeof client.POST
+    try {
+      await deviceProfileLink('d1')
+      await applyItip('m1')
+    } finally {
+      client.POST = realPost
+    }
+    expect(post.mock.calls.map((call) => call[0])).toEqual([
+      '/api/devices/{id}/profile',
+      '/api/messages/{id}/itip/apply',
+    ])
+    for (const call of post.mock.calls) {
+      expect(new Headers(call[1]?.headers).get('content-type')).toBe('application/json')
+    }
   })
 })
 

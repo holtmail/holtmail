@@ -4,6 +4,7 @@ import { ApiError, type MessageDetail } from '@holtmail/api-client'
 
 import {
   archivedAttachment,
+  canApplyAnswers,
   canCompose,
   discardsOnClose,
   capabilitySwitch,
@@ -29,6 +30,17 @@ describe('gating', () => {
     expect(canCompose(undefined)).toBe(false)
     expect(canCompose({ rights: { role: 'sender', manage: false, compose: false } })).toBe(false)
     expect(canCompose({ rights: { role: 'sender', manage: false, compose: true } })).toBe(true)
+  })
+
+  test('apply anyway shows to editors and senders only', () => {
+    expect(canApplyAnswers(undefined)).toBe(false)
+    expect(canApplyAnswers({ rights: { role: 'reader', manage: false, compose: false } })).toBe(
+      false,
+    )
+    expect(canApplyAnswers({ rights: { role: 'editor', manage: false, compose: false } })).toBe(
+      true,
+    )
+    expect(canApplyAnswers({ rights: { role: 'sender', manage: true, compose: true } })).toBe(true)
   })
 
   test('reader actions need compose, and a list for Reply to list', () => {

@@ -1,11 +1,14 @@
-import type { Invitation } from '@holtmail/api-client'
-import { Badge, cn } from '@holtmail/ui'
+import { applyItip, archivesQuery, type Invitation } from '@holtmail/api-client'
+import { Badge, Button, cn } from '@holtmail/ui'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ArrowRightIcon, CalendarIcon, RepeatIcon } from 'lucide-react'
 
 import { RsvpPanel, type RsvpTarget } from '../items/rsvp-panel.tsx'
+import { authErrorMessage } from '../lib/auth.ts'
 import { formatWhen, participantLabel, viewerZone } from '../lib/events.ts'
 import { answerable } from '../lib/rsvp.ts'
+import { canApplyAnswers } from '../lib/writing.ts'
 import { strings } from '../strings.ts'
 import { Row } from './row.tsx'
 
@@ -26,6 +29,7 @@ export function Invitations({
           <InvitationCard
             invitation={invitation}
             archiveId={archiveId}
+            messageId={messageId}
             target={
               invitations.length === 1
                 ? { kind: 'message', id: messageId }
@@ -45,10 +49,12 @@ function InvitationCard({
   invitation,
   target,
   archiveId,
+  messageId,
 }: {
   invitation: Invitation
   target: RsvpTarget
   archiveId: string
+  messageId: string
 }) {
   const when = formatWhen(invitation.start, invitation.end, invitation.all_day, viewerZone())
   const method =
@@ -113,6 +119,9 @@ function InvitationCard({
         {answer && <Row label={strings.invitation.yourAnswer}>{answer}</Row>}
       </dl>
       {answerable(invitation) && <RsvpPanel target={target} archiveId={archiveId} />}
+      {invitation.schedule_note === 'unauthenticated' && (
+        <ApplyAnyway messageId={messageId} archiveId={archiveId} />
+      )}
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs">
         <span className="text-fg-subtle">
           {strings.invitation.updatedSince(invitation.updates_after)}
@@ -145,5 +154,51 @@ function InvitationCard({
         </span>
       </footer>
     </section>
+  )
+}
+
+/** An attendee's answer that failed the sender check, with the override for editors. */
+function ApplyAnyway({ messageId, archiveId }: { messageId: string; archiveId: string }) {
+  const t = strings.edits.rsvp.unverified
+  const queryClient = useQueryClient()
+  const archives = useQuery(archivesQuery)
+  const archive = archives.data?.find((a) => a.id === archiveId)
+  const apply = useMutation({
+    mutationFn: () => applyItip(messageId),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['threads'] }),
+        queryClient.invalidateQueries({ queryKey: ['messages'] }),
+        queryClient.invalidateQueries({ queryKey: ['items'] }),
+        queryClient.invalidateQueries({ queryKey: ['events'] }),
+        queryClient.invalidateQueries({ queryKey: ['pim-changes'] }),
+        queryClient.invalidateQueries({ queryKey: ['archives', archiveId, 'calendar'] }),
+      ]),
+  })
+  const allowed = canApplyAnswers(archive)
+  return (
+    <div className="grid gap-2 border-t border-border pt-3 text-sm">
+      <p className="text-fg-muted">{t.lead}</p>
+      {!allowed ? null : apply.isSuccess ? (
+        <p role="status" className="text-fg">
+          {t.applied}
+        </p>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="justify-self-start"
+          disabled={apply.isPending}
+          onClick={() => apply.mutate()}
+        >
+          {apply.isPending ? t.applying : t.apply}
+        </Button>
+      )}
+      {apply.isError && (
+        <p role="alert" className="text-xs text-danger">
+          {t.failed} {authErrorMessage(apply.error)}
+        </p>
+      )}
+    </div>
   )
 }

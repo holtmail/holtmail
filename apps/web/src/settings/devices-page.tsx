@@ -4,6 +4,7 @@ import {
   type CreatedDevice,
   createDevice,
   type Device,
+  deviceProfileLink,
   type DeviceServer,
   deviceSetupQuery,
   devicesQuery,
@@ -30,7 +31,7 @@ import {
 } from '@holtmail/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { EllipsisIcon, PlusIcon } from 'lucide-react'
-import { type FormEvent, type ReactNode, useId, useState } from 'react'
+import { type FormEvent, type ReactNode, useId, useMemo, useState } from 'react'
 
 import { Field, FormError, PasswordField } from '../auth/field.tsx'
 import { authErrorMessage } from '../lib/auth.ts'
@@ -41,13 +42,17 @@ import {
   deviceFormProblem,
   deviceProtocols,
   deviceScopes,
+  domainList,
+  fitsProfile,
   formatDeviceDay,
   hasChanges,
   isDeviceProtocol,
   isDeviceScope,
   needsSignInAgain,
   newDeviceForm,
+  runsOnIosHomeScreen,
   serverRows,
+  unservedProtocols,
   updateDeviceRequest,
   usesArchiveList,
   usesImplicitSeen,
@@ -59,6 +64,7 @@ import { formatFullDate } from '../lib/format.ts'
 import { ConfirmDialog } from '../manage/confirm-dialog.tsx'
 import { strings } from '../strings.ts'
 import { Picker } from './aliases-page.tsx'
+import { ServingSection } from './serving-section.tsx'
 import { SettingsPage } from './settings-layout.tsx'
 
 const t = strings.devices
@@ -139,7 +145,9 @@ function Servers({
               className="border-b border-border"
             >
               <td className="py-2 pr-4">{t.servers.names[row.protocol] ?? row.protocol}</td>
-              <td className="py-2 pr-4 font-mono text-xs break-all">{row.host}</td>
+              <td className="py-2 pr-4 font-mono text-xs break-all">
+                {row.url ? <span className="select-all">{row.url}</span> : row.host}
+              </td>
               <td className="py-2 pr-4 font-mono text-xs">{row.port}</td>
               <td className="py-2 text-xs">
                 {row.security === 'tls' ? t.servers.tls : t.servers.starttls}
@@ -228,7 +236,7 @@ function DeviceDialog({
 }: {
   device?: Device
   archives: readonly Archive[]
-  servers: readonly DeviceServer[]
+  servers?: readonly DeviceServer[]
   email: string
   onClose: () => void
   onCreated: (created: CreatedDevice) => void
@@ -262,7 +270,7 @@ function DeviceDialog({
     if (!problem) save.mutate()
   }
   const archiveChoices = archives.map((archive) => ({ value: archive.id, label: archive.name }))
-  const listening = new Set(servers.map((server) => server.protocol))
+  const listening = servers ? new Set(servers.map((server) => server.protocol)) : undefined
   const f = t.form
   const error = save.isError && !needsSignInAgain(save.error) ? save.error : undefined
   return (
@@ -284,7 +292,7 @@ function DeviceDialog({
           <Group legend={f.protocols}>
             {deviceProtocols.map((protocol) => {
               const names = t.protocolNames[protocol]
-              const off = (protocol === 'imap' || protocol === 'smtp') && !listening.has(protocol)
+              const off = protocol !== 'api' && listening !== undefined && !listening.has(protocol)
               return (
                 <Check
                   key={protocol}
@@ -374,16 +382,150 @@ function DeviceDialog({
   )
 }
 
+function ProfileDialog({
+  device,
+  email,
+  onClose,
+}: {
+  device: Device
+  email: string
+  onClose: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const p = t.profile
+  const make = useMutation({
+    gcTime: 0,
+    mutationFn: () => deviceProfileLink(device.id),
+    onError: (error) => {
+      if (needsSignInAgain(error)) setConfirming(true)
+    },
+  })
+  const link = make.data
+  const failed = make.isError && !needsSignInAgain(make.error)
+  const standalone = useMemo(runsOnIosHomeScreen, [])
+  const [opened, setOpened] = useState(false)
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-h-[calc(100dvh-var(--spacing)*8)] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{p.title(device.name)}</DialogTitle>
+          <DialogDescription>{p.lead}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 text-sm text-fg-muted">
+          <p>{p.fresh}</p>
+          <p>{p.once}</p>
+          <p className="text-xs text-fg-subtle">{p.unsigned}</p>
+        </div>
+        {link && (
+          <div className="grid gap-2 border border-border px-4 py-3">
+            {opened ? (
+              <p role="status" className="text-sm text-fg">
+                {p.opened}
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                {!standalone && (
+                  <Button asChild>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setOpened(true)}
+                    >
+                      {p.download}
+                    </a>
+                  </Button>
+                )}
+                <CopyButton
+                  text={link.url}
+                  label={p.copy}
+                  copiedLabel={p.copied}
+                  variant={standalone ? 'secondary' : 'ghost'}
+                />
+              </div>
+            )}
+            {standalone && <p className="text-xs text-fg-muted">{p.standalone}</p>}
+            <p className="text-xs text-fg-subtle">
+              {p.expires(
+                new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(
+                  new Date(link.expires_at),
+                ),
+              )}
+            </p>
+          </div>
+        )}
+        <FormError message={failed ? authErrorMessage(make.error) : undefined} />
+        <DialogFooter>
+          {link ? (
+            <Button onClick={onClose}>{p.done}</Button>
+          ) : (
+            <>
+              <Button type="button" variant="ghost" onClick={onClose}>
+                {p.cancel}
+              </Button>
+              <Button disabled={make.isPending} onClick={() => make.mutate()}>
+                {make.isPending ? p.making : p.make}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+        <SignInAgain
+          open={confirming}
+          email={email}
+          onOpenChange={setConfirming}
+          onDone={() => make.mutate()}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SetupNotes({
+  davx5,
+  autoconfig,
+}: {
+  davx5: string | null | undefined
+  autoconfig: readonly string[]
+}) {
+  const domains = domainList(autoconfig)
+  return (
+    <section className="grid gap-2" aria-labelledby="device-setup-notes">
+      <h3 id="device-setup-notes" className="text-base font-normal">
+        {t.setup.heading}
+      </h3>
+      <ul className="grid list-disc gap-1 pl-5 text-sm text-fg-muted">
+        <li>{t.setup.notBoth}</li>
+        <li>{t.setup.iosPush}</li>
+        <li>{t.setup.cloud}</li>
+      </ul>
+      {domains && <p className="text-sm text-fg-muted">{t.setup.thunderbird(domains)}</p>}
+      {davx5 && (
+        <p className="text-sm">
+          <a
+            className="text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-solid focus-visible:outline-focus"
+            href={davx5}
+          >
+            {t.setup.davx5}
+          </a>{' '}
+          <span className="text-xs text-fg-subtle">{t.setup.davx5Hint}</span>
+        </p>
+      )}
+    </section>
+  )
+}
+
 function SecretDialog({
   created,
   servers,
   email,
   onDone,
+  onProfile,
 }: {
   created: CreatedDevice
   servers: readonly DeviceServer[]
   email: string
   onDone: () => void
+  onProfile?: () => void
 }) {
   const rows = serverRows(servers, browserHost(), created.device.protocols)
   return (
@@ -404,6 +546,11 @@ function SecretDialog({
         </div>
         <Servers servers={rows} email={email} host={browserHost()} />
         <DialogFooter>
+          {onProfile && (
+            <Button variant="ghost" onClick={onProfile}>
+              {t.profile.offer}
+            </Button>
+          )}
           <Button onClick={onDone}>{t.secret.done}</Button>
         </DialogFooter>
       </DialogContent>
@@ -414,11 +561,15 @@ function SecretDialog({
 function Row({
   device,
   archives,
+  servers,
   onEdit,
+  onProfile,
 }: {
   device: Device
   archives: readonly Archive[]
+  servers?: readonly DeviceServer[]
   onEdit: () => void
+  onProfile?: () => void
 }) {
   const queryClient = useQueryClient()
   const [revoking, setRevoking] = useState(false)
@@ -440,6 +591,7 @@ function Row({
         : t.row.someArchives(device.archives.map(archiveName).join(', '))
       : null,
   ].filter((line) => line !== null)
+  const unserved = servers ? unservedProtocols(device.protocols, servers) : []
   return (
     <li className="grid gap-2 border border-border px-4 py-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -458,6 +610,9 @@ function Row({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={onEdit}>{t.row.edit}</DropdownMenuItem>
+              {onProfile && (
+                <DropdownMenuItem onSelect={onProfile}>{t.profile.menu}</DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => setRevoking(true)}>{t.row.revoke}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -465,6 +620,11 @@ function Row({
       </div>
       <p className="text-xs text-fg-muted">{device.scopes.map(scopeLabel).join(' · ')}</p>
       {where.length > 0 && <p className="text-xs text-fg-muted">{where.join(' · ')}</p>}
+      {!revoked && unserved.length > 0 && (
+        <p className="text-xs text-fg-muted">
+          {t.row.notServed(unserved.map(protocolLabel).join(', '))}
+        </p>
+      )}
       <p className="text-xs text-fg-subtle">
         {revoked && device.revoked_at != null
           ? t.row.revokedOn(formatFullDate(device.revoked_at))
@@ -495,6 +655,9 @@ export function DevicesPage() {
   const email = useQuery(sessionQuery).data?.email ?? ''
   const [editing, setEditing] = useState<Editing | null>(null)
   const [created, setCreated] = useState<CreatedDevice | null>(null)
+  const [profileFor, setProfileFor] = useState<Device | null>(null)
+  const offersProfile = (device: Device) =>
+    setup.data?.apple_profile === true && fitsProfile(device.protocols, setup.data.servers)
   const servers = setup.data?.servers ?? []
   const list = devices.data ?? []
   const active = list.filter((device) => device.revoked_at == null)
@@ -525,6 +688,7 @@ export function DevicesPage() {
         )}
         <Servers servers={servers} email={email} host={browserHost()} />
       </section>
+      {setup.data && <SetupNotes davx5={setup.data.davx5} autoconfig={setup.data.autoconfig} />}
       <section className="grid gap-3">
         {devices.isPending && <Skeleton className="h-24 w-full" />}
         {devices.isError && (
@@ -540,12 +704,15 @@ export function DevicesPage() {
                 key={device.id}
                 device={device}
                 archives={archives}
+                servers={setup.data?.servers}
                 onEdit={() => setEditing({ device })}
+                onProfile={offersProfile(device) ? () => setProfileFor(device) : undefined}
               />
             ))}
           </ul>
         )}
       </section>
+      <ServingSection archives={archives} unknownArchive={t.row.unknownArchive} />
       {revoked.length > 0 && (
         <section className="grid gap-3" aria-labelledby="device-revoked">
           <h3 id="device-revoked" className="text-base font-normal">
@@ -563,7 +730,7 @@ export function DevicesPage() {
           key={editing.device?.id ?? 'new'}
           device={editing.device}
           archives={archives}
-          servers={servers}
+          servers={setup.data?.servers}
           email={email}
           onClose={() => setEditing(null)}
           onCreated={(next) => {
@@ -578,6 +745,22 @@ export function DevicesPage() {
           servers={servers}
           email={email}
           onDone={() => setCreated(null)}
+          onProfile={
+            offersProfile(created.device)
+              ? () => {
+                  setProfileFor(created.device)
+                  setCreated(null)
+                }
+              : undefined
+          }
+        />
+      )}
+      {profileFor && (
+        <ProfileDialog
+          key={profileFor.id}
+          device={profileFor}
+          email={email}
+          onClose={() => setProfileFor(null)}
         />
       )}
     </SettingsPage>

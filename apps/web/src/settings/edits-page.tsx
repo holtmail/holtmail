@@ -37,6 +37,7 @@ import { manages } from '../lib/roles.ts'
 import { ConfirmDialog } from '../manage/confirm-dialog.tsx'
 import { strings } from '../strings.ts'
 import { Picker } from './aliases-page.tsx'
+import { DeviceOrigin } from './device-origin.tsx'
 import { SettingsPage } from './settings-layout.tsx'
 
 const t = strings.edits
@@ -276,6 +277,12 @@ function ChangeRow({ change, account }: { change: PimChange; account?: string })
             <time dateTime={new Date(change.created_at).toISOString()} className="font-mono">
               {formatFullDate(change.created_at)}
             </time>
+            {change.device_id != null && (
+              <>
+                {' · '}
+                <DeviceOrigin deviceId={change.device_id} />
+              </>
+            )}
           </span>
         </span>
         <LocalEditMark edit={{ state: change.state, account_name: account, reason: null }} />

@@ -13,3 +13,61 @@
     height: 100%;
   }
 }
+
+.hm-flow {
+  --xy-background-color: var(--hm-color-bg-subtle);
+  --xy-edge-stroke: var(--hm-color-border-strong);
+  --xy-edge-stroke-selected: var(--hm-color-accent);
+  --xy-edge-stroke-width: 1;
+  --xy-connectionline-stroke: var(--hm-color-accent);
+  --xy-connectionline-stroke-width: 1;
+  --xy-handle-background-color: var(--hm-color-bg);
+  --xy-selection-background-color: var(--hm-color-bg-selected);
+  --xy-selection-border: 1px solid var(--hm-color-accent);
+  --xy-attribution-background-color: transparent;
+  font-family: var(--hm-font-sans);
+}
+
+.hm-flow .react-flow__handle {
+  width: calc(var(--spacing) * 2);
+  height: calc(var(--spacing) * 2);
+  border: 1px solid var(--hm-color-border-strong);
+  border-radius: var(--hm-radius);
+}
+
+.hm-flow .react-flow__handle.hm-port {
+  right: calc(var(--spacing) * -3);
+}
+
+.hm-flow .react-flow__handle.connectingto,
+.hm-flow .react-flow__handle:hover {
+  border-color: var(--hm-color-accent);
+}
+
+.hm-flow .react-flow__node:focus-visible {
+  outline: 2px solid var(--hm-color-focus);
+  outline-offset: 0;
+}
+
+.hm-flow .react-flow__edge.selected .react-flow__edge-path,
+.hm-flow .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--hm-color-accent);
+}
+
+.hm-flow .react-flow__edge.hm-path .react-flow__edge-path {
+  stroke: var(--hm-color-accent);
+  stroke-width: 2;
+}
+
+.hm-flow .hm-on-path {
+  background: var(--hm-color-bg-selected);
+}
+
+.hm-flow .react-flow__attribution a {
+  color: var(--hm-color-fg-subtle);
+  font-size: var(--hm-text-xs);
+}
+
+.hm-flow .react-flow__resize-control.handle {
+  border-radius: var(--hm-radius);
+}

@@ -3,9 +3,13 @@ import { describe, expect, test } from 'bun:test'
 import { ApiError, type Device } from '@holtmail/api-client'
 
 import {
+  buildState,
+  changeDevice,
   createDeviceRequest,
   deviceFormOf,
   deviceFormProblem,
+  domainList,
+  fitsProfile,
   formatDeviceDay,
   formatNoticeDate,
   hasChanges,
@@ -14,7 +18,10 @@ import {
   newDeviceForm,
   parseDismissedNotices,
   recentDeviceNotices,
+  runsOnIosHomeScreen,
   serverRows,
+  sortedFlagWords,
+  unservedProtocols,
   updateDeviceRequest,
   withProtocol,
 } from './devices.ts'
@@ -149,6 +156,45 @@ test('server rows fall back to the browser host and follow the protocols', () =>
   expect(serverRows(undefined, 'x')).toEqual([])
 })
 
+test('an HTTPS protocol carries the address its client asks for', () => {
+  const rows = serverRows(
+    [
+      {
+        protocol: 'jmap',
+        host: 'mail.example.com',
+        port: 443,
+        security: 'tls',
+        url: 'https://mail.example.com/.well-known/jmap',
+      },
+      { protocol: 'imap', host: null, port: 993, security: 'tls' },
+    ],
+    'web.example.org',
+  )
+  expect(rows.map((row) => row.url)).toEqual(['https://mail.example.com/.well-known/jmap', null])
+})
+
+test('protocols without a listener are named, never the API', () => {
+  const servers = [
+    { protocol: 'imap', host: null, port: 993, security: 'tls' },
+    { protocol: 'dav', host: 'mail.example.com', port: 443, security: 'tls' },
+  ]
+  expect(unservedProtocols(['api', 'jmap', 'smtp', 'imap', 'dav'], servers)).toEqual([
+    'smtp',
+    'jmap',
+  ])
+  expect(unservedProtocols(['api'], undefined)).toEqual([])
+  expect(unservedProtocols(['imap'], undefined)).toEqual(['imap'])
+})
+
+test('a change names the viewer’s own device and no other', () => {
+  const devices = [{ id: 'd1', name: 'Phone' }]
+  expect(changeDevice('d1', devices)).toBe('Phone')
+  expect(changeDevice('d9', devices)).toBeNull()
+  expect(changeDevice('d1', undefined)).toBeNull()
+  expect(changeDevice(null, devices)).toBeUndefined()
+  expect(changeDevice(undefined, devices)).toBeUndefined()
+})
+
 test('the day of last use is a UTC day', () => {
   const midnight = Date.UTC(2026, 10, 8)
   expect(formatDeviceDay(midnight, 'en-GB')).toBe('8 Nov 2026')
@@ -184,5 +230,103 @@ describe('notices', () => {
     expect(parseDismissedNotices('{')).toEqual([])
     expect(parseDismissedNotices('{"a":1}')).toEqual([])
     expect(parseDismissedNotices(null)).toEqual([])
+  })
+})
+
+describe('buildState', () => {
+  const row = { archive_id: 'a', local_flagged: 0 }
+  test('a built archive is ready', () => {
+    expect(buildState({ ...row, mailboxes: 3, built: 3, assigned: 0, total: 0 })).toEqual({
+      building: false,
+      percent: 100,
+    })
+  })
+  test('a building archive never shows 100 percent', () => {
+    expect(buildState({ ...row, mailboxes: 3, built: 1, assigned: 999, total: 1000 })).toEqual({
+      building: true,
+      percent: 99,
+    })
+    expect(buildState({ ...row, mailboxes: 3, built: 1, assigned: 250, total: 1000 }).percent).toBe(
+      25,
+    )
+  })
+  test('a finished mailbox keeps counting, so the bar does not fall back', () => {
+    expect(
+      buildState({ ...row, mailboxes: 2, built: 1, assigned: 1100, total: 2000 }).percent,
+    ).toBe(55)
+  })
+  test('an empty build starts at zero', () => {
+    expect(buildState({ ...row, mailboxes: 1, built: 0, assigned: 0, total: 0 })).toEqual({
+      building: true,
+      percent: 0,
+    })
+  })
+})
+
+describe('sortedFlagWords', () => {
+  test('system flags come first in a fixed order, keywords after by name', () => {
+    const words = sortedFlagWords([
+      { flag: 'Work', present: true },
+      { flag: '\\Flagged', present: true },
+      { flag: '$Label1', present: false },
+      { flag: '\\SEEN', present: false },
+    ])
+    expect(words.map((w) => [w.system, w.name, w.present])).toEqual([
+      ['seen', '\\SEEN', false],
+      ['flagged', '\\Flagged', true],
+      [null, '$Label1', false],
+      [null, 'Work', true],
+    ])
+  })
+  test('an unknown backslash flag is shown as written', () => {
+    expect(sortedFlagWords([{ flag: '\\Recent', present: true }])[0]?.system).toBeNull()
+  })
+})
+
+describe('fitsProfile', () => {
+  test('needs every part the profile carries to be served', () => {
+    const davOnly = [{ protocol: 'dav' }]
+    const mailOnly = [{ protocol: 'imap' }, { protocol: 'smtp' }]
+    expect(fitsProfile(['imap', 'smtp', 'dav'], davOnly)).toBe(false)
+    expect(fitsProfile(['dav'], mailOnly)).toBe(false)
+    expect(fitsProfile(['imap', 'smtp'], mailOnly)).toBe(true)
+    expect(fitsProfile(['imap', 'dav'], davOnly)).toBe(true)
+    expect(fitsProfile(['imap', 'smtp', 'dav'], [...mailOnly, ...davOnly])).toBe(true)
+  })
+
+  test('needs imap with smtp, or dav', () => {
+    expect(fitsProfile(['imap', 'smtp'])).toBe(true)
+    expect(fitsProfile(['dav'])).toBe(true)
+    expect(fitsProfile(['imap', 'dav'])).toBe(true)
+    expect(fitsProfile(['imap'])).toBe(false)
+    expect(fitsProfile(['smtp', 'jmap'])).toBe(false)
+    expect(fitsProfile([])).toBe(false)
+  })
+})
+
+describe('domainList', () => {
+  test('joins the domains in order, or gives null', () => {
+    expect(domainList([], 'en')).toBeNull()
+    expect(domainList(['example.com'], 'en')).toBe('example.com')
+    expect(domainList(['example.com', 'example.org'], 'en')).toBe('example.com and example.org')
+    expect(domainList(['example.com', 'example.org'], 'ru')).toBe('example.com и example.org')
+  })
+})
+
+describe('runsOnIosHomeScreen', () => {
+  test('only the iOS home-screen app counts', () => {
+    expect(runsOnIosHomeScreen()).toBe(false)
+    const realMatchMedia = globalThis.matchMedia
+    globalThis.matchMedia = ((query: string) => ({
+      matches: query.includes('standalone'),
+    })) as never
+    try {
+      expect(runsOnIosHomeScreen()).toBe(false)
+      Object.defineProperty(navigator, 'standalone', { value: true, configurable: true })
+      expect(runsOnIosHomeScreen()).toBe(true)
+    } finally {
+      Reflect.deleteProperty(navigator, 'standalone')
+      globalThis.matchMedia = realMatchMedia
+    }
   })
 })

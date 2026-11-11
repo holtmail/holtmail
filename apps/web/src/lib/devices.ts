@@ -1,4 +1,10 @@
-import { ApiError, type Device, type DeviceServer } from '@holtmail/api-client'
+import {
+  ApiError,
+  type Device,
+  type DeviceServer,
+  type LocalFlag,
+  type ServingArchive,
+} from '@holtmail/api-client'
 import type { Archive, CreateDeviceRequest, UpdateDeviceRequest } from '@holtmail/api-client'
 
 export const deviceProtocols = ['imap', 'smtp', 'jmap', 'dav', 'api'] as const
@@ -45,6 +51,34 @@ export const usesArchiveList = (protocols: readonly string[]): boolean =>
 
 export const usesImplicitSeen = (protocols: readonly string[]): boolean =>
   protocols.includes('imap')
+
+/** Whether an Apple profile can set the device up, as the server decides it: mail needs IMAP
+ * with SMTP, calendars and contacts need DAV, and with `servers` known every part the profile
+ * would carry must have a listener on this server. */
+export function fitsProfile(
+  protocols: readonly string[],
+  servers?: readonly Pick<DeviceServer, 'protocol'>[],
+): boolean {
+  const mail = protocols.includes('imap') && protocols.includes('smtp')
+  const dav = protocols.includes('dav')
+  if (!mail && !dav) return false
+  if (servers === undefined) return true
+  const served = new Set(servers.map((server) => server.protocol))
+  return (!mail || (served.has('imap') && served.has('smtp'))) && (!dav || served.has('dav'))
+}
+
+/** The autoconfig domains as one phrase, in the given order, or `null` when there are none. */
+export function domainList(domains: readonly string[], locale?: string): string | null {
+  if (domains.length === 0) return null
+  return new Intl.ListFormat(locale, { type: 'conjunction' }).format(domains)
+}
+
+/** Whether the page runs as an app added to the iOS or iPadOS home screen, which cannot hand a
+ * profile to the system. Only Safari there sets `navigator.standalone`; installed apps on other
+ * systems are not meant. */
+export const runsOnIosHomeScreen = (): boolean =>
+  typeof navigator !== 'undefined' &&
+  (navigator as Navigator & { standalone?: boolean }).standalone === true
 
 export const needsSignInAgain = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 428
@@ -177,6 +211,28 @@ export interface ServerRow extends DeviceServer {
   host: string
 }
 
+/** Protocols with nothing to connect to on this server; the API needs no listener of its own. */
+export function unservedProtocols(
+  protocols: readonly string[],
+  servers: readonly DeviceServer[] | undefined,
+): string[] {
+  const served = new Set((servers ?? []).map((server) => server.protocol))
+  return inOrder(deviceProtocols, protocols).filter(
+    (protocol) => protocol !== 'api' && !served.has(protocol),
+  )
+}
+
+/** Which device made a change: its name when it is one of the viewer's devices, `null` for a
+ * device the viewer cannot name (someone else's, or one since removed), `undefined` when no
+ * device made it. */
+export function changeDevice(
+  deviceId: string | null | undefined,
+  devices: readonly Pick<Device, 'id' | 'name'>[] | undefined,
+): string | null | undefined {
+  if (deviceId == null) return undefined
+  return devices?.find((device) => device.id === deviceId)?.name ?? null
+}
+
 /** The listeners a device using `protocols` connects to, or every listener without `protocols`. */
 export function serverRows(
   servers: readonly DeviceServer[] | undefined,
@@ -185,11 +241,12 @@ export function serverRows(
 ): ServerRow[] {
   return (servers ?? [])
     .filter((server) => !protocols || protocols.includes(server.protocol))
-    .map(({ protocol, host, port, security }) => ({
+    .map(({ protocol, host, port, security, url }) => ({
       protocol,
       host: host ?? fallbackHost,
       port,
       security,
+      url: url ?? null,
     }))
 }
 
@@ -243,4 +300,37 @@ export function parseDismissedNotices(raw: string | null): string[] {
   } catch {
     return []
   }
+}
+
+export interface BuildState {
+  building: boolean
+  percent: number
+}
+
+export function buildState(archive: ServingArchive): BuildState {
+  if (archive.built >= archive.mailboxes) return { building: false, percent: 100 }
+  if (archive.total <= 0) return { building: true, percent: 0 }
+  const percent = Math.floor((Math.min(archive.assigned, archive.total) * 100) / archive.total)
+  return { building: true, percent: Math.min(percent, 99) }
+}
+
+const systemFlags = ['seen', 'flagged', 'answered', 'draft'] as const
+export type SystemFlag = (typeof systemFlags)[number]
+
+export interface FlagWord {
+  system: SystemFlag | null
+  name: string
+  present: boolean
+}
+
+function flagWord(flag: LocalFlag): FlagWord {
+  const bare = flag.flag.startsWith('\\') ? flag.flag.slice(1).toLowerCase() : null
+  const system = systemFlags.find((name) => name === bare) ?? null
+  return { system, name: flag.flag, present: flag.present }
+}
+
+export function sortedFlagWords(flags: readonly LocalFlag[]): FlagWord[] {
+  const rank = (word: FlagWord) =>
+    word.system === null ? systemFlags.length : systemFlags.indexOf(word.system)
+  return flags.map(flagWord).toSorted((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
 }

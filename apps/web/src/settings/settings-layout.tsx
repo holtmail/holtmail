@@ -21,6 +21,7 @@ import {
   UsersIcon,
   VenetianMaskIcon,
   WebhookIcon,
+  WorkflowIcon,
 } from 'lucide-react'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
@@ -48,6 +49,7 @@ interface Section {
     | '/settings/categories'
     | '/settings/contacts-calendars'
     | '/settings/devices'
+    | '/settings/rules'
     | '/settings/reading'
     | '/settings/profile'
     | '/settings/about'
@@ -74,6 +76,7 @@ const sections: Section[] = [
     managers: false,
   },
   { to: '/settings/devices', label: strings.devices.nav, icon: SmartphoneIcon, managers: false },
+  { to: '/settings/rules', label: strings.rules.nav, icon: WorkflowIcon, managers: false },
   { to: '/settings/reading', label: t.reading, icon: BookOpenIcon, managers: false },
   { to: '/settings/profile', label: t.profile, icon: UserIcon, managers: false },
   { to: '/settings/about', label: t.about, icon: InfoIcon, managers: false },

@@ -22,6 +22,7 @@ import {
   parseLabelRouteSearch,
   parseMailSearch,
   parsePeopleSearch,
+  parseRulesSearch,
   parseSearchRouteSearch,
 } from './lib/search-params.ts'
 import { MailLayout } from './mail/mail-layout.tsx'
@@ -218,6 +219,21 @@ const editsSettingsRoute = createRoute({
   component: lazyRouteComponent(() => import('./settings/edits-page.tsx'), 'EditsPage'),
 })
 
+const rulesSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'rules',
+  validateSearch: parseRulesSearch,
+  component: lazyRouteComponent(() => import('./settings/rules-page.tsx'), 'RulesPage'),
+})
+
+const flowEditorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/rules/$flowId',
+  beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
+  component: lazyRouteComponent(() => import('./rules/flow-editor.tsx'), 'FlowEditorPage'),
+  errorComponent: ServerFailed,
+})
+
 const readingSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'reading',
@@ -307,6 +323,7 @@ const routeTree = rootRoute.addChildren([
   welcomeRoute,
   itemRoute,
   eventRoute,
+  flowEditorRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     archivesSettingsRoute,
@@ -321,6 +338,7 @@ const routeTree = rootRoute.addChildren([
     sendingSettingsRoute,
     categoriesSettingsRoute,
     editsSettingsRoute,
+    rulesSettingsRoute,
     readingSettingsRoute,
     profileSettingsRoute,
     aboutSettingsRoute,

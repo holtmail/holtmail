@@ -9,17 +9,20 @@ import type {
 
 import { deviceStrings } from './strings-devices.ts'
 import { editStrings } from './strings-edits.ts'
+import { ruleStrings } from './strings-rules.ts'
 import { currentLocale, writingStrings } from './strings-writing.ts'
 
 const writing = writingStrings[currentLocale()]
 const edits = editStrings[currentLocale()]
 const devices = deviceStrings[currentLocale()]
+const rules = ruleStrings[currentLocale()]
 
 export const strings = {
   appName: 'Holtmail',
   writing,
   edits,
   devices,
+  rules,
   landmarks: {
     folders: 'Folders',
     messages: 'Messages',
@@ -659,6 +662,9 @@ export const strings = {
       'account.needs_sign_in': 'An account needs signing in again',
       'messages.deleted': 'Messages are deleted',
       'ledger.verified': 'The ledger is checked',
+      'flow.paused': 'A rule is paused by the circuit breaker',
+      'flow.notified': 'A rule sends a notification',
+      'flow.run': 'A rule calls this webhook (rules may name it)',
     } as Record<string, string>,
     webhookSecret: 'Signing secret',
     webhookSecretLead:

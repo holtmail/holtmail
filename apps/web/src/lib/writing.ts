@@ -32,6 +32,10 @@ export const isGrantRole = (value: string): value is GrantRole =>
 export const roleIncludes = (role: string | undefined, needed: GrantRole): boolean =>
   role !== undefined && isGrantRole(role) && roleOrder.indexOf(role) >= roleOrder.indexOf(needed)
 
+/** Whether "Apply anyway" shows for an attendee's unverified answer: it needs an editor grant. */
+export const canApplyAnswers = (archive: Pick<Archive, 'rights'> | undefined): boolean =>
+  roleIncludes(archive?.rights.role, 'editor')
+
 /** Whether the compose button, reply actions and the outbox show in this archive. */
 export const canCompose = (archive: Pick<Archive, 'rights'> | undefined): boolean =>
   archive?.rights.compose === true

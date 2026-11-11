@@ -45,6 +45,7 @@ import {
   shownFlags,
 } from '../lib/mailbox.ts'
 import { displayStroke } from '../lib/shortcuts.ts'
+import { DeviceOrigin } from '../settings/device-origin.tsx'
 import { strings } from '../strings.ts'
 import { useMail } from './context.ts'
 import { folderLabel } from './sidebar.tsx'
@@ -274,6 +275,11 @@ export function HeldMark({
             <CircleAlertIcon aria-hidden className="size-4 shrink-0 text-danger" />
             <span className="min-w-0 flex-1 text-fg">
               {t.failedTitle}: {lineText(line)} — {errorText(line.error)}
+              {change.device_id != null && (
+                <span className="block text-xs text-fg-muted">
+                  <DeviceOrigin deviceId={change.device_id} />
+                </span>
+              )}
             </span>
             {(retry || dismiss) && (
               <span className="flex gap-1">

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use holtmail_compose::{
     Answer, Attachment, CalendarPart, ComposeError, Draft, ExtraHeader, ForwardKind, ImipKind,
     Invitation, MAX_REFERENCES, Mailbox, Original, ReplyKind, build, forward, imip, imip_subject,
-    reply, shorten_references,
+    reply, shorten_references, usable_references,
 };
 use holtmail_core::Timestamp;
 use mail_parser::MessageParser;
@@ -488,6 +488,26 @@ fn shortens_references_from_the_middle() {
     assert_eq!(short[0], "0@example.com");
     assert_eq!(short[1], "11@example.com");
     assert_eq!(short.last().unwrap(), "29@example.com");
+}
+
+#[test]
+fn usable_references_drop_ids_no_message_can_carry() {
+    let mut ids: Vec<String> = vec![
+        "<root@example.com>".into(),
+        "with space@example.com".into(),
+        "caf\u{e9}@example.com".into(),
+        "root@example.com".into(),
+    ];
+    ids.extend((0..40).map(|i| format!("{i}@example.org")));
+    let usable = usable_references(&ids);
+    assert_eq!(usable.len(), MAX_REFERENCES);
+    assert_eq!(usable[0], "root@example.com");
+    assert_eq!(usable.last().unwrap(), "39@example.org");
+    assert!(
+        usable
+            .iter()
+            .all(|id| id.bytes().all(|b| b.is_ascii_graphic()))
+    );
 }
 
 proptest! {

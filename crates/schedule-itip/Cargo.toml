@@ -1,0 +1,29 @@
+[package]
+name = "holtmail-schedule-itip"
+description = "Calendar scheduling over iMIP: pim-edit's iTIP objects and routes, compose and Submission"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-collection.workspace = true
+holtmail-compose.workspace = true
+holtmail-core.workspace = true
+holtmail-pim.workspace = true
+holtmail-pim-edit.workspace = true
+holtmail-route.workspace = true
+holtmail-schedule.workspace = true
+holtmail-submission.workspace = true
+async-trait.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+holtmail-schedule = { workspace = true, features = ["testing"] }
+holtmail-submission = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

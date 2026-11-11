@@ -1378,6 +1378,20 @@ async fn a_device_gets_a_report_for_mail_that_failed_after_it_was_taken() {
         Some(holtmail_mime::DsnAction::Failed)
     );
     assert_eq!(found[0].recipients[0].status.as_deref(), Some("5.0.0"));
+    let placed = w
+        .store
+        .local_places(w.user, w.archive, Some(FolderRole::Inbox))
+        .await
+        .unwrap();
+    assert_eq!(placed.len(), 1, "the report shows in the user's inbox");
+    assert!(
+        w.store
+            .locations(placed[0].message_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "never as an upstream place"
+    );
 }
 
 #[tokio::test]
@@ -1417,4 +1431,11 @@ async fn no_report_for_the_web_app_or_for_mail_that_left() {
     w.outbox.send_due().await.unwrap();
     assert_eq!(w.get(&device).await.state, OutboxState::Sent);
     assert!(reports(&w).is_empty());
+    assert!(
+        w.store
+            .local_places(w.user, w.archive, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

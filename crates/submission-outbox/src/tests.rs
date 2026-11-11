@@ -289,6 +289,7 @@ fn submit(w: &World, id: &str, actor: Actor, recipients: &[&str], extra: &str) -
         idempotency_key: None,
         allow_leaks: false,
         route: None,
+        hold: false,
     }
 }
 

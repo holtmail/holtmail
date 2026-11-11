@@ -95,6 +95,11 @@ pub struct Submit {
     /// `mail_from` and the header `From` must then be the route's `from`, which may be an alias
     /// of the identity, and the route must name that identity. Protocols leave this `None`.
     pub route: Option<Route>,
+    /// Keeps the message held: it is checked and taken in like any other, but it never leaves
+    /// until [`Submission::release`] lets it go, and [`Submission::undo`] can cancel it until
+    /// then. For a message that belongs to something recorded after it is queued; `send_at`
+    /// does not apply to it.
+    pub hold: bool,
 }
 
 /// Where a submitted message is.
@@ -257,6 +262,17 @@ pub trait Submission: Send + Sync {
     /// leaves. Undoing it again returns it unchanged. [`SubmissionError::TooLate`] once it left
     /// the queue, [`SubmissionError::NotFound`] unless `actor`'s user submitted it.
     async fn undo(&self, actor: &Actor, id: OutboxId) -> Result<Submitted, SubmissionError>;
+
+    /// Lets a held message go: it leaves once `undo_window` (`None` for the instance's default)
+    /// has passed from now. A message that is not held (queued, cancelled or gone) is returned
+    /// unchanged, so releasing twice is harmless. [`SubmissionError::NotFound`] unless `actor`'s
+    /// user submitted it.
+    async fn release(
+        &self,
+        actor: &Actor,
+        id: OutboxId,
+        undo_window: Option<Duration>,
+    ) -> Result<Submitted, SubmissionError>;
 
     /// The message's state and what became of each recipient. [`SubmissionError::NotFound`]
     /// unless `actor`'s user submitted it.

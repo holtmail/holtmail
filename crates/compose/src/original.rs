@@ -207,6 +207,19 @@ pub(crate) fn thread(original: &Original) -> Vec<String> {
     shorten_references(&references, MAX_REFERENCES)
 }
 
+/// The `References` of an answer to `original` that any message can carry: [`thread`]'s list
+/// with ids a message cannot carry dropped, at most [`MAX_REFERENCES`], the original's own id
+/// last when it is usable.
+pub fn answer_references(original: &Original) -> Vec<String> {
+    let mut references = if original.references.is_empty() {
+        original.in_reply_to.clone()
+    } else {
+        original.references.clone()
+    };
+    references.extend(original.message_id.clone());
+    crate::usable_references(&references)
+}
+
 /// A forward draft of `original`, whose archived bytes are `raw`, sent as `from`.
 ///
 /// Recipients are empty for the user to fill in; the subject gets exactly one `Fwd:`.

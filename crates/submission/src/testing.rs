@@ -102,6 +102,7 @@ fn request(world: &World, id: &str) -> Submit {
         idempotency_key: None,
         allow_leaks: false,
         route: None,
+        hold: false,
     }
 }
 
@@ -144,6 +145,7 @@ pub async fn conformance(harness: &dyn Harness) {
     idempotency(harness).await;
     rate_limits(harness).await;
     undoing(harness).await;
+    holding(harness).await;
 }
 
 async fn senders(harness: &dyn Harness) {
@@ -559,9 +561,70 @@ async fn undoing(harness: &dyn Harness) {
     );
 }
 
+async fn holding(harness: &dyn Harness) {
+    let w = harness.start(Setup::default()).await;
+    let s = &*w.submission;
+    let held = s
+        .queue(Submit {
+            hold: true,
+            ..request(&w, "held")
+        })
+        .await
+        .unwrap();
+    assert_eq!(held.state, SubmissionState::Queued, "a held message waits");
+    w.driver.deliver(held.id).await;
+    assert_eq!(
+        s.status(&w.sender, held.id).await.unwrap().state,
+        SubmissionState::Queued,
+        "a held message never leaves"
+    );
+    not_found(
+        s.release(&w.stranger, held.id, None).await,
+        "someone else's",
+    );
+    not_found(s.release(&w.sender, OutboxId::new(), None).await, "unknown");
+    let released = s
+        .release(&w.sender, held.id, Some(Duration::ZERO))
+        .await
+        .unwrap();
+    assert_eq!(released.state, SubmissionState::Queued);
+    w.driver.deliver(held.id).await;
+    let sent = s.status(&w.sender, held.id).await.unwrap();
+    assert_eq!(
+        sent.state,
+        SubmissionState::Sent,
+        "a released message leaves"
+    );
+    assert_eq!(
+        s.release(&w.sender, held.id, None).await.unwrap(),
+        sent,
+        "releasing again changes nothing"
+    );
+
+    let dropped = s
+        .queue(Submit {
+            hold: true,
+            ..request(&w, "dropped")
+        })
+        .await
+        .unwrap();
+    let undone = s.undo(&w.sender, dropped.id).await.unwrap();
+    assert_eq!(
+        undone.state,
+        SubmissionState::Cancelled,
+        "a held message can be undone"
+    );
+    assert_eq!(
+        s.release(&w.sender, dropped.id, None).await.unwrap(),
+        undone,
+        "a cancelled message stays cancelled"
+    );
+}
+
 struct Stored {
     submitted: Submitted,
     user: UserId,
+    held: bool,
 }
 
 #[derive(Default)]
@@ -828,6 +891,7 @@ impl Submission for FakeSubmission {
             Stored {
                 submitted: submitted.clone(),
                 user: request.actor.user,
+                held: request.hold,
             },
         );
         if let Some(key) = key {
@@ -856,6 +920,28 @@ impl Submission for FakeSubmission {
         }
     }
 
+    async fn release(
+        &self,
+        actor: &Actor,
+        id: OutboxId,
+        undo_window: Option<Duration>,
+    ) -> Result<Submitted, SubmissionError> {
+        self.visible(actor, id)?;
+        let mut state = self.lock();
+        let stored = state
+            .messages
+            .get_mut(&id)
+            .ok_or(SubmissionError::NotFound("submission"))?;
+        if stored.held && stored.submitted.state == SubmissionState::Queued {
+            stored.held = false;
+            let window = undo_window.unwrap_or(Duration::from_secs(10));
+            let earliest = Timestamp::now().as_millis() + window.as_millis() as i64;
+            stored.submitted.send_at =
+                Timestamp::from_millis(stored.submitted.send_at.as_millis().max(earliest));
+        }
+        Ok(stored.submitted.clone())
+    }
+
     async fn status(&self, actor: &Actor, id: OutboxId) -> Result<Submitted, SubmissionError> {
         self.visible(actor, id)
     }
@@ -866,6 +952,9 @@ impl Driver for FakeSubmission {
     async fn deliver(&self, id: OutboxId) {
         let mut state = self.lock();
         let stored = state.messages.get_mut(&id).expect("a submitted message");
+        if stored.held {
+            return;
+        }
         stored.submitted.state = SubmissionState::Sent;
         for recipient in &mut stored.submitted.recipients {
             recipient.delivery = RecipientDelivery::Accepted;

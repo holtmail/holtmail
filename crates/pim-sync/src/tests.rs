@@ -482,6 +482,7 @@ impl Fixture {
                     at: Timestamp::now(),
                     not_before: None,
                     messages: Vec::new(),
+                    schedule_tag: None,
                 },
                 holtmail_store::Expect::Any,
             )

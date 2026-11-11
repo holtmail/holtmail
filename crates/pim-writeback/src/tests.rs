@@ -218,6 +218,7 @@ impl World {
             at: self.now(),
             not_before: None,
             messages: Vec::new(),
+            schedule_tag: None,
         };
         match self
             .store

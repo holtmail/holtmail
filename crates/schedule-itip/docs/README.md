@@ -1,0 +1,35 @@
+# holtmail-schedule-itip
+
+The [`holtmail-schedule`](../../schedule/docs/README.md) `Scheduler` over iMIP (RFC 6047). The iTIP objects and the choice of who sends them come from [`holtmail-pim-edit`](../../pim-edit/docs/README.md) (Phase 62's `organize`, `reply`, `answered`, `apply_reply`, `classify`, `organizer_route` and `reply_route`), the mail around them from [`holtmail-compose`](../../compose/docs/README.md) (`imip`, `build`), and every message goes into the outbox through `holtmail_submission::Submission`. Wired only by `apps/server`.
+
+## Use
+
+```rust
+let scheduler = ItipScheduler::new(submission, holtmail_schedule::system_clock());
+let scheduler = scheduler.with_undo_window(Duration::from_secs(10)); // optional
+```
+
+- `new(submission, clock)`: every message is submitted held (`Submit::hold`) and leaves only after `confirm` and the instance's undo window, so `withdraw` can always take it back when the caller fails to record the change, whatever `[write] undo_seconds` says.
+- `with_undo_window(window)`: confirmed messages wait this window instead of the instance's.
+
+## How it schedules
+
+- **Prepare.** With `keep_answers` (a matching `If-Schedule-Tag-Match`), an organizer's write takes each other attendee's `PARTSTAT` from the same component of the served copy before anything else happens. A content-line model of its own (unfold, components, quote-aware parameters, refold at 75 octets) strips client `SCHEDULE-STATUS` and `SCHEDULE-FORCE-SEND`. An attendee's write is checked with `pim_edit::classify`: `noop`, `personal` and `reply` are kept as written; anything else is rebuilt from the previous copy with `answered` for the user's own answers (series first, then instances; an added `EXDATE` is answered `DECLINED` for that instance, as RFC 6638 asks servers to treat it), and the client's alarms, `TRANSP`, `PERCENT-COMPLETE`, `COMPLETED` and `X-MOZ-`/`X-APPLE-`/`X-EVOLUTION-` lines laid over each matching component.
+- **Organizer.** `organize(previous, next, false, now)` gives the copy to record (`SEQUENCE` raised, answers reset) and every message. `organizer_route` picks `Server`, `Deferred` or `Imip`; per recipient, `SCHEDULE-AGENT=CLIENT` from a device is left to the device, from the web app is mailed on a scheduling upstream (Phase 62's rule). Mail is sent from the identity `Submission::sender` gives for the organizer address.
+- **Attendee.** Own `PARTSTAT` changes per component (series and each instance, compared with the previous copy's same instance or its series) and a delete (`DECLINED`) are answered on `reply_route(host, caps, reply_agent(..))`: `Server` sends nothing (the caller writes the `reply` change with `Respond { notify: true }`), `Quiet` nothing, `Imip` one `REPLY` per changed component from `reply_as` (an alias route chosen by the front end, passed to `Submit::route`) or the invited own address, to `reply_as.to` (a reverse alias or the alias service's `Reply-To`) when the front end gave one and to the `ORGANIZER` otherwise; the status is still written on the `ORGANIZER`. `In-Reply-To` and `References` come from `Change::references` through `compose::usable_references` (ids no message can carry dropped, at most 20), so a long or broken chain from an invitation never blocks the answer; the `COMMENT` from `Change::comment`. `NEEDS-ACTION` is never sent.
+- **Statuses.** The worst outcome per recipient across a change's messages (`5.1` over `3.7` over `1.0` over `1.1`), written as `SCHEDULE-STATUS` on `ATTENDEE` (organizer) or `ORGANIZER` (attendee) lines; recipients the change does not concern keep the previous copy's status. The copy is rewritten only when a status changed.
+- **Duplicates.** Each message has a BLAKE3 digest of its method, `UID`, `SEQUENCE`, `RECURRENCE-ID`, recipients and calendar without `DTSTAMP` (the fresh `DTSTAMP` would make every message unique, so the content stands in for it). A digest delivered in the archive within `RECENT` is not queued again, unless the outbox says that message was cancelled since (undone in the outbox or withdrawn). The digest also makes the outbox idempotency key `itip:<digest>:<10-minute bucket>:<generation>`, so a repeat after a restart within the same bucket returns the first submission; a withdrawn message raises its digest's generation, and when the outbox answers a key with a cancelled message (a generation lost at a restart) the scheduler raises the generation and submits again, up to four keys. Only messages `withdraw` actually undid stop counting as sent. `just_sent` keeps each message's key (`UID`, `SEQUENCE`, method, `RECURRENCE-ID`, the answer of a `REPLY`) and recipients.
+- **Incoming.** Pure decisions as the contract lists them; DKIM counts when the signing domain is the attendee's domain or a parent of it. `apply_reply` does the merge, so a reply older than the copy, for another `UID` or naming no listed attendee changes nothing (`Unchanged`).
+- **Confirm.** `confirm` releases each held message with `Submission::release` and this scheduler's window; a message the outbox no longer knows is skipped.
+- **Failure.** `Submission::Unavailable` at any point undoes what this delivery queued and returns `Unavailable`. Other submission errors become `3.7` (`Forbidden`, `FromMismatch`, `Leak`) or `5.1` (rate limits, size, anything else) for that message's recipients. A message that fails or bounces after it was queued keeps `1.1` in the copy; the outbox shows the failure.
+
+## Limits
+
+- What was delivered recently lives in memory: after a restart `just_sent` is false until something is delivered again (the outbox key still drops a repeat within the same 10-minute bucket), and two processes do not share it.
+- Only `VEVENT`s are scheduled; `COUNTER`, `REFRESH`, `ADD` and delegation are not (as in `pim-edit`).
+- The attendee reduction matches instances by the `RECURRENCE-ID` value as written; an instance whose client spelling differs from the stored one loses its client alarms in a reduced write.
+- `SCHEDULE-STATUS` `1.2` (delivered) is never written: no upstream reports delivery to it yet.
+
+## Tests
+
+`cargo test -p holtmail-schedule-itip`: the contract's conformance suite, plus hand-written invented events: an added `EXDATE` reduced to a declined instance, Apple's decline of one occurrence answered for that instance only, a moved event (`SEQUENCE` raised, answers reset, `CANCEL` to a removed attendee, statuses ordered), an answer through an alias route (`From`, `In-Reply-To`, `COMMENT`), an answer through a reverse alias (sent to the alias service, status on the organizer), a 2,000-id reference chain with a broken id, a withdrawn message sent anew by a restarted scheduler despite the cancelled outbox key, a stale organizer write keeping series and instance answers, an outbox that becomes unavailable mid-change (the first message taken back), folded client lines stripped and refolded, a `REPLY` through a signing alias service applied and one naming two attendees refused, and an answer written through a Graph calendar. `src/ical.rs` tests folding, quoted parameters and unbalanced objects.

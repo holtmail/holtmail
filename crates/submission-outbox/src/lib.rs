@@ -606,12 +606,35 @@ impl Submission for OutboxSubmission {
             }
             return Err(store_error(error));
         }
+        if request.hold {
+            return Ok(submitted(&entry));
+        }
         let released = self
             .outbox
             .release_within(entry.id, request.send_at, window)
             .await
             .map_err(outbox_error)?;
         Ok(submitted(&released))
+    }
+
+    async fn release(
+        &self,
+        actor: &Actor,
+        id: OutboxId,
+        undo_window: Option<Duration>,
+    ) -> Result<Submitted, SubmissionError> {
+        let entry = self.mine(actor, id).await?;
+        if entry.state != OutboxState::Draft {
+            return Ok(submitted(&entry));
+        }
+        let window = undo_window.unwrap_or_else(|| self.outbox.config().undo_window);
+        match self.outbox.release_within(id, None, window).await {
+            Ok(released) => Ok(submitted(&released)),
+            Err(error) => match self.mine(actor, id).await {
+                Ok(now) if now.state != OutboxState::Draft => Ok(submitted(&now)),
+                _ => Err(outbox_error(error)),
+            },
+        }
     }
 
     async fn undo(&self, actor: &Actor, id: OutboxId) -> Result<Submitted, SubmissionError> {

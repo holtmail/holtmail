@@ -14,7 +14,7 @@ mod subject;
 
 pub use build::build;
 pub use imip::{Answer, ImipKind, Invitation, imip, imip_subject, imip_text};
-pub use original::{ForwardKind, Original, ReplyKind, forward, reply};
+pub use original::{ForwardKind, Original, ReplyKind, answer_references, forward, reply};
 pub use subject::{forward_subject, reply_subject, strip_prefixes};
 
 use holtmail_core::Timestamp;
@@ -189,6 +189,17 @@ pub enum ComposeError {
     /// A reply to the list was asked for, but the original has no usable `List-Post` address.
     #[error("the original has no list address")]
     NoListAddress,
+}
+
+/// `references` fit for a `References` field: ids a message cannot carry are dropped (with
+/// their angle brackets removed otherwise), then the list is shortened to [`MAX_REFERENCES`] as
+/// [`shorten_references`] does. Never fails, whatever the ids came from.
+pub fn usable_references(references: &[String]) -> Vec<String> {
+    let valid: Vec<String> = references
+        .iter()
+        .filter_map(|id| build::message_id_value(id, "References").ok())
+        .collect();
+    shorten_references(&valid, MAX_REFERENCES)
 }
 
 /// Shortens a `References` list to at most `max` ids by dropping ids from the middle, keeping

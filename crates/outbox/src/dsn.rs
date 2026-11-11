@@ -1,5 +1,5 @@
 use holtmail_core::Timestamp;
-use holtmail_store::{OutboxEntry, OutboxState, RecipientState};
+use holtmail_store::{FolderRole, OutboxEntry, OutboxState, RecipientState};
 use mail_builder::headers::date::Date;
 
 use crate::Outbox;
@@ -117,8 +117,8 @@ fn report(
 
 impl Outbox {
     /// Tells a mail client's user about a message that was accepted from a device and then
-    /// could not be delivered to someone: an RFC 3464 report is archived and the outbox row says
-    /// so. Runs after a message failed for good or was sent with refused recipients. Anything
+    /// could not be delivered to someone: an RFC 3464 report is archived, shown in that user's
+    /// served `INBOX` as a local place, and the outbox row says so. Runs after a message failed for good or was sent with refused recipients. Anything
     /// that goes wrong here is logged and leaves the row as it is.
     pub(crate) async fn report_undelivered(&self, entry: &OutboxEntry) {
         if entry.new.device_id.is_none()
@@ -139,15 +139,26 @@ impl Outbox {
             }
         };
         let bytes = report(entry, &failed, &original, self.now());
-        if let Err(error) = self
+        let message = match self
             .archiver
             .archive(entry.new.archive_id, bytes.into(), None, &[])
             .await
         {
-            tracing::warn!(outbox = %entry.id, %error, "delivery report not archived");
-            return;
-        }
+            Ok(message) => message,
+            Err(error) => {
+                tracing::warn!(outbox = %entry.id, %error, "delivery report not archived");
+                return;
+            }
+        };
         tracing::info!(outbox = %entry.id, recipients = failed.len(), "delivery report archived");
+        if let Some(user) = entry.new.user_id
+            && let Err(error) = self
+                .store
+                .add_local_place(user, FolderRole::Inbox, message, self.now())
+                .await
+        {
+            tracing::warn!(outbox = %entry.id, %error, "delivery report not placed in the inbox");
+        }
         if let Err(error) = self
             .store
             .set_outbox_note(entry.id, Some(NOTE), self.now())

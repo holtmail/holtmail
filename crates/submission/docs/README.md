@@ -20,6 +20,7 @@ pub struct Submit {
     pub idempotency_key: Option<String>,
     pub allow_leaks: bool,
     pub route: Option<Route>,
+    pub hold: bool,
 }
 pub struct Submitted { pub id: OutboxId, pub archive: ArchiveId, pub identity: IdentityId,
     pub state: SubmissionState, pub send_at: Timestamp,
@@ -31,6 +32,7 @@ pub struct Submitted { pub id: OutboxId, pub archive: ArchiveId, pub identity: I
 - `undo_window`: `None` is the instance's default, `Some(ZERO)` none.
 - `allow_leaks` is only for a person who confirmed the leak in the web app; protocols leave it false.
 - `route` is the `holtmail_route::Route` a front end already chose and showed to the person, stored with the message; protocols leave it `None`. With a route the leak guard is not run again, because that front end ran it with more than the message tells, and `allow_leaks` says it found leaks the person confirmed. `mail_from` and the header `From` must then be the route's `from`, which may be an alias of the identity, and the route must name that identity.
+- `hold` keeps the message held: it is checked and taken in like any other, never leaves until `release`, and `undo` cancels it until then. It is for a message that belongs to something recorded after it is queued (the scheduler's iTIP messages, recorded with their calendar change); `send_at` does not apply to it. A held message reports `Queued`.
 - `SubmissionState` is `Queued`, `Sending` (also while waiting for a retry), `Sent`, `Failed`, `Uncertain`, `Bounced`, `Cancelled`. `RecipientDelivery` is `Pending`, `Accepted`, `Refused { permanent, code, text }`, `Bounced { status, text }`; `text` may name addresses, never log it.
 
 ## Submission
@@ -42,6 +44,7 @@ pub struct Submitted { pub id: OutboxId, pub archive: ArchiveId, pub identity: I
 | `sender(actor, archive, address)` | The active identity whose address is `address` or has it as a plus address, ignoring letter case, with every lock open. `Forbidden` otherwise and for the null return path; `RateLimited` when the limits are used up |
 | `queue(request)` | A repeated idempotency key (per user) returns the first submission at once, whatever changed since, and counts once against the limits. Otherwise, in this order: `sender`'s checks for the named identity, the header `From`, the shape of the message and recipients, the size, the leak guard unless `allow_leaks`, the transport's own rules. A refused message leaves nothing behind. After `Unavailable` a request with a key may be repeated and picks up where it stopped; nothing leaves until then. Limits apply to device submissions only. It leaves no earlier than `send_at` and the end of its undo window |
 | `undo(actor, id)` | The message becomes `Cancelled` and never leaves; undoing again returns it unchanged. `TooLate` once it left the queue, `NotFound` unless the actor's user submitted it |
+| `release(actor, id, undo_window)` | A held message is let go and leaves once `undo_window` (`None`: the instance's default) has passed from now. A message that is not held (queued, cancelled or gone) is returned unchanged, so releasing twice is harmless. `NotFound` unless the actor's user submitted it |
 | `status(actor, id)` | Its state and each recipient in submitted order. `NotFound` unless the actor's user submitted it |
 
 Implementations are safe to share between tasks.
@@ -70,6 +73,6 @@ Enable the `testing` feature under `[dev-dependencies]` and run the suite with a
 holtmail_submission::testing::conformance(&harness).await;
 ```
 
-`Harness::start(setup)` makes a fresh instance as `Setup` says (per-user limits, the transport's `max_size` and `smtputf8`, whether sending is open) and returns a `World`: the implementation, a `Driver` that hands a message to its transport, the archive, a sender with the identity `ada@example.com`, a stranger who may not send as it, and a thread that arrived through an alias with a recipient who would see the real mailbox.
+`Harness::start(setup)` makes a fresh instance as `Setup` says (per-user limits, the transport's `max_size` and `smtputf8`, whether sending is open) and returns a `World`: the implementation, a `Driver` that hands a message to its transport, the archive, a sender with the identity `ada@example.com`, a stranger who may not send as it, and a thread that arrived through an alias with a recipient who would see the real mailbox. The `Driver` must leave a held message alone; the suite checks that a held message never leaves before `release`, leaves after it, can be undone while held, and that releasing again or releasing a cancelled message changes nothing.
 
 `testing::FakeSubmission::world(setup)` keeps the whole contract in memory for tests of protocol front ends; its time-based limits never reset.

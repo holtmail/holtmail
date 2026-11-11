@@ -153,7 +153,7 @@ fn list(list: &[(Option<String>, String)]) -> Address<'static> {
     Address::new_list(list.iter().map(address).collect())
 }
 
-fn message_id_value(id: &str, field: &'static str) -> Result<String, ComposeError> {
+pub(crate) fn message_id_value(id: &str, field: &'static str) -> Result<String, ComposeError> {
     no_breaks(id, field)?;
     let id = id.trim();
     let id = id

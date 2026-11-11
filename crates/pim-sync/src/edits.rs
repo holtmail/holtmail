@@ -222,6 +222,7 @@ impl Edits {
                 collection_id: Some(collection.id),
                 states: vec![ItemChangeState::Held],
                 flagged_only: true,
+                after: None,
                 limit: 500,
             })
             .await?;

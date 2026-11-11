@@ -57,6 +57,7 @@ fn summary(archive: ArchiveId, raw: &[u8]) -> ItemSummary {
             removed_at: None,
             versions: 1,
             dav_name: None,
+            schedule_tag: None,
         },
         index: Some(index(raw)),
     }

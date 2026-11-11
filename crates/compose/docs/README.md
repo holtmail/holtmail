@@ -12,6 +12,8 @@ pub fn reply_subject(subject: &str) -> String;
 pub fn forward_subject(subject: &str) -> String;
 pub fn strip_prefixes(subject: &str) -> &str;
 pub fn shorten_references(references: &[String], max: usize) -> Vec<String>;
+pub fn usable_references(references: &[String]) -> Vec<String>;
+pub fn answer_references(original: &Original) -> Vec<String>;
 pub fn imip(from: Mailbox, to: Vec<Mailbox>, invitation: &Invitation, answering: Option<&Original>) -> Draft;
 pub fn imip_subject(invitation: &Invitation) -> String;
 pub fn imip_text(from: &Mailbox, invitation: &Invitation) -> String;
@@ -44,7 +46,7 @@ pub fn imip_text(from: &Mailbox, invitation: &Invitation) -> String;
 - **All:** `Mail-Followup-To` when present. Otherwise the sender as above and the original's `To` in `To`, its `Cc` in `Cc`. Every address in `own` and the identity's address are removed; when `To` ends up empty, `Cc` moves to `To`.
 - **List:** the `mailto:` address of `List-Post`; `NoListAddress` when it is missing or `NO`.
 - Nobody appears twice, comparing addresses without regard to letter case.
-- **Threading:** `In-Reply-To` is the original's id; `References` is the original's `References` (or its `In-Reply-To` when it has none) plus its id, shortened by `shorten_references` to `MAX_REFERENCES` (20): repeated ids dropped, then ids from the middle, keeping the first one (the thread's root) and the latest ones.
+- **Threading:** `In-Reply-To` is the original's id; `References` is the original's `References` (or its `In-Reply-To` when it has none) plus its id, shortened by `shorten_references` to `MAX_REFERENCES` (20): repeated ids dropped, then ids from the middle, keeping the first one (the thread's root) and the latest ones. `usable_references` first drops ids no message can carry (spaces, non-ASCII, empty; angle brackets are removed) and then shortens the same way, so it never makes `build` fail; `answer_references(original)` is the `References` of an answer built that way, the original's own id last. The iMIP answers of the scheduler use them, since an invitation's chain comes from whoever sent it.
 - **Subject:** exactly one `Re:`. `strip_prefixes` removes, in any case and order, `Re`, `AW`, `SV`, `Antw`, `Ответ`, `Отв`, `Fwd`, `FW`, `WG`, `TR` and `Enc` followed by a colon, with an optional counter (`Re[2]:`, `Re(3):`, `Re^2:`). A word without the colon (`Reunion`, `Re Ada`) is kept, and so are list tags such as `[dev]`.
 - **Quoting:** the text body is an empty line for the answer, then `On <date> at <time> UTC, <sender> wrote:` and the original's text with `> ` before each line (`>` before lines already quoted and empty ones). When the original has HTML, the HTML body is an empty paragraph, then the attribution and the original's HTML, cleaned with the outgoing profile, inside `<blockquote type="cite">`; the reader's quote folding knows both forms. The attribution is in English; the web app may replace it before sending.
 

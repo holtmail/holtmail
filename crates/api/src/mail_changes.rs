@@ -44,6 +44,8 @@ pub struct MailChangeDto {
     pub expunge: Option<bool>,
     /// `user`, `rule`, `retention` or `sent_copy`.
     pub origin: String,
+    /// The device a mail app asked through; absent for the web app and the server itself.
+    pub device_id: Option<String>,
     /// `held` (not yet on the server), `sending`, `applied`, `superseded_by_server` (the
     /// server showed something else afterwards and wins) or `failed`.
     pub state: String,
@@ -87,6 +89,7 @@ impl From<MailChange> for MailChangeDto {
             target_folder_id: target,
             expunge,
             origin: new.origin.as_str().into(),
+            device_id: new.device_id.map(|d| d.to_string()),
             state: change.state.as_str().into(),
             attempts: change.attempts,
             last_error: change.last_error,
@@ -408,7 +411,7 @@ impl<'a> Planner<'a> {
     }
 }
 
-async fn change_messages(
+pub(crate) async fn change_messages(
     state: &ApiState,
     user: &User,
     scopes: &Scopes,

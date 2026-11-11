@@ -16,6 +16,7 @@ holtmail-blob.workspace = true
 holtmail-calendar.workspace = true
 holtmail-collection.workspace = true
 holtmail-category.workspace = true
+holtmail-client-setup.workspace = true
 holtmail-compose.workspace = true
 holtmail-core.workspace = true
 holtmail-device.workspace = true
@@ -37,7 +38,9 @@ holtmail-pim-sync.workspace = true
 holtmail-query.workspace = true
 holtmail-recur.workspace = true
 holtmail-route.workspace = true
+holtmail-rules.workspace = true
 holtmail-sanitize.workspace = true
+holtmail-schedule.workspace = true
 holtmail-secret.workspace = true
 holtmail-serve-net.workspace = true
 holtmail-store.workspace = true
@@ -49,7 +52,9 @@ axum.workspace = true
 blake3.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 futures.workspace = true
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -60,6 +65,7 @@ utoipa.workspace = true
 
 [dev-dependencies]
 holtmail-submission-outbox.workspace = true
+holtmail-schedule-itip.workspace = true
 holtmail-alias = { workspace = true, features = ["testing"] }
 holtmail-alias-simplelogin.workspace = true
 holtmail-secret.workspace = true

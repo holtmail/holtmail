@@ -42,7 +42,8 @@ fn forbidden() -> Response {
 /// replies and forwards) and mailbox changes (flags, moves, deletes, restores, retrying and
 /// dismissing failed changes, an account's changes and retention) and contact and calendar
 /// edits (creating, changing and deleting items, a person's card, open changes and their
-/// resolution, write modes, answers to invitations) pass to their handlers, which check the grant themselves. Archives, messages, threads, contact or calendar items, events and
+/// resolution, write modes, answers to invitations and applying an attendee's reply) and rules
+/// (flows, their runs and the catalogue) pass to their handlers, which check the grant themselves. Archives, messages, threads, contact or calendar items, events and
 /// people a member may not read answer `404`, as if they did not exist.
 pub(crate) async fn check(
     State(state): State<Arc<ApiState>>,
@@ -79,7 +80,10 @@ pub(crate) async fn check(
         | ["collections", _, "items" | "write-mode" | "organizing"]
         | ["items", _, "content" | "rsvp"]
         | ["pim", "changes", ..]
-        | ["people", _, "card"] => return next.run(request).await,
+        | ["people", _, "card"]
+        | ["messages", _, "itip", "apply"]
+        | ["rules" | "flows" | "flow-runs", ..]
+        | ["archives", _, "flows", ..] => return next.run(request).await,
         ["items", _] if *request.method() == Method::DELETE => return next.run(request).await,
         [
             "users" | "accounts" | "tasks" | "image-proxy" | "sync-schedule" | "oauth" | "ledger"

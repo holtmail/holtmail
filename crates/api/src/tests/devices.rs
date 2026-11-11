@@ -533,17 +533,27 @@ async fn setup_says_what_this_server_offers() {
     let f = fixture().await;
     assert_eq!(
         f.json("/api/devices/setup").await,
-        json!({ "can_create": true, "servers": [] })
+        json!({ "can_create": true, "apple_profile": false, "davx5": null, "autoconfig": [], "servers": [] })
     );
     let (_, member) = f.add_user("grace@example.org", "member").await;
     let app = f.with_serve(ServeOptions {
         members: false,
-        servers: vec![crate::ServeEndpoint {
-            protocol: DeviceProtocol::Smtp,
-            host: Some("mail.example.com".into()),
-            port: 465,
-            implicit_tls: true,
-        }],
+        servers: vec![
+            crate::ServeEndpoint {
+                protocol: DeviceProtocol::Smtp,
+                host: Some("mail.example.com".into()),
+                port: 465,
+                implicit_tls: true,
+                url: None,
+            },
+            crate::ServeEndpoint {
+                protocol: DeviceProtocol::Dav,
+                host: Some("mail.example.com".into()),
+                port: 443,
+                implicit_tls: true,
+                url: Some("https://mail.example.com/dav/".into()),
+            },
+        ],
         ..ServeOptions::default()
     });
     let get = || {
@@ -558,7 +568,13 @@ async fn setup_says_what_this_server_offers() {
         shown,
         json!({
             "can_create": false,
-            "servers": [{ "protocol": "smtp", "host": "mail.example.com", "port": 465, "security": "tls" }],
+            "apple_profile": false,
+            "davx5": null,
+            "autoconfig": [],
+            "servers": [
+                { "protocol": "smtp", "host": "mail.example.com", "port": 465, "security": "tls", "url": null },
+                { "protocol": "dav", "host": "mail.example.com", "port": 443, "security": "tls", "url": "https://mail.example.com/dav/" },
+            ],
         })
     );
     let (_, _, body) = f.on(&app, None, get()).await;
@@ -593,4 +609,348 @@ async fn a_raise_is_remembered_and_a_lowering_is_not() {
         .await;
     let lowered: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(lowered["raised_at"], raised["raised_at"]);
+}
+
+fn client_setup(https: bool, dav: bool) -> crate::ClientSetup {
+    use holtmail_client_setup::{Ports, Server};
+    crate::ClientSetup {
+        server: Server {
+            name: "Holtmail".into(),
+            mail_host: "mail.example.com".into(),
+            web_host: "mail.example.com".into(),
+            web_port: if https { 443 } else { 8080 },
+            web_tls: https,
+            imap: Ports {
+                tls: Some(993),
+                starttls: None,
+            },
+            submission: Ports {
+                tls: Some(465),
+                starttls: Some(587),
+            },
+            jmap: true,
+            dav,
+        },
+        instance: "instance-one".into(),
+        mail_domains: vec!["example.com".into()],
+    }
+}
+
+fn with_client(https: bool, dav: bool) -> ServeOptions {
+    ServeOptions {
+        client: Some(client_setup(https, dav)),
+        ..ServeOptions::default()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_profile_link_works_once_and_carries_a_fresh_app_password() {
+    let f = fixture().await;
+    let app = f.with_serve(with_client(true, true));
+    let made = f
+        .create(json!({ "name": "Ada's iPhone", "protocols": ["imap", "smtp", "dav"], "mail_archive": f.archive, "scopes": ["read", "send:mail"] }))
+        .await;
+    let old = made["secret"].as_str().unwrap().to_owned();
+    let id = made["device"]["id"].as_str().unwrap();
+
+    let setup = f
+        .on(
+            &app,
+            None,
+            Request::get("/api/devices/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    let setup: Value = serde_json::from_slice(&setup.2).unwrap();
+    assert_eq!(setup["apple_profile"], true);
+    assert_eq!(
+        setup["davx5"],
+        "davx5://ada%40example.com@mail.example.com/dav/"
+    );
+    assert_eq!(setup["autoconfig"], json!(["example.com"]));
+
+    let (status, headers, body) = f
+        .on(
+            &app,
+            None,
+            post_json(&format!("/api/devices/{id}/profile"), json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{}", body_text(&body));
+    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    let link: Value = serde_json::from_slice(&body).unwrap();
+    let url = link["url"].as_str().unwrap();
+    let path = url
+        .strip_prefix("https://mail.example.com")
+        .expect("an absolute link to this server");
+    assert!(path.starts_with("/api/devices/profile/"), "{url}");
+    assert!(link["expires_at"].as_i64().unwrap() > holtmail_core::Timestamp::now().as_millis());
+
+    for method in ["GET", "HEAD", "GET"] {
+        let (status, headers, body) = f
+            .on(
+                &app,
+                Some(""),
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{method}: {}", body_text(&body));
+        assert!(
+            headers[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/html"),
+            "{method} shows the confirmation page"
+        );
+        if method == "GET" {
+            assert!(body_text(&body).contains("<form method=\"post\">"));
+        }
+    }
+    assert!(
+        f.state
+            .devices
+            .verify("ada@example.com", &old, PEER, DeviceProtocol::Imap)
+            .await
+            .is_ok(),
+        "looking at the link changes nothing"
+    );
+
+    let (status, headers, body) = f
+        .on(
+            &app,
+            Some(""),
+            Request::post(path)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{}", body_text(&body));
+    assert_eq!(
+        headers[header::CONTENT_TYPE],
+        "application/x-apple-aspen-config"
+    );
+    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    assert!(
+        headers[header::CONTENT_DISPOSITION]
+            .to_str()
+            .unwrap()
+            .contains(".mobileconfig")
+    );
+    let profile = body_text(&body);
+    for part in [
+        "com.apple.mail.managed",
+        "com.apple.caldav.account",
+        "com.apple.carddav.account",
+        "<string>People</string>",
+        "<string>ada@example.com</string>",
+    ] {
+        assert!(profile.contains(part), "{part} missing");
+    }
+    assert!(
+        !profile.contains(&old),
+        "the old app password is in the profile"
+    );
+    let start = profile.find("<string>hm_").expect("an app password") + "<string>".len();
+    let fresh = &profile[start..start + 35];
+    let verified = f
+        .state
+        .devices
+        .verify("ada@example.com", fresh, PEER, DeviceProtocol::Imap)
+        .await
+        .unwrap();
+    assert_eq!(verified.device.to_string(), id);
+    assert!(matches!(
+        f.state
+            .devices
+            .verify("ada@example.com", &old, PEER, DeviceProtocol::Imap)
+            .await,
+        Err(DeviceAuthError::Invalid)
+    ));
+
+    for request in [
+        Request::post(path).body(Body::empty()).unwrap(),
+        Request::get(path).body(Body::empty()).unwrap(),
+    ] {
+        let (status, _, _) = f.on(&app, Some(""), request).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "a link works once");
+    }
+    let audit = f.json("/api/audit").await;
+    assert_eq!(audit[0]["kind"], "device_secret_issued");
+    assert_eq!(audit[0]["targets"][0], id);
+    assert!(!audit.to_string().contains(fresh));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_profile_link_is_refused_when_it_cannot_work() {
+    let f = fixture().await;
+    let jmap = f
+        .create(json!({ "name": "Laptop", "protocols": ["jmap"] }))
+        .await;
+    let dav = f
+        .create(json!({ "name": "Tablet", "protocols": ["dav"] }))
+        .await;
+    let link = |made: &Value| {
+        post_json(
+            &format!(
+                "/api/devices/{}/profile",
+                made["device"]["id"].as_str().unwrap()
+            ),
+            json!({}),
+        )
+    };
+    let none = f.with_serve(ServeOptions::default());
+    assert_eq!(f.on(&none, None, link(&dav)).await.0, StatusCode::CONFLICT);
+    let app = f.with_serve(with_client(true, false));
+    let (status, _, body) = f.on(&app, None, link(&jmap)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        message(&body).contains("imap and smtp"),
+        "{}",
+        message(&body)
+    );
+    let (status, _, body) = f.on(&app, None, link(&dav)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message(&body).contains("dav"), "{}", message(&body));
+
+    let app = f.with_serve(ServeOptions {
+        recent_sign_in: Duration::ZERO,
+        ..with_client(true, true)
+    });
+    assert_eq!(
+        f.on(&app, None, link(&dav)).await.0,
+        StatusCode::PRECONDITION_REQUIRED
+    );
+    let app = f.with_serve(with_client(true, true));
+    let (status, _, body) = f.on(&app, None, link(&dav)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let url: Value = serde_json::from_slice(&body).unwrap();
+    let path = url["url"]
+        .as_str()
+        .unwrap()
+        .trim_start_matches("https://mail.example.com")
+        .to_owned();
+    let id = dav["device"]["id"].as_str().unwrap();
+    let answer = f
+        .on(
+            &app,
+            None,
+            Request::delete(format!("/api/devices/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(answer.0, StatusCode::NO_CONTENT);
+    let (status, _, _) = f
+        .on(
+            &app,
+            Some(""),
+            Request::get(&path).body(Body::empty()).unwrap(),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a revoked device gets no profile"
+    );
+    assert_eq!(
+        f.on(&app, None, link(&dav)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, _, _) = f
+        .on(
+            &app,
+            Some(""),
+            Request::post("/api/devices/profile/0000")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn autoconfig_answers_only_for_the_own_mail_domains() {
+    let f = fixture().await;
+    let app = f.with_serve(with_client(true, true));
+    let get = |uri: &str, host: &str| {
+        Request::get(uri)
+            .header(header::HOST, host)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let well_known = "/.well-known/autoconfig/mail/config-v1.1.xml";
+    for request in [
+        get(
+            &format!("{well_known}?emailaddress=ada%40example.com"),
+            "example.com",
+        ),
+        get(well_known, "example.com"),
+        get("/mail/config-v1.1.xml", "autoconfig.example.com"),
+        get(
+            "/mail/config-v1.1.xml?emailaddress=ada%40EXAMPLE.com",
+            "autoconfig.example.com:443",
+        ),
+    ] {
+        let uri = request.uri().to_string();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let (status, headers) = (response.status(), response.headers().clone());
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        assert!(
+            headers[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("application/xml")
+        );
+        let xml = body_text(&body);
+        assert!(xml.contains("<domain>example.com</domain>"), "{xml}");
+        assert!(
+            xml.contains("<hostname>mail.example.com</hostname>"),
+            "{xml}"
+        );
+        assert!(!xml.contains("hm_"));
+    }
+    for request in [
+        get(
+            &format!("{well_known}?emailaddress=ada%40example.org"),
+            "example.com",
+        ),
+        get(well_known, "example.org"),
+        get("/mail/config-v1.1.xml", "autoconfig.example.org"),
+    ] {
+        let uri = request.uri().to_string();
+        let status = app.clone().oneshot(request).await.unwrap().status();
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
+    let off = f.with_serve(ServeOptions::default());
+    let status = off
+        .oneshot(get(well_known, "example.com"))
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn no_davx5_link_without_https() {
+    let f = fixture().await;
+    let app = f.with_serve(with_client(false, true));
+    let setup = f
+        .on(
+            &app,
+            None,
+            Request::get("/api/devices/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    let setup: Value = serde_json::from_slice(&setup.2).unwrap();
+    assert_eq!(setup["davx5"], Value::Null);
+    assert_eq!(setup["apple_profile"], true);
 }

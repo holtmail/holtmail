@@ -10,6 +10,7 @@ mod access;
 mod aliases;
 mod calendar;
 mod categories;
+mod client_setup;
 mod deletion;
 mod devices;
 mod drafts;
@@ -34,7 +35,10 @@ mod push;
 mod relay;
 mod remote;
 mod routes;
+mod rules;
+mod rules_run;
 mod send;
+mod serving;
 mod session;
 mod smtp;
 mod tasks;
@@ -61,6 +65,7 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 
 pub use aliases::{AliasProvider, Aliases, NewService, ServiceChange};
 pub use categories::trusted_authserv_preset;
+pub use client_setup::{ClientSetup, PROFILE_LINK_TTL, ProfileLinks};
 pub use devices::{ServeEndpoint, ServeOptions};
 use dto::*;
 pub use insights::{InsightProgress, InsightsConfig};
@@ -79,6 +84,7 @@ pub use operations::{
     DeletionReview, DeletionSelection, LedgerStatus, LedgerVerification, MAX_DELETION, Operations,
     SmtpRoute, SmtpStatus, VerifyLedger,
 };
+pub use rules_run::{NoRuleHooks, RuleHooks, RuleLimits, Rules, dry_run};
 pub use send::Sending;
 pub use session::{CurrentUser, SESSION_COOKIE};
 pub use write::{IDEMPOTENCY_WINDOW, Scope, Scopes, WriteSwitches};
@@ -116,14 +122,17 @@ pub struct ApiState {
     pub devices: Arc<dyn DeviceAuth>,
     /// What the `[serve]` config says about devices and proxies.
     pub serve: ServeOptions,
+    /// What rules tell outside the API: paused flows, `notify` and `webhook` actions.
+    pub rule_hooks: Arc<dyn RuleHooks>,
 }
 
-/// The API routes under `/api`.
+/// The API routes under `/api`, and Thunderbird autoconfig at
+/// `/.well-known/autoconfig/mail/config-v1.1.xml` and `/mail/config-v1.1.xml`.
 ///
 /// State-changing requests must be `application/json` (uploads `application/octet-stream`) and, when they carry an `Origin`, come
 /// from the same host; others are refused with `415` and `403`. Routes other than
-/// `/api/session`, `/api/setup`, `/api/login`, `/api/logout`, `/api/openapi.json` and the Web Push
-/// receiver `/api/push/dav/{id}` (which takes any body and needs no session) answer `401`
+/// `/api/session`, `/api/setup`, `/api/login`, `/api/logout`, `/api/openapi.json`, the one-time
+/// profile download `/api/devices/profile/{token}`, autoconfig and the Web Push receiver `/api/push/dav/{id}` (which takes any body and needs no session) answer `401`
 /// without a live session; unknown paths under `/api/` answer `404` to signed-in users.
 pub fn router(state: ApiState) -> Router {
     let state = Arc::new(state);
@@ -170,8 +179,47 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/api/devices/setup", get(devices::device_setup))
         .route(
+            "/api/devices/{id}/profile",
+            post(client_setup::profile_link),
+        )
+        .route("/api/devices/serving", get(serving::serving))
+        .route(
+            "/api/devices/local-flags",
+            get(serving::local_flags).delete(serving::drop_local_flags),
+        )
+        .route(
             "/api/devices/{id}",
             patch(devices::update_device).delete(devices::revoke_device),
+        )
+        .route("/api/rules/catalogue", get(rules::catalogue))
+        .route(
+            "/api/archives/{id}/flows",
+            get(rules::list_flows).post(rules::create_flow),
+        )
+        .route("/api/archives/{id}/flows/test", post(rules::test_new_flow))
+        .route(
+            "/api/archives/{id}/flows/preview",
+            post(rules::preview_template),
+        )
+        .route(
+            "/api/flows/{id}",
+            get(rules::get_flow)
+                .put(rules::save_flow)
+                .patch(rules::change_flow)
+                .delete(rules::delete_flow),
+        )
+        .route("/api/flows/{id}/versions", get(rules::flow_versions))
+        .route("/api/flows/{id}/test", post(rules::test_flow))
+        .route("/api/flows/{id}/run", post(rules::run_manual))
+        .route("/api/flows/{id}/runs", get(rules::flow_runs))
+        .route("/api/flow-runs/{id}", get(rules::get_run))
+        .route(
+            "/api/flow-runs/{id}/actions/{index}/confirm",
+            post(rules::confirm_action),
+        )
+        .route(
+            "/api/flow-runs/{id}/actions/{index}/dismiss",
+            post(rules::dismiss_action),
         )
         .route(
             "/api/archives/{id}/transports",
@@ -400,6 +448,10 @@ pub fn router(state: ApiState) -> Router {
                 .merge(post(invitations::rsvp_message).layer(from_fn(write::detached))),
         )
         .route(
+            "/api/messages/{id}/itip/apply",
+            post(invitations::apply_itip).layer(from_fn(write::detached)),
+        )
+        .route(
             "/api/collections/{id}/organizing",
             get(invitations::organizing),
         )
@@ -454,12 +506,25 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/logout", post(session::logout))
         .route("/api/openapi.json", get(routes::openapi))
         .route("/api/oauth/callback", get(oauth::callback))
+        .route(
+            "/.well-known/autoconfig/mail/config-v1.1.xml",
+            get(client_setup::autoconfig),
+        )
+        .route("/mail/config-v1.1.xml", get(client_setup::autoconfig))
         .merge(protected)
         .layer(from_fn(session::guard_writes))
         .merge(Router::new().route(
             "/api/push/dav/{id}",
             post(push::receive).layer(DefaultBodyLimit::max(push::MAX_MESSAGE)),
         ))
+        .merge(
+            Router::new().route(
+                "/api/devices/profile/{token}",
+                get(client_setup::profile_page)
+                    .post(client_setup::download_profile)
+                    .layer(DefaultBodyLimit::max(client_setup::MAX_CONFIRM)),
+            ),
+        )
         .with_state(state)
 }
 
@@ -546,6 +611,12 @@ pub fn openapi_json() -> String {
         devices::create_device,
         devices::update_device,
         devices::revoke_device,
+        client_setup::profile_link,
+        client_setup::profile_page,
+        client_setup::download_profile,
+        serving::serving,
+        serving::local_flags,
+        serving::drop_local_flags,
         routes::list_folders,
         routes::list_labels,
         routes::list_messages,
@@ -597,6 +668,22 @@ pub fn openapi_json() -> String {
         aliases::create_alias,
         aliases::list_alias_strategies,
         aliases::set_alias_strategy,
+        rules::catalogue,
+        rules::list_flows,
+        rules::create_flow,
+        rules::test_new_flow,
+        rules::preview_template,
+        rules::get_flow,
+        rules::save_flow,
+        rules::change_flow,
+        rules::delete_flow,
+        rules::flow_versions,
+        rules::test_flow,
+        rules::run_manual,
+        rules::flow_runs,
+        rules::get_run,
+        rules::confirm_action,
+        rules::dismiss_action,
         webhooks::list,
         webhooks::create,
         webhooks::update,
@@ -628,6 +715,7 @@ pub fn openapi_json() -> String {
         invitations::rsvp_message,
         invitations::rsvp_item_options,
         invitations::rsvp_message_options,
+        invitations::apply_itip,
         invitations::organizing,
         persons::list_people,
         persons::get_person,
@@ -658,6 +746,7 @@ pub fn openapi_json() -> String {
         DeviceDto,
         DeviceServerDto,
         DeviceSetupDto,
+        ProfileLinkDto,
         CreateDeviceRequest,
         CreatedDeviceDto,
         UpdateDeviceRequest,
@@ -687,6 +776,19 @@ pub fn openapi_json() -> String {
         drafts::RouteErrorDto,
         drafts::LeakDto,
         outbox::LeaksDto,
+        outbox::ConfirmDto,
+        rules::FlowDto,
+        rules::FlowVersionDto,
+        rules::NewFlowRequest,
+        rules::SaveFlowRequest,
+        rules::FlowChangeRequest,
+        rules::FlowIssuesDto,
+        rules::FlowTestRequest,
+        rules::FlowTestDto,
+        rules::TemplatePreviewRequest,
+        rules::TemplatePreviewDto,
+        rules::ManualRunRequest,
+        rules::FlowRunDto,
         drafts::DraftDto,
         drafts::DraftVersionDto,
         drafts::NewDraftRequest,
@@ -828,6 +930,7 @@ pub fn openapi_json() -> String {
         pim::EventTimeDto,
         pim::ParticipantDto,
         pim::InvitationDto,
+        invitations::ItipApplyDto,
         pim_edit::PersonFormDto,
         pim_edit::AlarmFormDto,
         pim_edit::EventFormDto,

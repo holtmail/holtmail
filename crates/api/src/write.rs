@@ -580,8 +580,8 @@ pub struct AuditEntryDto {
     pub user: Option<String>,
     /// `capabilities_changed`, `grant_changed`, `mail_flags`, `mail_move`, `mail_delete`,
     /// `mail_append`, `mail_send`, `pim_edit`, `pim_respond`, `rule_changed`, `transport_changed`,
-    /// `identity_changed`, `outbox_changed`, `device_created`, `device_changed` or
-    /// `device_revoked`.
+    /// `identity_changed`, `outbox_changed`, `device_created`, `device_changed`,
+    /// `device_revoked` or `device_secret_issued`.
     pub kind: String,
     pub archive: Option<String>,
     pub account: Option<String>,

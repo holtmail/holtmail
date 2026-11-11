@@ -14,6 +14,7 @@ use holtmail_store::{
 };
 
 use crate::access::readable;
+use crate::client_setup::{ClientSetup, ProfileLinks, autoconfig_domains, davx5, profiles};
 use crate::dto::*;
 use crate::manage::name;
 use crate::session::{body, no_store, session_token};
@@ -34,6 +35,14 @@ pub struct ServeOptions {
     pub recent_sign_in: Duration,
     /// The configured listeners devices connect to, in the order to show them.
     pub servers: Vec<ServeEndpoint>,
+    /// Whether flags a device cannot write upstream are kept as local flags (`[serve]
+    /// local_flags`).
+    pub local_flags: bool,
+    /// What clients are told for profiles, autoconfig and the DAVx5 link; `None` without a
+    /// `public_url`, and then none of them is offered.
+    pub client: Option<ClientSetup>,
+    /// The one-time profile links handed out and not yet opened.
+    pub profile_links: ProfileLinks,
 }
 
 /// One configured protocol listener, as a device should connect to it.
@@ -47,6 +56,9 @@ pub struct ServeEndpoint {
     pub port: u16,
     /// Whether TLS starts with the first byte; otherwise the client uses `STARTTLS`.
     pub implicit_tls: bool,
+    /// The address an HTTPS protocol's client asks for (JMAP's session, the DAV root);
+    /// `None` for IMAP and SMTP.
+    pub url: Option<String>,
 }
 
 impl Default for ServeOptions {
@@ -56,6 +68,9 @@ impl Default for ServeOptions {
             trusted_proxies: TrustedProxies::default(),
             recent_sign_in: Duration::from_secs(5 * 60),
             servers: Vec::new(),
+            local_flags: true,
+            client: None,
+            profile_links: ProfileLinks::default(),
         }
     }
 }
@@ -70,7 +85,7 @@ fn may_make_devices(state: &ApiState, user: &User) -> ApiResult<()> {
     ))
 }
 
-async fn recent_sign_in(state: &ApiState, headers: &HeaderMap) -> ApiResult<()> {
+pub(crate) async fn recent_sign_in(state: &ApiState, headers: &HeaderMap) -> ApiResult<()> {
     let token = session_token(headers).unwrap_or_default();
     let started = state
         .auth
@@ -187,7 +202,7 @@ pub(crate) fn targets(device: &Device) -> Vec<String> {
     ]
 }
 
-async fn own_device(state: &ApiState, user: &User, raw: &str) -> ApiResult<Device> {
+pub(crate) async fn own_device(state: &ApiState, user: &User, raw: &str) -> ApiResult<Device> {
     let id: DeviceId = raw.parse().map_err(|_| ApiError::not_found("device"))?;
     state
         .store
@@ -221,6 +236,9 @@ pub(crate) async fn device_setup(
 ) -> Json<DeviceSetupDto> {
     Json(DeviceSetupDto {
         can_create: may_make_devices(&state, &user).is_ok(),
+        apple_profile: profiles(&state),
+        davx5: davx5(&state, &user),
+        autoconfig: autoconfig_domains(&state),
         servers: state
             .serve
             .servers
@@ -235,6 +253,7 @@ pub(crate) async fn device_setup(
                     "starttls"
                 }
                 .to_owned(),
+                url: server.url.clone(),
             })
             .collect(),
     })
@@ -321,7 +340,7 @@ pub(crate) async fn create_device(
     ))
 }
 
-fn unavailable(failure: holtmail_device::DeviceAuthError) -> ApiError {
+pub(crate) fn unavailable(failure: holtmail_device::DeviceAuthError) -> ApiError {
     ApiError(StatusCode::INTERNAL_SERVER_ERROR, failure.to_string())
 }
 

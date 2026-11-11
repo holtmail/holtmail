@@ -193,6 +193,10 @@ pub struct SendRequest {
     /// Send even though recipients would see the real mailbox behind an alias; audited.
     #[serde(default)]
     pub allow_leaks: bool,
+    /// The sender confirmed what a `message.sending` rule asked to confirm (`409` with a
+    /// `reason`).
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 /// Why a send was refused: recipients would see the real mailbox behind an alias.
@@ -318,7 +322,7 @@ async fn record(
     path = "/api/drafts/{id}/send",
     params(("id" = String, Path, description = "Draft id")),
     request_body = SendRequest,
-    responses((status = 201, description = "Queued; the draft is removed. It leaves when the undo window ends or at send_at", body = OutboxDto), (status = 400, description = "No route, a draft that cannot be built, a message the transport may not carry, or an alias service that gave no reverse alias", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Sending is off, the account does not allow it, or no sender grant", body = ErrorDto), (status = 404, description = "No such draft of the user", body = ErrorDto), (status = 409, description = "The draft was saved again since that version (ErrorDto), or recipients would see the real mailbox behind an alias and allow_leaks is not set (LeaksDto)", body = LeaksDto), (status = 503, description = "The server does not send mail", body = ErrorDto)),
+    responses((status = 201, description = "Queued; the draft is removed. It leaves when the undo window ends or at send_at", body = OutboxDto), (status = 400, description = "No route, a draft that cannot be built, a message the transport may not carry, or an alias service that gave no reverse alias", body = ErrorDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Sending is off, the account does not allow it, no sender grant, or a message.sending rule blocks the message", body = ErrorDto), (status = 404, description = "No such draft of the user", body = ErrorDto), (status = 409, description = "The draft was saved again since that version (ErrorDto), recipients would see the real mailbox behind an alias and allow_leaks is not set (LeaksDto), or a message.sending rule asks to confirm and confirmed is not set (ConfirmDto)", body = LeaksDto), (status = 503, description = "The server does not send mail", body = ErrorDto)),
 )]
 pub(crate) async fn send_draft(
     State(state): AppState,
@@ -328,7 +332,7 @@ pub(crate) async fn send_draft(
     headers: HeaderMap,
     Json(request): Json<SendRequest>,
 ) -> ApiResult<Response> {
-    let sending = sending(&state)?;
+    sending(&state)?;
     let id: holtmail_core::DraftId = raw.parse().map_err(|_| ApiError::not_found("draft"))?;
     let draft = state
         .store
@@ -347,7 +351,153 @@ pub(crate) async fn send_draft(
             "the draft was saved again since that version".into(),
         ));
     }
-    let mut payload = DraftPayload::from_stored(&draft.current.payload);
+    let routing = crate::rules_run::sending_decision(&state, &user, &draft).await?;
+    if let Some(reason) = &routing.block {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            format!("a rule blocks this message: {reason}"),
+        ));
+    }
+    if let Some(reason) = routing.confirm.as_ref().filter(|_| !request.confirmed) {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(ConfirmDto {
+                error: "a rule asks to confirm before sending".into(),
+                reason: reason.clone(),
+            }),
+        )
+            .into_response());
+    }
+    let key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|k| format!("send:{k}"));
+    let sent = send_stored_draft(
+        &state,
+        &user,
+        &scopes,
+        &draft,
+        SendOptions {
+            allow_leaks: request.allow_leaks,
+            send_at: request.send_at.map(Timestamp::from_millis),
+            key,
+            headers: Vec::new(),
+            routing,
+            identity_limit: None,
+        },
+    )
+    .await?;
+    match sent {
+        Sent::Leaks(leaks) => Ok((
+            StatusCode::CONFLICT,
+            Json(LeaksDto {
+                error: "recipients would see the real mailbox behind the alias".into(),
+                leaks: leak_dtos(&leaks),
+            }),
+        )
+            .into_response()),
+        Sent::Queued(entry) => Ok((
+            StatusCode::CREATED,
+            Json(outbox_view(&state, &entry).await?),
+        )
+            .into_response()),
+        Sent::RateLimited => Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many messages from this identity".into(),
+        )),
+    }
+}
+
+/// What a `message.sending` rule asked for a 409: the message waits for the sender's
+/// confirmation.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConfirmDto {
+    pub error: String,
+    /// The rule's reason, shown to the sender.
+    pub reason: String,
+}
+
+/// What `message.sending` rules changed in a send, applied before the route is final.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RouteOverrides {
+    /// The identity id to send as instead of the route's choice.
+    pub identity: Option<String>,
+    /// The transport id; an identity of the same address that uses it is taken.
+    pub transport: Option<String>,
+    /// The alias strategy for a reply through an alias service.
+    pub strategy: Option<holtmail_route::Strategy>,
+    /// Addresses added as blind copies.
+    pub bcc: Vec<String>,
+    /// A rule asks the sender to confirm, with this reason.
+    pub confirm: Option<String>,
+    /// A rule refuses the message, with this reason.
+    pub block: Option<String>,
+}
+
+/// How [`send_stored_draft`] sends.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SendOptions {
+    /// Send although recipients would see the real mailbox behind an alias.
+    pub allow_leaks: bool,
+    /// When to send instead of the draft's own time.
+    pub send_at: Option<Timestamp>,
+    /// The idempotency key, already namespaced.
+    pub key: Option<String>,
+    /// Extra header fields, such as `Auto-Submitted`.
+    pub headers: Vec<holtmail_compose::ExtraHeader>,
+    /// What rules changed in the route.
+    pub routing: RouteOverrides,
+    /// For a rule's send: nothing is queued when flows sent this many messages as the routed
+    /// identity since then.
+    pub identity_limit: Option<IdentityLimit>,
+}
+
+/// How many messages flows may send as one identity since a moment.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IdentityLimit {
+    /// The most.
+    pub max: u64,
+    /// Counted from.
+    pub since: Timestamp,
+}
+
+/// What became of [`send_stored_draft`].
+pub(crate) enum Sent {
+    /// Queued; the draft is removed.
+    Queued(Box<OutboxEntry>),
+    /// Nothing was sent: these recipients would see the real mailbox.
+    Leaks(Vec<holtmail_route::Leak>),
+    /// Nothing was sent: the routed identity reached [`SendOptions::identity_limit`].
+    RateLimited,
+}
+
+/// Routes, builds and queues a stored draft of the user, then removes it. The caller has checked
+/// that the draft is the user's and that the user may send somehow in its archive.
+pub(crate) async fn send_stored_draft(
+    state: &ApiState,
+    user: &User,
+    scopes: &Scopes,
+    draft: &holtmail_store::Draft,
+    options: SendOptions,
+) -> ApiResult<Sent> {
+    let sending = sending(state)?;
+    let archive = draft.archive_id;
+    let mut payload = crate::drafts::stored_payload(state, &draft.current).await?;
+    if let Some(identity) = &options.routing.identity {
+        payload.identity = Some(identity.clone());
+    }
+    for address in &options.routing.bcc {
+        if !payload
+            .bcc
+            .iter()
+            .any(|m| m.address.eq_ignore_ascii_case(address))
+        {
+            payload.bcc.push(MailboxDto {
+                name: None,
+                address: address.clone(),
+            });
+        }
+    }
     let stored = DraftPayload {
         context: DraftContext {
             reverse_contacts: Vec::new(),
@@ -356,7 +506,10 @@ pub(crate) async fn send_draft(
         },
         ..payload.clone()
     };
-    let mut routing = routing_for(&state, &user, archive, &stored).await?;
+    let mut routing = routing_for(state, user, archive, &stored).await?;
+    if let (Some(strategy), Some(relay)) = (options.routing.strategy, routing.relay.as_mut()) {
+        relay.strategy = strategy;
+    }
     let recipients: Vec<String> = payload
         .to
         .iter()
@@ -371,23 +524,19 @@ pub(crate) async fn send_draft(
         .filter(|c| recipients.contains(&c.address.trim().to_ascii_lowercase()))
         .map(|c| (c.contact.clone(), c.address.clone()))
         .collect();
-    let trusted = crate::relay::confirmed(&state, &routing, &contacts).await;
+    let trusted = crate::relay::confirmed(state, &routing, &contacts).await;
     crate::relay::trust(&mut routing, trusted.iter().map(String::as_str));
-    let routed =
-        crate::relay::route_creating(&state, &user, &mut routing, payload.identity.as_deref())
+    let mut routed =
+        crate::relay::route_creating(state, user, &mut routing, payload.identity.as_deref())
             .await?
             .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    if let Some(transport) = &options.routing.transport {
+        retransport(state, user, archive, &mut routed.route, transport).await?;
+    }
     crate::relay::apply_to(&mut payload.to, &routed, &routing, false);
     let leaks = crate::relay::leaks(&routing, &routed, &payload.to, &payload.cc, &payload.bcc);
-    if !leaks.is_empty() && !request.allow_leaks {
-        return Ok((
-            StatusCode::CONFLICT,
-            Json(LeaksDto {
-                error: "recipients would see the real mailbox behind the alias".into(),
-                leaks: leak_dtos(&leaks),
-            }),
-        )
-            .into_response());
+    if !leaks.is_empty() && !options.allow_leaks {
+        return Ok(Sent::Leaks(leaks));
     }
     let route = routed.route;
     let transport = state
@@ -397,7 +546,7 @@ pub(crate) async fn send_draft(
         .into_iter()
         .find(|t| t.id.to_string() == route.transport)
         .ok_or_else(|| ApiError::bad_request("the archive may not use the transport"))?;
-    may_send(&state, &user, &scopes, archive, &transport).await?;
+    may_send(state, user, scopes, archive, &transport).await?;
     let identity = state
         .store
         .get_identity(
@@ -408,6 +557,15 @@ pub(crate) async fn send_draft(
         )
         .await?
         .ok_or_else(|| ApiError::not_found("identity"))?;
+    if let Some(limit) = options.identity_limit
+        && state
+            .store
+            .count_identity_flow_actions(identity.id, limit.since)
+            .await?
+            >= limit.max
+    {
+        return Ok(Sent::RateLimited);
+    }
     let mut attachments = Vec::with_capacity(payload.attachments.len());
     for (index, a) in payload.attachments.iter().enumerate() {
         let blob: BlobId = a
@@ -422,7 +580,7 @@ pub(crate) async fn send_draft(
                 .content_type
                 .clone()
                 .unwrap_or_else(|| "application/octet-stream".into()),
-            bytes: blob_bytes(&state, &blob).await?.to_vec(),
+            bytes: blob_bytes(state, &blob).await?.to_vec(),
             content_id: a.content_id.clone(),
         });
     }
@@ -446,21 +604,16 @@ pub(crate) async fn send_draft(
         attachments,
         in_reply_to: payload.in_reply_to.clone(),
         references: payload.references.clone(),
-        headers: Vec::new(),
+        headers: options.headers,
         message_id_domain: None,
         date: None,
         calendar: None,
     };
     let built = holtmail_compose::build(&compose)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
-    let send_at = request
+    let send_at = options
         .send_at
-        .or(payload.send_at)
-        .map(Timestamp::from_millis);
-    let key = headers
-        .get("idempotency-key")
-        .and_then(|v| v.to_str().ok())
-        .map(|k| format!("send:{k}"));
+        .or(payload.send_at.map(Timestamp::from_millis));
     let submitted = sending
         .submission
         .queue(Submit {
@@ -472,9 +625,10 @@ pub(crate) async fn send_draft(
             message: Bytes::from(built.bytes),
             send_at,
             undo_window: None,
-            idempotency_key: key,
+            idempotency_key: options.key,
             allow_leaks: !leaks.is_empty(),
             route: Some(route),
+            hold: false,
         })
         .await
         .map_err(submission_error)?;
@@ -484,11 +638,47 @@ pub(crate) async fn send_draft(
         .await?
         .ok_or_else(|| ApiError::not_found("outbox message"))?;
     state.store.delete_draft(draft.id).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(outbox_view(&state, &entry).await?),
-    )
-        .into_response())
+    Ok(Sent::Queued(Box::new(entry)))
+}
+
+/// Points the route at an identity of the same address that uses `transport`, for a
+/// `set_transport` rule; `400` when the user has none.
+async fn retransport(
+    state: &ApiState,
+    user: &User,
+    archive: ArchiveId,
+    route: &mut holtmail_route::Route,
+    transport: &str,
+) -> ApiResult<()> {
+    if route.transport == transport {
+        return Ok(());
+    }
+    let current = route.identity.parse::<holtmail_core::IdentityId>().ok();
+    let address = match current {
+        Some(id) => state
+            .store
+            .get_identity(id)
+            .await?
+            .map(|i| i.fields.address),
+        None => None,
+    }
+    .unwrap_or_else(|| route.from.clone());
+    let identity = state
+        .store
+        .user_identities(user.id, archive)
+        .await?
+        .into_iter()
+        .find(|i| {
+            i.fields.active
+                && i.fields.transport_id.to_string() == transport
+                && i.fields.address.eq_ignore_ascii_case(&address)
+        })
+        .ok_or_else(|| {
+            ApiError::bad_request("a rule asks for a transport no identity of this address uses")
+        })?;
+    route.identity = identity.id.to_string();
+    route.transport = transport.to_owned();
+    Ok(())
 }
 
 #[utoipa::path(

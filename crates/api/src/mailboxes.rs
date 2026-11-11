@@ -140,6 +140,20 @@ pub trait Mailboxes: Send + Sync {
         SchedulingProbe::NoServer
     }
 
+    /// "Apply anyway": runs the incoming iTIP decision for `message` again with the
+    /// authentication check overridden, merges an attendee's `REPLY` into the user's organizer
+    /// copies where it applies, and returns the schedule-inbox notes of the message's parts as
+    /// they are now. Never sends anything. The default changes nothing and returns the stored
+    /// notes.
+    async fn apply_itip(
+        &self,
+        archive: ArchiveId,
+        message: holtmail_core::MessageId,
+    ) -> Result<Vec<holtmail_store::InboxNote>, MailboxError> {
+        let _ = (archive, message);
+        Ok(Vec::new())
+    }
+
     /// Derived categories of `archive` may be stale: an override or a trust list changed. Wakes
     /// the stage-B pass and returns without waiting for it; repeated calls may be coalesced. The
     /// default does nothing.

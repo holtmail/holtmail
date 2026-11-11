@@ -325,6 +325,7 @@ async fn list(
             collection_id,
             states: Vec::new(),
             flagged_only: false,
+            after: None,
             limit: 500,
         })
         .await?;
@@ -461,6 +462,11 @@ pub struct InvitationDto {
     /// How many later versions changed the event itself (updates and cancellations, not
     /// answers).
     pub updates_after: u32,
+    /// What scheduling made of this message's iTIP part for the event, when it took the
+    /// message in: `applied`, `unauthenticated` (an attendee's answer without DKIM or DMARC
+    /// pass; "Apply anyway" can merge it), `not_from_attendee`, `no_copy`, `unchanged`, `update`,
+    /// `upstream_holds` or `own_organizer`.
+    pub schedule_note: Option<String>,
 }
 
 fn lower(method: Option<&str>) -> Option<String> {
@@ -482,6 +488,7 @@ pub(crate) async fn invitations(
         .iter()
         .filter_map(|a| holtmail_pim::normalize_email(a))
         .collect();
+    let notes = state.store.inbox_entries_of(message.id).await?;
     let mut out: Vec<InvitationDto> = Vec::new();
     for source in sources {
         if out.iter().any(|i| i.item_id == source.item_id.to_string()) {
@@ -509,14 +516,19 @@ pub(crate) async fn invitations(
         let status = main
             .and_then(|e| e.status.as_ref())
             .map(|s| s.to_ascii_lowercase());
+        let uid = summary
+            .index
+            .as_ref()
+            .and_then(|i| i.uid.clone())
+            .or(summary.item.key.clone());
         out.push(InvitationDto {
             item_id: source.item_id.to_string(),
             group_id: holtmail_calendar::group_of(&summary).map(|g| g.to_string()),
-            uid: summary
-                .index
-                .as_ref()
-                .and_then(|i| i.uid.clone())
-                .or(summary.item.key.clone()),
+            schedule_note: notes
+                .iter()
+                .find(|n| uid.as_deref() == Some(n.uid.as_str()))
+                .map(|n| n.note.as_str().to_owned()),
+            uid,
             version: source.number,
             method: lower(
                 this.and_then(|v| v.mail.as_ref())

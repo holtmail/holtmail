@@ -3,17 +3,17 @@ use holtmail_store::{AccountKind, FolderRole, MailChangeState, NewAccount};
 
 use super::*;
 
-struct Imap {
-    account: AccountId,
+pub(super) struct Imap {
+    pub(super) account: AccountId,
     inbox: FolderId,
     archive_folder: FolderId,
     trash: FolderId,
-    newsletter: MessageId,
+    pub(super) newsletter: MessageId,
     plain: MessageId,
 }
 
 impl Fixture {
-    async fn imap(&self) -> Imap {
+    pub(super) async fn imap(&self) -> Imap {
         let archive: ArchiveId = self.archive.parse().unwrap();
         let account = self
             .store
@@ -73,7 +73,7 @@ impl Fixture {
         }
     }
 
-    async fn allow(&self, account: AccountId, capabilities: &[&str]) {
+    pub(super) async fn allow(&self, account: AccountId, capabilities: &[&str]) {
         let (status, _, body) = self
             .send(request(
                 "PUT",

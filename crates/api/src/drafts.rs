@@ -139,6 +139,66 @@ impl DraftPayload {
     }
 }
 
+fn mailbox_dtos(addresses: &[holtmail_core::Address]) -> Vec<MailboxDto> {
+    addresses
+        .iter()
+        .map(|a| MailboxDto {
+            name: a.name.clone(),
+            address: a.email.clone(),
+        })
+        .collect()
+}
+
+/// What the compose window shows of a stored version. A raw version (a draft a mail client
+/// saved over IMAP or JMAP) opens like "Edit as new": recipients, subject, the text body and
+/// the attachments from its bytes, with the thread it answers kept, so the next save stores a
+/// compose version on top.
+pub(crate) async fn stored_payload(
+    state: &ApiState,
+    version: &DraftVersion,
+) -> ApiResult<DraftPayload> {
+    let Some(raw) = version.raw.as_ref().filter(|_| version.payload.is_null()) else {
+        return Ok(DraftPayload::from_stored(&version.payload));
+    };
+    let Some(bytes) = state.blobs.get(raw).await? else {
+        return Ok(DraftPayload::default());
+    };
+    let Ok(parsed) = holtmail_mime::parse(&bytes) else {
+        return Ok(DraftPayload::default());
+    };
+    let mut attachments = Vec::new();
+    for attachment in parsed.attachments.iter().filter(|a| !a.inline) {
+        let size = attachment.content.len() as u64;
+        let blob = state.blobs.put(attachment.content.clone()).await?;
+        attachments.push(DraftAttachment {
+            blob: Some(blob.to_string()),
+            message: None,
+            ordinal: None,
+            name: attachment.filename.clone(),
+            content_type: Some(attachment.content_type.clone()),
+            size: Some(size),
+            content_id: None,
+        });
+    }
+    Ok(DraftPayload {
+        identity: None,
+        to: mailbox_dtos(&parsed.to),
+        cc: mailbox_dtos(&parsed.cc),
+        bcc: mailbox_dtos(&parsed.bcc),
+        subject: parsed.subject.unwrap_or_default(),
+        text: parsed.text.unwrap_or_default(),
+        html: None,
+        attachments,
+        in_reply_to: parsed.in_reply_to.first().cloned(),
+        references: parsed.references,
+        context: DraftContext {
+            kind: new_kind(),
+            ..DraftContext::default()
+        },
+        send_at: None,
+    })
+}
+
 /// Why a route looks the way it does: a stable `code` with the address, alias or account it
 /// names.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -285,13 +345,13 @@ pub struct DraftVersionDto {
     pub saved_at: i64,
 }
 
-impl From<DraftVersion> for DraftVersionDto {
-    fn from(v: DraftVersion) -> Self {
-        Self {
+impl DraftVersionDto {
+    async fn of(state: &ApiState, v: &DraftVersion) -> ApiResult<Self> {
+        Ok(Self {
             version: v.version,
-            payload: DraftPayload::from_stored(&v.payload),
+            payload: stored_payload(state, v).await?,
             saved_at: v.saved_at.as_millis(),
-        }
+        })
     }
 }
 
@@ -414,7 +474,7 @@ pub(crate) async fn routing_for(
 }
 
 pub(crate) async fn draft_dto(state: &ApiState, user: &User, draft: &Draft) -> ApiResult<DraftDto> {
-    let payload = DraftPayload::from_stored(&draft.current.payload);
+    let payload = stored_payload(state, &draft.current).await?;
     let routing = routing_for(state, user, draft.archive_id, &payload).await?;
     let routed = relay::route(state, user, &routing, payload.identity.as_deref()).await?;
     let (route, route_error, leaks) = match &routed {
@@ -515,7 +575,7 @@ async fn resolve(
     Ok((payload, blobs))
 }
 
-fn blobs_of(payload: &DraftPayload) -> Vec<BlobId> {
+pub(crate) fn blobs_of(payload: &DraftPayload) -> Vec<BlobId> {
     payload
         .attachments
         .iter()
@@ -624,18 +684,18 @@ pub(crate) async fn save_draft(
 ) -> ApiResult<(StatusCode, Json<DraftDto>)> {
     let draft = own_draft(&state, &user, &raw).await?;
     may_compose(&state, &user, &scopes, draft.archive_id).await?;
-    let stored = DraftPayload::from_stored(&draft.current.payload);
+    let stored = stored_payload(&state, &draft.current).await?;
     let mut payload = request.payload;
     payload.context.reverse_alias = stored.context.reverse_alias;
     payload.context.reverse_contacts = stored.context.reverse_contacts;
-    let (payload, blobs) = resolve(
-        &state,
-        &user,
-        draft.archive_id,
-        payload,
-        &draft.current.blobs,
-    )
-    .await?;
+    let mut current = draft.current.blobs.clone();
+    current.extend(
+        stored
+            .attachments
+            .iter()
+            .filter_map(|a| a.blob.as_deref()?.parse::<BlobId>().ok()),
+    );
+    let (payload, blobs) = resolve(&state, &user, draft.archive_id, payload, &current).await?;
     match state
         .store
         .save_draft(
@@ -670,8 +730,11 @@ pub(crate) async fn draft_versions(
     Path(raw): Path<String>,
 ) -> ApiResult<Json<Vec<DraftVersionDto>>> {
     let draft = own_draft(&state, &user, &raw).await?;
-    let versions = state.store.draft_versions(draft.id).await?;
-    Ok(Json(versions.into_iter().map(Into::into).collect()))
+    let mut out = Vec::new();
+    for version in state.store.draft_versions(draft.id).await? {
+        out.push(DraftVersionDto::of(&state, &version).await?);
+    }
+    Ok(Json(out))
 }
 
 #[utoipa::path(
@@ -721,7 +784,7 @@ pub(crate) async fn upload_attachment(
     }
     let size = body.len() as u64;
     let blob = state.blobs.put(body).await?;
-    let mut payload = DraftPayload::from_stored(&draft.current.payload);
+    let mut payload = stored_payload(&state, &draft.current).await?;
     payload.attachments.push(DraftAttachment {
         blob: Some(blob.to_string()),
         name: Some(name.to_owned()),
@@ -754,7 +817,7 @@ pub(crate) async fn upload_attachment(
     }
 }
 
-async fn own_addresses(state: &ApiState, archive: ArchiveId) -> ApiResult<Vec<String>> {
+pub(crate) async fn own_addresses(state: &ApiState, archive: ArchiveId) -> ApiResult<Vec<String>> {
     let mut own: Vec<String> = state
         .store
         .list_identities(archive)
@@ -794,14 +857,33 @@ async fn template(
     chosen: Option<String>,
 ) -> ApiResult<(StatusCode, Json<DraftDto>)> {
     let message = readable_message(state, user, raw).await?;
+    may_compose(state, user, scopes, message.archive_id).await?;
+    let stored = template_draft(state, user, &message, forward, reply, chosen, |_| {}).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(draft_dto(state, user, &stored).await?),
+    ))
+}
+
+/// A stored draft answering or forwarding `message` as the user, routed as the compose window
+/// routes it; `adjust` changes the payload before it is stored. The caller has checked that
+/// the user may compose in the message's archive.
+pub(crate) async fn template_draft(
+    state: &ApiState,
+    user: &User,
+    message: &Message,
+    forward: Option<ForwardKind>,
+    reply: ReplyKind,
+    chosen: Option<String>,
+    adjust: impl FnOnce(&mut DraftPayload),
+) -> ApiResult<Draft> {
     let archive = message.archive_id;
-    may_compose(state, user, scopes, archive).await?;
     let bytes = blob(state, &message.blob_id).await?;
     let parsed = holtmail_mime::parse(&bytes)
         .map_err(|_| ApiError::bad_request("the message cannot be read"))?;
     let original = holtmail_compose::Original::from_parsed(&parsed);
     let mut routing =
-        relay::routing_of(state, &message, Some(&parsed), forward.is_some(), None).await?;
+        relay::routing_of(state, message, Some(&parsed), forward.is_some(), None).await?;
     let kind = if forward.is_some() {
         "forward"
     } else {
@@ -841,7 +923,7 @@ async fn template(
     if let Ok(routed) = &route {
         relay::apply_to(&mut to, routed, &routing, true);
     }
-    let payload = DraftPayload {
+    let mut payload = DraftPayload {
         identity: chosen,
         to,
         cc: draft.cc.iter().map(Into::into).collect(),
@@ -860,8 +942,9 @@ async fn template(
         },
         send_at: None,
     };
+    adjust(&mut payload);
     let blobs = blobs_of(&payload);
-    let stored = state
+    Ok(state
         .store
         .create_draft(
             archive,
@@ -870,11 +953,7 @@ async fn template(
             &blobs,
             Timestamp::now(),
         )
-        .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(draft_dto(state, user, &stored).await?),
-    ))
+        .await?)
 }
 
 #[utoipa::path(
@@ -961,7 +1040,7 @@ pub(crate) async fn reverse_alias(
             "the draft was saved again since that version".into(),
         ));
     }
-    let mut payload = DraftPayload::from_stored(&draft.current.payload);
+    let mut payload = stored_payload(&state, &draft.current).await?;
     let routing = routing_for(&state, &user, draft.archive_id, &payload).await?;
     let alias = relay::thread_alias(&routing).ok_or_else(|| {
         ApiError::bad_request("the draft answers no mail received through an alias")

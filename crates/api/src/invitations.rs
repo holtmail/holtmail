@@ -1,23 +1,25 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::{Extension, Json};
 use bytes::Bytes;
 use holtmail_collection::{Partstat, WriteCaps};
-use holtmail_compose::{ImipKind, Invitation, Mailbox};
+use holtmail_core::OutboxId;
 use holtmail_core::{ArchiveId, ItemId, Timestamp};
-use holtmail_outbox::Queue;
 use holtmail_pim::{ItemKind, Method};
 use holtmail_pim_edit::{
-    CopyUpdate, Host, Imip, ImipError, OrganizerChange, OrganizerRoute, ReplyRoute, Respond,
+    CopyUpdate, Host, ImipError, OrganizerChange, OrganizerRoute, ReplyRoute, Respond,
 };
 use holtmail_route::{Context, RouteError, Routed};
+use holtmail_schedule::{
+    Change, Delivery, HostCaps, Origin, ReplyAs, ScheduleError, ScheduleStatus, Scheduler,
+};
 use holtmail_store::{
     Account, AuditKind, Capability, ChangeTarget, Collection, CollectionKind, Effective, Message,
-    OutboxEntry, OutboxState, Transport, User, WriteMode,
+    OutboxEntry, Transport, User, WriteMode,
 };
-use holtmail_submit::Envelope;
+use holtmail_submission::Actor;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -26,7 +28,7 @@ use crate::mailboxes::{Scheduling, SchedulingProbe};
 use crate::outbox::{OutboxDto, may_send, may_send_somehow, outbox_view};
 use crate::pim_edit::{PimChangeDto, RecordAs};
 use crate::relay::{self, Routing};
-use crate::send::{outbox_error, sending};
+use crate::send::sending;
 use crate::write::{Scopes, audit, may_write};
 use crate::{ApiError, ApiResult, ApiState, CurrentUser};
 
@@ -80,11 +82,11 @@ fn imip_error(error: ImipError) -> ApiError {
     }
 }
 
-fn answer_of(raw: &str) -> ApiResult<(Partstat, holtmail_compose::Answer)> {
+fn answer_of(raw: &str) -> ApiResult<Partstat> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "accepted" => Ok((Partstat::Accepted, holtmail_compose::Answer::Accepted)),
-        "tentative" => Ok((Partstat::Tentative, holtmail_compose::Answer::Tentative)),
-        "declined" => Ok((Partstat::Declined, holtmail_compose::Answer::Declined)),
+        "accepted" => Ok(Partstat::Accepted),
+        "tentative" => Ok(Partstat::Tentative),
+        "declined" => Ok(Partstat::Declined),
         _ => Err(ApiError::bad_request(
             "answer is accepted, tentative or declined",
         )),
@@ -419,102 +421,145 @@ async fn answer_routing(
     Ok(routing)
 }
 
-/// A message queued for sending, waiting for its audit entry before it is released.
+/// Messages the scheduler queued for a change: audited once the change is recorded, taken
+/// back when it is not.
 pub(crate) struct Held {
-    entry: OutboxEntry,
-    account: Option<holtmail_core::AccountId>,
+    delivery: Option<Delivery>,
 }
 
-/// Queues `draft` from `routed` through `transport`, held until [`release`].
-pub(crate) async fn hold(
-    state: &ApiState,
-    user: &User,
-    archive: ArchiveId,
-    route: holtmail_route::Route,
-    transport: &Transport,
-    draft: &holtmail_compose::Draft,
-    key: Option<String>,
-) -> ApiResult<Held> {
-    let sending = sending(state)?;
-    let built =
-        holtmail_compose::build(draft).map_err(|error| ApiError::bad_request(error.to_string()))?;
-    let entry = sending
-        .outbox
-        .queue(Queue {
-            archive,
-            user: Some(user.id),
-            device: None,
-            route,
-            envelope: Envelope {
-                mail_from: draft.from.address.clone(),
-                recipients: built.recipients,
+impl Held {
+    fn none() -> Self {
+        Self { delivery: None }
+    }
+
+    fn ids(&self) -> Vec<OutboxId> {
+        self.delivery
+            .as_ref()
+            .map(|d| d.queued.clone())
+            .unwrap_or_default()
+    }
+}
+
+/// The scheduler web and DAV share, so nobody is told twice.
+fn scheduler(state: &ApiState) -> ApiResult<Arc<dyn Scheduler>> {
+    Ok(sending(state)?.scheduler.clone())
+}
+
+fn schedule_error(error: ScheduleError) -> ApiError {
+    match error {
+        ScheduleError::Invalid(reason) => unprocessable(reason),
+        ScheduleError::Unavailable(_) => ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the outbox cannot be reached; try again".into(),
+        ),
+    }
+}
+
+/// The refusal for a delivery whose messages could not be queued for some recipient.
+fn undelivered(delivery: &Delivery) -> Option<ApiError> {
+    if delivery
+        .statuses
+        .iter()
+        .any(|s| s.status == ScheduleStatus::NoRoute)
+    {
+        return Some(forbidden(
+            "none of your identities may send this; check the sending locks",
+        ));
+    }
+    if delivery
+        .statuses
+        .iter()
+        .any(|s| s.status == ScheduleStatus::Failed)
+    {
+        return Some(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "the outbox refused the message; try again later".into(),
+        ));
+    }
+    None
+}
+
+/// Delivers through the scheduler, refusing (and taking back) a delivery that left a recipient
+/// without a message.
+async fn deliver(state: &ApiState, change: &Change) -> ApiResult<Held> {
+    let scheduler = scheduler(state)?;
+    let delivery = scheduler.deliver(change).await.map_err(schedule_error)?;
+    if let Some(error) = undelivered(&delivery) {
+        drop_held(
+            state,
+            &change.actor,
+            Held {
+                delivery: Some(delivery),
             },
-            bytes: Bytes::from(built.bytes),
-            send_at: None,
-            hold: true,
-            flow_run: None,
-            idempotency_key: key,
-        })
-        .await
-        .map_err(outbox_error)?;
+        )
+        .await;
+        return Err(error);
+    }
     Ok(Held {
-        entry,
-        account: transport.account_id,
+        delivery: Some(delivery),
     })
 }
 
-/// Cancels messages [`hold`] queued when what they belong to could not be recorded.
-pub(crate) async fn drop_held(state: &ApiState, held: Vec<Held>) {
-    let Ok(sending) = sending(state) else {
+/// Takes back what the scheduler queued when what it belongs to could not be recorded.
+pub(crate) async fn drop_held(state: &ApiState, actor: &Actor, held: Held) {
+    let (Ok(scheduler), Some(delivery)) = (scheduler(state), held.delivery) else {
         return;
     };
-    for h in held {
-        if h.entry.state == OutboxState::Draft {
-            let _ = sending.outbox.cancel(h.entry.id).await;
-        }
+    if delivery.queued.is_empty() {
+        return;
+    }
+    if let Err(error) = scheduler.withdraw(actor, &delivery).await {
+        tracing::warn!(%error, "scheduled messages not taken back");
     }
 }
 
 /// The ids of held messages, to record with the change they belong to.
-pub(crate) fn held_ids(held: &[Held]) -> Vec<holtmail_core::OutboxId> {
-    held.iter().map(|h| h.entry.id).collect()
+pub(crate) fn held_ids(held: &Held) -> Vec<OutboxId> {
+    held.ids()
 }
 
-/// Audits and releases held messages into the undo window once what they belong to is
-/// recorded; returns those released as the outbox lists them. The change exists by now, so a
-/// failure here never takes it back: it is logged, every other message is still released, and a
-/// message of a recorded change left held is released at the next start.
+/// Lets the held messages of a recorded change go and audits them; returns them as the outbox
+/// lists them. The change exists by now, so a failure here never takes it back: it is logged,
+/// and a message of a recorded change left held is released at the next start.
 pub(crate) async fn release(
     state: &ApiState,
     user: &User,
-    held: Vec<Held>,
+    held: Held,
     action: &str,
 ) -> Vec<OutboxEntry> {
-    let Ok(sending) = sending(state) else {
-        return Vec::new();
-    };
-    let mut out = Vec::with_capacity(held.len());
-    for h in held {
-        if h.entry.state != OutboxState::Draft {
-            out.push(h.entry);
-            continue;
-        }
+    if let (Ok(scheduler), Some(delivery)) = (scheduler(state), held.delivery.as_ref())
+        && !delivery.queued.is_empty()
+        && let Err(error) = scheduler.confirm(&Actor::web(user.id), delivery).await
+    {
+        tracing::warn!(%error, "scheduled messages not released");
+    }
+    let mut out = Vec::new();
+    for id in held.ids() {
+        let entry = match state.store.get_outbox(id).await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(outbox = %id, %error, "queued message not read");
+                continue;
+            }
+        };
+        let account = match state.store.get_transport(entry.new.transport_id).await {
+            Ok(Some(transport)) => transport.account_id,
+            _ => None,
+        };
         if let Err(error) = audit(
             state,
             user,
             AuditKind::OutboxChanged,
-            Some(h.entry.new.archive_id),
-            h.account,
-            vec![h.entry.id.to_string(), action.to_owned()],
+            Some(entry.new.archive_id),
+            account,
+            vec![entry.id.to_string(), action.to_owned()],
         )
         .await
         {
-            tracing::warn!(outbox = %h.entry.id, error = %error.1, "release not audited");
+            tracing::warn!(outbox = %entry.id, error = %error.1, "queued message not audited");
         }
-        match sending.outbox.release(h.entry.id, None).await {
-            Ok(entry) => out.push(entry),
-            Err(error) => tracing::warn!(outbox = %h.entry.id, %error, "held message not released"),
-        }
+        out.push(entry);
     }
     out
 }
@@ -539,46 +584,27 @@ async fn transport_for(
 
 /// When a change whose reply is held in `held` may go upstream: after the reply's undo window,
 /// so undoing the answer can still discard it.
-fn not_before(held: &[Held]) -> Option<Timestamp> {
-    held.iter()
-        .map(|h| h.entry.new.send_at.as_millis())
-        .max()
-        .map(|at| Timestamp::from_millis(at + UNDO_MARGIN_MS))
+async fn not_before(state: &ApiState, held: &Held) -> Option<Timestamp> {
+    let mut latest = None;
+    for id in held.ids() {
+        if let Ok(Some(entry)) = state.store.get_outbox(id).await {
+            latest = latest.max(Some(entry.new.send_at.as_millis()));
+        }
+    }
+    latest.map(|at| Timestamp::from_millis(at + UNDO_MARGIN_MS))
 }
 
 /// How long after the end of the undo window an answered copy waits to go upstream.
 const UNDO_MARGIN_MS: i64 = 5_000;
 
-fn invitation_of(imip: &Imip, kind: ImipKind, comment: Option<&str>) -> Invitation {
-    Invitation {
-        kind,
-        calendar: imip.calendar.clone(),
-        summary: imip.summary.clone(),
-        when: imip.when.clone(),
-        location: imip.location.clone(),
-        comment: comment
-            .map(str::trim)
-            .filter(|c| !c.is_empty())
-            .map(str::to_owned),
-    }
-}
-
-fn idempotency(headers: &HeaderMap, prefix: &str) -> Option<String> {
-    headers
-        .get("idempotency-key")
-        .and_then(|v| v.to_str().ok())
-        .map(|k| format!("{prefix}:{k}"))
-}
-
 async fn answer(
     state: &ApiState,
     user: &User,
     scopes: &Scopes,
-    headers: &HeaderMap,
     start: Start,
     request: &RsvpRequest,
 ) -> ApiResult<RsvpDto> {
-    let (partstat, compose_answer) = answer_of(&request.answer)?;
+    let partstat = answer_of(&request.answer)?;
     let target = resolve(state, user, start).await?;
     let account = answering_account(state, user, scopes, &target).await?;
     let own = crate::pim_edit::edits(state)
@@ -599,14 +625,13 @@ async fn answer(
         .as_deref()
         .map(str::trim)
         .filter(|r| !r.is_empty());
-    let now = Timestamp::now().as_millis();
     let invited: Vec<String> = attendees(&target.invitation)
         .into_iter()
         .filter(|a| own.contains(a))
         .collect();
 
     let mine = mine(state, user, target.archive).await?;
-    let mut held = Vec::new();
+    let mut held = Held::none();
     let mut attendee = copy_attendee(&invited, &account, &mine);
     if let ReplyRoute::Imip { .. } = route {
         may_send_somehow(state, user, scopes, target.archive).await?;
@@ -631,19 +656,11 @@ async fn answer(
             .await?
             .map_err(|error| ApiError::bad_request(error.to_string()))?;
         }
-        let transport = transport_for(state, user, scopes, target.archive, &routed).await?;
+        transport_for(state, user, scopes, target.archive, &routed).await?;
         let used = holtmail_route::attendee_address(&routed).to_owned();
-        let imip = holtmail_pim_edit::reply(
-            &target.invitation,
-            &used,
-            partstat,
-            recurrence_id,
-            request.comment.as_deref(),
-            now,
-        )
-        .map_err(imip_error)?;
-        attendee = Some(used);
-        let original = match &target.message {
+        let next = holtmail_pim_edit::answered(&target.invitation, &used, partstat, recurrence_id)
+            .map_err(imip_error)?;
+        let references = match &target.message {
             Some(message) => state
                 .blobs
                 .get(&message.blob_id)
@@ -651,35 +668,37 @@ async fn answer(
                 .ok()
                 .flatten()
                 .and_then(|raw| holtmail_mime::parse(&raw).ok())
-                .map(|parsed| holtmail_compose::Original::from_parsed(&parsed)),
-            None => None,
+                .map(|parsed| {
+                    holtmail_compose::answer_references(&holtmail_compose::Original::from_parsed(
+                        &parsed,
+                    ))
+                })
+                .unwrap_or_default(),
+            None => Vec::new(),
         };
-        let to = routed.to.clone().unwrap_or_else(|| imip.organizer.clone());
-        let draft = holtmail_compose::imip(
-            Mailbox {
-                name: routed.route.name.clone(),
-                address: routed.route.from.clone(),
+        let (schedule_host, schedule_caps) = schedule_host(host, &caps);
+        held = deliver(
+            state,
+            &Change {
+                actor: Actor::web(user.id),
+                archive: target.archive,
+                origin: Origin::Web,
+                host: schedule_host,
+                caps: schedule_caps,
+                own: own.clone(),
+                previous: Some(target.invitation.clone()),
+                next: Some(Bytes::from(next)),
+                reply_as: Some(ReplyAs {
+                    attendee: used.clone(),
+                    route: routed.route.clone(),
+                    to: routed.to.clone(),
+                }),
+                references,
+                comment: request.comment.clone(),
             },
-            vec![Mailbox::new(to)],
-            &invitation_of(
-                &imip,
-                ImipKind::Reply(compose_answer),
-                request.comment.as_deref(),
-            ),
-            original.as_ref(),
-        );
-        held.push(
-            hold(
-                state,
-                user,
-                target.archive,
-                routed.route.clone(),
-                &transport,
-                &draft,
-                idempotency(headers, "rsvp"),
-            )
-            .await?,
-        );
+        )
+        .await?;
+        attendee = Some(used);
     }
 
     let (copy_word, change) = match (&target.copy, route) {
@@ -687,7 +706,7 @@ async fn answer(
             let attendee = match attendee.clone() {
                 Some(a) => a,
                 None => {
-                    drop_held(state, held).await;
+                    drop_held(state, &Actor::web(user.id), held).await;
                     return Err(imip_error(ImipError::NotAttendee));
                 }
             };
@@ -703,7 +722,7 @@ async fn answer(
             ) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    drop_held(state, held).await;
+                    drop_held(state, &Actor::web(user.id), held).await;
                     return Err(imip_error(error));
                 }
             };
@@ -722,7 +741,7 @@ async fn answer(
                 RecordAs {
                     respond: Some(respond),
                     audit: AuditKind::PimRespond,
-                    not_before: not_before(&held),
+                    not_before: not_before(state, &held).await,
                     messages: held_ids(&held),
                 },
             )
@@ -730,7 +749,7 @@ async fn answer(
             let change = match recorded {
                 Ok(change) => change,
                 Err(error) => {
-                    drop_held(state, held).await;
+                    drop_held(state, &Actor::web(user.id), held).await;
                     return Err(error);
                 }
             };
@@ -757,7 +776,7 @@ async fn answer(
             )
             .await
             {
-                drop_held(state, held).await;
+                drop_held(state, &Actor::web(user.id), held).await;
                 return Err(error);
             }
             ("none", None)
@@ -793,19 +812,10 @@ pub(crate) async fn rsvp_item(
     Extension(CurrentUser(user)): Extension<CurrentUser>,
     Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<RsvpRequest>,
 ) -> ApiResult<Json<RsvpDto>> {
     let item: ItemId = raw.parse().map_err(|_| ApiError::not_found("item"))?;
-    let done = answer(
-        &state,
-        &user,
-        &scopes,
-        &headers,
-        Start::Item(item),
-        &request,
-    )
-    .await?;
+    let done = answer(&state, &user, &scopes, Start::Item(item), &request).await?;
     state.mailboxes.pim_changed(
         state
             .store
@@ -829,7 +839,6 @@ pub(crate) async fn rsvp_message(
     Extension(CurrentUser(user)): Extension<CurrentUser>,
     Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<RsvpRequest>,
 ) -> ApiResult<Json<RsvpDto>> {
     let message = crate::drafts::readable_message(&state, &user, &raw).await?;
@@ -838,7 +847,6 @@ pub(crate) async fn rsvp_message(
         &state,
         &user,
         &scopes,
-        &headers,
         Start::Message(Box::new(message)),
         &request,
     )
@@ -853,8 +861,8 @@ pub(crate) struct Organizing {
     /// The bytes to record (`SEQUENCE` raised, answers reset where RFC 5546 asks); `None` for
     /// a delete or when the change is not an organizer's.
     pub event: Option<Vec<u8>>,
-    /// The held messages; release them once the change is recorded, drop them when it fails.
-    pub held: Vec<Held>,
+    /// The queued messages; release them once the change is recorded, drop them when it fails.
+    pub held: Held,
 }
 
 /// The organizer path of an event change in `collection` (`previous` what was served,
@@ -871,7 +879,6 @@ pub(crate) async fn organize(
     state: &ApiState,
     user: &User,
     scopes: &Scopes,
-    headers: &HeaderMap,
     collection: &Collection,
     previous: Option<&[u8]>,
     next: Option<&[u8]>,
@@ -879,7 +886,7 @@ pub(crate) async fn organize(
 ) -> ApiResult<Organizing> {
     let none = Organizing {
         event: next.map(<[u8]>::to_vec),
-        held: Vec::new(),
+        held: Held::none(),
     };
     let Some(organizer) = next
         .and_then(holtmail_pim_edit::organizer)
@@ -908,9 +915,10 @@ pub(crate) async fn organize(
         (Some(_), None) => OrganizerChange::Delete,
         (Some(_), Some(_)) => OrganizerChange::Update,
     };
-    let route = host_of(state, collection, Capability::PimEdit)
-        .await
-        .map(|(host, caps)| holtmail_pim_edit::organizer_route(host, &caps, change));
+    let route_host = host_of(state, collection, Capability::PimEdit).await;
+    let route = route_host
+        .as_ref()
+        .map(|(host, caps)| holtmail_pim_edit::organizer_route(*host, caps, change));
     let now = Timestamp::now().as_millis();
     let organized = holtmail_pim_edit::organize(
         previous,
@@ -926,14 +934,11 @@ pub(crate) async fn organize(
     if !notify || organized.messages.is_empty() {
         return Ok(Organizing {
             event,
-            held: Vec::new(),
+            held: Held::none(),
         });
     }
     if route.is_none() {
-        return Err(ApiError(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the calendar's server cannot be reached, so Holtmail cannot tell who sends the invitations; try again, or save without invitations".into(),
-        ));
+        return Err(unreachable_server());
     }
     let identity = identity.ok_or_else(|| {
         forbidden("none of your identities sends as the organizer; save without invitations")
@@ -944,43 +949,65 @@ pub(crate) async fn organize(
     let routed = relay::route(state, user, &routing, Some(&identity_id))
         .await?
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
-    let transport = transport_for(state, user, scopes, archive, &routed).await?;
-    let mut held = Vec::new();
-    for (index, imip) in organized.messages.iter().enumerate() {
-        let kind = match (imip.method, change) {
-            (Method::Cancel, _) => ImipKind::Cancel,
-            (_, OrganizerChange::Create) => ImipKind::Invitation,
-            _ => ImipKind::Update,
-        };
-        let draft = holtmail_compose::imip(
-            Mailbox {
-                name: routed.route.name.clone(),
-                address: routed.route.from.clone(),
-            },
-            imip.recipients.iter().cloned().map(Mailbox::new).collect(),
-            &invitation_of(imip, kind, None),
-            None,
-        );
-        let key = idempotency(headers, &format!("organize-{index}"));
-        match hold(
-            state,
-            user,
+    transport_for(state, user, scopes, archive, &routed).await?;
+    let Some((host, caps)) = route_host else {
+        return Err(unreachable_server());
+    };
+    let (host, caps) = schedule_host(host, &caps);
+    let own: Vec<String> = crate::pim_edit::edits(state)
+        .own_addresses(archive)
+        .await?
+        .iter()
+        .filter_map(|a| holtmail_pim::normalize_email(a))
+        .collect();
+    let held = deliver(
+        state,
+        &Change {
+            actor: Actor::web(user.id),
             archive,
-            routed.route.clone(),
-            &transport,
-            &draft,
-            key,
-        )
-        .await
-        {
-            Ok(h) => held.push(h),
-            Err(error) => {
-                drop_held(state, held).await;
-                return Err(error);
-            }
-        }
-    }
+            origin: Origin::Web,
+            host,
+            caps,
+            own,
+            previous: previous.map(Bytes::copy_from_slice),
+            next: next.map(Bytes::copy_from_slice),
+            reply_as: None,
+            references: Vec::new(),
+            comment: None,
+        },
+    )
+    .await?;
+    let event = match &held.delivery {
+        Some(delivery) => delivery.body.as_ref().map(|b| b.to_vec()).or(event),
+        None => event,
+    };
     Ok(Organizing { event, held })
+}
+
+fn unreachable_server() -> ApiError {
+    ApiError(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "the calendar's server cannot be reached, so Holtmail cannot tell who sends the invitations; try again, or save without invitations".into(),
+    )
+}
+
+/// The scheduler's view of a calendar's host and what may be written there now.
+fn schedule_host(host: Host, caps: &WriteCaps) -> (holtmail_schedule::Host, HostCaps) {
+    let host = match host {
+        Host::CalDav { auto_schedule } => holtmail_schedule::Host::CalDav { auto_schedule },
+        Host::Graph => holtmail_schedule::Host::Graph,
+        Host::Jmap { scheduling } => holtmail_schedule::Host::Jmap { scheduling },
+        Host::Mail => holtmail_schedule::Host::Mail,
+    };
+    (
+        host,
+        HostCaps {
+            create: caps.create,
+            update: caps.update,
+            delete: caps.delete,
+            respond: caps.respond,
+        },
+    )
 }
 
 /// The address and name a new event with invitees is organized as: the user's default
@@ -1495,4 +1522,88 @@ pub(crate) async fn organizing(
         _ => false,
     };
     Ok(Json(dto))
+}
+
+/// The schedule-inbox notes of a message after "Apply anyway".
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ItipApplyDto {
+    /// One note per calendar part the scheduler took in, in part order: `applied`,
+    /// `unauthenticated`, `not_from_attendee`, `no_copy`, `unchanged`, `update`,
+    /// `upstream_holds` or `own_organizer`.
+    pub notes: Vec<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/messages/{id}/itip/apply",
+    params(("id" = String, Path, description = "Id of a message carrying an attendee's iTIP REPLY")),
+    responses((status = 200, body = ItipApplyDto), (status = 401, description = "Not signed in", body = ErrorDto), (status = 403, description = "Writing is turned off on this server, or neither an editor of the archive nor an owner or admin", body = ErrorDto), (status = 404, description = "No such message", body = ErrorDto), (status = 422, description = "The message holds no answer that failed the authentication check", body = ErrorDto), (status = 500, description = "The server failed", body = ErrorDto)),
+)]
+pub(crate) async fn apply_itip(
+    State(state): AppState,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    Path(raw): Path<String>,
+) -> ApiResult<Json<ItipApplyDto>> {
+    let message = crate::drafts::readable_message(&state, &user, &raw).await?;
+    if !state.write.enabled {
+        return Err(forbidden("writing is turned off on this server"));
+    }
+    let role = crate::write::role_in(&state, &user, message.archive_id).await?;
+    if role < Some(holtmail_store::GrantRole::Editor) {
+        return Err(forbidden("applying an answer needs an editor grant"));
+    }
+    let entries = state.store.inbox_entries_of(message.id).await?;
+    if !entries
+        .iter()
+        .any(|e| e.note == holtmail_store::InboxNote::Unauthenticated)
+    {
+        return Err(unprocessable(
+            "the message holds no answer that failed the authentication check",
+        ));
+    }
+    let notes = state
+        .mailboxes
+        .apply_itip(message.archive_id, message.id)
+        .await
+        .map_err(|error| ApiError(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    audit(
+        &state,
+        &user,
+        AuditKind::PimRespond,
+        Some(message.archive_id),
+        None,
+        vec![message.id.to_string(), "apply_anyway".into()],
+    )
+    .await?;
+    state.mailboxes.pim_changed(message.archive_id);
+    Ok(Json(ItipApplyDto {
+        notes: notes.iter().map(|n| n.as_str().to_owned()).collect(),
+    }))
+}
+
+/// Answers the invitation `message` carries as the user, as `POST /api/messages/{id}/rsvp`
+/// does; for rule actions. `answer` is `accepted`, `tentative` or `declined`.
+pub(crate) async fn answer_message(
+    state: &ApiState,
+    user: &User,
+    scopes: &Scopes,
+    message: Message,
+    answer_text: &str,
+    comment: Option<String>,
+) -> ApiResult<RsvpDto> {
+    let archive = message.archive_id;
+    let done = answer(
+        state,
+        user,
+        scopes,
+        Start::Message(Box::new(message)),
+        &RsvpRequest {
+            answer: answer_text.to_owned(),
+            comment,
+            recurrence_id: None,
+        },
+    )
+    .await?;
+    state.mailboxes.pim_changed(archive);
+    Ok(done)
 }

@@ -1217,13 +1217,15 @@ impl From<holtmail_store::Device> for DeviceDto {
 /// One place a device can connect to.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DeviceServerDto {
-    /// `smtp` or `imap`.
+    /// `smtp`, `imap`, `jmap` or `dav`.
     pub protocol: String,
     /// The name to connect to; `null` when the server has no name of its own to give.
     pub host: Option<String>,
     pub port: u16,
     /// `tls` from the first byte, or `starttls`.
     pub security: String,
+    /// For `jmap` and `dav`: the full address to give the client; absent for IMAP and SMTP.
+    pub url: Option<String>,
 }
 
 /// What this server offers to devices.
@@ -1231,8 +1233,26 @@ pub struct DeviceServerDto {
 pub struct DeviceSetupDto {
     /// Whether this user may make devices and raise their rights.
     pub can_create: bool,
+    /// Whether `POST /api/devices/{id}/profile` can make an Apple profile on this server.
+    pub apple_profile: bool,
+    /// The link that opens DAVx5 with this server and the user's login filled in; `null` unless
+    /// DAV is served over https. It never carries a password.
+    pub davx5: Option<String>,
+    /// The mail domains Thunderbird finds this server for by itself from an address; empty
+    /// when autoconfig answers for none.
+    pub autoconfig: Vec<String>,
     /// The configured listeners, implicit TLS first; empty when none is.
     pub servers: Vec<DeviceServerDto>,
+}
+
+/// A one-time link to a device's Apple profile.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ProfileLinkDto {
+    /// The absolute address of the profile. It works once, without a session, until
+    /// `expires_at`; opening it gives the device a fresh app password.
+    pub url: String,
+    /// When the link stops working, in milliseconds since the epoch.
+    pub expires_at: i64,
 }
 
 /// A new device.

@@ -5,13 +5,13 @@ use super::*;
 
 const EVENT: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:standup@example.com\r\nDTSTAMP:20260101T090000Z\r\nSUMMARY:Standup\r\nDTSTART:20260105T090000Z\r\nDTEND:20260105T093000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
-struct Pim {
+pub(super) struct Pim {
     book: String,
-    calendar: String,
+    pub(super) calendar: String,
     event: String,
 }
 
-async fn pim(f: &Fixture) -> Pim {
+pub(super) async fn pim(f: &Fixture) -> Pim {
     let archive: ArchiveId = f.archive.parse().unwrap();
     let account = server_account(f).await;
     let collection = |kind, remote: &str| NewCollection {

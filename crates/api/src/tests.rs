@@ -21,7 +21,9 @@ mod devices;
 mod invitations;
 mod mail;
 mod pim_edit;
+mod rules;
 mod send;
+mod serving;
 mod write;
 
 const NEWSLETTER: &[u8] = b"From: News <news@example.com>\r\nTo: ada@example.com\r\nSubject: Weekly news\r\nMessage-ID: <n1@example.com>\r\nDate: Mon, 10 Mar 2025 08:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=r\r\n\r\n--r\r\nContent-Type: text/html\r\n\r\n<p onclick=\"x()\">Hello <img src=\"cid:logo@example.com\"><img src=\"https://tracker.example.com/p.gif\"></p>\r\n--r\r\nContent-Type: image/png\r\nContent-ID: <logo@example.com>\r\nContent-Disposition: inline\r\n\r\nPNGDATA\r\n--r\r\nContent-Type: text/html; name=\"evil.html\"\r\nContent-Disposition: attachment; filename=\"evil.html\"\r\n\r\n<script>alert(1)</script>\r\n--r--\r\n";
@@ -952,6 +954,7 @@ async fn empty_fixture_with(insights: Option<InsightsConfig>) -> Fixture {
             holtmail_device_local::Options::default(),
         )),
         serve: crate::ServeOptions::default(),
+        rule_hooks: Arc::new(crate::NoRuleHooks),
     };
     Fixture {
         app: router(state.clone()),
@@ -1335,6 +1338,8 @@ fn declares_the_refusal_of_members_on_every_write() {
         "/api/me",
         "/api/me/password",
         "/api/devices/{id}",
+        "/api/devices/{id}/profile",
+        "/api/devices/profile/{token}",
         "/api/push/dav/{id}",
     ];
     let mut checked = 0;

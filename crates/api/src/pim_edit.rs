@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::{Extension, Json};
 use bytes::Bytes;
 use holtmail_core::{ArchiveId, CollectionId, ItemChangeId, ItemId, MessageId, Timestamp};
@@ -199,6 +199,8 @@ pub struct PimChangeDto {
     pub class: String,
     /// `dav` or `api`.
     pub origin: String,
+    /// The device a calendar or contacts app saved through; absent for the web app.
+    pub device_id: Option<String>,
     /// `held`, `sending`, `applied`, `superseded`, `conflict`, `rejected` or `discarded`.
     pub state: String,
     pub reason: Option<String>,
@@ -232,6 +234,7 @@ impl From<&ItemChange> for PimChangeDto {
             op: c.op.as_str().into(),
             class: c.class.as_str().into(),
             origin: c.origin.as_str().into(),
+            device_id: c.device.clone(),
             state: c.state.as_str().into(),
             reason: c.reason.clone(),
             upstream_changed: c.upstream_changed,
@@ -663,6 +666,7 @@ async fn record(
         at: Timestamp::now(),
         not_before: record_as.not_before,
         messages: record_as.messages,
+        schedule_tag: None,
     };
     match state.store.record_change(&new, expect).await {
         Ok(RecordedChange::Recorded(change)) => {
@@ -814,31 +818,19 @@ pub(crate) async fn create_item(
     Extension(CurrentUser(user)): Extension<CurrentUser>,
     Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<ItemContentRequest>,
 ) -> ApiResult<(StatusCode, Json<PimChangeDto>)> {
     let id: CollectionId = raw.parse().map_err(|_| ApiError::not_found("collection"))?;
     let collection = collection_of(&state, &user, id).await?;
     let account = writable(&state, &user, &scopes, &collection).await?;
-    let change = create_in(
-        &state,
-        &user,
-        &scopes,
-        &headers,
-        &account,
-        &collection,
-        &request,
-    )
-    .await?;
+    let change = create_in(&state, &user, &scopes, &account, &collection, &request).await?;
     Ok((StatusCode::CREATED, Json(PimChangeDto::from(&change))))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn create_in(
     state: &ApiState,
     user: &User,
     scopes: &Scopes,
-    headers: &HeaderMap,
     account: &Account,
     collection: &Collection,
     request: &ItemContentRequest,
@@ -862,7 +854,6 @@ async fn create_in(
             state,
             user,
             scopes,
-            headers,
             account,
             ctx: &ctx,
             collection,
@@ -886,7 +877,6 @@ struct Scheduled<'a> {
     state: &'a ApiState,
     user: &'a User,
     scopes: &'a Scopes,
-    headers: &'a HeaderMap,
     account: &'a Account,
     ctx: &'a Ctx,
     collection: &'a Collection,
@@ -911,7 +901,6 @@ async fn scheduled(
         state,
         user,
         scopes,
-        headers,
         account,
         ctx,
         collection,
@@ -938,7 +927,6 @@ async fn scheduled(
         state,
         user,
         scopes,
-        headers,
         collection,
         previous,
         bytes.as_deref(),
@@ -963,7 +951,12 @@ async fn scheduled(
             Ok(recorded.change)
         }
         Err(error) => {
-            crate::invitations::drop_held(state, organizing.held).await;
+            crate::invitations::drop_held(
+                state,
+                &holtmail_submission::Actor::web(user.id),
+                organizing.held,
+            )
+            .await;
             Err(error)
         }
     }
@@ -1030,12 +1023,11 @@ pub(crate) async fn edit_item(
     Extension(CurrentUser(user)): Extension<CurrentUser>,
     Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
-    headers: HeaderMap,
     Json(request): Json<ItemContentRequest>,
 ) -> ApiResult<Json<PimChangeDto>> {
     let item: ItemId = raw.parse().map_err(|_| ApiError::not_found("item"))?;
     Ok(Json(PimChangeDto::from(
-        &edit(&state, &user, &scopes, &headers, item, &request).await?,
+        &edit(&state, &user, &scopes, item, &request).await?,
     )))
 }
 
@@ -1043,7 +1035,6 @@ async fn edit(
     state: &ApiState,
     user: &User,
     scopes: &Scopes,
-    headers: &HeaderMap,
     item: ItemId,
     request: &ItemContentRequest,
 ) -> ApiResult<ItemChange> {
@@ -1087,7 +1078,6 @@ async fn edit(
             state,
             user,
             scopes,
-            headers,
             account: &account,
             ctx: &ctx,
             collection: &collection,
@@ -1129,7 +1119,6 @@ pub(crate) async fn delete_item(
     Extension(scopes): Extension<Scopes>,
     Path(raw): Path<String>,
     Query(params): Query<DeleteParams>,
-    headers: HeaderMap,
 ) -> ApiResult<Json<PimChangeDto>> {
     let item: ItemId = raw.parse().map_err(|_| ApiError::not_found("item"))?;
     let effective = item_effective(&state, item).await?;
@@ -1164,7 +1153,6 @@ pub(crate) async fn delete_item(
             state: &state,
             user: &user,
             scopes: &scopes,
-            headers: &headers,
             account: &account,
             ctx: &ctx,
             collection: &collection,
@@ -1233,6 +1221,7 @@ pub(crate) async fn list_changes(
                 collection_id: collection,
                 states: wanted.clone(),
                 flagged_only: false,
+                after: None,
                 limit: 500,
             })
             .await?;
@@ -1592,6 +1581,7 @@ async fn open_of(state: &ApiState, collection: &Collection) -> ApiResult<Vec<Ite
             collection_id: Some(collection.id),
             states: Vec::new(),
             flagged_only: false,
+            after: None,
             limit: 500,
         })
         .await?)
@@ -1778,7 +1768,7 @@ pub(crate) async fn edit_person_card(
     }
     if let Some((item, _)) = primary_card(&state, &person).await? {
         return Ok(Json(PimChangeDto::from(
-            &edit(&state, &user, &scopes, &HeaderMap::new(), item, &request).await?,
+            &edit(&state, &user, &scopes, item, &request).await?,
         )));
     }
     let book = state
@@ -1811,16 +1801,7 @@ pub(crate) async fn edit_person_card(
             ..ContactFormDto::default()
         });
     }
-    let change = create_in(
-        &state,
-        &user,
-        &scopes,
-        &HeaderMap::new(),
-        &account,
-        &book,
-        &request,
-    )
-    .await?;
+    let change = create_in(&state, &user, &scopes, &account, &book, &request).await?;
     Ok(Json(PimChangeDto::from(&change)))
 }
 
@@ -1879,4 +1860,44 @@ pub(crate) async fn timeline(state: &ApiState, item: ItemId) -> ApiResult<Vec<Ti
     }
     out.sort_by_key(|(at, order, _)| (*at, *order));
     Ok(out.into_iter().map(|(_, _, e)| e).collect())
+}
+
+/// Creates an item in the archive as the user, for rule actions: in `collection` when given,
+/// else in the first collection of `kind` the user may edit. Every lock of a form create
+/// applies.
+pub(crate) async fn create_for_rule(
+    state: &ApiState,
+    user: &User,
+    scopes: &Scopes,
+    archive: ArchiveId,
+    kind: CollectionKind,
+    collection: Option<&str>,
+    request: &ItemContentRequest,
+) -> ApiResult<ItemChange> {
+    let chosen = match collection {
+        Some(raw) => {
+            let id: CollectionId = raw.parse().map_err(|_| ApiError::not_found("collection"))?;
+            let found = collection_of(state, user, id).await?;
+            if found.archive_id != archive || found.kind != kind {
+                return Err(ApiError::not_found("collection"));
+            }
+            found
+        }
+        None => {
+            let mut found = None;
+            for summary in state.store.list_collections(archive).await? {
+                let candidate = summary.collection;
+                if candidate.kind != kind || candidate.removed_at.is_some() {
+                    continue;
+                }
+                if writable(state, user, scopes, &candidate).await.is_ok() {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+            found.ok_or_else(|| forbidden("no collection of this kind may be edited"))?
+        }
+    };
+    let account = writable(state, user, scopes, &chosen).await?;
+    create_in(state, user, scopes, &account, &chosen, request).await
 }

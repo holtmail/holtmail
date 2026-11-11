@@ -34,6 +34,9 @@ pub struct Sending {
     pub secrets: Arc<dyn SecretBox>,
     /// Takes a composed message from a person into the queue, with every lock checked again.
     pub submission: Arc<dyn Submission>,
+    /// Delivers invitations, updates, cancellations and answers, shared with CalDAV and SMTP
+    /// submission so nothing is sent twice.
+    pub scheduler: Arc<dyn holtmail_schedule::Scheduler>,
 }
 
 pub(crate) fn sending(state: &ApiState) -> ApiResult<&Sending> {

@@ -856,3 +856,36 @@ async fn an_instance_only_update_keeps_the_series_answerable() {
     assert_eq!(options["recurring"], true, "{options}");
     assert!(!options["occurrences"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn apply_anyway_needs_an_unauthenticated_answer() {
+    let f = fixture().await;
+    f.deliver(INVITE, 30).await;
+    let message = f.message_with_subject("Invitation: Harbour walk").await;
+    let uri = format!("/api/messages/{message}/itip/apply");
+    let (status, body) = f.call("POST", &uri, json!({})).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+    let id: holtmail_core::MessageId = message.parse().unwrap();
+    f.store
+        .put_inbox_entry(&holtmail_store::ScheduleInboxEntry {
+            archive_id: f.archive.parse().unwrap(),
+            message_id: id,
+            part: 0,
+            method: "REPLY".into(),
+            uid: "harbour@example.org".into(),
+            note: holtmail_store::InboxNote::Unauthenticated,
+            received_at: holtmail_core::Timestamp::now(),
+        })
+        .await
+        .unwrap();
+    let detail = f.json(&format!("/api/messages/{message}")).await;
+    assert_eq!(
+        detail["invitations"][0]["schedule_note"], "unauthenticated",
+        "{detail}"
+    );
+    let applied = f.ok("POST", &uri, json!({})).await;
+    assert!(applied["notes"].is_array(), "{applied}");
+    let kinds = f.audit_kinds().await;
+    assert!(kinds.iter().any(|k| k == "pim_respond"), "{kinds:?}");
+}

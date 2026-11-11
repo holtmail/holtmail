@@ -129,12 +129,17 @@ pub(super) fn fake_sending(
         outbox.clone(),
         holtmail_submission_outbox::Options::default(),
     ));
+    let scheduler = Arc::new(holtmail_schedule_itip::ItipScheduler::new(
+        submission.clone(),
+        holtmail_schedule::system_clock(),
+    ));
     (
         Sending {
             outbox,
             transports,
             secrets: Arc::new(PlainSecrets),
             submission,
+            scheduler,
         },
         submitted,
     )
@@ -723,7 +728,7 @@ async fn sends_only_with_a_sender_grant_the_switch_and_the_capability() {
 }
 
 impl Fixture {
-    async fn add_member(&self, email: &str) -> (String, String) {
+    pub(super) async fn add_member(&self, email: &str) -> (String, String) {
         let (status, _, body) = self
             .send(post_json(
                 "/api/users",
@@ -1885,4 +1890,48 @@ async fn alias_sends_check_the_locks_first_and_keep_what_the_user_removed() {
     assert_eq!(picked["route"]["from"], "shop@alias.example");
     assert_eq!(picked["leaks"], json!([]), "{picked}");
     let _ = archive;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_raw_draft_opens_like_edit_as_new() {
+    let f = fixture().await;
+    f.sending_identity().await;
+    let archive: ArchiveId = f.archive.parse().unwrap();
+    let owner = f.store.list_users().await.unwrap()[0].id;
+    let raw = "From: Ada <ada@example.com>\r\nTo: Bob <bob@example.org>\r\n\
+               Subject: Saved in a mail client\r\nIn-Reply-To: <earlier@example.org>\r\n\
+               MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+               --b\r\nContent-Type: text/plain\r\n\r\nSee the notes.\r\n\
+               --b\r\nContent-Type: text/plain; name=\"notes.txt\"\r\n\
+               Content-Disposition: attachment; filename=\"notes.txt\"\r\n\r\nnotes\r\n--b--\r\n";
+    let blob = f
+        .blobs
+        .put(bytes::Bytes::from_static(raw.as_bytes()))
+        .await
+        .unwrap();
+    let draft = f
+        .store
+        .create_raw_draft(archive, owner, &blob, holtmail_core::Timestamp::now())
+        .await
+        .unwrap();
+    let shown = f.json(&format!("/api/drafts/{}", draft.id)).await;
+    let payload = &shown["payload"];
+    assert_eq!(payload["subject"], "Saved in a mail client");
+    assert_eq!(payload["to"][0]["address"], "bob@example.org");
+    assert_eq!(payload["text"].as_str().unwrap().trim(), "See the notes.");
+    assert_eq!(payload["in_reply_to"], "earlier@example.org");
+    assert_eq!(payload["attachments"][0]["name"], "notes.txt");
+    assert!(payload["attachments"][0]["blob"].is_string());
+    assert_eq!(payload["context"]["kind"], "new");
+    let versions = f.json(&format!("/api/drafts/{}/versions", draft.id)).await;
+    assert_eq!(versions[0]["payload"]["subject"], "Saved in a mail client");
+    let saved = f
+        .ok(
+            "PUT",
+            &format!("/api/drafts/{}", draft.id),
+            json!({ "version": 1, "payload": payload }),
+        )
+        .await;
+    assert_eq!(saved["version"], 2);
+    assert_eq!(saved["payload"]["subject"], "Saved in a mail client");
 }

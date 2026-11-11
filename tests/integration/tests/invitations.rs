@@ -3,7 +3,8 @@
 //! SMTP to the organizer's mailbox (read back over IMAP). An event with an invitee created in a
 //! `write_through` Radicale calendar (Radicale does not schedule) mails a `REQUEST`; the
 //! invitee's `REPLY` arriving in the organizer's mailbox lands on the event in Radicale as their
-//! `PARTSTAT` while a forged `REPLY` does not; deleting the event mails a `CANCEL`. On Stalwart,
+//! `PARTSTAT` (its DKIM pass stamped by the receiving server) while a forged `REPLY` does not;
+//! deleting the event mails a `CANCEL`. On Stalwart,
 //! a JMAP calendar's organizer mails the `REQUEST` itself (writes never ask the server to
 //! schedule), and a CalDAV calendar leaves it to the server, whose attendee finds the event.
 
@@ -31,8 +32,16 @@ fn invitation(uid: &str, organizer: &str, attendee: &str, subject: &str) -> Vec<
     .into_bytes()
 }
 
+/// An attendee's answer as the organizer's receiving server stamps it: DKIM passed for the
+/// attendee's domain, under the authserv-id `trust_receiving_server` trusts, so the scheduler
+/// applies it.
 fn reply(uid: &str, organizer: &str, attendee: &str) -> Vec<u8> {
-    reply_from(attendee, uid, organizer, attendee)
+    let domain = attendee.rsplit('@').next().unwrap_or_default();
+    let mut signed =
+        format!("Authentication-Results: mx.example.com; dkim=pass header.d={domain}\r\n")
+            .into_bytes();
+    signed.extend(reply_from(attendee, uid, organizer, attendee));
+    signed
 }
 
 fn reply_from(from: &str, uid: &str, organizer: &str, attendee: &str) -> Vec<u8> {
@@ -40,6 +49,24 @@ fn reply_from(from: &str, uid: &str, organizer: &str, attendee: &str) -> Vec<u8>
         "From: <{from}>\r\nTo: <{organizer}>\r\nSubject: Accepted\r\nDate: Tue, 03 Nov 2026 09:00:00 +0000\r\nMessage-ID: <reply-{from}-{uid}>\r\nMIME-Version: 1.0\r\nContent-Type: text/calendar; charset=utf-8; method=REPLY\r\n\r\nBEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nSEQUENCE:0\r\nDTSTAMP:20261103T090000Z\r\nORGANIZER:mailto:{organizer}\r\nATTENDEE;PARTSTAT=ACCEPTED:mailto:{attendee}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
     )
     .into_bytes()
+}
+
+/// Trusts the authserv-id `reply` stamps for the account, as an operator does once the account's
+/// server is known to strip forged `Authentication-Results` fields.
+async fn trust_receiving_server(api: &Api, account: &str) {
+    let trusted = api
+        .request(
+            Method::PATCH,
+            &format!("/api/accounts/{account}"),
+            Some(&json!({ "trusted_authserv_ids": ["mx.example.com"] })),
+        )
+        .await
+        .ok();
+    assert_eq!(
+        trusted["trusted_authserv_ids"],
+        json!(["mx.example.com"]),
+        "{trusted}"
+    );
 }
 
 async fn sending_identity(api: &Api, archive: &str, address: &str) {
@@ -262,6 +289,7 @@ async fn organizes_an_event_in_a_radicale_calendar_by_mail() {
     run.secrets("an item", &[bob.as_str(), title.as_str()]);
     let account = run.add_dav(&RADICALE, &user, None).await;
     capabilities(&run.api, &account, &["pim.edit", "pim.respond"]).await;
+    trust_receiving_server(&run.api, &account).await;
     sending_identity(&run.api, &run.archive, &user).await;
     let collections = run.collections().await;
     let team_id = collections["Team"]["id"]

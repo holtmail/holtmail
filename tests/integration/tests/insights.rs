@@ -1,7 +1,8 @@
 //! Message insights on stored mail: 1 500 invented messages imported while insights were
 //! off, then the walk over stored mail started by a restart with them on, killed with `SIGKILL`
 //! mid-walk and resumed at the next start. Every message ends with an insights row, rows written
-//! before the kill are not computed again, the reader shows the code and the unsubscribe link,
+//! before the kill are not computed again, messages the kill left without a stage-B row are
+//! categorized and indexed by one more walk, the reader shows the code and the unsubscribe link,
 //! and neither the logs nor `holtmail insights explain` carry a code or a link.
 
 use std::collections::BTreeMap;
@@ -187,10 +188,29 @@ async fn the_walk_fills_insights_and_resumes_after_a_kill() {
         before.len() < COUNT,
         "the walk finished before it could be killed; raise COUNT"
     );
+    let left = count(
+        &holtmail,
+        "SELECT COUNT(*) FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_insights i WHERE i.message_id = m.id) OR EXISTS (SELECT 1 FROM insight_reindex r WHERE r.message_id = m.id)",
+    )
+    .await;
+    let uncategorized = count(
+        &holtmail,
+        "SELECT COUNT(*) FROM message_insights i LEFT JOIN message_categories c ON c.message_id = i.message_id WHERE i.outcome IN ('ok', 'partial') AND c.message_id IS NULL",
+    )
+    .await;
     eprintln!(
-        "{} of {COUNT} messages had insights at the kill",
+        "{} of {COUNT} messages had insights at the kill, {left} left for the walk, {uncategorized} without categories",
         before.len()
     );
+    assert!(
+        left <= COUNT - before.len() + 200,
+        "more than one page was left queued at the kill: {left}"
+    );
+    assert!(
+        uncategorized <= 2,
+        "more than the two messages read at a time lost their categories at the kill: {uncategorized}"
+    );
+    let runs = if uncategorized == 0 { 1 } else { 2 };
 
     let since = now().timestamp_millis();
     holtmail.start_again().await;
@@ -201,15 +221,19 @@ async fn the_walk_fills_insights_and_resumes_after_a_kill() {
             .get(&format!("/api/archives/{archive}/insights/status"))
             .await
             .ok();
-        let finished = analyse_tasks(&api)
+        let since_restart: Vec<Value> = analyse_tasks(&api)
             .await
             .into_iter()
-            .find(|t| t["started_at"].as_i64().unwrap_or(0) >= since && t["state"] != "running");
+            .filter(|t| t["started_at"].as_i64().unwrap_or(0) >= since)
+            .collect();
         if status["pending"] == 0
+            && status["categorize"] == 0
+            && status["reindex"] == 0
             && status["running"] == false
-            && let Some(task) = finished
+            && since_restart.len() >= runs
+            && since_restart.iter().all(|t| t["state"] != "running")
         {
-            break task;
+            break since_restart;
         }
         assert!(
             Instant::now() < deadline,
@@ -217,14 +241,29 @@ async fn the_walk_fills_insights_and_resumes_after_a_kill() {
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
+    assert_eq!(resumed.len(), runs, "{resumed:?}");
+    if let Some(repair) = resumed.get(1) {
+        assert_eq!(repair["state"], "done", "{repair}");
+        assert_eq!(
+            repair["done"].as_u64(),
+            Some(uncategorized as u64),
+            "the walk after the stage-B pass read more than the messages it categorized: {repair}"
+        );
+    }
+    let resumed = &resumed[0];
     assert_eq!(resumed["state"], "done", "{resumed}");
     assert_eq!(
         resumed["done"].as_u64(),
-        Some((COUNT - before.len()) as u64),
-        "the resumed walk read messages that already had insights: {resumed}"
+        Some(left as u64),
+        "the resumed walk read messages that already had insights and were indexed: {resumed}"
+    );
+    assert_eq!(
+        count(&holtmail, "SELECT COUNT(*) FROM insight_reindex").await,
+        0,
+        "messages stayed queued for the index after the walk"
     );
     let tasks = analyse_tasks(&api).await;
-    assert_eq!(tasks.len(), 2, "{tasks:?}");
+    assert_eq!(tasks.len(), 1 + runs, "{tasks:?}");
     assert_eq!(tasks[0]["state"], "interrupted", "{}", tasks[0]);
 
     let after = computed(&holtmail).await;

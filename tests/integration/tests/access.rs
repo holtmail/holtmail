@@ -138,6 +138,8 @@ struct Seeded {
     subjects: Vec<String>,
     transport: String,
     identity: String,
+    flow: String,
+    run: String,
 }
 
 struct World {
@@ -367,6 +369,18 @@ async fn seed(owner: &Api, name: &str, tag: &str, images: &Images) -> (Seeded, S
         .to_owned();
     let transport = greenmail_transport(owner, &archive).await;
     let identity = sending_identity(owner, &archive, &transport).await;
+    let flow = manual_flow(owner, &archive).await;
+    let runs = owner
+        .post(
+            &format!("/api/flows/{flow}/run"),
+            json!({ "messages": [message] }),
+        )
+        .await
+        .ok();
+    let run = runs[0]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no run: {runs}"))
+        .to_owned();
 
     (
         Seeded {
@@ -389,9 +403,29 @@ async fn seed(owner: &Api, name: &str, tag: &str, images: &Images) -> (Seeded, S
             subjects: vec![first.subject, reply.subject, on_server.subject],
             transport,
             identity,
+            flow,
+            run,
         },
         user,
     )
+}
+
+fn manual_flow_json() -> Value {
+    json!({
+        "trigger": { "type": "manual", "next": "label" },
+        "nodes": [{ "id": "label", "type": "label", "params": { "name": "Access" } }]
+    })
+}
+
+async fn manual_flow(owner: &Api, archive: &str) -> String {
+    let created = owner
+        .post(
+            &format!("/api/archives/{archive}/flows"),
+            json!({ "name": unique("Access flow"), "flow": manual_flow_json() }),
+        )
+        .await
+        .ok();
+    id(&created)
 }
 
 async fn greenmail_transport(owner: &Api, archive: &str) -> String {
@@ -670,6 +704,14 @@ impl World {
             ("GET", "/api/accounts/{id}/mail-changes" | "/api/accounts/{id}/retention") => {
                 (template.replace("{id}", &s.imap_account), Body::Empty)
             }
+            ("GET", "/api/flows/{id}" | "/api/flows/{id}/versions" | "/api/flows/{id}/runs") => {
+                (template.replace("{id}", &s.flow), Body::Empty)
+            }
+            ("GET", "/api/flow-runs/{id}") => (template.replace("{id}", &s.run), Body::Empty),
+            ("GET", "/api/devices/local-flags") => (
+                fill("/api/devices/local-flags?archive={archive}"),
+                Body::Empty,
+            ),
             ("GET", t) => (t.to_owned(), Body::Empty),
             ("POST", "/api/setup") => (
                 "/api/setup".to_owned(),
@@ -1103,6 +1145,62 @@ impl World {
                 format!("/api/transports/{}/grants", self.instance_transport),
                 Body::Json(json!({ "archives": [] })),
             ),
+            ("DELETE", "/api/devices/local-flags") => (
+                fill("/api/devices/local-flags?archive={archive}"),
+                Body::NoneAsJson,
+            ),
+            ("POST", "/api/devices/profile/{token}") => (
+                "/api/devices/profile/unknown-token".to_owned(),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/devices/{id}/profile") => (
+                format!("/api/devices/{}/profile", uuid::Uuid::now_v7()),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/messages/{id}/itip/apply") => (
+                fill("/api/messages/{message}/itip/apply"),
+                Body::Json(json!({})),
+            ),
+            ("POST", "/api/archives/{id}/flows") => (
+                fill("/api/archives/{archive}/flows"),
+                Body::Json(json!({ "name": unique("Access flow"), "flow": manual_flow_json() })),
+            ),
+            ("POST", "/api/archives/{id}/flows/test") => (
+                fill("/api/archives/{archive}/flows/test"),
+                Body::Json(json!({ "flow": manual_flow_json(), "message": m })),
+            ),
+            ("POST", "/api/archives/{id}/flows/preview") => (
+                fill("/api/archives/{archive}/flows/preview"),
+                Body::Json(json!({ "template": "{{ subject }}", "message": m })),
+            ),
+            ("POST", "/api/flows/{id}/test") => (
+                template.replace("{id}", &s.flow),
+                Body::Json(json!({ "message": m })),
+            ),
+            ("POST", "/api/flows/{id}/run") => (
+                template.replace("{id}", &s.flow),
+                Body::Json(json!({ "messages": [m] })),
+            ),
+            ("PUT", "/api/flows/{id}") => (
+                template.replace("{id}", &manual_flow(&self.owner, a).await),
+                Body::Json(json!({ "version": 1, "flow": manual_flow_json() })),
+            ),
+            ("PATCH", "/api/flows/{id}") => (
+                template.replace("{id}", &manual_flow(&self.owner, a).await),
+                Body::Json(json!({ "name": unique("Renamed flow") })),
+            ),
+            ("DELETE", "/api/flows/{id}") => (
+                template.replace("{id}", &manual_flow(&self.owner, a).await),
+                Body::NoneAsJson,
+            ),
+            (
+                "POST",
+                "/api/flow-runs/{id}/actions/{index}/confirm"
+                | "/api/flow-runs/{id}/actions/{index}/dismiss",
+            ) => (
+                template.replace("{id}", &s.run).replace("{index}", "0"),
+                Body::Json(json!({})),
+            ),
             ("PUT" | "DELETE", "/api/users/{id}/grants/{archive}") => {
                 let target = self.throwaway_user().await;
                 let path = format!("/api/users/{target}/grants/{a}");
@@ -1228,6 +1326,9 @@ const SEND: Expected = [204, 403, 403, 404, 401];
 const WRITE_MAIL: Expected = [200, 403, 403, 404, 401];
 /// The owner's own draft: nobody else sees it.
 const OWN: Expected = [200, 404, 404, 404, 401];
+/// Rules: the owner only; an admin reads every archive but has no editor grant, the member's
+/// grant is `reader`.
+const RULES: Expected = [200, 403, 403, 404, 401];
 
 fn expectations() -> BTreeMap<(String, String), Expected> {
     let rows: &[(&str, &str, Expected)] = &[
@@ -1553,6 +1654,58 @@ fn expectations() -> BTreeMap<(String, String), Expected> {
             [404, 404, 404, 404, 401],
         ),
         ("PUT", "/api/people/{id}/card", [409, 409, 409, 404, 401]),
+        ("GET", "/api/devices/serving", [200, 200, 200, 200, 401]),
+        ("GET", "/api/devices/local-flags", READ),
+        ("DELETE", "/api/devices/local-flags", READ),
+        (
+            "GET",
+            "/api/devices/profile/{token}",
+            [404, 404, 404, 404, 404],
+        ),
+        (
+            "POST",
+            "/api/devices/profile/{token}",
+            [404, 404, 404, 404, 404],
+        ),
+        (
+            "POST",
+            "/api/devices/{id}/profile",
+            [404, 404, 404, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/messages/{id}/itip/apply",
+            [422, 403, 403, 404, 401],
+        ),
+        ("GET", "/api/rules/catalogue", [200, 200, 200, 200, 401]),
+        ("GET", "/api/archives/{id}/flows", RULES),
+        (
+            "POST",
+            "/api/archives/{id}/flows",
+            [201, 403, 403, 404, 401],
+        ),
+        ("POST", "/api/archives/{id}/flows/test", RULES),
+        ("POST", "/api/archives/{id}/flows/preview", RULES),
+        ("GET", "/api/flows/{id}", RULES),
+        ("PUT", "/api/flows/{id}", RULES),
+        ("PATCH", "/api/flows/{id}", RULES),
+        ("DELETE", "/api/flows/{id}", [204, 403, 403, 404, 401]),
+        ("GET", "/api/flows/{id}/versions", RULES),
+        ("POST", "/api/flows/{id}/test", RULES),
+        ("POST", "/api/flows/{id}/run", RULES),
+        ("GET", "/api/flows/{id}/runs", RULES),
+        ("GET", "/api/flow-runs/{id}", [200, 404, 404, 404, 401]),
+        // The seeded run is a test run, so its action is not pending.
+        (
+            "POST",
+            "/api/flow-runs/{id}/actions/{index}/confirm",
+            [409, 404, 404, 404, 401],
+        ),
+        (
+            "POST",
+            "/api/flow-runs/{id}/actions/{index}/dismiss",
+            [409, 404, 404, 404, 401],
+        ),
         ("GET", "/api/accounts/{id}/retention", READ),
         (
             "PUT",

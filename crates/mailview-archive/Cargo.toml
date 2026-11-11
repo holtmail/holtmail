@@ -1,0 +1,37 @@
+[package]
+name = "holtmail-mailview-archive"
+description = "The served mail view over the archive: store, blobs, search index and the write locks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+holtmail-access.workspace = true
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-index.workspace = true
+holtmail-mail-writeback.workspace = true
+holtmail-mailview.workspace = true
+holtmail-mime.workspace = true
+holtmail-outbox.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+mail-parser.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+holtmail-blob-fs.workspace = true
+holtmail-index-tantivy.workspace = true
+holtmail-ingest.workspace = true
+holtmail-mailview = { workspace = true, features = ["testing"] }
+holtmail-store-sqlite.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

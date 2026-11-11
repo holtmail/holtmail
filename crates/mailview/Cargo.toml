@@ -1,0 +1,26 @@
+[package]
+name = "holtmail-mailview"
+description = "Contract for the served mail view: mailbox tree, served UIDs, flags, fetch, search, changes and client writes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+holtmail-blob.workspace = true
+holtmail-core.workspace = true
+holtmail-store.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+holtmail-mailview = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

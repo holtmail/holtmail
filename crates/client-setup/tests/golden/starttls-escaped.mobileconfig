@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>EmailAccountDescription</key>
+			<string>Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt;</string>
+			<key>EmailAccountName</key>
+			<string>Ann &lt;ann&gt; &amp; Co</string>
+			<key>EmailAccountType</key>
+			<string>EmailTypeIMAP</string>
+			<key>EmailAddress</key>
+			<string>alice@example.com</string>
+			<key>IncomingMailServerAuthentication</key>
+			<string>EmailAuthPassword</string>
+			<key>IncomingMailServerHostName</key>
+			<string>mail.example.org</string>
+			<key>IncomingMailServerPortNumber</key>
+			<integer>993</integer>
+			<key>IncomingMailServerUseSSL</key>
+			<true/>
+			<key>IncomingMailServerUsername</key>
+			<string>alice@example.com</string>
+			<key>IncomingPassword</key>
+			<string>a&amp;b&lt;c&gt;d&quot;e&apos;f</string>
+			<key>OutgoingMailServerAuthentication</key>
+			<string>EmailAuthPassword</string>
+			<key>OutgoingMailServerHostName</key>
+			<string>mail.example.org</string>
+			<key>OutgoingMailServerPortNumber</key>
+			<integer>587</integer>
+			<key>OutgoingMailServerUseSSL</key>
+			<true/>
+			<key>OutgoingMailServerUsername</key>
+			<string>alice@example.com</string>
+			<key>OutgoingPasswordSameAsIncomingPassword</key>
+			<true/>
+			<key>PayloadDescription</key>
+			<string>Mail from Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt;.</string>
+			<key>PayloadDisplayName</key>
+			<string>Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt; Mail</string>
+			<key>PayloadIdentifier</key>
+			<string>org.example.mail.holtmail.115802e2-8b01-82b9-944d-297478010d8a.mail</string>
+			<key>PayloadType</key>
+			<string>com.apple.mail.managed</string>
+			<key>PayloadUUID</key>
+			<string>5508913D-F81D-865F-9061-462975B60724</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>CardDAVAccountDescription</key>
+			<string>People</string>
+			<key>CardDAVHostName</key>
+			<string>mail.example.org</string>
+			<key>CardDAVPassword</key>
+			<string>a&amp;b&lt;c&gt;d&quot;e&apos;f</string>
+			<key>CardDAVPort</key>
+			<integer>8443</integer>
+			<key>CardDAVPrincipalURL</key>
+			<string>https://mail.example.org:8443/dav/</string>
+			<key>CardDAVUseSSL</key>
+			<true/>
+			<key>CardDAVUsername</key>
+			<string>alice@example.com</string>
+			<key>PayloadDescription</key>
+			<string>People from Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt;.</string>
+			<key>PayloadDisplayName</key>
+			<string>Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt; People</string>
+			<key>PayloadIdentifier</key>
+			<string>org.example.mail.holtmail.115802e2-8b01-82b9-944d-297478010d8a.carddav</string>
+			<key>PayloadType</key>
+			<string>com.apple.carddav.account</string>
+			<key>PayloadUUID</key>
+			<string>9A0B4528-F9CF-8D15-9611-44A6E4754D9A</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Accounts from Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt; for alice@example.com.</string>
+	<key>PayloadDisplayName</key>
+	<string>Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt; (alice@example.com)</string>
+	<key>PayloadIdentifier</key>
+	<string>org.example.mail.holtmail.115802e2-8b01-82b9-944d-297478010d8a</string>
+	<key>PayloadOrganization</key>
+	<string>Ann&apos;s &quot;Archive&quot; &amp; &lt;Co&gt;</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>115802E2-8B01-82B9-944D-297478010D8A</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

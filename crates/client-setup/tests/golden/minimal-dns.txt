@@ -1,0 +1,6 @@
+_imaps._tcp.example.org.       3600 IN SRV 0 1 993 mail.example.org.
+_imap._tcp.example.org.        3600 IN SRV 0 0 0 .
+_submissions._tcp.example.org. 3600 IN SRV 0 0 0 .
+_submission._tcp.example.org.  3600 IN SRV 10 1 587 mail.example.org.
+_pop3s._tcp.example.org.       3600 IN SRV 0 0 0 .
+_pop3._tcp.example.org.        3600 IN SRV 0 0 0 .

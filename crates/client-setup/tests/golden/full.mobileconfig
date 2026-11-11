@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>EmailAccountDescription</key>
+			<string>Holtmail</string>
+			<key>EmailAccountName</key>
+			<string>Alice Example</string>
+			<key>EmailAccountType</key>
+			<string>EmailTypeIMAP</string>
+			<key>EmailAddress</key>
+			<string>alice@example.com</string>
+			<key>IncomingMailServerAuthentication</key>
+			<string>EmailAuthPassword</string>
+			<key>IncomingMailServerHostName</key>
+			<string>mail.example.com</string>
+			<key>IncomingMailServerPortNumber</key>
+			<integer>993</integer>
+			<key>IncomingMailServerUseSSL</key>
+			<true/>
+			<key>IncomingMailServerUsername</key>
+			<string>alice@example.com</string>
+			<key>IncomingPassword</key>
+			<string>test-pass-word-0001</string>
+			<key>OutgoingMailServerAuthentication</key>
+			<string>EmailAuthPassword</string>
+			<key>OutgoingMailServerHostName</key>
+			<string>mail.example.com</string>
+			<key>OutgoingMailServerPortNumber</key>
+			<integer>465</integer>
+			<key>OutgoingMailServerUseSSL</key>
+			<true/>
+			<key>OutgoingMailServerUsername</key>
+			<string>alice@example.com</string>
+			<key>OutgoingPasswordSameAsIncomingPassword</key>
+			<true/>
+			<key>PayloadDescription</key>
+			<string>Mail from Holtmail.</string>
+			<key>PayloadDisplayName</key>
+			<string>Holtmail Mail</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.archive.holtmail.115802e2-8b01-82b9-944d-297478010d8a.mail</string>
+			<key>PayloadType</key>
+			<string>com.apple.mail.managed</string>
+			<key>PayloadUUID</key>
+			<string>5508913D-F81D-865F-9061-462975B60724</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>CalDAVAccountDescription</key>
+			<string>Holtmail</string>
+			<key>CalDAVHostName</key>
+			<string>archive.example.com</string>
+			<key>CalDAVPassword</key>
+			<string>test-pass-word-0001</string>
+			<key>CalDAVPort</key>
+			<integer>443</integer>
+			<key>CalDAVPrincipalURL</key>
+			<string>https://archive.example.com/dav/</string>
+			<key>CalDAVUseSSL</key>
+			<true/>
+			<key>CalDAVUsername</key>
+			<string>alice@example.com</string>
+			<key>PayloadDescription</key>
+			<string>Calendars from Holtmail.</string>
+			<key>PayloadDisplayName</key>
+			<string>Holtmail Calendars</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.archive.holtmail.115802e2-8b01-82b9-944d-297478010d8a.caldav</string>
+			<key>PayloadType</key>
+			<string>com.apple.caldav.account</string>
+			<key>PayloadUUID</key>
+			<string>30019F5E-0EAB-8F87-A296-37D52ED8761E</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>CardDAVAccountDescription</key>
+			<string>People</string>
+			<key>CardDAVHostName</key>
+			<string>archive.example.com</string>
+			<key>CardDAVPassword</key>
+			<string>test-pass-word-0001</string>
+			<key>CardDAVPort</key>
+			<integer>443</integer>
+			<key>CardDAVPrincipalURL</key>
+			<string>https://archive.example.com/dav/</string>
+			<key>CardDAVUseSSL</key>
+			<true/>
+			<key>CardDAVUsername</key>
+			<string>alice@example.com</string>
+			<key>PayloadDescription</key>
+			<string>People from Holtmail.</string>
+			<key>PayloadDisplayName</key>
+			<string>Holtmail People</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.archive.holtmail.115802e2-8b01-82b9-944d-297478010d8a.carddav</string>
+			<key>PayloadType</key>
+			<string>com.apple.carddav.account</string>
+			<key>PayloadUUID</key>
+			<string>9A0B4528-F9CF-8D15-9611-44A6E4754D9A</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Accounts from Holtmail for alice@example.com.</string>
+	<key>PayloadDisplayName</key>
+	<string>Holtmail (alice@example.com)</string>
+	<key>PayloadIdentifier</key>
+	<string>com.example.archive.holtmail.115802e2-8b01-82b9-944d-297478010d8a</string>
+	<key>PayloadOrganization</key>
+	<string>Holtmail</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>115802E2-8B01-82B9-944D-297478010D8A</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>
